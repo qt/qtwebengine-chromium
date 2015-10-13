@@ -11,7 +11,7 @@
 #include "base/trace_event/trace_event.h"
 #include "media/base/android/media_drm_bridge.h"
 #include "media/base/bind_to_current_loop.h"
-#include "media/base/buffers.h"
+#include "media/base/timestamp_constants.h"
 
 namespace media {
 
@@ -88,7 +88,7 @@ void MediaDecoderJob::OnDataReceived(const DemuxerData& data) {
 
   if (stop_decode_pending_) {
     DCHECK(is_decoding());
-    OnDecodeCompleted(MEDIA_CODEC_ABORT, kNoTimestamp(), kNoTimestamp());
+    OnDecodeCompleted(MEDIA_CODEC_ABORT, false, kNoTimestamp(), kNoTimestamp());
     return;
   }
 
@@ -361,7 +361,7 @@ void MediaDecoderJob::DecodeCurrentAccessUnit(
         // MEDIA_CODEC_OUTPUT_FORMAT_CHANGED status will come later.
         ui_task_runner_->PostTask(FROM_HERE, base::Bind(
             &MediaDecoderJob::OnDecodeCompleted, base::Unretained(this),
-            MEDIA_CODEC_OK, kNoTimestamp(), kNoTimestamp()));
+            MEDIA_CODEC_OK, false, kNoTimestamp(), kNoTimestamp()));
         return;
       }
       // Start draining the decoder so that all the remaining frames are
@@ -394,9 +394,10 @@ void MediaDecoderJob::DecodeInternal(
     DVLOG(1) << "DecodeInternal needs flush.";
     input_eos_encountered_ = false;
     output_eos_encountered_ = false;
+    input_buf_index_ = -1;
     MediaCodecStatus reset_status = media_codec_bridge_->Reset();
     if (MEDIA_CODEC_OK != reset_status) {
-      callback.Run(reset_status, kNoTimestamp(), kNoTimestamp());
+      callback.Run(reset_status, false, kNoTimestamp(), kNoTimestamp());
       return;
     }
   }
@@ -408,7 +409,7 @@ void MediaDecoderJob::DecodeInternal(
 
   // For aborted access unit, just skip it and inform the player.
   if (unit.status == DemuxerStream::kAborted) {
-    callback.Run(MEDIA_CODEC_ABORT, kNoTimestamp(), kNoTimestamp());
+    callback.Run(MEDIA_CODEC_ABORT, false, kNoTimestamp(), kNoTimestamp());
     return;
   }
 
@@ -416,7 +417,7 @@ void MediaDecoderJob::DecodeInternal(
     if (unit.is_end_of_stream || unit.data.empty()) {
       input_eos_encountered_ = true;
       output_eos_encountered_ = true;
-      callback.Run(MEDIA_CODEC_OUTPUT_END_OF_STREAM, kNoTimestamp(),
+      callback.Run(MEDIA_CODEC_OUTPUT_END_OF_STREAM, false, kNoTimestamp(),
                    kNoTimestamp());
       return;
     }
@@ -429,8 +430,12 @@ void MediaDecoderJob::DecodeInternal(
     input_status = QueueInputBuffer(unit);
     if (input_status == MEDIA_CODEC_INPUT_END_OF_STREAM) {
       input_eos_encountered_ = true;
+    } else if (input_status == MEDIA_CODEC_DEQUEUE_INPUT_AGAIN_LATER) {
+      // In some cases, all buffers must be released to codec before format
+      // change can be resolved. Context: b/21786703
+      DVLOG(1) << "dequeueInputBuffer gave AGAIN_LATER, dequeue output buffers";
     } else if (input_status != MEDIA_CODEC_OK) {
-      callback.Run(input_status, kNoTimestamp(), kNoTimestamp());
+      callback.Run(input_status, false, kNoTimestamp(), kNoTimestamp());
       return;
     }
   }
@@ -466,7 +471,7 @@ void MediaDecoderJob::DecodeInternal(
            status != MEDIA_CODEC_DEQUEUE_OUTPUT_AGAIN_LATER);
 
   if (status != MEDIA_CODEC_OK) {
-    callback.Run(status, kNoTimestamp(), kNoTimestamp());
+    callback.Run(status, false, kNoTimestamp(), kNoTimestamp());
     return;
   }
 
@@ -489,12 +494,10 @@ void MediaDecoderJob::DecodeInternal(
     decoder_task_runner_->PostDelayedTask(
         FROM_HERE,
         base::Bind(&MediaDecoderJob::ReleaseOutputBuffer,
-                   base::Unretained(this),
-                   buffer_index,
-                   size,
+                   base::Unretained(this), buffer_index, offset, size,
                    render_output,
-                   presentation_timestamp,
-                   base::Bind(callback, status)),
+                   false,  // this is not a late frame
+                   presentation_timestamp, base::Bind(callback, status)),
         time_to_render);
     return;
   }
@@ -512,14 +515,19 @@ void MediaDecoderJob::DecodeInternal(
   } else {
     presentation_timestamp = kNoTimestamp();
   }
+
   ReleaseOutputCompletionCallback completion_callback = base::Bind(
       callback, status);
-  ReleaseOutputBuffer(buffer_index, size, render_output, presentation_timestamp,
-                      completion_callback);
+
+  const bool is_late_frame = (time_to_render < base::TimeDelta());
+  ReleaseOutputBuffer(buffer_index, offset, size, render_output, is_late_frame,
+                      presentation_timestamp, completion_callback);
 }
 
 void MediaDecoderJob::OnDecodeCompleted(
-    MediaCodecStatus status, base::TimeDelta current_presentation_timestamp,
+    MediaCodecStatus status,
+    bool is_late_frame,
+    base::TimeDelta current_presentation_timestamp,
     base::TimeDelta max_presentation_timestamp) {
   DCHECK(ui_task_runner_->BelongsToCurrentThread());
 
@@ -581,8 +589,9 @@ void MediaDecoderJob::OnDecodeCompleted(
   }
 
   stop_decode_pending_ = false;
-  base::ResetAndReturn(&decode_cb_).Run(
-      status, current_presentation_timestamp, max_presentation_timestamp);
+  base::ResetAndReturn(&decode_cb_)
+      .Run(status, is_late_frame, current_presentation_timestamp,
+           max_presentation_timestamp);
 }
 
 const AccessUnit& MediaDecoderJob::CurrentAccessUnit() const {

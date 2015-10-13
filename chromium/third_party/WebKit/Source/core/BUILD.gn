@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/config/chrome_build.gni")
 import("//build/config/ui.gni")
 import("//third_party/WebKit/Source/bindings/bindings.gni")
 import("//third_party/WebKit/Source/bindings/core/v8/generated.gni")
@@ -21,17 +22,13 @@ rel_blink_core_gen_dir = rebase_path(blink_core_output_dir, root_build_dir)
 # speed-over-size optimization for official builds on Windows only. The GN's
 # build optimize_max config applies this optimization on all platforms, so
 # compute how to modify the config list to duplicate the GYP behavior.
-if (is_debug) {
-  core_config_remove = [ "//build/config/compiler:no_optimize" ]
-  core_config_add = core_config_remove  # NOP
+if (is_debug || !is_win || !is_official_build) {
+  # NOP.
+  core_config_add = []
+  core_config_remove = []
 } else {
-  core_config_remove = [ "//build/config/compiler:optimize" ]
-
-  if (is_win && is_official_build) {
-    core_config_add = [ "//build/config/compiler:optimize_max" ]
-  } else {
-    core_config_add = core_config_remove  # NOP
-  }
+  core_config_remove = [ "//build/config/compiler:default_optimization" ]
+  core_config_add = [ "//build/config/compiler:optimize_max" ]
 }
 
 # Core targets also get wexit time destructors.
@@ -83,6 +80,7 @@ source_set("prerequisites") {
     "//skia",
     "//third_party/angle:translator",
     "//third_party/iccjpeg",
+    "//third_party/icu",
     "//third_party/libpng",
     "//third_party/libwebp",
     "//third_party/libxml",
@@ -275,6 +273,8 @@ source_set("remaining") {
       "layout/LayoutThemeDefault.h",
       "layout/LayoutThemeFontProvider.cpp",
       "layout/LayoutThemeFontProvider.h",
+      "paint/ThemePainterDefault.cpp",
+      "paint/ThemePainterDefault.h",
     ]
     libs += [ "Carbon.framework" ]
     # Some Mac-specific parts of WebKit won't compile without having this
@@ -285,7 +285,7 @@ source_set("remaining") {
     ]
   } else {  # !is_mac
     sources -= [
-      "editing/SmartReplaceCF.cpp",
+      "editing/commands/SmartReplaceCF.cpp",
     ]
   }
 }
@@ -341,8 +341,6 @@ source_set("testing") {
     "$bindings_core_v8_output_dir/V8InternalDictionary.h",
     "$bindings_core_v8_output_dir/V8InternalDictionaryDerived.cpp",
     "$bindings_core_v8_output_dir/V8InternalDictionaryDerived.h",
-    "$bindings_core_v8_output_dir/V8PluginPlaceholderOptions.cpp",
-    "$bindings_core_v8_output_dir/V8PluginPlaceholderOptions.h",
   ]
 }
 
@@ -469,7 +467,7 @@ source_set("core_generated") {
   cflags = []
   defines = []
 
-  if (is_win && component_mode == "shared_library") {
+  if (is_win && is_component_build) {
     defines += [ "USING_V8_SHARED" ]
   }
 
@@ -932,7 +930,6 @@ action("make_core_generated_private_script") {
   inputs = [
     "../bindings/core/v8/PrivateScriptRunner.js",
     "html/HTMLMarqueeElement.js",
-    "html/shadow/PluginPlaceholderElement.js",
     "xml/DocumentXMLTreeViewer.js",
   ]
   outputs = [

@@ -63,7 +63,7 @@ SkLinearGradient::SkLinearGradient(const SkPoint pts[2], const Descriptor& desc)
 SkFlattenable* SkLinearGradient::CreateProc(SkReadBuffer& buffer) {
     DescriptorScope desc;
     if (!desc.unflatten(buffer)) {
-        return NULL;
+        return nullptr;
     }
     SkPoint pts[2];
     pts[0] = buffer.readPoint();
@@ -83,7 +83,7 @@ size_t SkLinearGradient::contextSize() const {
 }
 
 SkShader::Context* SkLinearGradient::onCreateContext(const ContextRec& rec, void* storage) const {
-    return SkNEW_PLACEMENT_ARGS(storage, LinearGradientContext, (*this, rec));
+    return new (storage) LinearGradientContext(*this, rec);
 }
 
 SkLinearGradient::LinearGradientContext::LinearGradientContext(
@@ -228,7 +228,7 @@ void SkLinearGradient::LinearGradientContext::shadeSpan(int x, int y, SkPMColor*
 
         if (fDstToIndexClass == kFixedStepInX_MatrixClass) {
             SkFixed dxStorage[1];
-            (void)fDstToIndex.fixedStepInX(SkIntToScalar(y), dxStorage, NULL);
+            (void)fDstToIndex.fixedStepInX(SkIntToScalar(y), dxStorage, nullptr);
             // todo: do we need a real/high-precision value for dx here?
             dx = SkFixedToGradFixed(dxStorage[0]);
         } else {
@@ -259,22 +259,6 @@ void SkLinearGradient::LinearGradientContext::shadeSpan(int x, int y, SkPMColor*
             dstX += SK_Scalar1;
         } while (--count != 0);
     }
-}
-
-SkShader::BitmapType SkLinearGradient::asABitmap(SkBitmap* bitmap,
-                                                SkMatrix* matrix,
-                                                TileMode xy[]) const {
-    if (bitmap) {
-        this->getGradientTableBitmap(bitmap);
-    }
-    if (matrix) {
-        matrix->preConcat(fPtsToUnit);
-    }
-    if (xy) {
-        xy[0] = fTileMode;
-        xy[1] = kClamp_TileMode;
-    }
-    return kLinear_BitmapType;
 }
 
 SkShader::GradientType SkLinearGradient::asAGradient(GradientInfo* info) const {
@@ -417,7 +401,7 @@ void SkLinearGradient::LinearGradientContext::shadeSpan16(int x, int y,
 
         if (fDstToIndexClass == kFixedStepInX_MatrixClass) {
             SkFixed dxStorage[1];
-            (void)fDstToIndex.fixedStepInX(SkIntToScalar(y), dxStorage, NULL);
+            (void)fDstToIndex.fixedStepInX(SkIntToScalar(y), dxStorage, nullptr);
             // todo: do we need a real/high-precision value for dx here?
             dx = SkFixedToGradFixed(dxStorage[0]);
         } else {
@@ -467,12 +451,7 @@ public:
 
     virtual ~GrGLLinearGradient() { }
 
-    virtual void emitCode(GrGLFPBuilder*,
-                          const GrFragmentProcessor&,
-                          const char* outputColor,
-                          const char* inputColor,
-                          const TransformedCoordsArray&,
-                          const TextureSamplerArray&) override;
+    virtual void emitCode(EmitArgs&) override;
 
     static void GenKey(const GrProcessor& processor, const GrGLSLCaps&, GrProcessorKeyBuilder* b) {
         b->add32(GenBaseGradientKey(processor));
@@ -493,21 +472,12 @@ public:
                                        const SkLinearGradient& shader,
                                        const SkMatrix& matrix,
                                        SkShader::TileMode tm) {
-        return SkNEW_ARGS(GrLinearGradient, (ctx, procDataManager, shader, matrix, tm));
+        return new GrLinearGradient(ctx, procDataManager, shader, matrix, tm);
     }
 
     virtual ~GrLinearGradient() { }
 
     const char* name() const override { return "Linear Gradient"; }
-
-    virtual void getGLProcessorKey(const GrGLSLCaps& caps,
-                                   GrProcessorKeyBuilder* b) const override {
-        GrGLLinearGradient::GenKey(*this, caps, b);
-    }
-
-    GrGLFragmentProcessor* createGLInstance() const override {
-        return SkNEW_ARGS(GrGLLinearGradient, (*this));
-    }
 
 private:
     GrLinearGradient(GrContext* ctx,
@@ -518,6 +488,16 @@ private:
         : INHERITED(ctx, procDataManager, shader, matrix, tm) {
         this->initClassID<GrLinearGradient>();
     }
+
+    GrGLFragmentProcessor* onCreateGLInstance() const override {
+        return new GrGLLinearGradient(*this);
+    }
+
+    virtual void onGetGLProcessorKey(const GrGLSLCaps& caps,
+                                     GrProcessorKeyBuilder* b) const override {
+        GrGLLinearGradient::GenKey(*this, caps, b);
+    }
+
     GR_DECLARE_FRAGMENT_PROCESSOR_TEST;
 
     typedef GrGradientEffect INHERITED;
@@ -527,7 +507,7 @@ private:
 
 GR_DEFINE_FRAGMENT_PROCESSOR_TEST(GrLinearGradient);
 
-GrFragmentProcessor* GrLinearGradient::TestCreate(GrProcessorTestData* d) {
+const GrFragmentProcessor* GrLinearGradient::TestCreate(GrProcessorTestData* d) {
     SkPoint points[] = {{d->fRandom->nextUScalar1(), d->fRandom->nextUScalar1()},
                         {d->fRandom->nextUScalar1(), d->fRandom->nextUScalar1()}};
 
@@ -539,66 +519,51 @@ GrFragmentProcessor* GrLinearGradient::TestCreate(GrProcessorTestData* d) {
     SkAutoTUnref<SkShader> shader(SkGradientShader::CreateLinear(points,
                                                                  colors, stops, colorCount,
                                                                  tm));
-    SkPaint paint;
-    GrColor paintColor;
-    GrFragmentProcessor* fp;
-    SkAssertResult(shader->asFragmentProcessor(d->fContext, paint,
-                                               GrTest::TestMatrix(d->fRandom), NULL,
-                                               &paintColor, d->fProcDataManager, &fp));
+    const GrFragmentProcessor* fp = shader->asFragmentProcessor(d->fContext,
+        GrTest::TestMatrix(d->fRandom), NULL, kNone_SkFilterQuality, d->fProcDataManager);
+    GrAlwaysAssert(fp);
     return fp;
 }
 
 /////////////////////////////////////////////////////////////////////
 
-void GrGLLinearGradient::emitCode(GrGLFPBuilder* builder,
-                                  const GrFragmentProcessor& fp,
-                                  const char* outputColor,
-                                  const char* inputColor,
-                                  const TransformedCoordsArray& coords,
-                                  const TextureSamplerArray& samplers) {
-    const GrLinearGradient& ge = fp.cast<GrLinearGradient>();
-    this->emitUniforms(builder, ge);
-    SkString t = builder->getFragmentShaderBuilder()->ensureFSCoords2D(coords, 0);
+void GrGLLinearGradient::emitCode(EmitArgs& args) {
+    const GrLinearGradient& ge = args.fFp.cast<GrLinearGradient>();
+    this->emitUniforms(args.fBuilder, ge);
+    SkString t = args.fBuilder->getFragmentShaderBuilder()->ensureFSCoords2D(args.fCoords, 0);
     t.append(".x");
-    this->emitColor(builder, ge, t.c_str(), outputColor, inputColor, samplers);
+    this->emitColor(args.fBuilder, ge, t.c_str(), args.fOutputColor, args.fInputColor,
+                    args.fSamplers);
 }
 
 /////////////////////////////////////////////////////////////////////
 
-bool SkLinearGradient::asFragmentProcessor(GrContext* context, const SkPaint& paint,
-                                           const SkMatrix& viewm, const SkMatrix* localMatrix,
-                                           GrColor* paintColor,
-                                           GrProcessorDataManager* procDataManager,
-                                           GrFragmentProcessor** fp)  const {
+const GrFragmentProcessor* SkLinearGradient::asFragmentProcessor(
+                                                 GrContext* context,
+                                                 const SkMatrix& viewm,
+                                                 const SkMatrix* localMatrix,
+                                                 SkFilterQuality,
+                                                 GrProcessorDataManager* procDataManager) const {
     SkASSERT(context);
 
     SkMatrix matrix;
     if (!this->getLocalMatrix().invert(&matrix)) {
-        return false;
+        return nullptr;
     }
     if (localMatrix) {
         SkMatrix inv;
         if (!localMatrix->invert(&inv)) {
-            return false;
+            return nullptr;
         }
         matrix.postConcat(inv);
     }
     matrix.postConcat(fPtsToUnit);
 
-    *paintColor = SkColor2GrColorJustAlpha(paint.getColor());
-    *fp = GrLinearGradient::Create(context, procDataManager, *this, matrix, fTileMode);
-
-    return true;
+    SkAutoTUnref<const GrFragmentProcessor> inner(
+        GrLinearGradient::Create(context, procDataManager, *this, matrix, fTileMode));
+    return GrFragmentProcessor::MulOutputByInputAlpha(inner);
 }
 
-#else
-
-bool SkLinearGradient::asFragmentProcessor(GrContext*, const SkPaint&, const SkMatrix&,
-                                           const SkMatrix*, GrColor*, GrProcessorDataManager*,
-                                           GrFragmentProcessor**)  const {
-    SkDEBUGFAIL("Should not call in GPU-less build");
-    return false;
-}
 
 #endif
 

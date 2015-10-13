@@ -11,11 +11,12 @@ namespace content {
 
 // static
 ChildIOSurfaceManager* ChildIOSurfaceManager::GetInstance() {
-  return Singleton<ChildIOSurfaceManager,
-                   LeakySingletonTraits<ChildIOSurfaceManager>>::get();
+  return base::Singleton<
+      ChildIOSurfaceManager,
+      base::LeakySingletonTraits<ChildIOSurfaceManager>>::get();
 }
 
-bool ChildIOSurfaceManager::RegisterIOSurface(int io_surface_id,
+bool ChildIOSurfaceManager::RegisterIOSurface(IOSurfaceId io_surface_id,
                                               int client_id,
                                               IOSurfaceRef io_surface) {
   DCHECK(service_port_.is_valid());
@@ -52,7 +53,7 @@ bool ChildIOSurfaceManager::RegisterIOSurface(int io_surface_id,
   data.request.io_surface_port.name = scoped_io_surface_right;
   data.request.io_surface_port.disposition = MACH_MSG_TYPE_COPY_SEND;
   data.request.io_surface_port.type = MACH_MSG_PORT_DESCRIPTOR;
-  data.request.io_surface_id = io_surface_id;
+  data.request.io_surface_id = io_surface_id.id;
   data.request.client_id = client_id;
   memcpy(data.request.token_name, token_.name, sizeof(token_.name));
 
@@ -67,7 +68,7 @@ bool ChildIOSurfaceManager::RegisterIOSurface(int io_surface_id,
   return data.reply.msg.result;
 }
 
-void ChildIOSurfaceManager::UnregisterIOSurface(int io_surface_id,
+void ChildIOSurfaceManager::UnregisterIOSurface(IOSurfaceId io_surface_id,
                                                 int client_id) {
   DCHECK(service_port_.is_valid());
   DCHECK(!token_.IsZero());
@@ -78,7 +79,7 @@ void ChildIOSurfaceManager::UnregisterIOSurface(int io_surface_id,
   request.header.msgh_local_port = MACH_PORT_NULL;
   request.header.msgh_size = sizeof(request);
   request.header.msgh_id = IOSurfaceManagerHostMsg_UnregisterIOSurface::ID;
-  request.io_surface_id = io_surface_id;
+  request.io_surface_id = io_surface_id.id;
   request.client_id = client_id;
   memcpy(request.token_name, token_.name, sizeof(token_.name));
 
@@ -90,7 +91,8 @@ void ChildIOSurfaceManager::UnregisterIOSurface(int io_surface_id,
   }
 }
 
-IOSurfaceRef ChildIOSurfaceManager::AcquireIOSurface(int io_surface_id) {
+IOSurfaceRef ChildIOSurfaceManager::AcquireIOSurface(
+    IOSurfaceId io_surface_id) {
   DCHECK(service_port_.is_valid());
   DCHECK(!token_.IsZero());
 
@@ -116,7 +118,7 @@ IOSurfaceRef ChildIOSurfaceManager::AcquireIOSurface(int io_surface_id) {
   data.request.header.msgh_local_port = reply_port;
   data.request.header.msgh_size = sizeof(data.request);
   data.request.header.msgh_id = IOSurfaceManagerHostMsg_AcquireIOSurface::ID;
-  data.request.io_surface_id = io_surface_id;
+  data.request.io_surface_id = io_surface_id.id;
   memcpy(data.request.token_name, token_.name, sizeof(token_.name));
 
   kr = mach_msg(&data.request.header, MACH_SEND_MSG | MACH_RCV_MSG,
@@ -124,6 +126,10 @@ IOSurfaceRef ChildIOSurfaceManager::AcquireIOSurface(int io_surface_id) {
                 MACH_MSG_TIMEOUT_NONE, MACH_PORT_NULL);
   if (kr != KERN_SUCCESS) {
     MACH_LOG(ERROR, kr) << "mach_msg";
+    return nullptr;
+  }
+  if (!data.reply.msg.result) {
+    DLOG(ERROR) << "Browser refused AcquireIOSurface request";
     return nullptr;
   }
 
@@ -134,10 +140,8 @@ IOSurfaceRef ChildIOSurfaceManager::AcquireIOSurface(int io_surface_id) {
   return IOSurfaceLookupFromMachPort(scoped_io_surface_right);
 }
 
-ChildIOSurfaceManager::ChildIOSurfaceManager() {
-}
+ChildIOSurfaceManager::ChildIOSurfaceManager() {}
 
-ChildIOSurfaceManager::~ChildIOSurfaceManager() {
-}
+ChildIOSurfaceManager::~ChildIOSurfaceManager() {}
 
 }  // namespace content

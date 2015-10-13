@@ -36,7 +36,9 @@ WebContentsObserverProxy::WebContentsObserverProxy(JNIEnv* env,
 WebContentsObserverProxy::~WebContentsObserverProxy() {
 }
 
-jlong Init(JNIEnv* env, jobject obj, jobject java_web_contents) {
+jlong Init(JNIEnv* env,
+           const JavaParamRef<jobject>& obj,
+           const JavaParamRef<jobject>& java_web_contents) {
   WebContents* web_contents =
       WebContents::FromJavaWebContents(java_web_contents);
   CHECK(web_contents);
@@ -221,7 +223,8 @@ void WebContentsObserverProxy::DocumentLoadedInFrame(
   JNIEnv* env = AttachCurrentThread();
   ScopedJavaLocalRef<jobject> obj(java_observer_);
   Java_WebContentsObserverProxy_documentLoadedInFrame(
-      env, obj.obj(), render_frame_host->GetRoutingID());
+      env, obj.obj(), render_frame_host->GetRoutingID(),
+      !render_frame_host->GetParent());
 }
 
 void WebContentsObserverProxy::NavigationEntryCommitted(

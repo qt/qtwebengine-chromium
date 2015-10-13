@@ -6,18 +6,19 @@
 #define WebPushProvider_h
 
 #include "public/platform/WebCallbacks.h"
+#include "public/platform/WebPassOwnPtr.h"
 #include "public/platform/modules/push_messaging/WebPushPermissionStatus.h"
+#include "public/platform/modules/push_messaging/WebPushSubscription.h"
 
 namespace blink {
 
 class WebServiceWorkerRegistration;
 struct WebPushError;
-struct WebPushSubscription;
 struct WebPushSubscriptionOptions;
 
-using WebPushSubscriptionCallbacks = WebCallbacks<WebPushSubscription, WebPushError>;
-using WebPushPermissionStatusCallbacks = WebCallbacks<WebPushPermissionStatus, WebPushError>;
-using WebPushUnsubscribeCallbacks = WebCallbacks<bool, WebPushError>;
+using WebPushSubscriptionCallbacks = WebCallbacks<WebPassOwnPtr<WebPushSubscription>, const WebPushError&>;
+using WebPushPermissionStatusCallbacks = WebCallbacks<WebPushPermissionStatus, const WebPushError&>;
+using WebPushUnsubscribeCallbacks = WebCallbacks<bool, const WebPushError&>;
 
 class WebPushProvider {
 public:

@@ -96,6 +96,11 @@ void TOutputGLSLBase::writeVariableType(const TType &type)
     {
         out << "invariant ";
     }
+    if (type.getBasicType() == EbtInterfaceBlock)
+    {
+        TInterfaceBlock *interfaceBlock = type.getInterfaceBlock();
+        declareInterfaceBlockLayout(interfaceBlock);
+    }
     TQualifier qualifier = type.getQualifier();
     if (qualifier != EvqTemporary && qualifier != EvqGlobal)
     {
@@ -133,6 +138,11 @@ void TOutputGLSLBase::writeVariableType(const TType &type)
         {
             mDeclaredStructs.insert(structure->uniqueId());
         }
+    }
+    else if (type.getBasicType() == EbtInterfaceBlock)
+    {
+        TInterfaceBlock *interfaceBlock = type.getInterfaceBlock();
+        declareInterfaceBlock(interfaceBlock);
     }
     else
     {
@@ -373,6 +383,22 @@ bool TOutputGLSLBase::visitBinary(Visit visit, TIntermBinary *node)
             visitChildren = false;
         }
         break;
+      case EOpIndexDirectInterfaceBlock:
+          if (visit == InVisit)
+          {
+              out << ".";
+              const TInterfaceBlock *interfaceBlock = node->getLeft()->getType().getInterfaceBlock();
+              const TIntermConstantUnion *index = node->getRight()->getAsConstantUnion();
+              const TField *field = interfaceBlock->fields()[index->getIConst(0)];
+
+              TString fieldName = field->name();
+              ASSERT(!mSymbolTable.findBuiltIn(interfaceBlock->name(), mShaderVersion));
+              fieldName = hashName(fieldName);
+
+              out << fieldName;
+              visitChildren = false;
+          }
+          break;
       case EOpVectorSwizzle:
         if (visit == InVisit)
         {
@@ -783,7 +809,7 @@ bool TOutputGLSLBase::visitAggregate(Visit visit, TIntermAggregate *node)
                 out << arrayBrackets(type);
         }
 
-        out << " " << hashFunctionName(node->getName());
+        out << " " << hashFunctionNameIfNeeded(node->getNameObj());
 
         out << "(";
         writeFunctionParameters(*(node->getSequence()));
@@ -801,7 +827,7 @@ bool TOutputGLSLBase::visitAggregate(Visit visit, TIntermAggregate *node)
                 out << arrayBrackets(type);
         }
 
-        out << " " << hashFunctionName(node->getName());
+        out << " " << hashFunctionNameIfNeeded(node->getNameObj());
 
         incrementDepth(node);
         // Function definition node contains one or two children nodes
@@ -830,16 +856,7 @@ bool TOutputGLSLBase::visitAggregate(Visit visit, TIntermAggregate *node)
       case EOpFunctionCall:
         // Function call.
         if (visit == PreVisit)
-            out << hashFunctionName(node->getName()) << "(";
-        else if (visit == InVisit)
-            out << ", ";
-        else
-            out << ")";
-        break;
-      case EOpInternalFunctionCall:
-        // Function call to an internal helper function.
-        if (visit == PreVisit)
-            out << node->getName() << "(";
+            out << hashFunctionNameIfNeeded(node->getNameObj()) << "(";
         else if (visit == InVisit)
             out << ", ";
         else
@@ -920,6 +937,18 @@ bool TOutputGLSLBase::visitAggregate(Visit visit, TIntermAggregate *node)
         break;
       case EOpConstructIVec4:
         writeConstructorTriplet(visit, node->getType(), "ivec4");
+        break;
+      case EOpConstructUInt:
+        writeConstructorTriplet(visit, node->getType(), "uint");
+        break;
+      case EOpConstructUVec2:
+        writeConstructorTriplet(visit, node->getType(), "uvec2");
+        break;
+      case EOpConstructUVec3:
+        writeConstructorTriplet(visit, node->getType(), "uvec3");
+        break;
+      case EOpConstructUVec4:
+        writeConstructorTriplet(visit, node->getType(), "uvec4");
         break;
       case EOpConstructMat2:
         writeConstructorTriplet(visit, node->getType(), "mat2");
@@ -1046,8 +1075,12 @@ bool TOutputGLSLBase::visitLoop(Visit visit, TIntermLoop *node)
     TInfoSinkBase &out = objSink();
 
     incrementDepth(node);
-    // Loop header.
+
     TLoopType loopType = node->getType();
+
+    // Only for loops can be unrolled
+    ASSERT(!node->getUnrollFlag() || loopType == ELoopFor);
+
     if (loopType == ELoopFor)  // for loop
     {
         if (!node->getUnrollFlag())
@@ -1064,6 +1097,8 @@ bool TOutputGLSLBase::visitLoop(Visit visit, TIntermLoop *node)
             if (node->getExpression())
                 node->getExpression()->traverse(this);
             out << ")\n";
+
+            visitCodeBlock(node->getBody());
         }
         else
         {
@@ -1076,6 +1111,16 @@ bool TOutputGLSLBase::visitLoop(Visit visit, TIntermLoop *node)
             out << "for (int " << name << " = 0; "
                 << name << " < 1; "
                 << "++" << name << ")\n";
+
+            out << "{\n";
+            mLoopUnrollStack.push(node);
+            while (mLoopUnrollStack.satisfiesLoopCondition())
+            {
+                visitCodeBlock(node->getBody());
+                mLoopUnrollStack.step();
+            }
+            mLoopUnrollStack.pop();
+            out << "}\n";
         }
     }
     else if (loopType == ELoopWhile)  // while loop
@@ -1084,39 +1129,22 @@ bool TOutputGLSLBase::visitLoop(Visit visit, TIntermLoop *node)
         ASSERT(node->getCondition() != NULL);
         node->getCondition()->traverse(this);
         out << ")\n";
+
+        visitCodeBlock(node->getBody());
     }
     else  // do-while loop
     {
         ASSERT(loopType == ELoopDoWhile);
         out << "do\n";
-    }
 
-    // Loop body.
-    if (node->getUnrollFlag())
-    {
-        out << "{\n";
-        mLoopUnrollStack.push(node);
-        while (mLoopUnrollStack.satisfiesLoopCondition())
-        {
-            visitCodeBlock(node->getBody());
-            mLoopUnrollStack.step();
-        }
-        mLoopUnrollStack.pop();
-        out << "}\n";
-    }
-    else
-    {
         visitCodeBlock(node->getBody());
-    }
 
-    // Loop footer.
-    if (loopType == ELoopDoWhile)  // do-while loop
-    {
         out << "while (";
         ASSERT(node->getCondition() != NULL);
         node->getCondition()->traverse(this);
         out << ");\n";
     }
+
     decrementDepth();
 
     // No need to visit children. They have been already processed in
@@ -1171,6 +1199,10 @@ TString TOutputGLSLBase::getTypeName(const TType &type)
     {
         out << "mat";
         out << type.getNominalSize();
+        if (type.getSecondarySize() != type.getNominalSize())
+        {
+            out << "x" << type.getSecondarySize();
+        }
     }
     else if (type.isVector())
     {
@@ -1184,6 +1216,9 @@ TString TOutputGLSLBase::getTypeName(const TType &type)
             break;
           case EbtBool:
             out << "bvec";
+            break;
+          case EbtUInt:
+            out << "uvec";
             break;
           default:
             UNREACHABLE();
@@ -1219,12 +1254,16 @@ TString TOutputGLSLBase::hashVariableName(const TString &name)
     return hashName(name);
 }
 
-TString TOutputGLSLBase::hashFunctionName(const TString &mangled_name)
+TString TOutputGLSLBase::hashFunctionNameIfNeeded(const TName &mangledName)
 {
-    TString name = TFunction::unmangleName(mangled_name);
-    if (mSymbolTable.findBuiltIn(mangled_name, mShaderVersion) != NULL || name == "main")
+    TString mangledStr = mangledName.getString();
+    TString name = TFunction::unmangleName(mangledStr);
+    if (mSymbolTable.findBuiltIn(mangledStr, mShaderVersion) != nullptr || name == "main")
         return translateTextureFunction(name);
-    return hashName(name);
+    if (mangledName.isInternal())
+        return name;
+    else
+        return hashName(name);
 }
 
 bool TOutputGLSLBase::structDeclared(const TStructure *structure) const
@@ -1257,3 +1296,70 @@ void TOutputGLSLBase::declareStruct(const TStructure *structure)
     out << "}";
 }
 
+void TOutputGLSLBase::declareInterfaceBlockLayout(const TInterfaceBlock *interfaceBlock)
+{
+    TInfoSinkBase &out = objSink();
+
+    out << "layout(";
+
+    switch (interfaceBlock->blockStorage())
+    {
+        case EbsUnspecified:
+        case EbsShared:
+            // Default block storage is shared.
+            out << "shared";
+            break;
+
+        case EbsPacked:
+            out << "packed";
+            break;
+
+        case EbsStd140:
+            out << "std140";
+            break;
+
+        default:
+            UNREACHABLE();
+            break;
+    }
+
+    out << ", ";
+
+    switch (interfaceBlock->matrixPacking())
+    {
+        case EmpUnspecified:
+        case EmpColumnMajor:
+            // Default matrix packing is column major.
+            out << "column_major";
+            break;
+
+        case EmpRowMajor:
+            out << "row_major";
+            break;
+
+        default:
+            UNREACHABLE();
+            break;
+    }
+
+    out << ") ";
+}
+
+void TOutputGLSLBase::declareInterfaceBlock(const TInterfaceBlock *interfaceBlock)
+{
+    TInfoSinkBase &out = objSink();
+
+    out << hashName(interfaceBlock->name()) << "{\n";
+    const TFieldList &fields = interfaceBlock->fields();
+    for (size_t i = 0; i < fields.size(); ++i)
+    {
+        const TField *field = fields[i];
+        if (writeVariablePrecision(field->type()->getPrecision()))
+            out << " ";
+        out << getTypeName(*field->type()) << " " << hashName(field->name());
+        if (field->type()->isArray())
+            out << arrayBrackets(*field->type());
+        out << ";\n";
+    }
+    out << "}";
+}

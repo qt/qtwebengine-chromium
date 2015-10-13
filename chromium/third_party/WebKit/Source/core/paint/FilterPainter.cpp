@@ -5,9 +5,9 @@
 #include "config.h"
 #include "core/paint/FilterPainter.h"
 
-#include "core/paint/DeprecatedPaintLayer.h"
 #include "core/paint/FilterEffectBuilder.h"
 #include "core/paint/LayerClipRecorder.h"
+#include "core/paint/PaintLayer.h"
 #include "platform/RuntimeEnabledFeatures.h"
 #include "platform/graphics/GraphicsContext.h"
 #include "platform/graphics/GraphicsLayer.h"
@@ -21,7 +21,7 @@
 
 namespace blink {
 
-FilterPainter::FilterPainter(DeprecatedPaintLayer& layer, GraphicsContext* context, const LayoutPoint& offsetFromRoot, const ClipRect& clipRect, DeprecatedPaintLayerPaintingInfo& paintingInfo, PaintLayerFlags paintFlags,
+FilterPainter::FilterPainter(PaintLayer& layer, GraphicsContext* context, const LayoutPoint& offsetFromRoot, const ClipRect& clipRect, PaintLayerPaintingInfo& paintingInfo, PaintLayerFlags paintFlags,
     LayoutRect& rootRelativeBounds, bool& rootRelativeBoundsComputed)
     : m_filterInProgress(false)
     , m_context(context)
@@ -40,7 +40,7 @@ FilterPainter::FilterPainter(DeprecatedPaintLayer& layer, GraphicsContext* conte
         return;
 
     if (!rootRelativeBoundsComputed) {
-        rootRelativeBounds = layer.physicalBoundingBoxIncludingReflectionAndStackingChildren(paintingInfo.rootLayer, offsetFromRoot);
+        rootRelativeBounds = layer.physicalBoundingBoxIncludingReflectionAndStackingChildren(offsetFromRoot);
         rootRelativeBoundsComputed = true;
     }
 
@@ -57,23 +57,18 @@ FilterPainter::FilterPainter(DeprecatedPaintLayer& layer, GraphicsContext* conte
     }
 
     ASSERT(m_layoutObject);
-    if (RuntimeEnabledFeatures::slimmingPaintEnabled()) {
-        ASSERT(context->displayItemList());
-        if (!context->displayItemList()->displayItemConstructionIsDisabled()) {
-            FilterOperations filterOperations(layer.computeFilterOperations(m_layoutObject->styleRef()));
-            OwnPtr<WebFilterOperations> webFilterOperations = adoptPtr(Platform::current()->compositorSupport()->createFilterOperations());
-            builder.buildFilterOperations(filterOperations, webFilterOperations.get());
-            // FIXME: It's possible to have empty WebFilterOperations here even
-            // though the SkImageFilter produced above is non-null, since the
-            // layer's FilterEffectBuilder can have a stale representation of
-            // the layer's filter. See crbug.com/502026.
-            if (webFilterOperations->isEmpty())
-                return;
-            context->displayItemList()->createAndAppend<BeginFilterDisplayItem>(*m_layoutObject, imageFilter, rootRelativeBounds, webFilterOperations.release());
-        }
-    } else {
-        BeginFilterDisplayItem filterDisplayItem(*m_layoutObject, imageFilter, rootRelativeBounds);
-        filterDisplayItem.replay(*context);
+    ASSERT(context->displayItemList());
+    if (!context->displayItemList()->displayItemConstructionIsDisabled()) {
+        FilterOperations filterOperations(layer.computeFilterOperations(m_layoutObject->styleRef()));
+        OwnPtr<WebFilterOperations> webFilterOperations = adoptPtr(Platform::current()->compositorSupport()->createFilterOperations());
+        builder.buildFilterOperations(filterOperations, webFilterOperations.get());
+        // FIXME: It's possible to have empty WebFilterOperations here even
+        // though the SkImageFilter produced above is non-null, since the
+        // layer's FilterEffectBuilder can have a stale representation of
+        // the layer's filter. See crbug.com/502026.
+        if (webFilterOperations->isEmpty())
+            return;
+        context->displayItemList()->createAndAppend<BeginFilterDisplayItem>(*m_layoutObject, imageFilter, FloatRect(rootRelativeBounds), webFilterOperations.release());
     }
 
     m_filterInProgress = true;
@@ -84,17 +79,12 @@ FilterPainter::~FilterPainter()
     if (!m_filterInProgress)
         return;
 
-    if (RuntimeEnabledFeatures::slimmingPaintEnabled()) {
-        ASSERT(m_context->displayItemList());
-        if (!m_context->displayItemList()->displayItemConstructionIsDisabled()) {
-            if (m_context->displayItemList()->lastDisplayItemIsNoopBegin())
-                m_context->displayItemList()->removeLastDisplayItem();
-            else
-                m_context->displayItemList()->createAndAppend<EndFilterDisplayItem>(*m_layoutObject);
-        }
-    } else {
-        EndFilterDisplayItem endFilterDisplayItem(*m_layoutObject);
-        endFilterDisplayItem.replay(*m_context);
+    ASSERT(m_context->displayItemList());
+    if (!m_context->displayItemList()->displayItemConstructionIsDisabled()) {
+        if (m_context->displayItemList()->lastDisplayItemIsNoopBegin())
+            m_context->displayItemList()->removeLastDisplayItem();
+        else
+            m_context->displayItemList()->createAndAppend<EndFilterDisplayItem>(*m_layoutObject);
     }
 }
 

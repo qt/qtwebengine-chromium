@@ -39,6 +39,7 @@
 #include "platform/LengthSize.h"
 #include "platform/fonts/FontDescription.h"
 #include "platform/text/TabSize.h"
+#include "wtf/Allocator.h"
 
 namespace blink {
 
@@ -48,6 +49,7 @@ class ScaleTransformOperation;
 
 // Note that we assume the parser only allows valid CSSValue types.
 class StyleBuilderConverter {
+    STATIC_ONLY(StyleBuilderConverter);
 public:
     static PassRefPtr<StyleReflection> convertBoxReflect(StyleResolverState&, CSSValue*);
     static AtomicString convertFragmentIdentifier(StyleResolverState&, CSSValue*);
@@ -74,7 +76,6 @@ public:
     static Length convertLengthSizing(StyleResolverState&, CSSValue*);
     static Length convertLengthMaxSizing(StyleResolverState&, CSSValue*);
     static TabSize convertLengthOrTabSpaces(StyleResolverState&, CSSValue*);
-    static LineBoxContain convertLineBoxContain(StyleResolverState&, CSSValue*);
     static Length convertLineHeight(StyleResolverState&, CSSValue*);
     static float convertNumberOrPercentage(StyleResolverState&, CSSValue*);
     static LengthPoint convertPosition(StyleResolverState&, CSSValue*);
@@ -85,7 +86,7 @@ public:
     static LengthSize convertRadius(StyleResolverState&, CSSValue*);
     static EPaintOrder convertPaintOrder(StyleResolverState&, CSSValue*);
     static PassRefPtr<ShadowList> convertShadow(StyleResolverState&, CSSValue*);
-    static PassRefPtr<ShapeValue> convertShapeValue(StyleResolverState&, CSSValue*);
+    static PassRefPtrWillBeRawPtr<ShapeValue> convertShapeValue(StyleResolverState&, CSSValue*);
     static float convertSpacing(StyleResolverState&, CSSValue*);
     template <CSSValueID IdForNone> static AtomicString convertString(StyleResolverState&, CSSValue*);
     static PassRefPtr<SVGDashArray> convertStrokeDasharray(StyleResolverState&, CSSValue*);
@@ -93,7 +94,7 @@ public:
     static float convertTextStrokeWidth(StyleResolverState&, CSSValue*);
     static TransformOrigin convertTransformOrigin(StyleResolverState&, CSSValue*);
 
-    static bool convertGridTrackList(CSSValue*, Vector<GridTrackSize>&, NamedGridLinesMap&, OrderedNamedGridLines&, StyleResolverState&);
+    static void convertGridTrackList(CSSValue*, Vector<GridTrackSize>&, NamedGridLinesMap&, OrderedNamedGridLines&, StyleResolverState&);
     static void createImplicitNamedGridLinesFromGridArea(const NamedGridAreaMap&, NamedGridLinesMap&, GridTrackSizingDirection);
     static void convertOrderedNamedGridLinesMapToNamedGridLinesMap(const OrderedNamedGridLines&, NamedGridLinesMap&);
 
@@ -103,6 +104,7 @@ public:
     static PassRefPtr<TranslateTransformOperation> convertTranslate(StyleResolverState&, CSSValue*);
     static PassRefPtr<RotateTransformOperation> convertRotate(StyleResolverState&, CSSValue*);
     static PassRefPtr<ScaleTransformOperation> convertScale(StyleResolverState&, CSSValue*);
+    static RespectImageOrientationEnum convertImageOrientation(StyleResolverState&, CSSValue*);
 };
 
 template <typename T>
@@ -154,6 +156,7 @@ AtomicString StyleBuilderConverter::convertString(StyleResolverState&, CSSValue*
     CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value);
     if (primitiveValue->getValueID() == IdForNone)
         return nullAtom;
+    ASSERT(primitiveValue->isString());
     return AtomicString(primitiveValue->getStringValue());
 }
 

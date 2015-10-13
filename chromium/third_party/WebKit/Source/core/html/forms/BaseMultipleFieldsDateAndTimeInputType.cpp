@@ -541,6 +541,12 @@ void BaseMultipleFieldsDateAndTimeInputType::updateView()
     updateClearButtonVisibility();
 }
 
+void BaseMultipleFieldsDateAndTimeInputType::closePopupView()
+{
+    if (PickerIndicatorElement* picker = pickerIndicatorElement())
+        picker->closePopup();
+}
+
 void BaseMultipleFieldsDateAndTimeInputType::valueAttributeChanged()
 {
     if (!element().hasDirtyValue())
@@ -606,7 +612,7 @@ void BaseMultipleFieldsDateAndTimeInputType::updateClearButtonVisibility()
         return;
 
     if (element().isRequired() || !dateTimeEditElement()->anyEditableFieldsHaveValues()) {
-        clearButton->setInlineStyleProperty(CSSPropertyOpacity, 0.0, CSSPrimitiveValue::CSS_NUMBER);
+        clearButton->setInlineStyleProperty(CSSPropertyOpacity, 0.0, CSSPrimitiveValue::UnitType::Number);
         clearButton->setInlineStyleProperty(CSSPropertyPointerEvents, CSSValueNone);
     } else {
         clearButton->removeInlineStyleProperty(CSSPropertyOpacity);

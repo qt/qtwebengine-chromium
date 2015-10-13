@@ -59,14 +59,8 @@ public:
     WebEmbeddedWorkerImpl(PassOwnPtr<WebServiceWorkerContextClient>, PassOwnPtr<WebWorkerContentSettingsClientProxy>);
     ~WebEmbeddedWorkerImpl() override;
 
-    // Terminate all WebEmbeddedWorkerImpl for testing purposes.
-    // Note that this only schedules termination and
-    // does not synchronously wait for it to complete.
-    static void terminateAll();
-
     // WebEmbeddedWorker overrides.
     void startWorkerContext(const WebEmbeddedWorkerStartData&) override;
-    void resumeAfterDownload() override;
     void terminateWorkerContext() override;
     void attachDevTools(const WebString& hostId) override;
     void reattachDevTools(const WebString& hostId, const WebString& savedState) override;
@@ -83,7 +77,7 @@ private:
     void willSendRequest(
         WebLocalFrame*, unsigned identifier, WebURLRequest&,
         const WebURLResponse& redirectResponse) override;
-    void didFinishDocumentLoad(WebLocalFrame*) override;
+    void didFinishDocumentLoad(WebLocalFrame*, bool documentIsEmpty) override;
 
     // WebDevToolsAgentClient overrides.
     void sendProtocolMessage(int callId, const WebString&, const WebString&) override;
@@ -109,19 +103,19 @@ private:
     OwnPtr<WebServiceWorkerNetworkProvider> m_networkProvider;
 
     // Kept around only while main script loading is ongoing.
-    OwnPtr<WorkerScriptLoader> m_mainScriptLoader;
+    RefPtr<WorkerScriptLoader> m_mainScriptLoader;
 
     RefPtr<WorkerThread> m_workerThread;
     RefPtr<WorkerLoaderProxy> m_loaderProxy;
     OwnPtr<ServiceWorkerGlobalScopeProxy> m_workerGlobalScopeProxy;
-    OwnPtr<WorkerInspectorProxy> m_workerInspectorProxy;
+    OwnPtrWillBePersistent<WorkerInspectorProxy> m_workerInspectorProxy;
 
     // 'shadow page' - created to proxy loading requests from the worker.
     // Both WebView and WebFrame objects are close()'ed (where they're
     // deref'ed) when this EmbeddedWorkerImpl is destructed, therefore they
     // are guaranteed to exist while this object is around.
     WebView* m_webView;
-    WebLocalFrameImpl* m_mainFrame;
+    RefPtrWillBePersistent<WebLocalFrameImpl> m_mainFrame;
 
     bool m_loadingShadowPage;
     bool m_askedToTerminate;
@@ -131,12 +125,6 @@ private:
         WaitingForDebuggerAfterScriptLoaded,
         NotWaitingForDebugger
     };
-
-    enum {
-        DontPauseAfterDownload,
-        DoPauseAfterDownload,
-        IsPausedAfterDownload
-    } m_pauseAfterDownloadState;
 
     WaitingForDebuggerState m_waitingForDebuggerState;
 };

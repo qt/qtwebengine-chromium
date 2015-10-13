@@ -20,6 +20,7 @@
 #include "content/browser/service_worker/service_worker_request_handler.h"
 #include "content/browser/ssl/ssl_client_auth_handler.h"
 #include "content/browser/ssl/ssl_manager.h"
+#include "content/browser/ssl/ssl_policy.h"
 #include "content/common/ssl_status_serialization.h"
 #include "content/public/browser/cert_store.h"
 #include "content/public/browser/resource_context.h"
@@ -29,6 +30,7 @@
 #include "content/public/common/content_switches.h"
 #include "content/public/common/process_type.h"
 #include "content/public/common/resource_response.h"
+#include "content/public/common/security_style.h"
 #include "net/base/io_buffer.h"
 #include "net/base/load_flags.h"
 #include "net/http/http_response_headers.h"
@@ -42,8 +44,37 @@ using base::TimeTicks;
 namespace content {
 namespace {
 
-// The interval for calls to ResourceLoader::ReportUploadProgress.
-const int kUploadProgressIntervalMsec = 100;
+void StoreSignedCertificateTimestamps(
+    const net::SignedCertificateTimestampAndStatusList& sct_list,
+    int process_id,
+    SignedCertificateTimestampIDStatusList* sct_ids) {
+  SignedCertificateTimestampStore* sct_store(
+      SignedCertificateTimestampStore::GetInstance());
+
+  for (auto iter = sct_list.begin(); iter != sct_list.end(); ++iter) {
+    const int sct_id(sct_store->Store(iter->sct.get(), process_id));
+    sct_ids->push_back(
+        SignedCertificateTimestampIDAndStatus(sct_id, iter->status));
+  }
+}
+
+void GetSSLStatusForRequest(const GURL& url,
+                            const net::SSLInfo& ssl_info,
+                            int child_id,
+                            SSLStatus* ssl_status) {
+  DCHECK(ssl_info.cert);
+
+  int cert_id =
+      CertStore::GetInstance()->StoreCert(ssl_info.cert.get(), child_id);
+
+  SignedCertificateTimestampIDStatusList signed_certificate_timestamp_ids;
+  StoreSignedCertificateTimestamps(ssl_info.signed_certificate_timestamps,
+                                   child_id, &signed_certificate_timestamp_ids);
+
+  *ssl_status = SSLStatus(SSLPolicy::GetSecurityStyleForResource(
+                              url, cert_id, ssl_info.cert_status),
+                          cert_id, signed_certificate_timestamp_ids, ssl_info);
+}
 
 void PopulateResourceResponse(ResourceRequestInfoImpl* info,
                               net::URLRequest* request,
@@ -68,11 +99,23 @@ void PopulateResourceResponse(ResourceRequestInfoImpl* info,
     handler->GetExtraResponseInfo(&response->head);
   }
   AppCacheInterceptor::GetExtraResponseInfo(
-      request,
-      &response->head.appcache_id,
+      request, &response->head.appcache_id,
       &response->head.appcache_manifest_url);
   if (info->is_load_timing_enabled())
     request->GetLoadTimingInfo(&response->head.load_timing);
+
+  if (request->ssl_info().cert.get()) {
+    SSLStatus ssl_status;
+    GetSSLStatusForRequest(request->url(), request->ssl_info(),
+                           info->GetChildID(), &ssl_status);
+    response->head.security_info = SerializeSecurityInfo(ssl_status);
+  } else {
+    // We should not have any SSL state.
+    DCHECK(!request->ssl_info().cert_status);
+    DCHECK_EQ(request->ssl_info().security_bits, -1);
+    DCHECK_EQ(request->ssl_info().key_exchange_info, 0);
+    DCHECK(!request->ssl_info().connection_status);
+  }
 }
 
 }  // namespace
@@ -84,8 +127,6 @@ ResourceLoader::ResourceLoader(scoped_ptr<net::URLRequest> request,
       request_(request.Pass()),
       handler_(handler.Pass()),
       delegate_(delegate),
-      last_upload_position_(0),
-      waiting_for_upload_progress_ack_(false),
       is_transferring_(false),
       times_cancelled_before_request_start_(0),
       started_request_(false),
@@ -139,38 +180,6 @@ void ResourceLoader::CancelWithError(int error_code) {
   CancelRequestInternal(error_code, false);
 }
 
-void ResourceLoader::ReportUploadProgress() {
-  DCHECK(GetRequestInfo()->is_upload_progress_enabled());
-
-  if (waiting_for_upload_progress_ack_)
-    return;  // Send one progress event at a time.
-
-  net::UploadProgress progress = request_->GetUploadProgress();
-  if (!progress.size())
-    return;  // Nothing to upload.
-
-  if (progress.position() == last_upload_position_)
-    return;  // No progress made since last time.
-
-  const uint64 kHalfPercentIncrements = 200;
-  const TimeDelta kOneSecond = TimeDelta::FromMilliseconds(1000);
-
-  uint64 amt_since_last = progress.position() - last_upload_position_;
-  TimeDelta time_since_last = TimeTicks::Now() - last_upload_ticks_;
-
-  bool is_finished = (progress.size() == progress.position());
-  bool enough_new_progress =
-      (amt_since_last > (progress.size() / kHalfPercentIncrements));
-  bool too_much_time_passed = time_since_last > kOneSecond;
-
-  if (is_finished || enough_new_progress || too_much_time_passed) {
-    handler_->OnUploadProgress(progress.position(), progress.size());
-    waiting_for_upload_progress_ack_ = true;
-    last_upload_ticks_ = TimeTicks::Now();
-    last_upload_position_ = progress.position();
-  }
-}
-
 void ResourceLoader::MarkAsTransferring() {
   CHECK(IsResourceTypeFrame(GetRequestInfo()->GetResourceType()))
       << "Can only transfer for navigations";
@@ -214,10 +223,6 @@ ResourceRequestInfoImpl* ResourceLoader::GetRequestInfo() {
 
 void ResourceLoader::ClearLoginDelegate() {
   login_delegate_ = NULL;
-}
-
-void ResourceLoader::OnUploadProgressACK() {
-  waiting_for_upload_progress_ack_ = false;
 }
 
 void ResourceLoader::OnReceivedRedirect(net::URLRequest* unused,
@@ -334,32 +339,9 @@ void ResourceLoader::OnResponseStarted(net::URLRequest* unused) {
 
   DVLOG(1) << "OnResponseStarted: " << request_->url().spec();
 
-  progress_timer_.Stop();
-
-  // The CanLoadPage check should take place after any server redirects have
-  // finished, at the point in time that we know a page will commit in the
-  // renderer process.
-  ResourceRequestInfoImpl* info = GetRequestInfo();
-  ChildProcessSecurityPolicyImpl* policy =
-      ChildProcessSecurityPolicyImpl::GetInstance();
-  if (!policy->CanLoadPage(info->GetChildID(),
-                           request_->url(),
-                           info->GetResourceType())) {
-    Cancel();
-    return;
-  }
-
   if (!request_->status().is_success()) {
     ResponseCompleted();
     return;
-  }
-
-  // We want to send a final upload progress message prior to sending the
-  // response complete message even if we're waiting for an ack to to a
-  // previous upload progress message.
-  if (info->is_upload_progress_enabled()) {
-    waiting_for_upload_progress_ack_ = false;
-    ReportUploadProgress();
   }
 
   CompleteResponseStarted();
@@ -498,15 +480,6 @@ void ResourceLoader::StartRequestInternal() {
   request_->Start();
 
   delegate_->DidStartRequest(this);
-
-  if (GetRequestInfo()->is_upload_progress_enabled() &&
-      request_->has_upload()) {
-    progress_timer_.Start(
-        FROM_HERE,
-        base::TimeDelta::FromMilliseconds(kUploadProgressIntervalMsec),
-        this,
-        &ResourceLoader::ReportUploadProgress);
-  }
 }
 
 void ResourceLoader::CancelRequestInternal(int error, bool from_renderer) {
@@ -555,48 +528,10 @@ void ResourceLoader::CancelRequestInternal(int error, bool from_renderer) {
   }
 }
 
-void ResourceLoader::StoreSignedCertificateTimestamps(
-    const net::SignedCertificateTimestampAndStatusList& sct_list,
-    int process_id,
-    SignedCertificateTimestampIDStatusList* sct_ids) {
-  SignedCertificateTimestampStore* sct_store(
-      SignedCertificateTimestampStore::GetInstance());
-
-  for (net::SignedCertificateTimestampAndStatusList::const_iterator iter =
-       sct_list.begin(); iter != sct_list.end(); ++iter) {
-    const int sct_id(sct_store->Store(iter->sct.get(), process_id));
-    sct_ids->push_back(
-        SignedCertificateTimestampIDAndStatus(sct_id, iter->status));
-  }
-}
-
 void ResourceLoader::CompleteResponseStarted() {
   ResourceRequestInfoImpl* info = GetRequestInfo();
   scoped_refptr<ResourceResponse> response(new ResourceResponse());
   PopulateResourceResponse(info, request_.get(), response.get());
-
-  if (request_->ssl_info().cert.get()) {
-    int cert_id = CertStore::GetInstance()->StoreCert(
-        request_->ssl_info().cert.get(), info->GetChildID());
-
-    SignedCertificateTimestampIDStatusList signed_certificate_timestamp_ids;
-    StoreSignedCertificateTimestamps(
-        request_->ssl_info().signed_certificate_timestamps,
-        info->GetChildID(),
-        &signed_certificate_timestamp_ids);
-
-    response->head.security_info = SerializeSecurityInfo(
-        cert_id,
-        request_->ssl_info().cert_status,
-        request_->ssl_info().security_bits,
-        request_->ssl_info().connection_status,
-        signed_certificate_timestamp_ids);
-  } else {
-    // We should not have any SSL state.
-    DCHECK(!request_->ssl_info().cert_status &&
-           request_->ssl_info().security_bits == -1 &&
-           !request_->ssl_info().connection_status);
-  }
 
   delegate_->DidReceiveResponse(this);
 
@@ -706,16 +641,11 @@ void ResourceLoader::ResponseCompleted() {
   std::string security_info;
   const net::SSLInfo& ssl_info = request_->ssl_info();
   if (ssl_info.cert.get() != NULL) {
-    int cert_id = CertStore::GetInstance()->StoreCert(ssl_info.cert.get(),
-                                                      info->GetChildID());
-    SignedCertificateTimestampIDStatusList signed_certificate_timestamp_ids;
-    StoreSignedCertificateTimestamps(ssl_info.signed_certificate_timestamps,
-                                     info->GetChildID(),
-                                     &signed_certificate_timestamp_ids);
+    SSLStatus ssl_status;
+    GetSSLStatusForRequest(request_->url(), ssl_info, info->GetChildID(),
+                           &ssl_status);
 
-    security_info = SerializeSecurityInfo(
-        cert_id, ssl_info.cert_status, ssl_info.security_bits,
-        ssl_info.connection_status, signed_certificate_timestamp_ids);
+    security_info = SerializeSecurityInfo(ssl_status);
   }
 
   bool defer = false;

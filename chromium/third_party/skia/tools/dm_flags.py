@@ -57,6 +57,7 @@ def get_args(bot):
   # Runs out of memory on Android bots and Daisy.  Everyone else seems fine.
   if 'Android' not in bot and 'Daisy' not in bot:
     configs.append('pdf')
+    configs.append('pdf_poppler')
 
   # NP is running out of RAM when we run all these modes.  skia:3255
   if 'NexusPlayer' not in bot:
@@ -80,9 +81,6 @@ def get_args(bot):
     args.extend(('--threads', '0'))
 
   blacklist = []
-  # This image is too large to be a texture for many GPUs.
-  blacklist.extend('gpu _ _ PANO_20121023_214540.jpg'.split(' '))
-  blacklist.extend('msaa _ _ PANO_20121023_214540.jpg'.split(' '))
 
   # Several of the newest version bmps fail on SkImageDecoder
   blacklist.extend('_ image decode pal8os2v2.bmp'.split(' '))
@@ -141,6 +139,12 @@ def get_args(bot):
     blacklist.extend('gpu image subset _ msaa image subset _'.split(' '))
     blacklist.extend('msaa16 gm _ tilemodesProcess'.split(' '))
 
+  # the 32-bit GCE bots run out of memory in DM when running these large images
+  if 'x86' in bot and not 'x86-64' in bot:
+    blacklist.extend('_ image _ interlaced1.png'.split(' '))
+    blacklist.extend('_ image _ interlaced2.png'.split(' '))
+    blacklist.extend('_ image _ interlaced3.png'.split(' '))
+
   if blacklist:
     args.append('--blacklist')
     args.extend(blacklist)
@@ -164,6 +168,12 @@ def get_args(bot):
 
   if 'iOS' in bot:
     match.append('~WritePixels')
+
+  if 'GalaxyS4' in bot:  # skia:4079
+    match.append('~imagefiltersclipped')
+    match.append('~scaled_tilemodes_npot')
+    match.append('~bleed_image')  # skia:4367
+    match.append('~ReadPixels')  # skia:4368
 
   if match:
     args.append('--match')

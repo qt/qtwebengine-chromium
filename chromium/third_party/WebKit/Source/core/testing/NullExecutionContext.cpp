@@ -16,10 +16,10 @@ namespace {
 class NullEventQueue final : public EventQueue {
 public:
     NullEventQueue() { }
-    virtual ~NullEventQueue() { }
-    virtual bool enqueueEvent(PassRefPtrWillBeRawPtr<Event>) override { return true; }
-    virtual bool cancelEvent(Event*) override { return true; }
-    virtual void close() override { }
+    ~NullEventQueue() override { }
+    bool enqueueEvent(PassRefPtrWillBeRawPtr<Event>) override { return true; }
+    bool cancelEvent(Event*) override { return true; }
+    void close() override { }
 };
 
 } // namespace
@@ -39,7 +39,7 @@ double NullExecutionContext::timerAlignmentInterval() const
     return DOMTimer::visiblePageAlignmentInterval();
 }
 
-bool NullExecutionContext::isPrivilegedContext(String& errorMessage, const PrivilegeContextCheck privilegeContextCheck) const
+bool NullExecutionContext::isSecureContext(String& errorMessage, const SecureContextCheck privilegeContextCheck) const
 {
     return true;
 }

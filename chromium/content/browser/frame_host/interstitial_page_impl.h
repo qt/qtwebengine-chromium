@@ -13,7 +13,6 @@
 #include "content/browser/frame_host/render_frame_host_delegate.h"
 #include "content/browser/renderer_host/render_view_host_delegate.h"
 #include "content/browser/renderer_host/render_widget_host_delegate.h"
-#include "content/public/browser/dom_operation_notification_details.h"
 #include "content/public/browser/interstitial_page.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
@@ -122,15 +121,16 @@ class CONTENT_EXPORT InterstitialPageImpl
       BrowserContext* browser_context) const override;
   gfx::Rect GetRootWindowResizerRect() const override;
   void CreateNewWindow(
-      int render_process_id,
+      SiteInstance* source_site_instance,
       int route_id,
       int main_frame_route_id,
       const ViewHostMsg_CreateWindow_Params& params,
       SessionStorageNamespace* session_storage_namespace) override;
-  void CreateNewWidget(int render_process_id,
-                       int route_id,
+  void CreateNewWidget(int32 render_process_id,
+                       int32 route_id,
                        blink::WebPopupType popup_type) override;
-  void CreateNewFullscreenWidget(int render_process_id, int route_id) override;
+  void CreateNewFullscreenWidget(int32 render_process_id,
+                                 int32 route_id) override;
   void ShowCreatedWindow(int route_id,
                          WindowOpenDisposition disposition,
                          const gfx::Rect& initial_rect,
@@ -203,8 +203,7 @@ class CONTENT_EXPORT InterstitialPageImpl
   void TakeActionOnResourceDispatcher(ResourceRequestAction action);
 
   // IPC message handlers.
-  void OnDomOperationResponse(const std::string& json_string,
-                              int automation_id);
+  void OnDomOperationResponse(const std::string& json_string);
 
   // Creates the RenderViewHost containing the interstitial content.
   RenderViewHostImpl* CreateRenderViewHost();

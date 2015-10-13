@@ -19,6 +19,7 @@ class PlatformWindowCast : public PlatformWindow {
   // PlatformWindow implementation:
   gfx::Rect GetBounds() override;
   void SetBounds(const gfx::Rect& bounds) override;
+  void SetTitle(const base::string16& title) override;
   void Show() override {}
   void Hide() override {}
   void Close() override {}
@@ -31,6 +32,7 @@ class PlatformWindowCast : public PlatformWindow {
   void SetCursor(PlatformCursor cursor) override {}
   void MoveCursorTo(const gfx::Point& location) override {}
   void ConfineCursorToBounds(const gfx::Rect& bounds) override {}
+  PlatformImeController* GetPlatformImeController() override;
 
  private:
   PlatformWindowDelegate* delegate_;

@@ -34,7 +34,7 @@ public:
     bool showInfo;
     bool showRulers;
     bool showExtensionLines;
-    bool showLayoutEditor;
+    bool displayAsMaterial;
 };
 
 class CORE_EXPORT InspectorHighlight {
@@ -46,9 +46,10 @@ public:
 
     static bool getBoxModel(Node*, RefPtr<TypeBuilder::DOM::BoxModel>&);
     static InspectorHighlightConfig defaultConfig();
+    static bool buildNodeQuads(Node*, FloatQuad* content, FloatQuad* padding, FloatQuad* border, FloatQuad* margin);
 
-    void appendPath(PassRefPtr<JSONArrayBase> path, const Color& fillColor, const Color& outlineColor);
-    void appendQuad(const FloatQuad&, const Color& fillColor, const Color& outlineColor = Color::transparent);
+    void appendPath(PassRefPtr<JSONArrayBase> path, const Color& fillColor, const Color& outlineColor, const String& name = String());
+    void appendQuad(const FloatQuad&, const Color& fillColor, const Color& outlineColor = Color::transparent, const String& name = String());
     void appendEventTargetQuads(Node* eventTargetNode, const InspectorHighlightConfig&);
     PassRefPtr<JSONObject> asJSONObject() const;
 
@@ -60,6 +61,7 @@ private:
     RefPtr<JSONArray> m_highlightPaths;
     bool m_showRulers;
     bool m_showExtensionLines;
+    bool m_displayAsMaterial;
 };
 
 } // namespace blink

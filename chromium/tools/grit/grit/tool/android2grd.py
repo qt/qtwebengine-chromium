@@ -243,8 +243,9 @@ OPTIONS may be any of the following:
         else:
           translatable = self.IsTranslatable(child)
           raw_name = child.getAttribute('name')
-          product = child.getAttribute('product') or None
-          grd_name = self.__FormatName(raw_name, product)
+          if not _STRING_NAME.match(raw_name):
+            print 'Error: illegal string name: %s' % raw_name
+          grd_name = 'IDS_' + raw_name.upper()
           # Transform the <string> node contents into a tclib.Message, taking
           # care to handle whitespace transformations and escaped characters,
           # and coverting <xliff:g> placeholders into <ph> placeholders.
@@ -254,27 +255,6 @@ OPTIONS may be any of the following:
           messages.AddChild(msg_node)
           # Reset the description once a message has been parsed.
           description = ''
-
-  def __FormatName(self, name, product=None):
-    """Formats the message name.
-
-    Names in the strings.xml files should be lowercase with underscores. In grd
-    files message names should be mostly uppercase with a IDS prefix. We also
-    will annotate names with product information (lowercase) where appropriate.
-
-    Args:
-      name: The message name as found in the string.xml file.
-      product: An optional product annotation.
-
-    Returns:
-      String containing the grd style name that will be used in the translation
-      console.
-    """
-    if not _STRING_NAME.match(name):
-      print 'Error: string name contains illegal characters: %s' % name
-    grd_name = 'IDS_%s' % name.upper()
-    product_suffix = ('_product_%s' % product.lower()) if product else ''
-    return grd_name + product_suffix
 
   def CreateTclibMessage(self, android_string):
     """Transforms a <string/> element from strings.xml into a tclib.Message.

@@ -32,9 +32,24 @@ if ({{item.check_expression}})
 
 
 {% macro declare_enum_validation_variable(enum_values) %}
-static const char* validValues[] = {
+const char* validValues[] = {
 {% for enum_value in enum_values %}
     "{{enum_value}}",
 {% endfor %}
 };
 {%-endmacro %}
+
+
+{% macro property_location(member) %}
+{% set property_location_list = [] %}
+{% if member.on_instance %}
+{% set property_location_list = property_location_list + ['V8DOMConfiguration::OnInstance'] %}
+{% endif %}
+{% if member.on_prototype %}
+{% set property_location_list = property_location_list + ['V8DOMConfiguration::OnPrototype'] %}
+{% endif %}
+{% if member.on_interface %}
+{% set property_location_list = property_location_list + ['V8DOMConfiguration::OnInterface'] %}
+{% endif %}
+{{property_location_list | join(' | ')}}
+{%- endmacro %}

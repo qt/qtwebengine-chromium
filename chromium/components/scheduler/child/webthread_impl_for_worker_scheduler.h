@@ -5,7 +5,7 @@
 #ifndef COMPONENTS_SCHEDULER_CHILD_WEBTHREAD_IMPL_FOR_WORKER_SCHEDULER_H_
 #define COMPONENTS_SCHEDULER_CHILD_WEBTHREAD_IMPL_FOR_WORKER_SCHEDULER_H_
 
-#include "components/scheduler/child/task_queue_manager.h"
+#include "components/scheduler/base/task_queue_manager.h"
 #include "components/scheduler/child/webthread_base.h"
 
 namespace base {
@@ -17,8 +17,10 @@ class WebScheduler;
 };
 
 namespace scheduler {
+class SchedulerTaskRunnerDelegate;
 class SingleThreadIdleTaskRunner;
 class WebSchedulerImpl;
+class WebTaskRunnerImpl;
 class WorkerScheduler;
 
 class SCHEDULER_EXPORT WebThreadImplForWorkerScheduler
@@ -26,11 +28,12 @@ class SCHEDULER_EXPORT WebThreadImplForWorkerScheduler
       public base::MessageLoop::DestructionObserver {
  public:
   explicit WebThreadImplForWorkerScheduler(const char* name);
-  virtual ~WebThreadImplForWorkerScheduler();
+  ~WebThreadImplForWorkerScheduler() override;
 
   // blink::WebThread implementation.
-  virtual blink::WebScheduler* scheduler() const;
+  blink::WebScheduler* scheduler() const override;
   blink::PlatformThreadId threadId() const override;
+  blink::WebTaskRunner* taskRunner() override;
 
   // WebThreadBase implementation.
   base::SingleThreadTaskRunner* TaskRunner() const override;
@@ -46,12 +49,16 @@ class SCHEDULER_EXPORT WebThreadImplForWorkerScheduler
       base::MessageLoop::TaskObserver* observer) override;
 
   void InitOnThread(base::WaitableEvent* completion);
+  void RestoreTaskRunnerOnThread(base::WaitableEvent* completion);
 
   scoped_ptr<base::Thread> thread_;
   scoped_ptr<scheduler::WorkerScheduler> worker_scheduler_;
   scoped_ptr<scheduler::WebSchedulerImpl> web_scheduler_;
+  scoped_refptr<base::SingleThreadTaskRunner> thread_task_runner_;
   scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
   scoped_refptr<scheduler::SingleThreadIdleTaskRunner> idle_task_runner_;
+  scoped_refptr<SchedulerTaskRunnerDelegate> task_runner_delegate_;
+  scoped_ptr<WebTaskRunnerImpl> web_task_runner_;
 };
 
 }  // namespace scheduler

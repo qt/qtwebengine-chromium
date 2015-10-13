@@ -28,16 +28,31 @@ namespace cricket {
 // what kinds of ports are allocated.
 
 enum {
+  // Disable local UDP ports. This doesn't impact how we connect to relay
+  // servers.
   PORTALLOCATOR_DISABLE_UDP = 0x01,
   PORTALLOCATOR_DISABLE_STUN = 0x02,
   PORTALLOCATOR_DISABLE_RELAY = 0x04,
+  // Disable local TCP ports. This doesn't impact how we connect to relay
+  // servers.
   PORTALLOCATOR_DISABLE_TCP = 0x08,
   PORTALLOCATOR_ENABLE_SHAKER = 0x10,
   PORTALLOCATOR_ENABLE_IPV6 = 0x40,
+  // TODO(pthatcher): Remove this once it's no longer used in:
+  // remoting/client/plugin/pepper_port_allocator.cc
+  // remoting/protocol/chromium_port_allocator.cc
+  // remoting/test/fake_port_allocator.cc
+  // It's a no-op and is no longer needed.
   PORTALLOCATOR_ENABLE_SHARED_UFRAG = 0x80,
   PORTALLOCATOR_ENABLE_SHARED_SOCKET = 0x100,
   PORTALLOCATOR_ENABLE_STUN_RETRANSMIT_ATTRIBUTE = 0x200,
   PORTALLOCATOR_DISABLE_ADAPTER_ENUMERATION = 0x400,
+  // When specified, a loopback candidate will be generated if
+  // PORTALLOCATOR_DISABLE_ADAPTER_ENUMERATION is specified.
+  PORTALLOCATOR_ENABLE_LOCALHOST_CANDIDATE = 0x800,
+  // Disallow use of UDP when connecting to a relay server. Since proxy servers
+  // usually don't handle UDP, using UDP will leak the IP address.
+  PORTALLOCATOR_DISABLE_UDP_RELAY = 0x1000,
 };
 
 const uint32 kDefaultPortAllocatorFlags = 0;
@@ -59,11 +74,10 @@ enum {
 class PortAllocatorSession : public sigslot::has_slots<> {
  public:
   // Content name passed in mostly for logging and debugging.
-  // TODO(mallinath) - Change username and password to ice_ufrag and ice_pwd.
   PortAllocatorSession(const std::string& content_name,
                        int component,
-                       const std::string& username,
-                       const std::string& password,
+                       const std::string& ice_ufrag,
+                       const std::string& ice_pwd,
                        uint32 flags);
 
   // Subclasses should clean up any ports created.
@@ -77,6 +91,9 @@ class PortAllocatorSession : public sigslot::has_slots<> {
   // Starts gathering STUN and Relay configurations.
   virtual void StartGettingPorts() = 0;
   virtual void StopGettingPorts() = 0;
+  // Only stop the existing gathering process but may start new ones if needed.
+  virtual void ClearGettingPorts() = 0;
+  // Whether the process of getting ports has been stopped.
   virtual bool IsGettingPorts() = 0;
 
   sigslot::signal2<PortAllocatorSession*, PortInterface*> SignalPortReady;
@@ -88,9 +105,14 @@ class PortAllocatorSession : public sigslot::has_slots<> {
   virtual void set_generation(uint32 generation) { generation_ = generation; }
   sigslot::signal1<PortAllocatorSession*> SignalDestroyed;
 
+  const std::string& ice_ufrag() const { return ice_ufrag_; }
+  const std::string& ice_pwd() const { return ice_pwd_; }
+
  protected:
-  const std::string& username() const { return username_; }
-  const std::string& password() const { return password_; }
+  // TODO(deadbeef): Get rid of these when everyone switches to ice_ufrag and
+  // ice_pwd.
+  const std::string& username() const { return ice_ufrag_; }
+  const std::string& password() const { return ice_pwd_; }
 
   std::string content_name_;
   int component_;
@@ -98,8 +120,8 @@ class PortAllocatorSession : public sigslot::has_slots<> {
  private:
   uint32 flags_;
   uint32 generation_;
-  std::string username_;
-  std::string password_;
+  std::string ice_ufrag_;
+  std::string ice_pwd_;
 };
 
 class PortAllocator : public sigslot::has_slots<> {

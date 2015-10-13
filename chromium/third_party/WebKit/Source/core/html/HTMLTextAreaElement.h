@@ -86,6 +86,8 @@ private:
     void setNonDirtyValue(const String&);
     void setValueCommon(const String&, TextFieldEventBehavior, SetValueCommonOption = NotSetSelection);
 
+    bool isPlaceholderVisible() const override { return m_isPlaceholderVisible; }
+    void setPlaceholderVisibility(bool) override;
     bool supportsPlaceholder() const override { return true; }
     void updatePlaceholderText() override;
     bool isEmptyValue() const override { return value().isEmpty(); }
@@ -118,7 +120,7 @@ private:
     bool isPresentationAttribute(const QualifiedName&) const override;
     void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) override;
     LayoutObject* createLayoutObject(const ComputedStyle&) override;
-    bool appendFormData(FormDataList&, bool) override;
+    void appendToFormData(FormData&) override;
     void resetImpl() override;
     bool hasCustomFocusLogic() const override;
     bool shouldShowFocusRingOnMouseFocus() const override;
@@ -142,6 +144,7 @@ private:
     mutable String m_value;
     mutable bool m_isDirty;
     bool m_valueIsUpToDate;
+    unsigned m_isPlaceholderVisible : 1;
     String m_suggestedValue;
 };
 

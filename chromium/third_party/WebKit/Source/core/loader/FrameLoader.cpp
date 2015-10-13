@@ -43,7 +43,7 @@
 #include "core/dom/Element.h"
 #include "core/dom/ViewportDescription.h"
 #include "core/editing/Editor.h"
-#include "core/editing/UndoStack.h"
+#include "core/editing/commands/UndoStack.h"
 #include "core/events/GestureEvent.h"
 #include "core/events/KeyboardEvent.h"
 #include "core/events/MouseEvent.h"
@@ -54,8 +54,8 @@
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalDOMWindow.h"
 #include "core/frame/LocalFrame.h"
-#include "core/frame/PinchViewport.h"
 #include "core/frame/Settings.h"
+#include "core/frame/VisualViewport.h"
 #include "core/frame/csp/ContentSecurityPolicy.h"
 #include "core/html/HTMLFormElement.h"
 #include "core/html/HTMLFrameOwnerElement.h"
@@ -69,6 +69,7 @@
 #include "core/loader/FrameLoadRequest.h"
 #include "core/loader/FrameLoaderClient.h"
 #include "core/loader/MixedContentChecker.h"
+#include "core/loader/NavigationScheduler.h"
 #include "core/loader/ProgressTracker.h"
 #include "core/loader/appcache/ApplicationCacheHost.h"
 #include "core/page/ChromeClient.h"
@@ -113,7 +114,7 @@ static bool needsHistoryItemRestore(FrameLoadType type)
 ResourceRequest FrameLoader::resourceRequestFromHistoryItem(HistoryItem* item,
     ResourceRequestCachePolicy cachePolicy)
 {
-    RefPtr<FormData> formData = item->formData();
+    RefPtr<EncodedFormData> formData = item->formData();
     ResourceRequest request(item->url());
     request.setHTTPReferrer(item->referrer());
     request.setCachePolicy(cachePolicy);
@@ -237,12 +238,12 @@ void FrameLoader::saveScrollState()
         return;
 
     // Shouldn't clobber anything if we might still restore later.
-    if (needsHistoryItemRestore(m_loadType) && !m_frame->view()->wasScrolledByUser())
+    if (needsHistoryItemRestore(m_loadType) && m_documentLoader && !m_documentLoader->initialScrollState().wasScrolledByUser)
         return;
 
     if (ScrollableArea* layoutScrollableArea = m_frame->view()->layoutViewportScrollableArea())
         m_currentItem->setScrollPoint(layoutScrollableArea->scrollPosition());
-    m_currentItem->setPinchViewportScrollPoint(m_frame->host()->pinchViewport().visibleRect().location());
+    m_currentItem->setVisualViewportScrollPoint(m_frame->host()->visualViewport().visibleRect().location());
 
     if (m_frame->isMainFrame())
         m_currentItem->setPageScaleFactor(m_frame->page()->pageScaleFactor());
@@ -375,8 +376,10 @@ void FrameLoader::setHistoryItemStateForCommit(HistoryCommitType historyCommitTy
         return;
     m_currentItem->setDocumentSequenceNumber(oldItem->documentSequenceNumber());
     m_currentItem->setScrollPoint(oldItem->scrollPoint());
-    m_currentItem->setPinchViewportScrollPoint(oldItem->pinchViewportScrollPoint());
+    m_currentItem->setVisualViewportScrollPoint(oldItem->visualViewportScrollPoint());
     m_currentItem->setPageScaleFactor(oldItem->pageScaleFactor());
+    m_currentItem->setScrollRestorationType(oldItem->scrollRestorationType());
+
     // The item sequence number determines whether items are "the same", such back/forward navigation
     // between items with the same item sequence number is a no-op. Only treat this as identical if the
     // navigation did not create a back/forward entry and the url is identical or it was loaded via
@@ -438,7 +441,7 @@ void FrameLoader::didBeginDocument(bool dispatch)
 
     m_frame->document()->initContentSecurityPolicy(m_documentLoader ? m_documentLoader->releaseContentSecurityPolicy() : ContentSecurityPolicy::create());
     if (m_documentLoader)
-        m_frame->document()->setClientHintsPreferences(m_documentLoader->clientHintsPreferences());
+        m_frame->document()->clientHintsPreferences().updateFrom(m_documentLoader->clientHintsPreferences());
 
     Settings* settings = m_frame->document()->settings();
     if (settings) {
@@ -477,8 +480,10 @@ void FrameLoader::finishedParsing()
     // Null-checking the FrameView indicates whether or not we're in the destructor.
     RefPtrWillBeRawPtr<LocalFrame> protect(m_frame->view() ? m_frame.get() : nullptr);
 
+    m_progressTracker->finishedParsing();
+
     if (client())
-        client()->dispatchDidFinishDocumentLoad();
+        client()->dispatchDidFinishDocumentLoad(m_documentLoader ? m_documentLoader->isCommittedButEmpty() : true);
 
     checkCompleted();
 
@@ -546,9 +551,14 @@ static bool shouldSendCompleteNotifications(LocalFrame* frame)
     if (frame->loader().provisionalDocumentLoader())
         return false;
 
+    // A navigation is still scheduled in the embedder, so don't complete yet.
+    if (frame->loader().client()->hasPendingNavigation())
+        return false;
+
     // We might have declined to run the load event due to an imminent content-initiated navigation.
     if (!frame->document()->loadEventFinished())
         return false;
+
     return true;
 }
 
@@ -569,11 +579,12 @@ void FrameLoader::checkCompleted()
         m_frame->view()->handleLoadCompleted();
 
     if (shouldSendCompleteNotifications(m_frame)) {
-        m_loadType = FrameLoadTypeStandard;
         m_progressTracker->progressCompleted();
         // Retry restoring scroll offset since finishing loading disables content
         // size clamping.
         restoreScrollPositionAndViewState();
+
+        m_loadType = FrameLoadTypeStandard;
         m_frame->localDOMWindow()->finishedLoading();
 
         // Report mobile vs. desktop page statistics. This will only report on Android.
@@ -690,11 +701,8 @@ void FrameLoader::loadInSameDocument(const KURL& url, PassRefPtr<SerializedScrip
     m_documentLoader->setIsClientRedirect(clientRedirect == ClientRedirect);
     updateForSameDocumentNavigation(url, SameDocumentNavigationDefault, nullptr, ScrollRestorationAuto, type);
 
-    m_frame->view()->setWasScrolledByUser(false);
+    m_documentLoader->initialScrollState().wasScrolledByUser = false;
 
-    // We need to scroll to the fragment whether or not a hash change occurred, since
-    // the user might have scrolled since the previous navigation.
-    processFragment(url, NavigationWithinSameDocument);
     checkCompleted();
 
     m_frame->localDOMWindow()->statePopped(stateObject ? stateObject : SerializedScriptValue::nullValue());
@@ -704,9 +712,9 @@ void FrameLoader::setReferrerForFrameRequest(ResourceRequest& request, ShouldSen
 {
     if (!originDocument)
         return;
-    // FIXME: This should be an assertion, but there's some plugin code in the chromium repo
-    // that both determines its own referrer and expects to be associated with an originDocument.
-    if (!request.httpReferrer().isEmpty())
+    // Anchor elements with the 'referrerpolicy' attribute will have
+    // already set the referrer on the request.
+    if (request.didSetHTTPReferrer())
         return;
     if (shouldSendReferrer == NeverSendReferrer)
         return;
@@ -737,12 +745,17 @@ FrameLoadType FrameLoader::determineFrameLoadType(const FrameLoadRequest& reques
     //  "If the browsing context's session history contains only one Document,
     //   and that was the about:blank Document created when the browsing context
     //   was created, then the navigation must be done with replacement enabled."
-    if (request.lockBackForwardList()
+    if (request.replacesCurrentItem()
         || (!m_stateMachine.committedMultipleRealLoads()
             && equalIgnoringCase(m_frame->document()->url(), blankURL())))
-        return FrameLoadTypeRedirectWithLockedBackForwardList;
-    if (!request.originDocument() && request.resourceRequest().url() == m_documentLoader->urlForHistory())
-        return FrameLoadTypeSame;
+        return FrameLoadTypeReplaceCurrentItem;
+
+    if (request.resourceRequest().url() == m_documentLoader->urlForHistory()) {
+        if (!request.originDocument())
+            return FrameLoadTypeSame;
+        return request.resourceRequest().httpMethod() == "POST" ? FrameLoadTypeStandard : FrameLoadTypeReplaceCurrentItem;
+    }
+
     if (request.substituteData().failingURL() == m_documentLoader->urlForHistory() && m_loadType == FrameLoadTypeReload)
         return FrameLoadTypeReload;
     return FrameLoadTypeStandard;
@@ -909,30 +922,21 @@ void FrameLoader::load(const FrameLoadRequest& passedRequest, FrameLoadType fram
             m_documentLoader->setNavigationType(determineNavigationType(
                 newLoadType, false, request.triggeringEvent()));
             if (shouldTreatURLAsSameAsCurrent(url))
-                newLoadType = FrameLoadTypeRedirectWithLockedBackForwardList;
+                newLoadType = FrameLoadTypeReplaceCurrentItem;
         }
 
         loadInSameDocument(url, stateObject, newLoadType, request.clientRedirect());
 
         if (sameDocumentHistoryNavigation)
             restoreScrollPositionAndViewState();
+
+        // We need to scroll to the fragment whether or not a hash change occurred, since
+        // the user might have scrolled since the previous navigation.
+        processFragment(url, NavigationWithinSameDocument);
         return;
     }
 
-    // Perform navigation to a different document.
-    bool sameURL = url == m_documentLoader->urlForHistory();
     startLoad(request, newLoadType, policy);
-
-    // Example of this case are sites that reload the same URL with a different cookie
-    // driving the generated content, or a master frame with links that drive a target
-    // frame, where the user has clicked on the same link repeatedly.
-    if (sameURL
-        && !isBackForwardLoadType(frameLoadType)
-        && newLoadType != FrameLoadTypeReload
-        && newLoadType != FrameLoadTypeReloadFromOrigin
-        && request.resourceRequest().httpMethod() != "POST") {
-        m_loadType = FrameLoadTypeSame;
-    }
 }
 
 SubstituteData FrameLoader::defaultSubstituteDataForURL(const KURL& url)
@@ -995,7 +999,7 @@ void FrameLoader::stopAllLoaders()
 
     m_inStopAllLoaders = false;
 
-    // detachFromParent() can be called multiple times on same LocalFrame, which
+    // LocalFrame::detach() can be called multiple times which
     // means we may no longer have a FrameLoaderClient to talk to.
     if (client())
         client()->didStopAllLoaders();
@@ -1029,6 +1033,18 @@ bool FrameLoader::prepareForCommit()
 {
     PluginScriptForbiddenScope forbidPluginDestructorScripting;
     RefPtrWillBeRawPtr<DocumentLoader> pdl = m_provisionalDocumentLoader;
+
+    if (m_frame->document()) {
+        unsigned totalNodeCount = InstanceCounters::counterValue(InstanceCounters::NodeCounter);
+        int nodeCount = static_cast<int>(totalNodeCount);
+        for (Document* document : Document::liveDocumentSet()) {
+            if (document != m_frame->document())
+                nodeCount -= document->nodeCount();
+        }
+        ASSERT(nodeCount >= 0);
+        float ratio = static_cast<float>(nodeCount) / totalNodeCount;
+        ThreadState::current()->schedulePageNavigationGCIfNeeded(ratio);
+    }
 
     if (m_documentLoader) {
         client()->dispatchWillClose();
@@ -1104,48 +1120,54 @@ FrameLoadType FrameLoader::loadType() const
 void FrameLoader::restoreScrollPositionAndViewState()
 {
     FrameView* view = m_frame->view();
-    if (!m_frame->page() || !view || !m_currentItem || !m_stateMachine.committedFirstRealDocumentLoad())
+    if (!m_frame->page() || !view || !view->layoutViewportScrollableArea() || !m_currentItem || !m_stateMachine.committedFirstRealDocumentLoad())
         return;
 
     if (!needsHistoryItemRestore(m_loadType))
         return;
 
-    if (m_currentItem->scrollRestorationType() == ScrollRestorationManual)
-        return;
+    bool shouldRestoreScroll = m_currentItem->scrollRestorationType() != ScrollRestorationManual;
+    bool shouldRestoreScale = m_currentItem->pageScaleFactor();
 
-    // This tries to balance 1. restoring as soon as possible, 2. detecting
-    // clamping to avoid repeatedly popping the scroll position down as the
-    // page height increases, 3. ignore clamp detection after load completes
-    // because that may be because the page will never reach its previous
-    // height.
-    bool canRestoreWithoutClamping = view->clampOffsetAtScale(m_currentItem->scrollPoint(), 1) == m_currentItem->scrollPoint();
-    bool canRestoreWithoutAnnoyingUser = !view->wasScrolledByUser() && (canRestoreWithoutClamping || m_frame->isLoading());
+    // This tries to balance:
+    //   1. restoring as soon as possible
+    //   2. not overriding user scroll (TODO(majidvp): also respect user scale)
+    //   3. detecting clamping to avoid repeatedly popping the scroll position
+    //      down as the page height increases
+    //   4. ignore clamp detection if we are not restoring scroll or after load
+    //      completes because that may be because the page will never reach its
+    //      previous height
+    bool canRestoreWithoutClamping = view->layoutViewportScrollableArea()->clampScrollPosition(m_currentItem->scrollPoint()) == m_currentItem->scrollPoint();
+    bool canRestoreWithoutAnnoyingUser = !documentLoader()->initialScrollState().wasScrolledByUser
+        && (canRestoreWithoutClamping || !m_frame->isLoading() || !shouldRestoreScroll);
     if (!canRestoreWithoutAnnoyingUser)
         return;
 
-    if (m_frame->isMainFrame() && m_currentItem->pageScaleFactor()) {
-        FloatPoint pinchViewportOffset(m_currentItem->pinchViewportScrollPoint());
-        IntPoint frameScrollOffset(m_currentItem->scrollPoint());
+    if (shouldRestoreScroll)
+        view->layoutViewportScrollableArea()->setScrollPosition(m_currentItem->scrollPoint(), ProgrammaticScroll);
 
-        m_frame->page()->setPageScaleFactor(m_currentItem->pageScaleFactor(), frameScrollOffset);
-
-        // If the pinch viewport's offset is (-1, -1) it means the history item
-        // is an old version of HistoryItem so distribute the scroll between
-        // the main frame and the pinch viewport as best as we can.
-        if (pinchViewportOffset.x() == -1 && pinchViewportOffset.y() == -1)
-            pinchViewportOffset = FloatPoint(frameScrollOffset - view->scrollPosition());
-
-        m_frame->host()->pinchViewport().setLocation(pinchViewportOffset);
-    } else {
-        IntPoint adjustedScrollPosition = view->clampScrollPosition(m_currentItem->scrollPoint());
-        if (adjustedScrollPosition != view->scrollPosition())
-            view->setScrollPosition(adjustedScrollPosition, ProgrammaticScroll);
-    }
-
+    // For main frame restore scale and visual viewport position
     if (m_frame->isMainFrame()) {
+        FloatPoint visualViewportOffset(m_currentItem->visualViewportScrollPoint());
+
+        // If the visual viewport's offset is (-1, -1) it means the history item
+        // is an old version of HistoryItem so distribute the scroll between
+        // the main frame and the visual viewport as best as we can.
+        if (visualViewportOffset.x() == -1 && visualViewportOffset.y() == -1)
+            visualViewportOffset = FloatPoint(m_currentItem->scrollPoint() - view->scrollPosition());
+
+        VisualViewport& visualViewport = m_frame->host()->visualViewport();
+        if (shouldRestoreScale && shouldRestoreScroll)
+            visualViewport.setScaleAndLocation(m_currentItem->pageScaleFactor(), visualViewportOffset);
+        else if (shouldRestoreScale)
+            visualViewport.setScale(m_currentItem->pageScaleFactor());
+        else if (shouldRestoreScroll)
+            visualViewport.setLocation(visualViewportOffset);
+
         if (ScrollingCoordinator* scrollingCoordinator = m_frame->page()->scrollingCoordinator())
             scrollingCoordinator->frameViewRootLayerDidChange(view);
     }
+
     documentLoader()->initialScrollState().didRestoreFromHistory = true;
 }
 
@@ -1238,9 +1260,13 @@ void FrameLoader::processFragment(const KURL& url, LoadStartType loadStartType)
     if (boundaryFrame && boundaryFrame->isLocalFrame())
         toLocalFrame(boundaryFrame.get())->view()->setSafeToPropagateScrollToParent(false);
 
-    view->processUrlFragment(url,
-        loadStartType == NavigationToDifferentDocument && documentLoader()->initialScrollState().didRestoreFromHistory ?
-            FrameView::UrlFragmentDontScroll : FrameView::UrlFragmentScroll);
+    // If scroll position is restored from history fragment then we should not override it unless
+    // this is a same document reload.
+    bool shouldScrollToFragment = (loadStartType == NavigationWithinSameDocument && !isBackForwardLoadType(m_loadType))
+        || (documentLoader() && !documentLoader()->initialScrollState().didRestoreFromHistory);
+
+    view->processUrlFragment(url, shouldScrollToFragment ?
+        FrameView::UrlFragmentScroll : FrameView::UrlFragmentDontScroll);
 
     if (boundaryFrame && boundaryFrame->isLocalFrame())
         toLocalFrame(boundaryFrame.get())->view()->setSafeToPropagateScrollToParent(true);
@@ -1294,7 +1320,7 @@ void FrameLoader::startLoad(FrameLoadRequest& frameLoadRequest, FrameLoadType ty
 
     m_policyDocumentLoader = client()->createDocumentLoader(m_frame, request, frameLoadRequest.substituteData().isValid() ? frameLoadRequest.substituteData() : defaultSubstituteDataForURL(request.url()));
     m_policyDocumentLoader->setNavigationType(navigationType);
-    m_policyDocumentLoader->setReplacesCurrentHistoryItem(type == FrameLoadTypeRedirectWithLockedBackForwardList);
+    m_policyDocumentLoader->setReplacesCurrentHistoryItem(type == FrameLoadTypeReplaceCurrentItem);
     m_policyDocumentLoader->setIsClientRedirect(frameLoadRequest.clientRedirect() == ClientRedirect);
 
     // stopAllLoaders can detach the LocalFrame, so protect it.
@@ -1337,7 +1363,7 @@ void FrameLoader::startLoad(FrameLoadRequest& frameLoadRequest, FrameLoadType ty
     if (m_provisionalDocumentLoader->isClientRedirect())
         m_provisionalDocumentLoader->appendRedirect(m_frame->document()->url());
     m_provisionalDocumentLoader->appendRedirect(m_provisionalDocumentLoader->request().url());
-    double triggeringEventTime = frameLoadRequest.triggeringEvent() ? convertDOMTimeStampToSeconds(frameLoadRequest.triggeringEvent()->timeStamp()) : 0;
+    double triggeringEventTime = frameLoadRequest.triggeringEvent() ? frameLoadRequest.triggeringEvent()->platformTimeStamp() : 0;
     client()->dispatchDidStartProvisionalLoad(triggeringEventTime);
     ASSERT(m_provisionalDocumentLoader);
     m_provisionalDocumentLoader->startLoadingMainResource();

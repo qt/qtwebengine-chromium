@@ -57,6 +57,11 @@ EventTargetData::~EventTargetData()
 {
 }
 
+DEFINE_TRACE(EventTargetData)
+{
+    visitor->trace(eventListenerMap);
+}
+
 EventTarget::EventTarget()
 {
 }
@@ -67,27 +72,27 @@ EventTarget::~EventTarget()
 
 Node* EventTarget::toNode()
 {
-    return 0;
+    return nullptr;
 }
 
 LocalDOMWindow* EventTarget::toDOMWindow()
 {
-    return 0;
+    return nullptr;
 }
 
 MessagePort* EventTarget::toMessagePort()
 {
-    return 0;
+    return nullptr;
 }
 
 inline LocalDOMWindow* EventTarget::executingWindow()
 {
     if (ExecutionContext* context = executionContext())
         return context->executingWindow();
-    return 0;
+    return nullptr;
 }
 
-bool EventTarget::addEventListener(const AtomicString& eventType, PassRefPtr<EventListener> listener, bool useCapture)
+bool EventTarget::addEventListener(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener> listener, bool useCapture)
 {
     if (!listener)
         return false;
@@ -103,7 +108,7 @@ bool EventTarget::addEventListener(const AtomicString& eventType, PassRefPtr<Eve
     return ensureEventTargetData().eventListenerMap.add(eventType, listener, useCapture);
 }
 
-bool EventTarget::removeEventListener(const AtomicString& eventType, PassRefPtr<EventListener> listener, bool useCapture)
+bool EventTarget::removeEventListener(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener> listener, bool useCapture)
 {
     if (!listener)
         return false;
@@ -130,14 +135,18 @@ bool EventTarget::removeEventListener(const AtomicString& eventType, PassRefPtr<
             continue;
 
         --firingIterator.end;
-        if (indexOfRemovedListener <= firingIterator.iterator)
+        // Note that when firing an event listener,
+        // firingIterator.iterator indicates the next event listener
+        // that would fire, not the currently firing event
+        // listener. See EventTarget::fireEventListeners.
+        if (indexOfRemovedListener < firingIterator.iterator)
             --firingIterator.iterator;
     }
 
     return true;
 }
 
-bool EventTarget::setAttributeEventListener(const AtomicString& eventType, PassRefPtr<EventListener> listener)
+bool EventTarget::setAttributeEventListener(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener> listener)
 {
     clearAttributeEventListener(eventType);
     if (!listener)
@@ -147,13 +156,15 @@ bool EventTarget::setAttributeEventListener(const AtomicString& eventType, PassR
 
 EventListener* EventTarget::getAttributeEventListener(const AtomicString& eventType)
 {
-    const EventListenerVector& entry = getEventListeners(eventType);
-    for (const auto& eventListener : entry) {
+    EventListenerVector* listenerVector = getEventListeners(eventType);
+    if (!listenerVector)
+        return nullptr;
+    for (const auto& eventListener : *listenerVector) {
         EventListener* listener = eventListener.listener.get();
         if (listener->isAttribute() && listener->belongsToTheCurrentWorld())
             return listener;
     }
-    return 0;
+    return nullptr;
 }
 
 bool EventTarget::clearAttributeEventListener(const AtomicString& eventType)
@@ -164,7 +175,7 @@ bool EventTarget::clearAttributeEventListener(const AtomicString& eventType)
     return removeEventListener(eventType, listener, false);
 }
 
-bool EventTarget::dispatchEvent(PassRefPtrWillBeRawPtr<Event> event, ExceptionState& exceptionState)
+bool EventTarget::dispatchEventForBindings(PassRefPtrWillBeRawPtr<Event> event, ExceptionState& exceptionState)
 {
     if (!event) {
         exceptionState.throwDOMException(InvalidStateError, "The event provided is null.");
@@ -182,10 +193,17 @@ bool EventTarget::dispatchEvent(PassRefPtrWillBeRawPtr<Event> event, ExceptionSt
     if (!executionContext())
         return false;
 
-    return dispatchEvent(event);
+    event->setTrusted(false);
+    return dispatchEventInternal(event);
 }
 
 bool EventTarget::dispatchEvent(PassRefPtrWillBeRawPtr<Event> event)
+{
+    event->setTrusted(true);
+    return dispatchEventInternal(event);
+}
+
+bool EventTarget::dispatchEventInternal(PassRefPtrWillBeRawPtr<Event> event)
 {
     event->setTarget(this);
     event->setCurrentTarget(this);
@@ -265,7 +283,7 @@ bool EventTarget::fireEventListeners(Event* event)
     if (!d)
         return true;
 
-    EventListenerVector* legacyListenersVector = 0;
+    EventListenerVector* legacyListenersVector = nullptr;
     AtomicString legacyTypeName = legacyType(event);
     if (!legacyTypeName.isEmpty())
         legacyListenersVector = d->eventListenerMap.find(legacyTypeName);
@@ -321,8 +339,14 @@ void EventTarget::fireEventListeners(Event* event, EventTargetData* d, EventList
     if (!d->firingEventIterators)
         d->firingEventIterators = adoptPtr(new FiringEventIteratorVector);
     d->firingEventIterators->append(FiringEventIterator(event->type(), i, size));
-    for ( ; i < size; ++i) {
+    while (i < size) {
         RegisteredEventListener& registeredListener = entry[i];
+
+        // Move the iterator past this event listener. This must match
+        // the handling of the FiringEventIterator::iterator in
+        // EventTarget::removeEventListener.
+        ++i;
+
         if (event->eventPhase() == Event::CAPTURING_PHASE && !registeredListener.useCapture)
             continue;
         if (event->eventPhase() == Event::BUBBLING_PHASE && registeredListener.useCapture)
@@ -338,27 +362,23 @@ void EventTarget::fireEventListeners(Event* event, EventTargetData* d, EventList
             break;
 
         InspectorInstrumentationCookie cookie = InspectorInstrumentation::willHandleEvent(this, event, registeredListener.listener.get(), registeredListener.useCapture);
+
         // To match Mozilla, the AT_TARGET phase fires both capturing and bubbling
         // event listeners, even though that violates some versions of the DOM spec.
         registeredListener.listener->handleEvent(context, event);
+        RELEASE_ASSERT(i <= size);
+
         InspectorInstrumentation::didHandleEvent(cookie);
     }
     d->firingEventIterators->removeLast();
 }
 
-const EventListenerVector& EventTarget::getEventListeners(const AtomicString& eventType)
+EventListenerVector* EventTarget::getEventListeners(const AtomicString& eventType)
 {
-    AtomicallyInitializedStaticReference(EventListenerVector, emptyVector, new EventListenerVector);
-
-    EventTargetData* d = eventTargetData();
-    if (!d)
-        return emptyVector;
-
-    EventListenerVector* listenerVector = d->eventListenerMap.find(eventType);
-    if (!listenerVector)
-        return emptyVector;
-
-    return *listenerVector;
+    EventTargetData* data = eventTargetData();
+    if (!data)
+        return nullptr;
+    return data->eventListenerMap.find(eventType);
 }
 
 Vector<AtomicString> EventTarget::eventTypes()

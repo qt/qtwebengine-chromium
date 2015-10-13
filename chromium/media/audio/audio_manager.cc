@@ -15,6 +15,7 @@
 #include "build/build_config.h"
 #include "media/audio/audio_manager_factory.h"
 #include "media/audio/fake_audio_log_factory.h"
+#include "media/base/media_resources.h"
 #include "media/base/media_switches.h"
 
 #if defined(OS_WIN)
@@ -25,14 +26,14 @@ namespace media {
 namespace {
 
 // The singleton instance of AudioManager. This is set when Create() is called.
-AudioManager* g_last_created = NULL;
+AudioManager* g_last_created = nullptr;
 
 // The singleton instance of AudioManagerFactory. This is only set if
 // SetFactory() is called. If it is set when Create() is called, its
 // CreateInstance() function is used to set |g_last_created|. Otherwise, the
 // linked implementation of media::CreateAudioManager is used to set
 // |g_last_created|.
-AudioManagerFactory* g_audio_manager_factory = NULL;
+AudioManagerFactory* g_audio_manager_factory = nullptr;
 
 // Maximum number of failed pings to the audio thread allowed. A crash will be
 // issued once this count is reached.  We require at least two pings before
@@ -156,6 +157,16 @@ class AudioManagerHelper : public base::PowerObserver {
   }
 #endif
 
+#if defined(OS_LINUX)
+  void set_app_name(const std::string& app_name) {
+    app_name_ = app_name;
+  }
+
+  const std::string& app_name() const {
+    return app_name_;
+  }
+#endif
+
  private:
   FakeAudioLogFactory fake_log_factory_;
 
@@ -173,13 +184,18 @@ class AudioManagerHelper : public base::PowerObserver {
   scoped_ptr<base::win::ScopedCOMInitializer> com_initializer_for_testing_;
 #endif
 
+#if defined(OS_LINUX)
+  std::string app_name_;
+#endif
+
   DISALLOW_COPY_AND_ASSIGN(AudioManagerHelper);
 };
 
-static bool g_hang_monitor_enabled = false;
+bool g_hang_monitor_enabled = false;
 
-static base::LazyInstance<AudioManagerHelper>::Leaky g_helper =
+base::LazyInstance<AudioManagerHelper>::Leaky g_helper =
     LAZY_INSTANCE_INITIALIZER;
+
 }  // namespace
 
 // Forward declaration of the platform specific AudioManager factory function.
@@ -189,7 +205,7 @@ AudioManager::AudioManager() {}
 
 AudioManager::~AudioManager() {
   CHECK(!g_last_created || g_last_created == this);
-  g_last_created = NULL;
+  g_last_created = nullptr;
 }
 
 // static
@@ -251,9 +267,36 @@ void AudioManager::EnableHangMonitor() {
 #endif
 }
 
+#if defined(OS_LINUX)
+// static
+void AudioManager::SetGlobalAppName(const std::string& app_name) {
+  g_helper.Pointer()->set_app_name(app_name);
+}
+
+// static
+const std::string& AudioManager::GetGlobalAppName() {
+  return g_helper.Pointer()->app_name();
+}
+#endif
+
 // static
 AudioManager* AudioManager::Get() {
   return g_last_created;
+}
+
+// static
+std::string AudioManager::GetDefaultDeviceName() {
+  return GetLocalizedStringUTF8(DEFAULT_AUDIO_DEVICE_NAME);
+}
+
+// static
+std::string AudioManager::GetCommunicationsDeviceName() {
+#if defined(OS_WIN)
+  return GetLocalizedStringUTF8(COMMUNICATIONS_AUDIO_DEVICE_NAME);
+#else
+  NOTREACHED();
+  return "";
+#endif
 }
 
 }  // namespace media

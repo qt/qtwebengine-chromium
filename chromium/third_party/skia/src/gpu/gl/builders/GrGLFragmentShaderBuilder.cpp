@@ -16,7 +16,7 @@
 
 const char* GrGLFragmentShaderBuilder::kDstTextureColorName = "_dstColor";
 static const char* declared_color_output_name() { return "fsColorOut"; }
-static const char* dual_source_output_name() { return "dualSourceOut"; }
+static const char* declared_secondary_color_output_name() { return "fsSecondaryColorOut"; }
 
 static const char* specific_layout_qualifier_name(GrBlendEquation equation) {
     SkASSERT(GrBlendEquationIsAdvanced(equation));
@@ -159,6 +159,7 @@ const char* GrGLFragmentShaderBuilder::fragmentPosition() {
         }
         return "gl_FragCoord";
     } else {
+        static const char* kTempName = "tmpXYFragCoord";
         static const char* kCoordName = "fragCoordYDown";
         if (!fSetupFragPosition) {
             // temporarily change the stage index because we're inserting non-stage code.
@@ -173,11 +174,14 @@ const char* GrGLFragmentShaderBuilder::fragmentPosition() {
                                                 "RTHeight",
                                                 &rtHeightName);
 
-            // Using glFragCoord.zw for the last two components tickles an Adreno driver bug that
-            // causes programs to fail to link. Making this function return a vec2() didn't fix the
-            // problem but using 1.0 for the last two components does.
-            this->codePrependf("\tvec4 %s = vec4(gl_FragCoord.x, %s - gl_FragCoord.y, 1.0, "
-                               "1.0);\n", kCoordName, rtHeightName);
+            // The Adreno compiler seems to be very touchy about access to "gl_FragCoord".
+            // Accessing glFragCoord.zw can cause a program to fail to link. Additionally,
+            // depending on the surrounding code, accessing .xy with a uniform involved can
+            // do the same thing. Copying gl_FragCoord.xy into a temp vec2 beforehand 
+            // (and only accessing .xy) seems to "fix" things.
+            this->codePrependf("\tvec4 %s = vec4(%s.x, %s - %s.y, 1.0, 1.0);\n",
+                               kCoordName, kTempName, rtHeightName, kTempName);
+            this->codePrependf("vec2 %s = gl_FragCoord.xy;", kTempName);
             fSetupFragPosition = true;
         }
         SkASSERT(fProgramBuilder->fUniformHandles.fRTHeightUni.isValid());
@@ -236,8 +240,19 @@ void GrGLFragmentShaderBuilder::enableCustomOutput() {
 void GrGLFragmentShaderBuilder::enableSecondaryOutput() {
     SkASSERT(!fHasSecondaryOutput);
     fHasSecondaryOutput = true;
-    fOutputs.push_back().set(kVec4f_GrSLType, GrGLShaderVar::kOut_TypeModifier,
-                             dual_source_output_name());
+    if (kGLES_GrGLStandard == fProgramBuilder->gpu()->ctxInfo().standard()) {
+        this->addFeature(1 << kBlendFuncExtended_GLSLPrivateFeature, "GL_EXT_blend_func_extended");
+    }
+
+    // If the primary output is declared, we must declare also the secondary output
+    // and vice versa, since it is not allowed to use a built-in gl_FragColor and a custom
+    // output. The condition also co-incides with the condition in whici GLES SL 2.0
+    // requires the built-in gl_SecondaryFragColorEXT, where as 3.0 requires a custom output.
+    const GrGLSLCaps& caps = *fProgramBuilder->gpu()->glCaps().glslCaps();
+    if (caps.mustDeclareFragmentShaderOutput()) {
+        fOutputs.push_back().set(kVec4f_GrSLType, GrGLShaderVar::kOut_TypeModifier,
+                                 declared_secondary_color_output_name());
+    }
 }
 
 const char* GrGLFragmentShaderBuilder::getPrimaryColorOutputName() const {
@@ -245,7 +260,9 @@ const char* GrGLFragmentShaderBuilder::getPrimaryColorOutputName() const {
 }
 
 const char* GrGLFragmentShaderBuilder::getSecondaryColorOutputName() const {
-    return dual_source_output_name();
+    const GrGLSLCaps& caps = *fProgramBuilder->gpu()->glCaps().glslCaps();
+    return caps.mustDeclareFragmentShaderOutput() ? declared_secondary_color_output_name()
+                                                  : "gl_SecondaryFragColorEXT";
 }
 
 bool GrGLFragmentShaderBuilder::compileAndAttachShaders(GrGLuint programId,
@@ -266,11 +283,13 @@ bool GrGLFragmentShaderBuilder::compileAndAttachShaders(GrGLuint programId,
 }
 
 void GrGLFragmentShaderBuilder::bindFragmentShaderLocations(GrGLuint programID) {
-    if (fHasCustomColorOutput && fProgramBuilder->gpu()->glCaps().bindFragDataLocationSupport()) {
+    const GrGLCaps& caps = fProgramBuilder->gpu()->glCaps();
+    if (fHasCustomColorOutput && caps.bindFragDataLocationSupport()) {
         GL_CALL(BindFragDataLocation(programID, 0, declared_color_output_name()));
     }
-    if (fHasSecondaryOutput) {
-        GL_CALL(BindFragDataLocationIndexed(programID, 0, 1, dual_source_output_name()));
+    if (fHasSecondaryOutput && caps.glslCaps()->mustDeclareFragmentShaderOutput()) {
+        GL_CALL(BindFragDataLocationIndexed(programID, 0, 1,
+                                            declared_secondary_color_output_name()));
     }
 }
 
@@ -280,4 +299,20 @@ void GrGLFragmentShaderBuilder::addVarying(GrGLVarying* v, GrSLPrecision fsPrec)
         v->fFsIn = v->fGsOut;
     }
     fInputs.push_back().set(v->fType, GrGLShaderVar::kVaryingIn_TypeModifier, v->fFsIn, fsPrec);
+}
+
+void GrGLFragmentBuilder::onBeforeChildProcEmitCode() {
+    SkASSERT(fSubstageIndices.count() >= 1);
+    fSubstageIndices.push_back(0);
+    // second-to-last value in the fSubstageIndices stack is the index of the child proc
+    // at that level which is currently emitting code.
+    fMangleString.appendf("_c%d", fSubstageIndices[fSubstageIndices.count() - 2]);
+}
+
+void GrGLFragmentBuilder::onAfterChildProcEmitCode() {
+    SkASSERT(fSubstageIndices.count() >= 2);
+    fSubstageIndices.pop_back();
+    fSubstageIndices.back()++;
+    int removeAt = fMangleString.findLastOf('_');
+    fMangleString.remove(removeAt, fMangleString.size() - removeAt);
 }

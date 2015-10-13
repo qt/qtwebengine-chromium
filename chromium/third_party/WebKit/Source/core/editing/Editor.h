@@ -28,15 +28,15 @@
 
 #include "core/CoreExport.h"
 #include "core/clipboard/DataTransferAccessPolicy.h"
-#include "core/dom/DocumentMarker.h"
-#include "core/editing/EditAction.h"
 #include "core/editing/EditingBehavior.h"
 #include "core/editing/EphemeralRange.h"
 #include "core/editing/FindOptions.h"
 #include "core/editing/FrameSelection.h"
 #include "core/editing/VisibleSelection.h"
 #include "core/editing/WritingDirection.h"
+#include "core/editing/commands/EditAction.h"
 #include "core/editing/iterators/TextIterator.h"
+#include "core/editing/markers/DocumentMarker.h"
 #include "platform/PasteMode.h"
 #include "platform/heap/Handle.h"
 
@@ -60,6 +60,7 @@ enum EditorCommandSource { CommandFromMenuOrKeyBinding, CommandFromDOM };
 enum EditorParagraphSeparator { EditorParagraphSeparatorIsDiv, EditorParagraphSeparatorIsP };
 
 class CORE_EXPORT Editor final : public NoBaseWillBeGarbageCollectedFinalized<Editor> {
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(Editor);
     WTF_MAKE_NONCOPYABLE(Editor);
 public:
     static PassOwnPtrWillBeRawPtr<Editor> create(LocalFrame&);
@@ -192,10 +193,7 @@ public:
 
     EphemeralRange selectedRange();
 
-    // TODO(yosin) We should get rid of |addToKillRing()| with |Range| for
-    // Oilpan.
-    void addToKillRing(Range*, bool prepend);
-    void addToKillRing(const EphemeralRange&, bool prepend);
+    void addToKillRing(const EphemeralRange&);
 
     void pasteAsFragment(PassRefPtrWillBeRawPtr<DocumentFragment>, bool smartReplace, bool matchStyle);
     void pasteAsPlainText(const String&, bool smartReplace);
@@ -205,13 +203,16 @@ public:
     bool findString(const String&, FindOptions);
 
     PassRefPtrWillBeRawPtr<Range> findStringAndScrollToVisible(const String&, Range*, FindOptions);
+    PassRefPtrWillBeRawPtr<Range> findRangeOfString(const String& target, const EphemeralRange& referenceRange, FindOptions);
+    PassRefPtrWillBeRawPtr<Range> findRangeOfString(const String& target, const EphemeralRangeInComposedTree& referenceRange, FindOptions);
 
     const VisibleSelection& mark() const; // Mark, to be used as emacs uses it.
     void setMark(const VisibleSelection&);
 
     void computeAndSetTypingStyle(StylePropertySet* , EditAction = EditActionUnspecified);
 
-    IntRect firstRectForRange(Range*) const;
+    IntRect firstRectForRange(const EphemeralRange&) const;
+    IntRect firstRectForRange(const Range*) const;
 
     void respondToChangedSelection(const VisibleSelection& oldSelection, FrameSelection::SetSelectionOptions);
 
@@ -277,8 +278,6 @@ private:
     void notifyComponentsOnChangedSelection(const VisibleSelection& oldSelection, FrameSelection::SetSelectionOptions);
 
     Element* findEventTargetFromSelection() const;
-
-    PassRefPtrWillBeRawPtr<Range> findRangeOfString(const String&, Range*, FindOptions);
 
     SpellChecker& spellChecker() const;
 

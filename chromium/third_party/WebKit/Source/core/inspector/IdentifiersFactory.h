@@ -27,6 +27,7 @@
 #define IdentifiersFactory_h
 
 #include "core/CoreExport.h"
+#include "wtf/Allocator.h"
 #include "wtf/text/WTFString.h"
 
 namespace blink {
@@ -35,6 +36,7 @@ class DocumentLoader;
 class LocalFrame;
 
 class CORE_EXPORT IdentifiersFactory {
+    STATIC_ONLY(IdentifiersFactory);
 public:
     static void setProcessId(long);
     static String createIdentifier();
@@ -42,10 +44,10 @@ public:
     static String requestId(unsigned long identifier);
 
     static String frameId(LocalFrame*);
-    static LocalFrame* frameById(const String&);
+    static LocalFrame* frameById(LocalFrame* inspectedFrame, const String&);
 
     static String loaderId(DocumentLoader*);
-    static DocumentLoader* loaderById(const String&);
+    static DocumentLoader* loaderById(LocalFrame* inspectedFrame, const String&);
 
 private:
     static String addProcessIdPrefixTo(int id);

@@ -66,7 +66,6 @@ class ImageTransportSurface {
   virtual void OnResize(gfx::Size size, float scale_factor) = 0;
   virtual void SetLatencyInfo(
       const std::vector<ui::LatencyInfo>& latency_info) = 0;
-  virtual void WakeUpGpu() = 0;
 
   // Creates a surface with the given attributes.
   static scoped_refptr<gfx::GLSurface> CreateSurface(
@@ -96,13 +95,6 @@ class ImageTransportSurface {
       GpuCommandBufferStub* stub,
       const gfx::GLSurfaceHandle& handle);
 
-#if defined(OS_ANDROID)
-  static scoped_refptr<gfx::GLSurface> CreateTransportSurface(
-      GpuChannelManager* manager,
-      GpuCommandBufferStub* stub,
-      const gfx::GLSurfaceHandle& handle);
-#endif
-
   DISALLOW_COPY_AND_ASSIGN(ImageTransportSurface);
 };
 
@@ -129,9 +121,6 @@ class ImageTransportHelper
       GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params params);
 #endif
 
-  void SetPreemptByFlag(
-      scoped_refptr<gpu::PreemptionFlag> preemption_flag);
-
   // Make the surface's context current.
   bool MakeCurrent();
 
@@ -149,7 +138,6 @@ class ImageTransportHelper
   void OnBufferPresented(
       const AcceleratedSurfaceMsg_BufferPresented_Params& params);
 #endif
-  void OnWakeUpGpu();
 
   // Backbuffer resize callback.
   void Resize(gfx::Size size, float scale_factor);
@@ -193,7 +181,6 @@ class PassThroughImageTransportSurface
   gfx::Size GetSize() override;
   void SetLatencyInfo(
       const std::vector<ui::LatencyInfo>& latency_info) override;
-  void WakeUpGpu() override;
 
  protected:
   ~PassThroughImageTransportSurface() override;

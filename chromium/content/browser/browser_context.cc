@@ -36,7 +36,7 @@ namespace {
 
 // Key names on BrowserContext.
 const char kDownloadManagerKeyName[] = "download_manager";
-const char kStorageParitionMapKeyName[] = "content_storage_partition_map";
+const char kStoragePartitionMapKeyName[] = "content_storage_partition_map";
 
 #if defined(OS_CHROMEOS)
 const char kMountPointsKey[] = "mount_points";
@@ -46,10 +46,10 @@ StoragePartitionImplMap* GetStoragePartitionMap(
     BrowserContext* browser_context) {
   StoragePartitionImplMap* partition_map =
       static_cast<StoragePartitionImplMap*>(
-          browser_context->GetUserData(kStorageParitionMapKeyName));
+          browser_context->GetUserData(kStoragePartitionMapKeyName));
   if (!partition_map) {
     partition_map = new StoragePartitionImplMap(browser_context);
-    browser_context->SetUserData(kStorageParitionMapKeyName, partition_map);
+    browser_context->SetUserData(kStoragePartitionMapKeyName, partition_map);
   }
   return partition_map;
 }
@@ -91,6 +91,13 @@ void ShutdownServiceWorkerContext(StoragePartition* partition) {
   wrapper->process_manager()->Shutdown();
 }
 
+void SetDownloadManager(BrowserContext* context,
+                        content::DownloadManager* download_manager) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  DCHECK(download_manager);
+  context->SetUserData(kDownloadManagerKeyName, download_manager);
+}
+
 }  // namespace
 
 // static
@@ -121,9 +128,7 @@ DownloadManager* BrowserContext::GetDownloadManager(
         new DownloadManagerImpl(
             GetContentClient()->browser()->GetNetLog(), context);
 
-    context->SetUserData(
-        kDownloadManagerKeyName,
-        download_manager);
+    SetDownloadManager(context, download_manager);
     download_manager->SetDelegate(context->GetDownloadManagerDelegate());
   }
 
@@ -194,7 +199,7 @@ void BrowserContext::ForEachStoragePartition(
     const StoragePartitionCallback& callback) {
   StoragePartitionImplMap* partition_map =
       static_cast<StoragePartitionImplMap*>(
-          browser_context->GetUserData(kStorageParitionMapKeyName));
+          browser_context->GetUserData(kStoragePartitionMapKeyName));
   if (!partition_map)
     return;
 
@@ -305,6 +310,12 @@ void BrowserContext::SaveSessionState(BrowserContext* browser_context) {
         base::Bind(&SaveSessionStateOnIndexedDBThread,
                    make_scoped_refptr(indexed_db_context_impl)));
   }
+}
+
+void BrowserContext::SetDownloadManagerForTesting(
+    BrowserContext* browser_context,
+    DownloadManager* download_manager) {
+  SetDownloadManager(browser_context, download_manager);
 }
 
 #endif  // !OS_IOS

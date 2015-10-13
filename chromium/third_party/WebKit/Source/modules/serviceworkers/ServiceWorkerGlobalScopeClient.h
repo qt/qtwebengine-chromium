@@ -35,10 +35,10 @@
 #include "core/workers/WorkerClients.h"
 #include "modules/ModulesExport.h"
 #include "public/platform/WebMessagePortChannel.h"
-#include "public/platform/WebServiceWorkerClientsClaimCallbacks.h"
-#include "public/platform/WebServiceWorkerClientsInfo.h"
-#include "public/platform/WebServiceWorkerEventResult.h"
-#include "public/platform/WebServiceWorkerSkipWaitingCallbacks.h"
+#include "public/platform/modules/serviceworker/WebServiceWorkerClientsClaimCallbacks.h"
+#include "public/platform/modules/serviceworker/WebServiceWorkerClientsInfo.h"
+#include "public/platform/modules/serviceworker/WebServiceWorkerEventResult.h"
+#include "public/platform/modules/serviceworker/WebServiceWorkerSkipWaitingCallbacks.h"
 #include "wtf/Forward.h"
 #include "wtf/Noncopyable.h"
 
@@ -55,6 +55,7 @@ class WorkerClients;
 // See WebServiceWorkerContextClient for documentation for the methods in this class.
 class MODULES_EXPORT ServiceWorkerGlobalScopeClient : public WillBeHeapSupplement<WorkerClients> {
     WTF_MAKE_NONCOPYABLE(ServiceWorkerGlobalScopeClient);
+    DISALLOW_ALLOCATION();
 public:
     virtual ~ServiceWorkerGlobalScopeClient() { }
 
@@ -75,13 +76,12 @@ public:
     virtual void didHandleNotificationClickEvent(int eventID, WebServiceWorkerEventResult) = 0;
     virtual void didHandlePushEvent(int pushEventID, WebServiceWorkerEventResult) = 0;
     virtual void didHandleSyncEvent(int syncEventID, WebServiceWorkerEventResult) = 0;
-    virtual void didHandleCrossOriginConnectEvent(int connectEventID, bool acceptConnect) = 0;
     virtual void postMessageToClient(const WebString& clientUUID, const WebString& message, PassOwnPtr<WebMessagePortChannelArray>) = 0;
     virtual void postMessageToCrossOriginClient(const WebCrossOriginServiceWorkerClient&, const WebString& message, PassOwnPtr<WebMessagePortChannelArray>) = 0;
     virtual void skipWaiting(WebServiceWorkerSkipWaitingCallbacks*) = 0;
     virtual void claim(WebServiceWorkerClientsClaimCallbacks*) = 0;
     virtual void focus(const WebString& clientUUID, WebServiceWorkerClientCallbacks*) = 0;
-    virtual void stashMessagePort(WebMessagePortChannel*, const WebString& name) = 0;
+    virtual void navigate(const WebString& clientUUID, const WebURL&, WebServiceWorkerClientCallbacks*) = 0;
 
     static const char* supplementName();
     static ServiceWorkerGlobalScopeClient* from(ExecutionContext*);

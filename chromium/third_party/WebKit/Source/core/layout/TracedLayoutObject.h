@@ -18,12 +18,12 @@ class LayoutView;
 class TracedLayoutObject : public TraceEvent::ConvertableToTraceFormat {
     WTF_MAKE_NONCOPYABLE(TracedLayoutObject);
 public:
-    static PassRefPtr<TraceEvent::ConvertableToTraceFormat> create(const LayoutView&);
+    static PassRefPtr<TraceEvent::ConvertableToTraceFormat> create(const LayoutView&, bool traceGeometry = true);
 
     String asTraceFormat() const override;
 
 private:
-    explicit TracedLayoutObject(const LayoutObject&);
+    explicit TracedLayoutObject(const LayoutObject&, bool traceGeometry);
 
     PassRefPtr<JSONObject> toJSON() const;
 
@@ -31,6 +31,7 @@ private:
     bool m_isAnonymous;
     bool m_isPositioned;
     bool m_isRelPositioned;
+    bool m_isStickyPositioned;
     bool m_isFloating;
     bool m_selfNeeds;
     bool m_positionedMovement;

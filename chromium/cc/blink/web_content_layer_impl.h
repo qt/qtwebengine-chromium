@@ -28,12 +28,11 @@ class WebContentLayerImpl : public blink::WebContentLayer,
   CC_BLINK_EXPORT explicit WebContentLayerImpl(blink::WebContentLayerClient*);
 
   // WebContentLayer implementation.
-  virtual blink::WebLayer* layer();
-  virtual void setDoubleSided(bool double_sided);
-  virtual void setDrawCheckerboardForMissingTiles(bool checkerboard);
+  blink::WebLayer* layer() override;
+  void setDoubleSided(bool double_sided) override;
 
  protected:
-  virtual ~WebContentLayerImpl();
+  ~WebContentLayerImpl() override;
 
   // ContentLayerClient implementation.
   void PaintContents(SkCanvas* canvas,
@@ -43,6 +42,7 @@ class WebContentLayerImpl : public blink::WebContentLayer,
       const gfx::Rect& clip,
       PaintingControlSetting painting_control) override;
   bool FillsBoundsCompletely() const override;
+  size_t GetApproximateUnsharedMemoryUsage() const override;
 
   scoped_ptr<WebLayerImpl> layer_;
   blink::WebContentLayerClient* client_;

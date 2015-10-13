@@ -13,8 +13,6 @@
 #include "ui/ozone/platform/drm/gpu/drm_buffer.h"
 #include "ui/ozone/platform/drm/gpu/drm_device_generator.h"
 #include "ui/ozone/platform/drm/gpu/drm_device_manager.h"
-#include "ui/ozone/platform/drm/gpu/drm_surface.h"
-#include "ui/ozone/platform/drm/gpu/drm_surface_factory.h"
 #include "ui/ozone/platform/drm/gpu/drm_window.h"
 #include "ui/ozone/platform/drm/gpu/hardware_display_controller.h"
 #include "ui/ozone/platform/drm/gpu/screen_manager.h"
@@ -35,7 +33,7 @@ const int kDefaultCursorSize = 64;
 std::vector<skia::RefPtr<SkSurface>> GetCursorBuffers(
     const scoped_refptr<ui::MockDrmDevice> drm) {
   std::vector<skia::RefPtr<SkSurface>> cursor_buffers;
-  for (const skia::RefPtr<SkSurface>& cursor_buffer : drm->buffers()) {
+  for (const auto& cursor_buffer : drm->buffers()) {
     if (cursor_buffer->width() == kDefaultCursorSize &&
         cursor_buffer->height() == kDefaultCursorSize) {
       cursor_buffers.push_back(cursor_buffer);

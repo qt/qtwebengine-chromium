@@ -1,12 +1,8 @@
 
-(function() {
-
   Polymer({
-
     is: 'paper-input-container',
 
     properties: {
-
       /**
        * Set to true to disable the floating label. The label disappears when the input value is
        * not null.
@@ -42,7 +38,7 @@
 
       /**
        * True if the input is invalid. This property is set automatically when the input value
-       * changes if auto-validating, or when the `iron-input-valid` event is heard from a child.
+       * changes if auto-validating, or when the `iron-input-validate` event is heard from a child.
        */
       invalid: {
         observer: '_invalidChanged',
@@ -56,7 +52,8 @@
       focused: {
         readOnly: true,
         type: Boolean,
-        value: false
+        value: false,
+        notify: true
       },
 
       _addons: {
@@ -103,7 +100,6 @@
           return this._onValueChanged.bind(this);
         }
       }
-
     },
 
     listeners: {
@@ -123,6 +119,10 @@
       return Polymer.dom(this).querySelector(this._inputSelector);
     },
 
+    get _inputElementValue() {
+      return this._inputElement[this._propertyForValue] || this._inputElement.value;
+    },
+
     ready: function() {
       if (!this._addons) {
         this._addons = [];
@@ -137,7 +137,12 @@
     },
 
     attached: function() {
-      this._handleValue(this._inputElement);
+      // Only validate when attached if the input already has a value.
+      if (this._inputElementValue != '') {
+        this._handleValueAndAutoValidate(this._inputElement);
+      } else {
+        this._handleValue(this._inputElement);
+      }
     },
 
     _onAddonAttached: function(event) {
@@ -159,31 +164,22 @@
 
     _onBlur: function() {
       this._setFocused(false);
+      this._handleValueAndAutoValidate(this._inputElement);
     },
 
     _onInput: function(event) {
-      this._handleValue(event.target);
+      this._handleValueAndAutoValidate(event.target);
     },
 
     _onValueChanged: function(event) {
-      this._handleValue(event.target);
+      this._handleValueAndAutoValidate(event.target);
     },
 
     _handleValue: function(inputElement) {
-      var value = inputElement[this._propertyForValue] || inputElement.value;
-
-      if (this.autoValidate) {
-        var valid;
-        if (inputElement.validate) {
-          valid = inputElement.validate(value);
-        } else {
-          valid = inputElement.checkValidity();
-        }
-        this.invalid = !valid;
-      }
+      var value = this._inputElementValue;
 
       // type="number" hack needed because this.value is empty until it's valid
-      if (value || (inputElement.type === 'number' && !inputElement.checkValidity())) {
+      if (value || value === 0 || (inputElement.type === 'number' && !inputElement.checkValidity())) {
         this._inputHasContent = true;
       } else {
         this._inputHasContent = false;
@@ -194,6 +190,21 @@
         value: value,
         invalid: this.invalid
       });
+    },
+
+    _handleValueAndAutoValidate: function(inputElement) {
+      if (this.autoValidate) {
+        var valid;
+        if (inputElement.validate) {
+          valid = inputElement.validate(this._inputElementValue);
+        } else {
+          valid = inputElement.checkValidity();
+        }
+        this.invalid = !valid;
+      }
+
+      // Call this last to notify the add-ons.
+      this._handleValue(inputElement);
     },
 
     _onIronInputValidate: function(event) {
@@ -219,12 +230,25 @@
     _computeInputContentClass: function(noLabelFloat, alwaysFloatLabel, focused, invalid, _inputHasContent) {
       var cls = 'input-content';
       if (!noLabelFloat) {
+        var label = this.querySelector('label');
+
         if (alwaysFloatLabel || _inputHasContent) {
           cls += ' label-is-floating';
           if (invalid) {
             cls += ' is-invalid';
           } else if (focused) {
             cls += " label-is-highlighted";
+          }
+          // The label might have a horizontal offset if a prefix element exists
+          // which needs to be undone when displayed as a floating label.
+          if (Polymer.dom(this.$.prefix).getDistributedNodes().length > 0 &&
+              label && label.offsetParent) {
+            label.style.left = -label.offsetParent.offsetLeft + 'px';
+          }
+        } else {
+          // When the label is not floating, it should overlap the input element.
+          if (label) {
+            label.style.left = 0;
           }
         }
       } else {
@@ -254,7 +278,4 @@
       }
       return cls;
     }
-
   });
-
-})();

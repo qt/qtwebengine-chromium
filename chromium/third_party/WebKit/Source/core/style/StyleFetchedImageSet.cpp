@@ -47,9 +47,24 @@ StyleFetchedImageSet::~StyleFetchedImageSet()
     m_bestFitImage->removeClient(this);
 }
 
+WrappedImagePtr StyleFetchedImageSet::data() const
+{
+    return m_bestFitImage.get();
+}
+
+ImageResource* StyleFetchedImageSet::cachedImage() const
+{
+    return m_bestFitImage.get();
+}
+
 PassRefPtrWillBeRawPtr<CSSValue> StyleFetchedImageSet::cssValue() const
 {
     return m_imageSetValue;
+}
+
+PassRefPtrWillBeRawPtr<CSSValue> StyleFetchedImageSet::computedCSSValue() const
+{
+    return m_imageSetValue->valueWithURLsMadeAbsolute();
 }
 
 bool StyleFetchedImageSet::canRender(const LayoutObject& layoutObject, float multiplier) const
@@ -109,7 +124,7 @@ void StyleFetchedImageSet::removeClient(LayoutObject* layoutObject)
     m_bestFitImage->removeClient(layoutObject);
 }
 
-PassRefPtr<Image> StyleFetchedImageSet::image(LayoutObject* layoutObject, const IntSize&) const
+PassRefPtr<Image> StyleFetchedImageSet::image(const LayoutObject* layoutObject, const IntSize&) const
 {
     return m_bestFitImage->imageForLayoutObject(layoutObject);
 }
@@ -117,6 +132,12 @@ PassRefPtr<Image> StyleFetchedImageSet::image(LayoutObject* layoutObject, const 
 bool StyleFetchedImageSet::knownToBeOpaque(const LayoutObject* layoutObject) const
 {
     return m_bestFitImage->currentFrameKnownToBeOpaque(layoutObject);
+}
+
+DEFINE_TRACE(StyleFetchedImageSet)
+{
+    visitor->trace(m_imageSetValue);
+    StyleImage::trace(visitor);
 }
 
 } // namespace blink

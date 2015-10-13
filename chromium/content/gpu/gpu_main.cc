@@ -25,6 +25,7 @@
 #include "content/common/gpu/gpu_config.h"
 #include "content/common/gpu/gpu_memory_buffer_factory.h"
 #include "content/common/gpu/gpu_messages.h"
+#include "content/common/gpu/media/gpu_jpeg_decode_accelerator.h"
 #include "content/common/gpu/media/gpu_video_decode_accelerator.h"
 #include "content/common/gpu/media/gpu_video_encode_accelerator.h"
 #include "content/common/sandbox_linux/sandbox_linux.h"
@@ -35,6 +36,7 @@
 #include "content/public/common/content_switches.h"
 #include "content/public/common/main_function_params.h"
 #include "gpu/command_buffer/service/gpu_switches.h"
+#include "gpu/command_buffer/service/sync_point_manager.h"
 #include "gpu/config/gpu_info_collector.h"
 #include "gpu/config/gpu_switches.h"
 #include "gpu/config/gpu_util.h"
@@ -73,7 +75,11 @@
 #include <sanitizer/coverage_interface.h>
 #endif
 
+#if defined(CYGPROFILE_INSTRUMENTATION)
+const int kGpuTimeout = 30000;
+#else
 const int kGpuTimeout = 10000;
+#endif
 
 namespace content {
 
@@ -223,6 +229,7 @@ int GpuMain(const MainFunctionParams& parameters) {
   // Get vendor_id, device_id, driver_version from browser process through
   // commandline switches.
   GetGpuInfoFromCommandLine(gpu_info, command_line);
+  gpu_info.in_process_gpu = false;
 
 #if defined(OS_CHROMEOS) && defined(ARCH_CPU_X86_FAMILY)
   VaapiWrapper::PreSandboxInitialization();
@@ -346,6 +353,8 @@ int GpuMain(const MainFunctionParams& parameters) {
         content::GpuVideoDecodeAccelerator::GetSupportedProfiles();
     gpu_info.video_encode_accelerator_supported_profiles =
         content::GpuVideoEncodeAccelerator::GetSupportedProfiles();
+    gpu_info.jpeg_decode_accelerator_supported =
+        content::GpuJpegDecodeAccelerator::IsSupported();
   } else {
     dead_on_arrival = true;
   }
@@ -355,12 +364,14 @@ int GpuMain(const MainFunctionParams& parameters) {
   scoped_ptr<GpuMemoryBufferFactory> gpu_memory_buffer_factory =
       GpuMemoryBufferFactory::Create(
           GpuChildThread::GetGpuMemoryBufferFactoryType());
+  gpu::SyncPointManager sync_point_manager(false);
 
   GpuProcess gpu_process;
 
   GpuChildThread* child_thread = new GpuChildThread(
       watchdog_thread.get(), dead_on_arrival, gpu_info, deferred_messages.Get(),
-      gpu_memory_buffer_factory.get());
+      gpu_memory_buffer_factory.get(),
+      &sync_point_manager);
   while (!deferred_messages.Get().empty())
     deferred_messages.Get().pop();
 
@@ -533,13 +544,6 @@ bool StartSandboxWindows(const sandbox::SandboxInterfaceInfo* sandbox_info) {
   // content.
   sandbox::TargetServices* target_services = sandbox_info->target_services;
   if (target_services) {
-#if defined(ADDRESS_SANITIZER)
-    // Bind and leak dbghelp.dll before the token is lowered, otherwise
-    // AddressSanitizer will crash when trying to symbolize a report.
-    if (!LoadLibraryA("dbghelp.dll"))
-      return false;
-#endif
-
     target_services->LowerToken();
     return true;
   }

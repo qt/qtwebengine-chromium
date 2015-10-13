@@ -38,7 +38,6 @@ import time
 import unittest
 
 from webkitpy.common.system.executive_mock import MockExecutive, MockExecutive2
-from webkitpy.common.system.filesystem_mock import MockFileSystem
 from webkitpy.common.system.outputcapture import OutputCapture
 from webkitpy.common.system.platforminfo_mock import MockPlatformInfo
 from webkitpy.common.system.systemhost import SystemHost
@@ -296,10 +295,14 @@ class PortTestCase(unittest.TestCase):
             TestConfiguration('xp', 'x86', 'release'),
             TestConfiguration('win7', 'x86', 'debug'),
             TestConfiguration('win7', 'x86', 'release'),
-            TestConfiguration('lucid', 'x86', 'debug'),
-            TestConfiguration('lucid', 'x86', 'release'),
-            TestConfiguration('lucid', 'x86_64', 'debug'),
-            TestConfiguration('lucid', 'x86_64', 'release'),
+            TestConfiguration('win10', 'x86', 'debug'),
+            TestConfiguration('win10', 'x86', 'release'),
+            TestConfiguration('linux32', 'x86', 'debug'),
+            TestConfiguration('linux32', 'x86', 'release'),
+            TestConfiguration('precise', 'x86_64', 'debug'),
+            TestConfiguration('precise', 'x86_64', 'release'),
+            TestConfiguration('trusty', 'x86_64', 'debug'),
+            TestConfiguration('trusty', 'x86_64', 'release'),
             TestConfiguration('icecreamsandwich', 'x86', 'debug'),
             TestConfiguration('icecreamsandwich', 'x86', 'release'),
         ]))
@@ -344,7 +347,6 @@ class PortTestCase(unittest.TestCase):
         never_fix_tests_path = port._filesystem.join(port.layout_tests_dir(), 'NeverFixTests')
         stale_tests_path = port._filesystem.join(port.layout_tests_dir(), 'StaleTestExpectations')
         slow_tests_path = port._filesystem.join(port.layout_tests_dir(), 'SlowTests')
-        flaky_tests_path = port._filesystem.join(port.layout_tests_dir(), 'FlakyTests')
         skia_overrides_path = port.path_from_chromium_base(
             'skia', 'skia_test_expectations.txt')
 
@@ -353,22 +355,19 @@ class PortTestCase(unittest.TestCase):
         port._options.builder_name = 'DUMMY_BUILDER_NAME'
         self.assertEqual(port.expectations_files(),
                          [generic_path, skia_overrides_path,
-                          never_fix_tests_path, stale_tests_path, slow_tests_path,
-                          flaky_tests_path])
+                          never_fix_tests_path, stale_tests_path, slow_tests_path])
 
         port._options.builder_name = 'builder (deps)'
         self.assertEqual(port.expectations_files(),
                          [generic_path, skia_overrides_path,
-                          never_fix_tests_path, stale_tests_path, slow_tests_path,
-                          flaky_tests_path])
+                          never_fix_tests_path, stale_tests_path, slow_tests_path])
 
         # A builder which does NOT observe the Chromium test_expectations,
         # but still observes the Skia test_expectations...
         port._options.builder_name = 'builder'
         self.assertEqual(port.expectations_files(),
                          [generic_path, skia_overrides_path,
-                          never_fix_tests_path, stale_tests_path, slow_tests_path,
-                          flaky_tests_path])
+                          never_fix_tests_path, stale_tests_path, slow_tests_path])
 
     def test_check_sys_deps(self):
         port = self.make_port()

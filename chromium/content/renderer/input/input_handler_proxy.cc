@@ -134,10 +134,10 @@ void ReportInputEventLatencyUma(const WebInputEvent& event,
   }
 
   ui::LatencyInfo::LatencyMap::const_iterator it =
-      latency_info.latency_components.find(std::make_pair(
+      latency_info.latency_components().find(std::make_pair(
           ui::INPUT_EVENT_LATENCY_ORIGINAL_COMPONENT, 0));
 
-  if (it == latency_info.latency_components.end())
+  if (it == latency_info.latency_components().end())
     return;
 
   base::TimeDelta delta = base::TimeTicks::Now() - it->second.event_time;
@@ -185,6 +185,8 @@ InputHandlerProxy::InputHandlerProxy(cc::InputHandler* input_handler,
     : client_(client),
       input_handler_(input_handler),
       deferred_fling_cancel_time_seconds_(0),
+      synchronous_input_handler_(nullptr),
+      allow_root_animate_(true),
 #ifndef NDEBUG
       expect_scroll_update_end_(false),
 #endif
@@ -224,10 +226,11 @@ InputHandlerProxy::HandleInputEventWithLatencyInfo(
   if (uma_latency_reporting_enabled_)
     ReportInputEventLatencyUma(event, *latency_info);
 
-  TRACE_EVENT_FLOW_STEP0("input,benchmark",
+  TRACE_EVENT_WITH_FLOW1("input,benchmark",
                          "LatencyInfo.Flow",
-                         TRACE_ID_DONT_MANGLE(latency_info->trace_id),
-                         "HandleInputEventImpl");
+                         TRACE_ID_DONT_MANGLE(latency_info->trace_id()),
+                         TRACE_EVENT_FLAG_FLOW_IN | TRACE_EVENT_FLAG_FLOW_OUT,
+                         "step", "HandleInputEventImpl");
 
   scoped_ptr<cc::SwapPromiseMonitor> latency_info_swap_promise_monitor =
       input_handler_->CreateLatencyInfoSwapPromiseMonitor(latency_info);
@@ -550,7 +553,7 @@ InputHandlerProxy::EventDisposition InputHandlerProxy::HandleGestureFlingStart(
           WebPoint(gesture_event.globalX, gesture_event.globalY);
       fling_parameters_.modifiers = gesture_event.modifiers;
       fling_parameters_.sourceDevice = gesture_event.sourceDevice;
-      input_handler_->SetNeedsAnimateInput();
+      RequestAnimation();
       return DID_HANDLE;
     }
     case cc::InputHandler::SCROLL_UNKNOWN:
@@ -750,6 +753,11 @@ void InputHandlerProxy::ExtendBoostedFlingTimeout(
 }
 
 void InputHandlerProxy::Animate(base::TimeTicks time) {
+  // If using synchronous animate, then only expect Animate attempts started by
+  // the synchronous system. Don't let the InputHandler try to Animate also.
+  DCHECK_IMPLIES(input_handler_->IsCurrentlyScrollingRoot(),
+                 allow_root_animate_);
+
   if (scroll_elasticity_controller_)
     scroll_elasticity_controller_->Animate(time);
 
@@ -776,7 +784,7 @@ void InputHandlerProxy::Animate(base::TimeTicks time) {
         monotonic_time_sec >= fling_parameters_.startTime +
                                   kMaxSecondsFromFlingTimestampToFirstAnimate) {
       fling_parameters_.startTime = monotonic_time_sec;
-      input_handler_->SetNeedsAnimateInput();
+      RequestAnimation();
       return;
     }
   }
@@ -789,7 +797,7 @@ void InputHandlerProxy::Animate(base::TimeTicks time) {
     fling_is_active = false;
 
   if (fling_is_active) {
-    input_handler_->SetNeedsAnimateInput();
+    RequestAnimation();
   } else {
     TRACE_EVENT_INSTANT0("input",
                          "InputHandlerProxy::animate::flingOver",
@@ -806,6 +814,44 @@ void InputHandlerProxy::MainThreadHasStoppedFlinging() {
 void InputHandlerProxy::ReconcileElasticOverscrollAndRootScroll() {
   if (scroll_elasticity_controller_)
     scroll_elasticity_controller_->ReconcileStretchAndScroll();
+}
+
+void InputHandlerProxy::UpdateRootLayerStateForSynchronousInputHandler(
+    const gfx::ScrollOffset& total_scroll_offset,
+    const gfx::ScrollOffset& max_scroll_offset,
+    const gfx::SizeF& scrollable_size,
+    float page_scale_factor,
+    float min_page_scale_factor,
+    float max_page_scale_factor) {
+  if (synchronous_input_handler_) {
+    synchronous_input_handler_->UpdateRootLayerState(
+        total_scroll_offset, max_scroll_offset, scrollable_size,
+        page_scale_factor, min_page_scale_factor, max_page_scale_factor);
+  }
+}
+
+void InputHandlerProxy::SetOnlySynchronouslyAnimateRootFlings(
+    SynchronousInputHandler* synchronous_input_handler) {
+  allow_root_animate_ = !synchronous_input_handler;
+  synchronous_input_handler_ = synchronous_input_handler;
+  if (synchronous_input_handler_)
+    input_handler_->RequestUpdateForSynchronousInputHandler();
+}
+
+void InputHandlerProxy::SynchronouslyAnimate(base::TimeTicks time) {
+  // When this function is used, SetOnlySynchronouslyAnimate() should have been
+  // previously called. IOW you should either be entirely in synchronous mode or
+  // not.
+  DCHECK(synchronous_input_handler_);
+  DCHECK(!allow_root_animate_);
+  base::AutoReset<bool> reset(&allow_root_animate_, true);
+  Animate(time);
+}
+
+void InputHandlerProxy::SynchronouslySetRootScrollOffset(
+    const gfx::ScrollOffset& root_offset) {
+  DCHECK(synchronous_input_handler_);
+  input_handler_->SetSynchronousInputHandlerRootScrollOffset(root_offset);
 }
 
 void InputHandlerProxy::HandleOverscroll(
@@ -885,6 +931,16 @@ bool InputHandlerProxy::CancelCurrentFlingWithoutNotifyingClient() {
   }
 
   return had_fling_animation;
+}
+
+void InputHandlerProxy::RequestAnimation() {
+  // When a SynchronousInputHandler is present, root flings should go through
+  // it to allow it to control when or if the root fling is animated. Non-root
+  // flings always go through the normal InputHandler.
+  if (synchronous_input_handler_ && input_handler_->IsCurrentlyScrollingRoot())
+    synchronous_input_handler_->SetNeedsSynchronousAnimateInput();
+  else
+    input_handler_->SetNeedsAnimateInput();
 }
 
 bool InputHandlerProxy::TouchpadFlingScroll(

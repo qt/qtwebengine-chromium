@@ -244,11 +244,11 @@ void AXNodeData::AddIntListAttribute(
   intlist_attributes.push_back(std::make_pair(attribute, value));
 }
 
-void AXNodeData::SetName(std::string name) {
+void AXNodeData::SetName(const std::string& name) {
   string_attributes.push_back(std::make_pair(AX_ATTR_NAME, name));
 }
 
-void AXNodeData::SetValue(std::string value) {
+void AXNodeData::SetValue(const std::string& value) {
   string_attributes.push_back(std::make_pair(AX_ATTR_VALUE, value));
 }
 
@@ -264,6 +264,8 @@ std::string AXNodeData::ToString() const {
     result += " CHECKED";
   if (state & (1 << AX_STATE_COLLAPSED))
     result += " COLLAPSED";
+  if (state & (1 << AX_STATE_EDITABLE))
+    result += " EDITABLE";
   if (state & (1 << AX_STATE_EXPANDED))
     result += " EXPANDED";
   if (state & (1 << AX_STATE_FOCUSABLE))
@@ -292,6 +294,8 @@ std::string AXNodeData::ToString() const {
     result += " READONLY";
   if (state & (1 << AX_STATE_REQUIRED))
     result += " REQUIRED";
+  if (state & (1 << AX_STATE_RICHLY_EDITABLE))
+    result += " RICHLY_EDITABLE";
   if (state & (1 << AX_STATE_SELECTABLE))
     result += " SELECTABLE";
   if (state & (1 << AX_STATE_SELECTED))
@@ -329,6 +333,18 @@ std::string AXNodeData::ToString() const {
         break;
       case AX_ATTR_HIERARCHICAL_LEVEL:
         result += " level=" + value;
+        break;
+      case AX_ATTR_ANCHOR_OBJECT_ID:
+        result += " anchor_object_id=" + value;
+        break;
+      case AX_ATTR_ANCHOR_OFFSET:
+        result += " anchor_offset=" + value;
+        break;
+      case AX_ATTR_FOCUS_OBJECT_ID:
+        result += " focus_object_id=" + value;
+        break;
+      case AX_ATTR_FOCUS_OFFSET:
+        result += " focus_offset=" + value;
         break;
       case AX_ATTR_TEXT_SEL_START:
         result += " sel_start=" + value;
@@ -396,6 +412,9 @@ std::string AXNodeData::ToString() const {
         break;
       case AX_ATTR_CHILD_TREE_ID:
         result += " child_tree_id=" + value;
+        break;
+      case AX_ATTR_PARENT_TREE_ID:
+        result += " parent_tree_id=" + value;
         break;
       case AX_ATTR_COLOR_VALUE:
         result += base::StringPrintf(" color_value=&%X",
@@ -599,9 +618,6 @@ std::string AXNodeData::ToString() const {
       case AX_ATTR_CANVAS_HAS_FALLBACK:
         result += " has_fallback=" + value;
         break;
-      case AX_ATTR_IS_AX_TREE_HOST:
-        result += " is_ax_tree_host=" + value;
-        break;
       case AX_BOOL_ATTRIBUTE_NONE:
         break;
     }
@@ -655,6 +671,15 @@ std::string AXNodeData::ToString() const {
     result += " child_ids=" + IntVectorToString(child_ids);
 
   return result;
+}
+
+bool AXNodeData::IsRoot() const {
+  return (role == AX_ROLE_ROOT_WEB_AREA ||
+          role == AX_ROLE_DESKTOP);
+}
+
+void AXNodeData::SetRoot() {
+  role = AX_ROLE_ROOT_WEB_AREA;
 }
 
 }  // namespace ui

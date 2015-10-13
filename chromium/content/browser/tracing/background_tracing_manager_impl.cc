@@ -4,16 +4,20 @@
 
 #include "content/browser/tracing/background_tracing_manager_impl.h"
 
+#include "base/cpu.h"
 #include "base/json/json_writer.h"
 #include "base/macros.h"
 #include "base/metrics/histogram_macros.h"
+#include "base/sys_info.h"
 #include "base/time/time.h"
-#include "content/public/browser/background_tracing_preemptive_config.h"
-#include "content/public/browser/background_tracing_reactive_config.h"
+#include "content/browser/tracing/background_tracing_rule.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/content_browser_client.h"
+#include "content/public/browser/gpu_data_manager.h"
 #include "content/public/browser/tracing_delegate.h"
 #include "content/public/common/content_client.h"
+#include "gpu/config/gpu_info.h"
+#include "net/base/network_change_notifier.h"
 
 namespace content {
 
@@ -21,9 +25,6 @@ namespace {
 
 base::LazyInstance<BackgroundTracingManagerImpl>::Leaky g_controller =
     LAZY_INSTANCE_INITIALIZER;
-
-const char kMetaDataConfigKey[] = "config";
-const char kMetaDataVersionKey[] = "product_version";
 
 // These values are used for a histogram. Do not reorder.
 enum BackgroundTracingMetrics {
@@ -44,6 +45,29 @@ void RecordBackgroundTracingMetric(BackgroundTracingMetrics metric) {
                             NUMBER_OF_BACKGROUND_TRACING_METRICS);
 }
 
+std::string GetNetworkTypeString() {
+  switch (net::NetworkChangeNotifier::GetConnectionType()) {
+    case net::NetworkChangeNotifier::CONNECTION_ETHERNET:
+      return "Ethernet";
+    case net::NetworkChangeNotifier::CONNECTION_WIFI:
+      return "WiFi";
+    case net::NetworkChangeNotifier::CONNECTION_2G:
+      return "2G";
+    case net::NetworkChangeNotifier::CONNECTION_3G:
+      return "3G";
+    case net::NetworkChangeNotifier::CONNECTION_4G:
+      return "4G";
+    case net::NetworkChangeNotifier::CONNECTION_NONE:
+      return "None";
+    case net::NetworkChangeNotifier::CONNECTION_BLUETOOTH:
+      return "Bluetooth";
+    case net::NetworkChangeNotifier::CONNECTION_UNKNOWN:
+    default:
+      break;
+  }
+  return "Unknown";
+}
+
 }  // namespace
 
 BackgroundTracingManagerImpl::TracingTimer::TracingTimer(
@@ -53,10 +77,10 @@ BackgroundTracingManagerImpl::TracingTimer::TracingTimer(
 BackgroundTracingManagerImpl::TracingTimer::~TracingTimer() {
 }
 
-void BackgroundTracingManagerImpl::TracingTimer::StartTimer() {
-  const int kTimeoutSecs = 10;
-  tracing_timer_.Start(FROM_HERE, base::TimeDelta::FromSeconds(kTimeoutSecs),
-      this, &BackgroundTracingManagerImpl::TracingTimer::TracingTimerFired);
+void BackgroundTracingManagerImpl::TracingTimer::StartTimer(int seconds) {
+  tracing_timer_.Start(
+      FROM_HERE, base::TimeDelta::FromSeconds(seconds), this,
+      &BackgroundTracingManagerImpl::TracingTimer::TracingTimerFired);
 }
 
 void BackgroundTracingManagerImpl::TracingTimer::CancelTimer() {
@@ -85,8 +109,8 @@ BackgroundTracingManagerImpl::BackgroundTracingManagerImpl()
       is_gathering_(false),
       is_tracing_(false),
       requires_anonymized_data_(true),
-      trigger_handle_ids_(0) {
-}
+      trigger_handle_ids_(0),
+      reactive_triggered_handle_(-1) {}
 
 BackgroundTracingManagerImpl::~BackgroundTracingManagerImpl() {
   NOTREACHED();
@@ -98,38 +122,23 @@ void BackgroundTracingManagerImpl::WhenIdle(
   idle_callback_ = idle_callback;
 }
 
-bool BackgroundTracingManagerImpl::IsSupportedConfig(
-    BackgroundTracingConfig* config) {
-  // No config is just fine, we just don't do anything.
-  if (!config)
-    return true;
+void BackgroundTracingManagerImpl::TriggerPreemptiveFinalization() {
+  CHECK(config_ &&
+        config_->tracing_mode() == BackgroundTracingConfigImpl::PREEMPTIVE);
 
-  if (config->mode == BackgroundTracingConfig::PREEMPTIVE_TRACING_MODE) {
-    BackgroundTracingPreemptiveConfig* preemptive_config =
-        static_cast<BackgroundTracingPreemptiveConfig*>(config);
-    const std::vector<BackgroundTracingPreemptiveConfig::MonitoringRule>&
-        configs = preemptive_config->configs;
-    for (size_t i = 0; i < configs.size(); ++i) {
-      if (configs[i].type !=
-          BackgroundTracingPreemptiveConfig::
-              MONITOR_AND_DUMP_WHEN_TRIGGER_NAMED)
-        return false;
-    }
+  if (!is_tracing_ || is_gathering_)
+    return;
+
+  RecordBackgroundTracingMetric(PREEMPTIVE_TRIGGERED);
+  BeginFinalizing(StartedFinalizingCallback());
+}
+
+void BackgroundTracingManagerImpl::OnHistogramTrigger(
+    const std::string& histogram_name) {
+  for (auto& rule : config_->rules()) {
+    static_cast<BackgroundTracingRule*>(rule)
+        ->OnHistogramTrigger(histogram_name);
   }
-
-  if (config->mode == BackgroundTracingConfig::REACTIVE_TRACING_MODE) {
-    BackgroundTracingReactiveConfig* reactive_config =
-        static_cast<BackgroundTracingReactiveConfig*>(config);
-    const std::vector<BackgroundTracingReactiveConfig::TracingRule>&
-        configs = reactive_config->configs;
-    for (size_t i = 0; i < configs.size(); ++i) {
-      if (configs[i].type !=
-          BackgroundTracingReactiveConfig::TRACE_FOR_10S_OR_TRIGGER_OR_FULL)
-        return false;
-    }
-  }
-
-  return true;
 }
 
 bool BackgroundTracingManagerImpl::SetActiveScenario(
@@ -161,16 +170,19 @@ bool BackgroundTracingManagerImpl::SetActiveScenario(
                    base::Unretained(this)));
   }
 
-  if (!IsSupportedConfig(config.get()))
-    return false;
-
   // No point in tracing if there's nowhere to send it.
   if (config && receive_callback.is_null())
     return false;
 
-  config_ = config.Pass();
+  config_.reset(static_cast<BackgroundTracingConfigImpl*>(config.release()));
   receive_callback_ = receive_callback;
   requires_anonymized_data_ = requires_anonymized_data;
+
+  if (config_) {
+    DCHECK(!config_.get()->rules().empty());
+    for (auto& rule : config_.get()->rules())
+      static_cast<BackgroundTracingRule*>(rule)->Install();
+  }
 
   EnableRecordingIfConfigNeedsIt();
 
@@ -196,64 +208,36 @@ void BackgroundTracingManagerImpl::EnableRecordingIfConfigNeedsIt() {
   if (!config_)
     return;
 
-  if (config_->mode == BackgroundTracingConfig::PREEMPTIVE_TRACING_MODE) {
-    EnableRecording(GetCategoryFilterStringForCategoryPreset(
-        static_cast<BackgroundTracingPreemptiveConfig*>(config_.get())
-            ->category_preset),
+  if (config_->tracing_mode() == BackgroundTracingConfigImpl::PREEMPTIVE) {
+    EnableRecording(
+        GetCategoryFilterStringForCategoryPreset(config_->category_preset()),
         base::trace_event::RECORD_CONTINUOUSLY);
   }
   // There is nothing to do in case of reactive tracing.
 }
 
-bool BackgroundTracingManagerImpl::IsAbleToTriggerTracing(
+BackgroundTracingRule*
+BackgroundTracingManagerImpl::GetRuleAbleToTriggerTracing(
     TriggerHandle handle) const {
   if (!config_)
-    return false;
+    return nullptr;
 
   // If the last trace is still uploading, we don't allow a new one to trigger.
   if (is_gathering_)
-    return false;
+    return nullptr;
 
   if (!IsTriggerHandleValid(handle)) {
-    return false;
+    return nullptr;
   }
 
   std::string trigger_name = GetTriggerNameFromHandle(handle);
-
-  if (config_->mode == BackgroundTracingConfig::PREEMPTIVE_TRACING_MODE) {
-    BackgroundTracingPreemptiveConfig* preemptive_config =
-        static_cast<BackgroundTracingPreemptiveConfig*>(config_.get());
-
-    const std::vector<BackgroundTracingPreemptiveConfig::MonitoringRule>&
-        configs = preemptive_config->configs;
-
-    for (size_t i = 0; i < configs.size(); ++i) {
-      if (configs[i].type != BackgroundTracingPreemptiveConfig::
-                                 MONITOR_AND_DUMP_WHEN_TRIGGER_NAMED)
-        continue;
-
-      if (trigger_name == configs[i].named_trigger_info.trigger_name) {
-        return true;
-      }
-    }
-  } else {
-    BackgroundTracingReactiveConfig* reactive_config =
-        static_cast<BackgroundTracingReactiveConfig*>(config_.get());
-
-    const std::vector<BackgroundTracingReactiveConfig::TracingRule>&
-        configs = reactive_config->configs;
-
-    for (size_t i = 0; i < configs.size(); ++i) {
-      if (configs[i].type !=
-              BackgroundTracingReactiveConfig::
-                  TRACE_FOR_10S_OR_TRIGGER_OR_FULL)
-        continue;
-      if (trigger_name == configs[i].trigger_name) {
-        return true;
-      }
-    }
+  for (const auto& rule : config_.get()->rules()) {
+    if (static_cast<BackgroundTracingRule*>(rule)
+            ->ShouldTriggerNamedEvent(trigger_name))
+      return static_cast<BackgroundTracingRule*>(rule);
   }
-  return false;
+
+  return nullptr;
 }
 
 void BackgroundTracingManagerImpl::TriggerNamedEvent(
@@ -267,16 +251,24 @@ void BackgroundTracingManagerImpl::TriggerNamedEvent(
     return;
   }
 
-  if (!IsAbleToTriggerTracing(handle)) {
+  BackgroundTracingRule* triggered_rule = GetRuleAbleToTriggerTracing(handle);
+  if (!triggered_rule) {
     if (!callback.is_null())
       callback.Run(false);
     return;
   }
 
-  if (config_->mode == BackgroundTracingConfig::PREEMPTIVE_TRACING_MODE) {
+  if (config_->tracing_mode() == BackgroundTracingConfigImpl::PREEMPTIVE) {
     RecordBackgroundTracingMetric(PREEMPTIVE_TRIGGERED);
     BeginFinalizing(callback);
   } else {
+    // A different reactive config tried to trigger.
+    if (is_tracing_ && handle != reactive_triggered_handle_) {
+      if (!callback.is_null())
+        callback.Run(false);
+      return;
+    }
+
     RecordBackgroundTracingMetric(REACTIVE_TRIGGERED);
     if (is_tracing_) {
       tracing_timer_->CancelTimer();
@@ -285,22 +277,12 @@ void BackgroundTracingManagerImpl::TriggerNamedEvent(
     }
 
     // It was not already tracing, start a new trace.
-    BackgroundTracingReactiveConfig* reactive_config =
-        static_cast<BackgroundTracingReactiveConfig*>(config_.get());
-    const std::vector<BackgroundTracingReactiveConfig::TracingRule>&
-        configs = reactive_config->configs;
-    std::string trigger_name = GetTriggerNameFromHandle(handle);
-    for (size_t i = 0; i < configs.size(); ++i) {
-      if (configs[i].trigger_name == trigger_name) {
-        EnableRecording(
-            GetCategoryFilterStringForCategoryPreset(
-                configs[i].category_preset),
-            base::trace_event::RECORD_UNTIL_FULL);
-        tracing_timer_.reset(new TracingTimer(callback));
-        tracing_timer_->StartTimer();
-        break;
-      }
-    }
+    EnableRecording(GetCategoryFilterStringForCategoryPreset(
+                        triggered_rule->GetCategoryPreset()),
+                    base::trace_event::RECORD_UNTIL_FULL);
+    tracing_timer_.reset(new TracingTimer(callback));
+    tracing_timer_->StartTimer(triggered_rule->GetReactiveTimeout());
+    reactive_triggered_handle_ = handle;
   }
 }
 
@@ -325,14 +307,6 @@ std::string BackgroundTracingManagerImpl::GetTriggerNameFromHandle(
     BackgroundTracingManager::TriggerHandle handle) const {
   CHECK(IsTriggerHandleValid(handle));
   return trigger_handles_.find(handle)->second;
-}
-
-void BackgroundTracingManagerImpl::GetTriggerNameList(
-    std::vector<std::string>* trigger_names) {
-  for (std::map<TriggerHandle, std::string>::iterator it =
-           trigger_handles_.begin();
-       it != trigger_handles_.end(); ++it)
-    trigger_names->push_back(it->second);
 }
 
 void BackgroundTracingManagerImpl::InvalidateTriggerHandlesForTesting() {
@@ -398,6 +372,8 @@ void BackgroundTracingManagerImpl::OnFinalizeComplete() {
       delegate_->IsAllowedToBeginBackgroundScenario(
           *config_.get(), requires_anonymized_data_)) {
     EnableRecordingIfConfigNeedsIt();
+  } else {
+    AbortScenario();
   }
 
   RecordBackgroundTracingMetric(FINALIZATION_COMPLETE);
@@ -405,17 +381,64 @@ void BackgroundTracingManagerImpl::OnFinalizeComplete() {
 
 scoped_ptr<base::DictionaryValue>
 BackgroundTracingManagerImpl::GenerateMetadataDict() const {
+  // Grab the network type.
+  std::string network_type = GetNetworkTypeString();
+
   // Grab the product version.
   std::string product_version = GetContentClient()->GetProduct();
 
   // Serialize the config into json.
   scoped_ptr<base::DictionaryValue> config_dict(new base::DictionaryValue());
 
-  BackgroundTracingConfig::IntoDict(config_.get(), config_dict.get());
+  config_->IntoDict(config_dict.get());
 
   scoped_ptr<base::DictionaryValue> metadata_dict(new base::DictionaryValue());
-  metadata_dict->Set(kMetaDataConfigKey, config_dict.Pass());
-  metadata_dict->SetString(kMetaDataVersionKey, product_version);
+  metadata_dict->Set("config", config_dict.Pass());
+  metadata_dict->SetString("network-type", network_type);
+  metadata_dict->SetString("product-version", product_version);
+
+  // OS
+  metadata_dict->SetString("os-name", base::SysInfo::OperatingSystemName());
+  metadata_dict->SetString("os-version",
+                           base::SysInfo::OperatingSystemVersion());
+  metadata_dict->SetString("os-arch",
+                           base::SysInfo::OperatingSystemArchitecture());
+
+  // CPU
+  base::CPU cpu;
+  metadata_dict->SetInteger("cpu-family", cpu.family());
+  metadata_dict->SetInteger("cpu-model", cpu.model());
+  metadata_dict->SetInteger("cpu-stepping", cpu.stepping());
+  metadata_dict->SetInteger("num-cpus", base::SysInfo::NumberOfProcessors());
+  metadata_dict->SetInteger("physical-memory",
+                            base::SysInfo::AmountOfPhysicalMemoryMB());
+
+  std::string cpu_brand = cpu.cpu_brand();
+  // Workaround for crbug.com/249713.
+  // TODO(oysteine): Remove workaround when bug is fixed.
+  size_t null_pos = cpu_brand.find('\0');
+  if (null_pos != std::string::npos)
+    cpu_brand.erase(null_pos);
+  metadata_dict->SetString("cpu-brand", cpu_brand);
+
+  // GPU
+  gpu::GPUInfo gpu_info = content::GpuDataManager::GetInstance()->GetGPUInfo();
+
+#if !defined(OS_ANDROID)
+  metadata_dict->SetInteger("gpu-venid", gpu_info.gpu.vendor_id);
+  metadata_dict->SetInteger("gpu-devid", gpu_info.gpu.device_id);
+#endif
+
+  metadata_dict->SetString("gpu-driver", gpu_info.driver_version);
+  metadata_dict->SetString("gpu-psver", gpu_info.pixel_shader_version);
+  metadata_dict->SetString("gpu-vsver", gpu_info.vertex_shader_version);
+
+#if defined(OS_MACOSX)
+  metadata_dict->SetString("gpu-glver", gpu_info.gl_version);
+#elif defined(OS_POSIX)
+  metadata_dict->SetString("gpu-gl-vendor", gpu_info.gl_vendor);
+  metadata_dict->SetString("gpu-gl-renderer", gpu_info.gl_renderer);
+#endif
 
   return metadata_dict.Pass();
 }
@@ -424,6 +447,7 @@ void BackgroundTracingManagerImpl::BeginFinalizing(
     StartedFinalizingCallback callback) {
   is_gathering_ = true;
   is_tracing_ = false;
+  reactive_triggered_handle_ = -1;
 
   bool is_allowed_finalization =
       !delegate_ || (config_ &&
@@ -455,6 +479,7 @@ void BackgroundTracingManagerImpl::BeginFinalizing(
 
 void BackgroundTracingManagerImpl::AbortScenario() {
   is_tracing_ = false;
+  reactive_triggered_handle_ = -1;
   config_.reset();
 
   content::TracingController::GetInstance()->DisableRecording(nullptr);
@@ -462,12 +487,19 @@ void BackgroundTracingManagerImpl::AbortScenario() {
 
 std::string
 BackgroundTracingManagerImpl::GetCategoryFilterStringForCategoryPreset(
-    BackgroundTracingConfig::CategoryPreset preset) const {
+    BackgroundTracingConfigImpl::CategoryPreset preset) const {
   switch (preset) {
-    case BackgroundTracingConfig::CategoryPreset::BENCHMARK:
+    case BackgroundTracingConfigImpl::CategoryPreset::BENCHMARK:
       return "benchmark,toplevel";
-    case BackgroundTracingConfig::CategoryPreset::BENCHMARK_DEEP:
-      return "*,disabled-by-default-benchmark.detailed";
+    case BackgroundTracingConfigImpl::CategoryPreset::BENCHMARK_DEEP:
+      return "*,disabled-by-default-benchmark.detailed,"
+             "disabled-by-default-v8.cpu_profile";
+    case BackgroundTracingConfigImpl::CategoryPreset::BENCHMARK_GPU:
+      return "benchmark,toplevel,gpu";
+    case BackgroundTracingConfigImpl::CategoryPreset::BENCHMARK_IPC:
+      return "benchmark,toplevel,ipc";
+    case BackgroundTracingConfigImpl::CategoryPreset::BENCHMARK_STARTUP:
+      return "benchmark,toplevel,startup,disabled-by-default-file";
   }
   NOTREACHED();
   return "";

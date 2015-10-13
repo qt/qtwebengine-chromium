@@ -42,11 +42,10 @@ class LayoutMenuList;
 class Page;
 class Widget;
 
-class CORE_EXPORT AXObjectCache : public NoBaseWillBeGarbageCollectedFinalized<AXObjectCache> {
+class CORE_EXPORT AXObjectCache : public GarbageCollectedFinalized<AXObjectCache> {
     WTF_MAKE_NONCOPYABLE(AXObjectCache);
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(AXObjectCache);
 public:
-    static PassOwnPtrWillBeRawPtr<AXObjectCache> create(Document&);
+    static AXObjectCache* create(Document&);
 
     static AXObject* focusedUIElementForPage(const Page*);
 
@@ -63,6 +62,7 @@ public:
         AXChildrenChanged,
         AXFocusedUIElementChanged,
         AXHide,
+        AXHover,
         AXInvalidStatusChanged,
         AXLayoutComplete,
         AXLiveRegionChanged,
@@ -136,7 +136,9 @@ public:
     virtual const AtomicString& computedRoleForNode(Node*) = 0;
     virtual String computedNameForNode(Node*) = 0;
 
-    typedef PassOwnPtrWillBeRawPtr<AXObjectCache> (*AXObjectCacheCreateFunction)(Document&);
+    virtual void onTouchAccessibilityHover(const IntPoint&) = 0;
+
+    typedef AXObjectCache* (*AXObjectCacheCreateFunction)(Document&);
     static void init(AXObjectCacheCreateFunction);
 
 protected:
@@ -147,6 +149,7 @@ private:
 };
 
 class CORE_EXPORT ScopedAXObjectCache {
+    WTF_MAKE_FAST_ALLOCATED(ScopedAXObjectCache);
     WTF_MAKE_NONCOPYABLE(ScopedAXObjectCache);
 public:
     static PassOwnPtr<ScopedAXObjectCache> create(Document&);
@@ -158,7 +161,7 @@ private:
     explicit ScopedAXObjectCache(Document&);
 
     RefPtrWillBePersistent<Document> m_document;
-    OwnPtrWillBePersistent<AXObjectCache> m_cache;
+    Persistent<AXObjectCache> m_cache;
 };
 
 }

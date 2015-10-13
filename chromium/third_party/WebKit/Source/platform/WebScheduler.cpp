@@ -6,6 +6,8 @@
 #include "public/platform/WebScheduler.h"
 
 #include "platform/Task.h"
+#include "public/platform/WebFrameHostScheduler.h"
+#include "public/platform/WebFrameScheduler.h"
 #include "public/platform/WebTraceLocation.h"
 #include "wtf/Assertions.h"
 #include "wtf/OwnPtr.h"
@@ -52,11 +54,6 @@ void WebScheduler::postNonNestableIdleTask(const WebTraceLocation& location, Pas
 void WebScheduler::postIdleTaskAfterWakeup(const WebTraceLocation& location, PassOwnPtr<IdleTask> idleTask)
 {
     postIdleTaskAfterWakeup(location, new IdleTaskRunner(idleTask));
-}
-
-void WebScheduler::postLoadingTask(const WebTraceLocation& location, PassOwnPtr<Task> task)
-{
-    postLoadingTask(location, new blink::Task(task));
 }
 
 } // namespace blink

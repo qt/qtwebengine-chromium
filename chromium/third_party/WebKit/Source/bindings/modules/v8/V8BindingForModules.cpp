@@ -34,7 +34,6 @@
 #include "bindings/core/v8/V8Blob.h"
 #include "bindings/core/v8/V8DOMStringList.h"
 #include "bindings/core/v8/V8File.h"
-#include "bindings/core/v8/V8HiddenValue.h"
 #include "bindings/core/v8/V8Uint8Array.h"
 #include "bindings/modules/v8/ToV8ForModules.h"
 #include "bindings/modules/v8/V8IDBCursor.h"
@@ -120,11 +119,11 @@ v8::Local<v8::Value> toV8(const IDBKey* key, v8::Local<v8::Object> creationConte
     return v8Undefined();
 }
 
-// IDBAny is a a variant type used to hold the values produced by the |result|
+// IDBAny is a variant type used to hold the values produced by the |result|
 // attribute of IDBRequest and (as a convenience) the |source| attribute of
 // IDBRequest and IDBCursor.
-// TODO(jsbell): Once the custom wrapper linking between cursor and request
-// is eliminated, remove the |source| support by using union types in the IDL.
+// TODO(jsbell): Replace the use of IDBAny for |source| attributes (which are
+// ScriptWrappable types) using unions per IDL.
 v8::Local<v8::Value> toV8(const IDBAny* impl, v8::Local<v8::Object> creationContext, v8::Isolate* isolate)
 {
     if (!impl)
@@ -137,30 +136,10 @@ v8::Local<v8::Value> toV8(const IDBAny* impl, v8::Local<v8::Object> creationCont
         return v8::Null(isolate);
     case IDBAny::DOMStringListType:
         return toV8(impl->domStringList(), creationContext, isolate);
-    case IDBAny::IDBCursorType: {
-        // Ensure request wrapper is kept alive at least as long as the cursor wrapper,
-        // so that event listeners are retained.
-        // TODO(jsbell): Use [SetWrapperReferenceTo] instead.
-        v8::Local<v8::Value> cursor = toV8(impl->idbCursor(), creationContext, isolate);
-        v8::Local<v8::Value> request = toV8(impl->idbCursor()->request(), creationContext, isolate);
-
-        // FIXME: Due to race at worker shutdown, V8 may return empty handles.
-        if (!cursor.IsEmpty() && cursor->IsObject())
-            V8HiddenValue::setHiddenValue(isolate, cursor.As<v8::Object>(), V8HiddenValue::idbCursorRequest(isolate), request);
-        return cursor;
-    }
-    case IDBAny::IDBCursorWithValueType: {
-        // Ensure request wrapper is kept alive at least as long as the cursor wrapper,
-        // so that event listeners are retained.
-        // TODO(jsbell): Use [SetWrapperReferenceTo] instead.
-        v8::Local<v8::Value> cursor = toV8(impl->idbCursorWithValue(), creationContext, isolate);
-        v8::Local<v8::Value> request = toV8(impl->idbCursorWithValue()->request(), creationContext, isolate);
-
-        // FIXME: Due to race at worker shutdown, V8 may return empty handles.
-        if (!cursor.IsEmpty() && cursor->IsObject())
-            V8HiddenValue::setHiddenValue(isolate, cursor.As<v8::Object>(), V8HiddenValue::idbCursorRequest(isolate), request);
-        return cursor;
-    }
+    case IDBAny::IDBCursorType:
+        return toV8(impl->idbCursor(), creationContext, isolate);
+    case IDBAny::IDBCursorWithValueType:
+        return toV8(impl->idbCursorWithValue(), creationContext, isolate);
     case IDBAny::IDBDatabaseType:
         return toV8(impl->idbDatabase(), creationContext, isolate);
     case IDBAny::IDBIndexType:
@@ -196,12 +175,20 @@ static IDBKey* createIDBKeyFromValue(v8::Isolate* isolate, v8::Local<v8::Value> 
         // https://w3c.github.io/IndexedDB/#dfn-convert-a-value-to-a-key
         if (value->IsArrayBuffer()) {
             DOMArrayBuffer* buffer = V8ArrayBuffer::toImpl(value.As<v8::Object>());
+            if (buffer->isNeutered()) {
+                exceptionState.throwTypeError("The ArrayBuffer is neutered.");
+                return nullptr;
+            }
             const char* start = static_cast<const char*>(buffer->data());
             size_t length = buffer->byteLength();
             return IDBKey::createBinary(SharedBuffer::create(start, length));
         }
         if (value->IsArrayBufferView()) {
             DOMArrayBufferView* view = V8ArrayBufferView::toImpl(value.As<v8::Object>());
+            if (view->buffer()->isNeutered()) {
+                exceptionState.throwTypeError("The viewed ArrayBuffer is neutered.");
+                return nullptr;
+            }
             const char* start = static_cast<const char*>(view->baseAddress());
             size_t length = view->byteLength();
             return IDBKey::createBinary(SharedBuffer::create(start, length));
@@ -325,7 +312,7 @@ static IDBKey* createIDBKeyFromValueAndKeyPath(v8::Isolate* isolate, v8::Local<v
 static v8::Local<v8::Value> deserializeIDBValueData(v8::Isolate* isolate, const IDBValue* value)
 {
     ASSERT(isolate->InContext());
-    if (value->isNull())
+    if (!value || value->isNull())
         return v8::Null(isolate);
 
     const SharedBuffer* valueData = value->data();
@@ -337,7 +324,7 @@ static v8::Local<v8::Value> deserializeIDBValueData(v8::Isolate* isolate, const 
 static v8::Local<v8::Value> deserializeIDBValue(v8::Isolate* isolate, v8::Local<v8::Object> creationContext, const IDBValue* value)
 {
     ASSERT(isolate->InContext());
-    if (value->isNull())
+    if (!value || value->isNull())
         return v8::Null(isolate);
 
     v8::Local<v8::Value> v8Value = deserializeIDBValueData(isolate, value);

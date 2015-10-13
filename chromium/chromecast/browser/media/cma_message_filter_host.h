@@ -12,7 +12,6 @@
 #include "base/memory/shared_memory.h"
 #include "base/memory/weak_ptr.h"
 #include "chromecast/common/media/cma_ipc_common.h"
-#include "chromecast/media/cma/backend/media_pipeline_device.h"
 #include "chromecast/media/cma/pipeline/load_type.h"
 #include "content/public/browser/browser_message_filter.h"
 #include "content/public/browser/browser_thread.h"
@@ -25,7 +24,6 @@ class SingleThreadTaskRunner;
 }
 
 namespace gfx {
-class PointF;
 class Size;
 }
 
@@ -38,14 +36,20 @@ class VideoDecoderConfig;
 namespace chromecast {
 namespace media {
 
+class MediaPipelineBackend;
+struct MediaPipelineDeviceParams;
 class MediaPipelineHost;
+class CmaMediaPipelineClient;
 
 class CmaMessageFilterHost
     : public content::BrowserMessageFilter {
  public:
-  CmaMessageFilterHost(
-      int render_process_id,
-      const media::CreatePipelineDeviceCB& create_pipeline_device_cb);
+  // Factory method to create a MediaPipelineBackend
+  typedef base::Callback<scoped_ptr<MediaPipelineBackend>(
+      const MediaPipelineDeviceParams&)> CreateDeviceComponentsCB;
+
+  CmaMessageFilterHost(int render_process_id,
+                       scoped_refptr<CmaMediaPipelineClient> client);
 
   // content::BrowserMessageFilter implementation.
   void OnChannelClosing() override;
@@ -84,9 +88,6 @@ class CmaMessageFilterHost
   void SetPlaybackRate(int media_id, double playback_rate);
   void SetVolume(int media_id, TrackId track_id, float volume);
   void NotifyPipeWrite(int media_id, TrackId track_id);
-  void NotifyExternalSurface(int surface_id,
-                             const gfx::PointF& p0, const gfx::PointF& p1,
-                             const gfx::PointF& p2, const gfx::PointF& p3);
 
   // Audio/Video callbacks.
   void OnMediaStateChanged(int media_id,
@@ -114,7 +115,8 @@ class CmaMessageFilterHost
   const int process_id_;
 
   // Factory function for device-specific part of media pipeline creation
-  media::CreatePipelineDeviceCB create_pipeline_device_cb_;
+  CreateDeviceComponentsCB create_device_components_cb_;
+  scoped_refptr<CmaMediaPipelineClient> client_;
 
   // List of media pipeline and message loop media pipelines are running on.
   MediaPipelineMap media_pipelines_;

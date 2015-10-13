@@ -11,6 +11,7 @@
 #include "media/base/demuxer_stream.h"
 #include "media/base/media_export.h"
 #include "media/base/stream_parser.h"
+#include "media/base/timestamp_constants.h"
 
 namespace media {
 
@@ -134,6 +135,7 @@ class MEDIA_EXPORT StreamParserBuffer : public DecoderBuffer {
   // Gets the parser's media type associated with this buffer. Value is
   // meaningless for EOS buffers.
   Type type() const { return type_; }
+  const char* GetTypeName() const;
 
   // Gets the parser's track ID associated with this buffer. Value is
   // meaningless for EOS buffers.

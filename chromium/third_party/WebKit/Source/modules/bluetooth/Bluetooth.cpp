@@ -12,9 +12,10 @@
 #include "core/dom/ExceptionCode.h"
 #include "modules/bluetooth/BluetoothDevice.h"
 #include "modules/bluetooth/BluetoothError.h"
+#include "modules/bluetooth/BluetoothSupplement.h"
 #include "modules/bluetooth/BluetoothUUID.h"
 #include "modules/bluetooth/RequestDeviceOptions.h"
-#include "public/platform/Platform.h"
+#include "platform/UserGestureIndicator.h"
 #include "public/platform/modules/bluetooth/WebBluetooth.h"
 #include "public/platform/modules/bluetooth/WebRequestDeviceOptions.h"
 
@@ -49,18 +50,32 @@ static void convertRequestDeviceOptions(const RequestDeviceOptions& options, Web
     }
 }
 
+// https://webbluetoothchrome.github.io/web-bluetooth/#dom-bluetooth-requestdevice
 ScriptPromise Bluetooth::requestDevice(ScriptState* scriptState, const RequestDeviceOptions& options, ExceptionState& exceptionState)
 {
-    WebBluetooth* webbluetooth = Platform::current()->bluetooth();
+    // 1. If the incumbent settings object is not a secure context, reject promise with a SecurityError and abort these steps.
+    String errorMessage;
+    if (!scriptState->executionContext()->isSecureContext(errorMessage)) {
+        return ScriptPromise::rejectWithDOMException(scriptState, DOMException::create(SecurityError, errorMessage));
+    }
+
+    // 2. If the algorithm is not allowed to show a popup, reject promise with a SecurityError and abort these steps.
+    if (!UserGestureIndicator::consumeUserGesture()) {
+        return ScriptPromise::rejectWithDOMException(scriptState, DOMException::create(SecurityError, "Must be handling a user gesture to show a permission request."));
+    }
+
+    WebBluetooth* webbluetooth = BluetoothSupplement::from(scriptState);
     if (!webbluetooth)
         return ScriptPromise::rejectWithDOMException(scriptState, DOMException::create(NotSupportedError));
 
+    // 3. In order to convert the arguments from service names and aliases to just UUIDs, do the following substeps:
     WebRequestDeviceOptions webOptions;
     convertRequestDeviceOptions(options, webOptions, exceptionState);
     if (exceptionState.hadException())
         return exceptionState.reject(scriptState);
 
-    RefPtrWillBeRawPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(scriptState);
+    // Subsequent steps are handled in the browser process.
+    ScriptPromiseResolver* resolver = ScriptPromiseResolver::create(scriptState);
     ScriptPromise promise = resolver->promise();
     webbluetooth->requestDevice(webOptions, new CallbackPromiseAdapter<BluetoothDevice, BluetoothError>(resolver));
     return promise;

@@ -51,8 +51,8 @@ namespace blink {
 
 class AutoscrollController;
 class DataTransfer;
-class DeprecatedPaintLayer;
-class DeprecatedPaintLayerScrollableArea;
+class PaintLayer;
+class PaintLayerScrollableArea;
 class Document;
 class DragState;
 class Element;
@@ -84,8 +84,9 @@ class Widget;
 
 enum class DragInitiator;
 
-class CORE_EXPORT EventHandler : public NoBaseWillBeGarbageCollectedFinalized<EventHandler> {
+class CORE_EXPORT EventHandler final : public NoBaseWillBeGarbageCollectedFinalized<EventHandler> {
     WTF_MAKE_NONCOPYABLE(EventHandler);
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(EventHandler);
 public:
     explicit EventHandler(LocalFrame*);
     ~EventHandler();
@@ -226,7 +227,7 @@ private:
 
     bool handleMouseMoveOrLeaveEvent(const PlatformMouseEvent&, HitTestResult* hoveredNode = nullptr, bool onlyUpdateScrollbars = false, bool forceLeave = false);
     bool handleMousePressEvent(const MouseEventWithHitTestResults&);
-    bool handleMouseFocus(const MouseEventWithHitTestResults&);
+    bool handleMouseFocus(const MouseEventWithHitTestResults&, InputDeviceCapabilities* sourceCapabilities);
     bool handleMouseDraggedEvent(const MouseEventWithHitTestResults&);
     bool handleMouseReleaseEvent(const MouseEventWithHitTestResults&);
 
@@ -238,6 +239,8 @@ private:
     bool handleGestureScrollUpdate(const PlatformGestureEvent&);
     bool handleGestureScrollBegin(const PlatformGestureEvent&);
     void clearGestureScrollState();
+
+    void updateGestureTargetNodeForMouseEvent(const GestureEventWithHitTestResults&);
 
     bool shouldApplyTouchAdjustment(const PlatformGestureEvent&) const;
 
@@ -253,7 +256,7 @@ private:
     bool isCursorVisible() const;
     void updateCursor();
 
-    ScrollableArea* associatedScrollableArea(const DeprecatedPaintLayer*) const;
+    ScrollableArea* associatedScrollableArea(const PaintLayer*) const;
 
     // Scrolls the elements of the DOM tree. Returns true if a node was scrolled.
     // False if we reached the root and couldn't scroll anything.
@@ -273,21 +276,18 @@ private:
 
     void customizedScroll(const Node& startNode, ScrollState&);
 
-    TouchAction intersectTouchAction(const TouchAction, const TouchAction);
-    TouchAction computeEffectiveTouchAction(const Node&);
-
     HitTestResult hitTestResultInFrame(LocalFrame*, const LayoutPoint&, HitTestRequest::HitTestRequestType hitType = HitTestRequest::ReadOnly | HitTestRequest::Active);
 
     void invalidateClick();
 
-    void updateMouseEventTargetNode(Node*, const PlatformMouseEvent&, bool);
+    void updateMouseEventTargetNode(Node*, const PlatformMouseEvent&);
 
     /* Dispatches mouseover, mouseout, mouseenter and mouseleave events to appropriate nodes when the mouse pointer moves from one node to another. */
     void sendMouseEventsForNodeTransition(Node*, Node*, const PlatformMouseEvent&);
 
     MouseEventWithHitTestResults prepareMouseEvent(const HitTestRequest&, const PlatformMouseEvent&);
 
-    bool dispatchMouseEvent(const AtomicString& eventType, Node* target, int clickCount, const PlatformMouseEvent&, bool setUnder);
+    bool dispatchMouseEvent(const AtomicString& eventType, Node* target, int clickCount, const PlatformMouseEvent&);
     bool dispatchDragEvent(const AtomicString& eventType, Node* target, const PlatformMouseEvent&, DataTransfer*);
 
     void clearDragDataTransfer();
@@ -344,7 +344,7 @@ private:
     // NOTE: If adding a new field to this class please ensure that it is
     // cleared in |EventHandler::clear()|.
 
-    LocalFrame* const m_frame;
+    const RawPtrWillBeMember<LocalFrame> m_frame;
 
     bool m_mousePressed;
     bool m_capturesDragging;
@@ -367,13 +367,12 @@ private:
 
     bool m_svgPan;
 
-    RawPtrWillBeMember<DeprecatedPaintLayerScrollableArea> m_resizeScrollableArea;
+    RawPtrWillBeMember<PaintLayerScrollableArea> m_resizeScrollableArea;
 
     RefPtrWillBeMember<Node> m_capturingMouseEventsNode;
     bool m_eventHandlerWillResetCapturingMouseEventsNode;
 
     RefPtrWillBeMember<Node> m_nodeUnderMouse;
-    RefPtrWillBeMember<Node> m_lastNodeUnderMouse;
     RefPtrWillBeMember<LocalFrame> m_lastMouseMoveEventSubframe;
     RefPtrWillBeMember<Scrollbar> m_lastScrollbarUnderMouse;
 
@@ -397,9 +396,6 @@ private:
     double m_mouseDownTimestamp;
     PlatformMouseEvent m_mouseDown;
     RefPtr<UserGestureToken> m_lastMouseDownUserGestureToken;
-
-    RefPtrWillBeMember<Node> m_latchedWheelEventNode;
-    bool m_widgetIsLatched;
 
     RefPtrWillBeMember<Node> m_previousWheelScrolledNode;
 

@@ -16,8 +16,8 @@
 // VPX_CODEC_DISABLE_COMPAT excludes parts of the libvpx API that provide
 // backwards compatibility for legacy applications using the library.
 #define VPX_CODEC_DISABLE_COMPAT 1
-#include "third_party/libvpx/source/libvpx/vpx/vp8dx.h"
-#include "third_party/libvpx/source/libvpx/vpx/vpx_decoder.h"
+#include "third_party/libvpx_new/source/libvpx/vpx/vp8dx.h"
+#include "third_party/libvpx_new/source/libvpx/vpx/vpx_decoder.h"
 #include "ui/gfx/geometry/size.h"
 
 namespace media {
@@ -140,12 +140,9 @@ class VideoDecoder::Vp8Impl : public VideoDecoder::ImplBase {
 
     const gfx::Size frame_size(image->d_w, image->d_h);
     // Note: Timestamp for the VideoFrame will be set in VideoReceiver.
-    const scoped_refptr<VideoFrame> decoded_frame =
-        VideoFrame::CreateFrame(VideoFrame::YV12,
-                                frame_size,
-                                gfx::Rect(frame_size),
-                                frame_size,
-                                base::TimeDelta());
+    const scoped_refptr<VideoFrame> decoded_frame = VideoFrame::CreateFrame(
+        PIXEL_FORMAT_YV12, frame_size, gfx::Rect(frame_size), frame_size,
+        base::TimeDelta());
     CopyYPlane(image->planes[VPX_PLANE_Y],
                image->stride[VPX_PLANE_Y],
                image->d_h,

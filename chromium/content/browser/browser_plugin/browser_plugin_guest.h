@@ -44,6 +44,7 @@ struct BrowserPluginHostMsg_Attach_Params;
 struct FrameHostMsg_CompositorFrameSwappedACK_Params;
 struct FrameHostMsg_ReclaimCompositorResources_Params;
 struct FrameMsg_CompositorFrameSwapped_Params;
+struct ViewHostMsg_TextInputState_Params;
 
 #if defined(OS_MACOSX)
 struct FrameHostMsg_ShowPopup_Params;
@@ -178,6 +179,7 @@ class CONTENT_EXPORT BrowserPluginGuest : public GuestHost,
   // GuestHost implementation.
   int LoadURLWithParams(
       const NavigationController::LoadURLParams& load_params) override;
+  void GuestResizeDueToAutoResize(const gfx::Size& new_size) override;
   void SizeContents(const gfx::Size& new_size) override;
   void WillDestroy() override;
 
@@ -185,6 +187,17 @@ class CONTENT_EXPORT BrowserPluginGuest : public GuestHost,
   WebContentsImpl* GetWebContents() const;
 
   gfx::Point GetScreenCoordinates(const gfx::Point& relative_position) const;
+
+  // This method is called by the RenderWidgetHostViewGuest to inform the
+  // BrowserPlugin of the potential location of the context menu event (to
+  // come). The need for this (hack) is that the input events when passed on to
+  // the BrowserPlugin are modified by any CSS transforms applied on the plugin.
+  // Therefore, the coordinates of the context menu event with respect to the
+  // container window are modifed with the guest renderer process beiung unaware
+  // of the change. Then eventually, when the context menu event arrives at the
+  // browser, it contains the wrong coordinates (BUG=470087).
+  // TODO(ekaramad): Find a more fundamental solution and remove this later.
+  void SetContextMenuPosition(const gfx::Point& position);
 
   // Helper to send messages to embedder. If this guest is not yet attached,
   // then IPCs will be queued until attachment.
@@ -224,9 +237,7 @@ class CONTENT_EXPORT BrowserPluginGuest : public GuestHost,
 
   void PointerLockPermissionResponse(bool allow);
 
-  // The next three functions are virtual for test purposes.
-  virtual void UpdateGuestSizeIfNecessary(const gfx::Size& frame_size,
-                                          float scale_factor);
+  // The next two functions are virtual for test purposes.
   virtual void SwapCompositorFrame(uint32 output_surface_id,
                                    int host_process_id,
                                    int host_routing_id,
@@ -244,6 +255,8 @@ class CONTENT_EXPORT BrowserPluginGuest : public GuestHost,
             const base::string16& search_text,
             const blink::WebFindOptions& options);
   bool StopFinding(StopFindAction action);
+
+  void ResendEventToEmbedder(const blink::WebInputEvent& event);
 
  protected:
 
@@ -268,8 +281,6 @@ class CONTENT_EXPORT BrowserPluginGuest : public GuestHost,
 
   void InitInternal(const BrowserPluginHostMsg_Attach_Params& params,
                     WebContentsImpl* owner_web_contents);
-
-  bool InAutoSizeBounds(const gfx::Size& size) const;
 
   void OnSatisfySequence(int instance_id, const cc::SurfaceSequence& sequence);
   void OnRequireSequence(int instance_id,
@@ -334,10 +345,8 @@ class CONTENT_EXPORT BrowserPluginGuest : public GuestHost,
   void OnUnlockMouseAck(int instance_id);
   void OnUpdateGeometry(int instance_id, const gfx::Rect& view_rect);
 
-  void OnTextInputTypeChanged(ui::TextInputType type,
-                              ui::TextInputMode input_mode,
-                              bool can_compose_inline,
-                              int flags);
+  void OnTextInputStateChanged(
+      const ViewHostMsg_TextInputState_Params& params);
   void OnImeSetComposition(
       int instance_id,
       const std::string& text,
@@ -423,10 +432,8 @@ class CONTENT_EXPORT BrowserPluginGuest : public GuestHost,
   bool initialized_;
 
   // Text input type states.
-  ui::TextInputType last_text_input_type_;
-  ui::TextInputMode last_input_mode_;
-  int last_input_flags_;
-  bool last_can_compose_inline_;
+  // Using scoped_ptr to avoid including the header file: view_messages.h.
+  scoped_ptr<const ViewHostMsg_TextInputState_Params> last_text_input_state_;
 
   // The is the routing ID for a swapped out RenderView for the guest
   // WebContents in the embedder's process.

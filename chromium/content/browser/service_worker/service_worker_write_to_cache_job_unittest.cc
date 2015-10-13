@@ -14,8 +14,8 @@
 #include "content/browser/service_worker/service_worker_provider_host.h"
 #include "content/browser/service_worker/service_worker_registration.h"
 #include "content/browser/service_worker/service_worker_test_utils.h"
-#include "content/browser/service_worker/service_worker_utils.h"
 #include "content/common/resource_request_body.h"
+#include "content/common/service_worker/service_worker_utils.h"
 #include "content/public/test/mock_resource_context.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "net/base/io_buffer.h"
@@ -280,8 +280,8 @@ class ServiceWorkerWriteToCacheJobTest : public testing::Test {
     url_request_context_.reset(new net::URLRequestContext);
     mock_protocol_handler_ = new MockHttpProtocolHandler(&resource_context_);
     url_request_job_factory_.reset(new net::URLRequestJobFactoryImpl);
-    url_request_job_factory_->SetProtocolHandler("https",
-                                                 mock_protocol_handler_);
+    url_request_job_factory_->SetProtocolHandler(
+        "https", make_scoped_ptr(mock_protocol_handler_));
     url_request_context_->set_job_factory(url_request_job_factory_.get());
 
     request_ = url_request_context_->CreateRequest(
@@ -289,9 +289,9 @@ class ServiceWorkerWriteToCacheJobTest : public testing::Test {
     ServiceWorkerRequestHandler::InitializeHandler(
         request_.get(), context_wrapper(), &blob_storage_context_, process_id,
         provider_id, false, FETCH_REQUEST_MODE_NO_CORS,
-        FETCH_CREDENTIALS_MODE_OMIT, RESOURCE_TYPE_SERVICE_WORKER,
-        REQUEST_CONTEXT_TYPE_SERVICE_WORKER, REQUEST_CONTEXT_FRAME_TYPE_NONE,
-        scoped_refptr<ResourceRequestBody>());
+        FETCH_CREDENTIALS_MODE_OMIT, FetchRedirectMode::FOLLOW_MODE,
+        RESOURCE_TYPE_SERVICE_WORKER, REQUEST_CONTEXT_TYPE_SERVICE_WORKER,
+        REQUEST_CONTEXT_FRAME_TYPE_NONE, scoped_refptr<ResourceRequestBody>());
   }
 
   int NextRenderProcessId() { return next_render_process_id_++; }

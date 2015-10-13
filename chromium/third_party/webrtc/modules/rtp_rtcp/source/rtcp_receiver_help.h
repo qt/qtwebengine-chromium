@@ -20,6 +20,9 @@
 #include "webrtc/typedefs.h"
 
 namespace webrtc {
+namespace rtcp {
+class TransportFeedback;
+}
 namespace RTCPHelp
 {
 
@@ -84,8 +87,10 @@ public:
     bool xr_dlrr_item;
     RTCPVoIPMetric*  VoIPMetric;
 
+    rtc::scoped_ptr<rtcp::TransportFeedback> transport_feedback_;
+
 private:
-    DISALLOW_COPY_AND_ASSIGN(RTCPPacketInformation);
+    RTC_DISALLOW_COPY_AND_ASSIGN(RTCPPacketInformation);
 };
 
 class RTCPReceiveInformation

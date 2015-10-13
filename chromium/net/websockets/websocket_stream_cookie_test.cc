@@ -17,6 +17,7 @@
 #include "net/websockets/websocket_test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
+#include "url/origin.h"
 
 namespace net {
 namespace {
@@ -29,13 +30,14 @@ const char kNoCookieHeader[] = "";
 class TestBase : public WebSocketStreamCreateTestBase {
  public:
   void CreateAndConnect(const GURL& url,
-                        const std::string& origin,
+                        const url::Origin& origin,
                         const std::string& cookie_header,
                         const std::string& response_body) {
     // We assume cookie_header ends with CRLF if not empty, as
     // WebSocketStandardRequestWithCookies requires. Use AddCRLFIfNotEmpty
     // in a call site.
-    CHECK(cookie_header.empty() || base::EndsWith(cookie_header, "\r\n", true));
+    CHECK(cookie_header.empty() ||
+          base::EndsWith(cookie_header, "\r\n", base::CompareCase::SENSITIVE));
 
     url_request_context_host_.SetExpectations(
         WebSocketStandardRequestWithCookies(url.path(), url.host(), origin,
@@ -123,7 +125,7 @@ TEST_P(WebSocketStreamClientUseCookieTest, ClientUseCookie) {
 
   const GURL url(GetParam().url);
   const GURL cookie_url(GetParam().cookie_url);
-  const std::string origin("http://www.example.com");
+  const url::Origin origin(GURL("http://www.example.com"));
   const std::string cookie_line(GetParam().cookie_line);
   const std::string cookie_header(AddCRLFIfNotEmpty(GetParam().cookie_header));
 
@@ -153,7 +155,7 @@ TEST_P(WebSocketStreamServerSetCookieTest, ServerSetCookie) {
 
   const GURL url(GetParam().url);
   const GURL cookie_url(GetParam().cookie_url);
-  const std::string origin("http://www.example.com");
+  const url::Origin origin(GURL("http://www.example.com"));
   const std::string cookie_line(GetParam().cookie_line);
   const std::string cookie_header(AddCRLFIfNotEmpty(GetParam().cookie_header));
 

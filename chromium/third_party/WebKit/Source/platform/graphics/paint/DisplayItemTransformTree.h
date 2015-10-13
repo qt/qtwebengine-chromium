@@ -6,6 +6,7 @@
 #define DisplayItemTransformTree_h
 
 #include "platform/PlatformExport.h"
+#include "platform/geometry/FloatPoint3D.h"
 #include "platform/transforms/TransformationMatrix.h"
 #include "public/platform/WebDisplayItemTransformTree.h"
 #include "wtf/Vector.h"
@@ -20,7 +21,6 @@ namespace blink {
 class PLATFORM_EXPORT DisplayItemTransformTree {
 public:
     using TransformNode = WebDisplayItemTransformTree::TransformNode;
-    using RangeRecord = WebDisplayItemTransformTree::RangeRecord;
     enum : size_t { kInvalidIndex = WebDisplayItemTransformTree::kInvalidIndex };
 
     DisplayItemTransformTree();
@@ -30,39 +30,19 @@ public:
     TransformNode& nodeAt(size_t index) { return m_nodes[index]; }
     const TransformNode& nodeAt(size_t index) const { return m_nodes[index]; }
 
-    size_t rangeRecordCount() const { return m_rangeRecords.size(); }
-    RangeRecord& rangeRecordAt(size_t index) { return m_rangeRecords[index]; }
-    const RangeRecord& rangeRecordAt(size_t index) const { return m_rangeRecords[index]; }
-
-    TransformNode& parentNode(const TransformNode& node)
-    {
-        ASSERT(!node.isRoot());
-        return nodeAt(node.parentNodeIndex);
-    }
-    const TransformNode& parentNode(const TransformNode& node) const
-    {
-        ASSERT(!node.isRoot());
-        return nodeAt(node.parentNodeIndex);
-    }
-
     // Returns the new node index.
-    size_t createNewNode(size_t parentNodeIndex, const TransformationMatrix& matrix)
+    size_t createNewNode(size_t parentNodeIndex, const TransformationMatrix& matrix, const FloatPoint3D& transformOrigin)
     {
         ASSERT(parentNodeIndex != kInvalidIndex);
         m_nodes.append(TransformNode(
             parentNodeIndex,
-            TransformationMatrix::toSkMatrix44(matrix)));
+            TransformationMatrix::toSkMatrix44(matrix),
+            transformOrigin));
         return m_nodes.size() - 1;
-    }
-
-    void appendRangeRecord(size_t beginIndex, size_t endIndex, size_t nodeIndex, const FloatSize& offset)
-    {
-        m_rangeRecords.append(RangeRecord(beginIndex, endIndex, nodeIndex, offset));
     }
 
 private:
     Vector<TransformNode> m_nodes;
-    Vector<RangeRecord> m_rangeRecords;
 };
 
 } // namespace blink

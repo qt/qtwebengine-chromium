@@ -16,6 +16,7 @@
       'automation.idl',
       'automation_internal.idl',
       'autotest_private.idl',
+      'bluetooth_low_energy.idl',
       'bookmark_manager_private.json',
       'bookmarks.json',
       'braille_display_private.idl',
@@ -30,6 +31,7 @@
       'copresence.idl',
       'copresence_private.idl',
       'cryptotoken_private.idl',
+      'dashboard_private.json',
       'data_reduction_proxy.json',
       'debugger.json',
       'desktop_capture.json',
@@ -53,6 +55,7 @@
       'image_writer_private.idl',
       'inline_install_private.idl',
       'instance_id.json',
+      'language_settings_private.idl',
       'launcher_page.idl',
       'location.idl',
       'manifest_types.json',
@@ -67,6 +70,7 @@
       'permissions.json',
       'preferences_private.json',
       'reading_list_private.json',
+      'resources_private.idl',
       'screenlock_private.idl',
       'search_engines_private.idl',
       'sessions.json',
@@ -91,7 +95,7 @@
       'windows.json',
     ],
     'main_schema_include_rules': [
-      'extensions/common/api:extensions::core_api::%(namespace)s',
+      'extensions/common/api:extensions::api::%(namespace)s',
     ],
     'main_non_compiled_schema_files': [
       'browsing_data.json',
@@ -104,7 +108,11 @@
 
     # ChromeOS-specific schemas.
     'chromeos_schema_files': [
+      'cast_devices_private.idl',
+      'certificate_provider.idl',
+      'certificate_provider_internal.idl',
       'echo_private.json',
+      'enterprise_device_attributes.idl',
       'enterprise_platform_keys.idl',
       'enterprise_platform_keys_internal.idl',
       'enterprise_platform_keys_private.json',
@@ -169,6 +177,7 @@
     ],
     'cc_dir': 'chrome/common/extensions/api',
     'root_namespace': 'extensions::api::%(namespace)s',
+    'bundle_name': 'Chrome',
     'impl_dir_': 'chrome/browser/extensions/api',
   },
 }

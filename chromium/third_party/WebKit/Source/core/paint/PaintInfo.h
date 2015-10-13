@@ -26,12 +26,16 @@
 #ifndef PaintInfo_h
 #define PaintInfo_h
 
+// TODO(jchaffraix): Once we unify PaintBehavior and PaintLayerFlags, we should move
+// PaintLayerFlags to PaintPhase and rename it. Thus removing the need for this #include.
+#include "core/paint/PaintLayerPaintingInfo.h"
 #include "core/paint/PaintPhase.h"
 #include "platform/geometry/IntRect.h"
 #include "platform/geometry/LayoutRect.h"
 #include "platform/graphics/GraphicsContext.h"
 #include "platform/graphics/paint/DisplayItem.h"
 #include "platform/transforms/AffineTransform.h"
+#include "wtf/Allocator.h"
 #include "wtf/HashMap.h"
 #include "wtf/ListHashSet.h"
 
@@ -44,16 +48,16 @@ class LayoutBoxModelObject;
 class LayoutObject;
 
 struct PaintInfo {
-    PaintInfo(GraphicsContext* newContext, const IntRect& newRect, PaintPhase newPhase, PaintBehavior newPaintBehavior,
-        LayoutObject* newPaintingRoot = 0, ListHashSet<LayoutInline*>* newOutlineObjects = 0,
-        const LayoutBoxModelObject* newPaintContainer = 0)
+    ALLOW_ONLY_INLINE_ALLOCATION();
+    PaintInfo(GraphicsContext* newContext, const IntRect& newRect, PaintPhase newPhase, GlobalPaintFlags globalPaintFlags, PaintLayerFlags paintFlags,
+        LayoutObject* newPaintingRoot = 0, const LayoutBoxModelObject* newPaintContainer = 0)
         : context(newContext)
         , rect(newRect)
         , phase(newPhase)
-        , paintBehavior(newPaintBehavior)
         , paintingRoot(newPaintingRoot)
         , m_paintContainer(newPaintContainer)
-        , m_outlineObjects(newOutlineObjects)
+        , m_paintFlags(paintFlags)
+        , m_globalPaintFlags(globalPaintFlags)
     {
     }
 
@@ -74,17 +78,20 @@ struct PaintInfo {
         return !paintingRoot || paintingRoot == layoutObject;
     }
 
-    bool isRenderingClipPathAsMaskImage() const { return paintBehavior & PaintBehaviorRenderingClipPathAsMask; }
+    bool isRenderingClipPathAsMaskImage() const { return m_paintFlags & PaintLayerPaintingRenderingClipPathAsMask; }
 
-    bool skipRootBackground() const { return paintBehavior & PaintBehaviorSkipRootBackground; }
-    bool paintRootBackgroundOnly() const { return paintBehavior & PaintBehaviorRootBackgroundOnly; }
+    bool skipRootBackground() const { return m_paintFlags & PaintLayerPaintingSkipRootBackground; }
+    bool paintRootBackgroundOnly() const { return m_paintFlags & PaintLayerPaintingRootBackgroundOnly; }
+
+    bool isPrinting() const { return m_globalPaintFlags & GlobalPaintPrinting; }
 
     DisplayItem::Type displayItemTypeForClipping() const { return DisplayItem::paintPhaseToClipBoxType(phase); }
 
     const LayoutBoxModelObject* paintContainer() const { return m_paintContainer; }
 
-    ListHashSet<LayoutInline*>* outlineObjects() const { return m_outlineObjects; }
-    void setOutlineObjects(ListHashSet<LayoutInline*>* objects) { m_outlineObjects = objects; }
+    GlobalPaintFlags globalPaintFlags() const { return m_globalPaintFlags; }
+
+    PaintLayerFlags paintFlags() const { return m_paintFlags; }
 
     bool intersectsCullRect(const AffineTransform& transform, const FloatRect& boundingBox) const
     {
@@ -101,12 +108,13 @@ struct PaintInfo {
     GraphicsContext* context;
     IntRect rect; // dirty rect used for culling non-intersecting layoutObjects
     PaintPhase phase;
-    PaintBehavior paintBehavior;
     LayoutObject* paintingRoot; // used to draw just one element and its visual kids
 
 private:
     const LayoutBoxModelObject* m_paintContainer; // the box model object that originates the current painting
-    ListHashSet<LayoutInline*>* m_outlineObjects; // used to list outlines that should be painted by a block with inline children
+
+    const PaintLayerFlags m_paintFlags;
+    const GlobalPaintFlags m_globalPaintFlags;
 };
 
 } // namespace blink

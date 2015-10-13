@@ -6,8 +6,8 @@
   'variables': {
     # File lists shared with GN build.
     'media_router_sources': [
-      'create_session_request.cc',
-      'create_session_request.h',
+      'create_presentation_session_request.cc',
+      'create_presentation_session_request.h',
       'issue.cc',
       'issue.h',
       'issue_manager.cc',
@@ -16,14 +16,11 @@
       'issues_observer.cc',
       'media_route.cc',
       'media_route.h',
-      'media_route_id.h',
       'media_router.h',
-      'media_router_mojo_impl.cc',
-      'media_router_mojo_impl.h',
-      'media_router_mojo_impl_factory.cc',
-      'media_router_mojo_impl_factory.h',
-      'media_router_type_converters.cc',
-      'media_router_type_converters.h',
+      'media_router_dialog_controller.cc',
+      'media_router_dialog_controller.h',
+      'media_router_factory.cc',
+      'media_router_factory.h',
       'media_routes_observer.cc',
       'media_routes_observer.h',
       'media_sink.cc',
@@ -38,8 +35,17 @@
       'presentation_media_sinks_observer.h',
       'presentation_service_delegate_impl.cc',
       'presentation_service_delegate_impl.h',
+      'presentation_session_messages_observer.cc',
+      'presentation_session_messages_observer.h',
       'presentation_session_state_observer.cc',
       'presentation_session_state_observer.h',
+    ],
+    # Files that are only needed on desktop builds
+    'media_router_non_android_sources': [
+      'media_router_mojo_impl.cc',
+      'media_router_mojo_impl.h',
+      'media_router_type_converters.cc',
+      'media_router_type_converters.h',
     ],
     'media_router_test_support_sources': [
       'media_router_mojo_test.cc',

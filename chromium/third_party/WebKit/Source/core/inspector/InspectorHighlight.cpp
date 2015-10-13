@@ -20,6 +20,7 @@ namespace blink {
 namespace {
 
 class PathBuilder {
+    STACK_ALLOCATED();
     WTF_MAKE_NONCOPYABLE(PathBuilder);
 public:
     PathBuilder() : m_path(TypeBuilder::Array<JSONValue>::create()) { }
@@ -85,7 +86,7 @@ void PathBuilder::appendPathElement(const PathElement* pathElement)
 class ShapePathBuilder : public PathBuilder {
 public:
     ShapePathBuilder(FrameView& view, LayoutObject& layoutObject, const ShapeOutsideInfo& shapeOutsideInfo)
-        : m_view(view)
+        : m_view(&view)
         , m_layoutObject(layoutObject)
         , m_shapeOutsideInfo(shapeOutsideInfo) { }
 
@@ -100,11 +101,11 @@ protected:
     virtual FloatPoint translatePoint(const FloatPoint& point)
     {
         FloatPoint layoutObjectPoint = m_shapeOutsideInfo.shapeToLayoutObjectPoint(point);
-        return m_view.contentsToViewport(roundedIntPoint(m_layoutObject.localToAbsolute(layoutObjectPoint)));
+        return m_view->contentsToViewport(roundedIntPoint(m_layoutObject.localToAbsolute(layoutObjectPoint)));
     }
 
 private:
-    FrameView& m_view;
+    RawPtrWillBeMember<FrameView> m_view;
     LayoutObject& m_layoutObject;
     const ShapeOutsideInfo& m_shapeOutsideInfo;
 };
@@ -162,8 +163,218 @@ const ShapeOutsideInfo* shapeOutsideInfoForNode(Node* node, Shape::DisplayPaths*
     return shapeOutsideInfo;
 }
 
-bool buildNodeQuads(LayoutObject* layoutObject, FloatQuad* content, FloatQuad* padding, FloatQuad* border, FloatQuad* margin)
+PassRefPtr<JSONObject> buildElementInfo(Element* element)
 {
+    RefPtr<JSONObject> elementInfo = JSONObject::create();
+    Element* realElement = element;
+    PseudoElement* pseudoElement = nullptr;
+    if (element->isPseudoElement()) {
+        pseudoElement = toPseudoElement(element);
+        realElement = element->parentOrShadowHostElement();
+    }
+    bool isXHTML = realElement->document().isXHTMLDocument();
+    elementInfo->setString("tagName", isXHTML ? realElement->nodeName() : realElement->nodeName().lower());
+    elementInfo->setString("idValue", realElement->getIdAttribute());
+    StringBuilder classNames;
+    if (realElement->hasClass() && realElement->isStyledElement()) {
+        HashSet<AtomicString> usedClassNames;
+        const SpaceSplitString& classNamesString = realElement->classNames();
+        size_t classNameCount = classNamesString.size();
+        for (size_t i = 0; i < classNameCount; ++i) {
+            const AtomicString& className = classNamesString[i];
+            if (!usedClassNames.add(className).isNewEntry)
+                continue;
+            classNames.append('.');
+            classNames.append(className);
+        }
+    }
+    if (pseudoElement) {
+        if (pseudoElement->pseudoId() == BEFORE)
+            classNames.appendLiteral("::before");
+        else if (pseudoElement->pseudoId() == AFTER)
+            classNames.appendLiteral("::after");
+    }
+    if (!classNames.isEmpty())
+        elementInfo->setString("className", classNames.toString());
+
+    LayoutObject* layoutObject = element->layoutObject();
+    FrameView* containingView = element->document().view();
+    if (!layoutObject || !containingView)
+        return elementInfo;
+
+    // layoutObject the getBoundingClientRect() data in the tooltip
+    // to be consistent with the rulers (see http://crbug.com/262338).
+    ClientRect* boundingBox = element->getBoundingClientRect();
+    elementInfo->setString("nodeWidth", String::number(boundingBox->width()));
+    elementInfo->setString("nodeHeight", String::number(boundingBox->height()));
+
+    return elementInfo;
+}
+
+} // namespace
+
+InspectorHighlight::InspectorHighlight()
+    : m_highlightPaths(JSONArray::create())
+    , m_showRulers(false)
+    , m_showExtensionLines(false)
+    , m_displayAsMaterial(false)
+{
+}
+
+InspectorHighlightConfig::InspectorHighlightConfig()
+    : showInfo(false)
+    , showRulers(false)
+    , showExtensionLines(false)
+    , displayAsMaterial(false)
+{
+}
+
+InspectorHighlight::InspectorHighlight(Node* node, const InspectorHighlightConfig& highlightConfig, bool appendElementInfo)
+    : m_highlightPaths(JSONArray::create())
+    , m_showRulers(highlightConfig.showRulers)
+    , m_showExtensionLines(highlightConfig.showExtensionLines)
+    , m_displayAsMaterial(highlightConfig.displayAsMaterial)
+{
+    appendPathsForShapeOutside(node, highlightConfig);
+    appendNodeHighlight(node, highlightConfig);
+    if (appendElementInfo && node->isElementNode())
+        m_elementInfo = buildElementInfo(toElement(node));
+}
+
+InspectorHighlight::~InspectorHighlight()
+{
+}
+
+void InspectorHighlight::appendQuad(const FloatQuad& quad, const Color& fillColor, const Color& outlineColor, const String& name)
+{
+    Path path = quadToPath(quad);
+    PathBuilder builder;
+    builder.appendPath(path);
+    appendPath(builder.path(), fillColor, outlineColor, name);
+}
+
+void InspectorHighlight::appendPath(PassRefPtr<JSONArrayBase> path, const Color& fillColor, const Color& outlineColor, const String& name)
+{
+    RefPtr<JSONObject> object = JSONObject::create();
+    object->setValue("path", path);
+    object->setString("fillColor", fillColor.serialized());
+    if (outlineColor != Color::transparent)
+        object->setString("outlineColor", outlineColor.serialized());
+    if (!name.isEmpty())
+        object->setString("name", name);
+    m_highlightPaths->pushObject(object.release());
+}
+
+void InspectorHighlight::appendEventTargetQuads(Node* eventTargetNode, const InspectorHighlightConfig& highlightConfig)
+{
+    if (eventTargetNode->layoutObject()) {
+        FloatQuad border, unused;
+        if (buildNodeQuads(eventTargetNode, &unused, &unused, &border, &unused))
+            appendQuad(border, highlightConfig.eventTarget);
+    }
+}
+
+void InspectorHighlight::appendPathsForShapeOutside(Node* node, const InspectorHighlightConfig& config)
+{
+    Shape::DisplayPaths paths;
+    FloatQuad boundsQuad;
+
+    const ShapeOutsideInfo* shapeOutsideInfo = shapeOutsideInfoForNode(node, &paths, &boundsQuad);
+    if (!shapeOutsideInfo)
+        return;
+
+    if (!paths.shape.length()) {
+        appendQuad(boundsQuad, config.shape);
+        return;
+    }
+
+    appendPath(ShapePathBuilder::buildPath(*node->document().view(), *node->layoutObject(), *shapeOutsideInfo, paths.shape), config.shape, Color::transparent);
+    if (paths.marginShape.length())
+        appendPath(ShapePathBuilder::buildPath(*node->document().view(), *node->layoutObject(), *shapeOutsideInfo, paths.marginShape), config.shapeMargin, Color::transparent);
+}
+
+void InspectorHighlight::appendNodeHighlight(Node* node, const InspectorHighlightConfig& highlightConfig)
+{
+    LayoutObject* layoutObject = node->layoutObject();
+    if (!layoutObject)
+        return;
+
+    // LayoutSVGRoot should be highlighted through the isBox() code path, all other SVG elements should just dump their absoluteQuads().
+    if (layoutObject->node() && layoutObject->node()->isSVGElement() && !layoutObject->isSVGRoot()) {
+        Vector<FloatQuad> quads;
+        layoutObject->absoluteQuads(quads);
+        FrameView* containingView = layoutObject->frameView();
+        for (size_t i = 0; i < quads.size(); ++i) {
+            if (containingView)
+                contentsQuadToViewport(containingView, quads[i]);
+            appendQuad(quads[i], highlightConfig.content, highlightConfig.contentOutline);
+        }
+        return;
+    }
+
+    FloatQuad content, padding, border, margin;
+    if (!buildNodeQuads(node, &content, &padding, &border, &margin))
+        return;
+    appendQuad(content, highlightConfig.content, highlightConfig.contentOutline, "content");
+    appendQuad(padding, highlightConfig.padding, Color::transparent, "padding");
+    appendQuad(border, highlightConfig.border, Color::transparent, "border");
+    appendQuad(margin, highlightConfig.margin, Color::transparent, "margin");
+}
+
+PassRefPtr<JSONObject> InspectorHighlight::asJSONObject() const
+{
+    RefPtr<JSONObject> object = JSONObject::create();
+    object->setArray("paths", m_highlightPaths);
+    object->setBoolean("showRulers", m_showRulers);
+    object->setBoolean("showExtensionLines", m_showExtensionLines);
+    if (m_elementInfo)
+        object->setObject("elementInfo", m_elementInfo);
+    object->setBoolean("displayAsMaterial", m_displayAsMaterial);
+    return object.release();
+}
+
+// static
+bool InspectorHighlight::getBoxModel(Node* node, RefPtr<TypeBuilder::DOM::BoxModel>& model)
+{
+    LayoutObject* layoutObject = node->layoutObject();
+    FrameView* view = node->document().view();
+    if (!layoutObject || !view)
+        return false;
+
+    FloatQuad content, padding, border, margin;
+    if (!buildNodeQuads(node, &content, &padding, &border, &margin))
+        return false;
+
+    IntRect boundingBox = view->contentsToRootFrame(layoutObject->absoluteBoundingBoxRect());
+    LayoutBoxModelObject* modelObject = layoutObject->isBoxModelObject() ? toLayoutBoxModelObject(layoutObject) : nullptr;
+
+    model = TypeBuilder::DOM::BoxModel::create()
+        .setContent(buildArrayForQuad(content))
+        .setPadding(buildArrayForQuad(padding))
+        .setBorder(buildArrayForQuad(border))
+        .setMargin(buildArrayForQuad(margin))
+        .setWidth(modelObject ? adjustForAbsoluteZoom(modelObject->pixelSnappedOffsetWidth(), modelObject) : boundingBox.width())
+        .setHeight(modelObject ? adjustForAbsoluteZoom(modelObject->pixelSnappedOffsetHeight(), modelObject) : boundingBox.height());
+
+    Shape::DisplayPaths paths;
+    FloatQuad boundsQuad;
+    if (const ShapeOutsideInfo* shapeOutsideInfo = shapeOutsideInfoForNode(node, &paths, &boundsQuad)) {
+        RefPtr<TypeBuilder::DOM::ShapeOutsideInfo> shapeTypeBuilder = TypeBuilder::DOM::ShapeOutsideInfo::create()
+            .setBounds(buildArrayForQuad(boundsQuad))
+            .setShape(ShapePathBuilder::buildPath(*view, *layoutObject, *shapeOutsideInfo, paths.shape))
+            .setMarginShape(ShapePathBuilder::buildPath(*view, *layoutObject, *shapeOutsideInfo, paths.marginShape));
+        model->setShapeOutside(shapeTypeBuilder);
+    }
+
+    return true;
+}
+
+bool InspectorHighlight::buildNodeQuads(Node* node, FloatQuad* content, FloatQuad* padding, FloatQuad* border, FloatQuad* margin)
+{
+    LayoutObject* layoutObject = node->layoutObject();
+    if (!layoutObject)
+        return false;
+
     FrameView* containingView = layoutObject->frameView();
     if (!containingView)
         return false;
@@ -220,207 +431,6 @@ bool buildNodeQuads(LayoutObject* layoutObject, FloatQuad* content, FloatQuad* p
     return true;
 }
 
-PassRefPtr<JSONObject> buildElementInfo(Element* element)
-{
-    RefPtr<JSONObject> elementInfo = JSONObject::create();
-    Element* realElement = element;
-    PseudoElement* pseudoElement = nullptr;
-    if (element->isPseudoElement()) {
-        pseudoElement = toPseudoElement(element);
-        realElement = element->parentOrShadowHostElement();
-    }
-    bool isXHTML = realElement->document().isXHTMLDocument();
-    elementInfo->setString("tagName", isXHTML ? realElement->nodeName() : realElement->nodeName().lower());
-    elementInfo->setString("idValue", realElement->getIdAttribute());
-    StringBuilder classNames;
-    if (realElement->hasClass() && realElement->isStyledElement()) {
-        HashSet<AtomicString> usedClassNames;
-        const SpaceSplitString& classNamesString = realElement->classNames();
-        size_t classNameCount = classNamesString.size();
-        for (size_t i = 0; i < classNameCount; ++i) {
-            const AtomicString& className = classNamesString[i];
-            if (!usedClassNames.add(className).isNewEntry)
-                continue;
-            classNames.append('.');
-            classNames.append(className);
-        }
-    }
-    if (pseudoElement) {
-        if (pseudoElement->pseudoId() == BEFORE)
-            classNames.appendLiteral("::before");
-        else if (pseudoElement->pseudoId() == AFTER)
-            classNames.appendLiteral("::after");
-    }
-    if (!classNames.isEmpty())
-        elementInfo->setString("className", classNames.toString());
-
-    LayoutObject* layoutObject = element->layoutObject();
-    FrameView* containingView = element->document().view();
-    if (!layoutObject || !containingView)
-        return elementInfo;
-
-    // layoutObject the getBoundingClientRect() data in the tooltip
-    // to be consistent with the rulers (see http://crbug.com/262338).
-    ClientRect* boundingBox = element->getBoundingClientRect();
-    elementInfo->setString("nodeWidth", String::number(boundingBox->width()));
-    elementInfo->setString("nodeHeight", String::number(boundingBox->height()));
-
-    return elementInfo;
-}
-
-} // namespace
-
-InspectorHighlight::InspectorHighlight()
-    : m_highlightPaths(JSONArray::create())
-    , m_showRulers(false)
-    , m_showExtensionLines(false)
-{
-}
-
-InspectorHighlightConfig::InspectorHighlightConfig()
-    : showInfo(false)
-    , showRulers(false)
-    , showExtensionLines(false)
-    , showLayoutEditor(false)
-{
-}
-
-InspectorHighlight::InspectorHighlight(Node* node, const InspectorHighlightConfig& highlightConfig, bool appendElementInfo)
-    : m_highlightPaths(JSONArray::create())
-    , m_showRulers(highlightConfig.showRulers)
-    , m_showExtensionLines(highlightConfig.showExtensionLines)
-{
-    appendPathsForShapeOutside(node, highlightConfig);
-    appendNodeHighlight(node, highlightConfig);
-    if (appendElementInfo && node->isElementNode())
-        m_elementInfo = buildElementInfo(toElement(node));
-}
-
-InspectorHighlight::~InspectorHighlight()
-{
-}
-
-void InspectorHighlight::appendQuad(const FloatQuad& quad, const Color& fillColor, const Color& outlineColor)
-{
-    Path path = quadToPath(quad);
-    PathBuilder builder;
-    builder.appendPath(path);
-    appendPath(builder.path(), fillColor, outlineColor);
-}
-
-void InspectorHighlight::appendPath(PassRefPtr<JSONArrayBase> path, const Color& fillColor, const Color& outlineColor)
-{
-    RefPtr<JSONObject> object = JSONObject::create();
-    object->setValue("path", path);
-    object->setString("fillColor", fillColor.serialized());
-    if (outlineColor != Color::transparent)
-        object->setString("outlineColor", outlineColor.serialized());
-    m_highlightPaths->pushObject(object.release());
-}
-
-void InspectorHighlight::appendEventTargetQuads(Node* eventTargetNode, const InspectorHighlightConfig& highlightConfig)
-{
-    if (eventTargetNode->layoutObject()) {
-        FloatQuad border, unused;
-        if (buildNodeQuads(eventTargetNode->layoutObject(), &unused, &unused, &border, &unused))
-            appendQuad(border, highlightConfig.eventTarget);
-    }
-}
-
-void InspectorHighlight::appendPathsForShapeOutside(Node* node, const InspectorHighlightConfig& config)
-{
-    Shape::DisplayPaths paths;
-    FloatQuad boundsQuad;
-
-    const ShapeOutsideInfo* shapeOutsideInfo = shapeOutsideInfoForNode(node, &paths, &boundsQuad);
-    if (!shapeOutsideInfo)
-        return;
-
-    if (!paths.shape.length()) {
-        appendQuad(boundsQuad, config.shape);
-        return;
-    }
-
-    appendPath(ShapePathBuilder::buildPath(*node->document().view(), *node->layoutObject(), *shapeOutsideInfo, paths.shape), config.shape, Color::transparent);
-    if (paths.marginShape.length())
-        appendPath(ShapePathBuilder::buildPath(*node->document().view(), *node->layoutObject(), *shapeOutsideInfo, paths.marginShape), config.shapeMargin, Color::transparent);
-}
-
-void InspectorHighlight::appendNodeHighlight(Node* node, const InspectorHighlightConfig& highlightConfig)
-{
-    LayoutObject* layoutObject = node->layoutObject();
-    if (!layoutObject)
-        return;
-
-    // LayoutSVGRoot should be highlighted through the isBox() code path, all other SVG elements should just dump their absoluteQuads().
-    if (layoutObject->node() && layoutObject->node()->isSVGElement() && !layoutObject->isSVGRoot()) {
-        Vector<FloatQuad> quads;
-        layoutObject->absoluteQuads(quads);
-        FrameView* containingView = layoutObject->frameView();
-        for (size_t i = 0; i < quads.size(); ++i) {
-            if (containingView)
-                contentsQuadToViewport(containingView, quads[i]);
-            appendQuad(quads[i], highlightConfig.content, highlightConfig.contentOutline);
-        }
-        return;
-    }
-
-    FloatQuad content, padding, border, margin;
-    if (!buildNodeQuads(layoutObject, &content, &padding, &border, &margin))
-        return;
-    appendQuad(content, highlightConfig.content, highlightConfig.contentOutline);
-    appendQuad(padding, highlightConfig.padding);
-    appendQuad(border, highlightConfig.border);
-    appendQuad(margin, highlightConfig.margin);
-}
-
-PassRefPtr<JSONObject> InspectorHighlight::asJSONObject() const
-{
-    RefPtr<JSONObject> object = JSONObject::create();
-    object->setArray("paths", m_highlightPaths);
-    object->setBoolean("showRulers", m_showRulers);
-    object->setBoolean("showExtensionLines", m_showExtensionLines);
-    if (m_elementInfo)
-        object->setObject("elementInfo", m_elementInfo);
-    return object.release();
-}
-
-// static
-bool InspectorHighlight::getBoxModel(Node* node, RefPtr<TypeBuilder::DOM::BoxModel>& model)
-{
-    LayoutObject* layoutObject = node->layoutObject();
-    FrameView* view = node->document().view();
-    if (!layoutObject || !view)
-        return false;
-
-    FloatQuad content, padding, border, margin;
-    if (!buildNodeQuads(node->layoutObject(), &content, &padding, &border, &margin))
-        return false;
-
-    IntRect boundingBox = view->contentsToRootFrame(layoutObject->absoluteBoundingBoxRect());
-    LayoutBoxModelObject* modelObject = layoutObject->isBoxModelObject() ? toLayoutBoxModelObject(layoutObject) : nullptr;
-
-    model = TypeBuilder::DOM::BoxModel::create()
-        .setContent(buildArrayForQuad(content))
-        .setPadding(buildArrayForQuad(padding))
-        .setBorder(buildArrayForQuad(border))
-        .setMargin(buildArrayForQuad(margin))
-        .setWidth(modelObject ? adjustForAbsoluteZoom(modelObject->pixelSnappedOffsetWidth(), modelObject) : boundingBox.width())
-        .setHeight(modelObject ? adjustForAbsoluteZoom(modelObject->pixelSnappedOffsetHeight(), modelObject) : boundingBox.height());
-
-    Shape::DisplayPaths paths;
-    FloatQuad boundsQuad;
-    if (const ShapeOutsideInfo* shapeOutsideInfo = shapeOutsideInfoForNode(node, &paths, &boundsQuad)) {
-        RefPtr<TypeBuilder::DOM::ShapeOutsideInfo> shapeTypeBuilder = TypeBuilder::DOM::ShapeOutsideInfo::create()
-            .setBounds(buildArrayForQuad(boundsQuad))
-            .setShape(ShapePathBuilder::buildPath(*view, *layoutObject, *shapeOutsideInfo, paths.shape))
-            .setMarginShape(ShapePathBuilder::buildPath(*view, *layoutObject, *shapeOutsideInfo, paths.marginShape));
-        model->setShapeOutside(shapeTypeBuilder);
-    }
-
-    return true;
-}
-
 // static
 InspectorHighlightConfig InspectorHighlight::defaultConfig()
 {
@@ -436,7 +446,7 @@ InspectorHighlightConfig InspectorHighlight::defaultConfig()
     config.showInfo = true;
     config.showRulers = true;
     config.showExtensionLines = true;
-    config.showLayoutEditor = false;
+    config.displayAsMaterial = false;
     return config;
 }
 

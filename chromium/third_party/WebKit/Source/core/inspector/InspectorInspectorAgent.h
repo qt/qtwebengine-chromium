@@ -52,7 +52,7 @@ public:
         return adoptPtrWillBeNoop(new InspectorInspectorAgent(injectedScriptManager));
     }
 
-    virtual ~InspectorInspectorAgent();
+    ~InspectorInspectorAgent() override;
     DECLARE_VIRTUAL_TRACE();
 
     // Inspector front-end API.
@@ -73,7 +73,7 @@ private:
 
     RawPtrWillBeMember<InjectedScriptManager> m_injectedScriptManager;
 
-    Vector<pair<long, String> > m_pendingEvaluateTestCommands;
+    Vector<std::pair<long, String>> m_pendingEvaluateTestCommands;
 };
 
 } // namespace blink

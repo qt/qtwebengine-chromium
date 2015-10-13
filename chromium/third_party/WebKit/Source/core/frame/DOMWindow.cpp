@@ -8,6 +8,7 @@
 #include "bindings/core/v8/ScriptCallStackFactory.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
+#include "core/dom/ExecutionContext.h"
 #include "core/dom/SecurityContext.h"
 #include "core/events/MessageEvent.h"
 #include "core/frame/Frame.h"
@@ -120,7 +121,9 @@ DOMWindow* DOMWindow::anonymousIndexedGetter(uint32_t index) const
 
 bool DOMWindow::isCurrentlyDisplayedInFrame() const
 {
-    return frame() && frame()->domWindow() == this && frame()->host();
+    if (frame())
+        RELEASE_ASSERT_WITH_SECURITY_IMPLICATION(frame()->domWindow() == this);
+    return frame() && frame()->host();
 }
 
 bool DOMWindow::isInsecureScriptAccess(LocalDOMWindow& callingWindow, const String& urlString)
@@ -153,6 +156,15 @@ void DOMWindow::resetLocation()
         m_location->reset();
         m_location = nullptr;
     }
+}
+
+bool DOMWindow::isSecureContext() const
+{
+    if (!frame())
+        return false;
+
+    String unusedErrorMessage;
+    return document()->isSecureContext(unusedErrorMessage, ExecutionContext::StandardSecureContextCheck);
 }
 
 void DOMWindow::postMessage(PassRefPtr<SerializedScriptValue> message, const MessagePortArray* ports, const String& targetOrigin, LocalDOMWindow* source, ExceptionState& exceptionState)
@@ -206,7 +218,7 @@ void DOMWindow::postMessage(PassRefPtr<SerializedScriptValue> message, const Mes
         // Capture stack trace only when inspector front-end is loaded as it may be time consuming.
         RefPtrWillBeRawPtr<ScriptCallStack> stackTrace = nullptr;
         if (InspectorInstrumentation::consoleAgentEnabled(sourceDocument))
-            stackTrace = createScriptCallStack(ScriptCallStack::maxCallStackSizeToCapture, true);
+            stackTrace = currentScriptCallStack(ScriptCallStack::maxCallStackSizeToCapture);
 
         toLocalDOMWindow(this)->schedulePostMessage(event, source, target.get(), stackTrace.release());
     }

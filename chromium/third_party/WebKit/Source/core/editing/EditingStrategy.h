@@ -5,40 +5,46 @@
 #ifndef EditingStrategy_h
 #define EditingStrategy_h
 
+#include "core/CoreExport.h"
 #include "core/dom/NodeTraversal.h"
 #include "core/dom/shadow/ComposedTreeTraversal.h"
+#include "wtf/Allocator.h"
 
 namespace blink {
 
 template <typename Strategy>
-class PositionAlgorithm;
+class PositionTemplate;
 
 template <typename Strategy>
 class PositionIteratorAlgorithm;
 
 // Editing algorithm defined on node traversal.
 template <typename Traversal>
-class EditingAlgorithm : public Traversal {
+class CORE_TEMPLATE_CLASS_EXPORT EditingAlgorithm : public Traversal {
+    STATIC_ONLY(EditingAlgorithm);
 public:
+    static int caretMaxOffset(const Node&);
+    // TODO(yosin) We should make following functions to take |Node&| instead
+    // of |Node*|.
     static bool isEmptyNonEditableNodeInEditable(const Node*);
     static bool editingIgnoresContent(const Node*);
+
+    // This method is used to create positions in the DOM. It returns the
+    // maximum valid offset in a node. It returns 1 for some elements even
+    // though they do not have children, which creates technically invalid DOM
+    // Positions. Be sure to call |parentAnchoredEquivalent()| on a Position
+    // before using it to create a DOM Range, or an exception will be thrown.
     static int lastOffsetForEditing(const Node*);
+    static Node* rootUserSelectAllForNode(Node*);
 };
+
+extern template class CORE_EXTERN_TEMPLATE_EXPORT EditingAlgorithm<NodeTraversal>;
+extern template class CORE_EXTERN_TEMPLATE_EXPORT EditingAlgorithm<ComposedTreeTraversal>;
 
 // DOM tree version of editing algorithm
-class EditingStrategy : public EditingAlgorithm<NodeTraversal> {
-public:
-    using PositionType = PositionAlgorithm<EditingStrategy>;
-};
-
+using EditingStrategy = EditingAlgorithm<NodeTraversal>;
 // Composed tree version of editing algorithm
-class EditingInComposedTreeStrategy : public EditingAlgorithm<ComposedTreeTraversal> {
-public:
-    using PositionType = PositionAlgorithm<EditingInComposedTreeStrategy>;
-};
-
-extern template class EditingAlgorithm<NodeTraversal>;
-extern template class EditingAlgorithm<ComposedTreeTraversal>;
+using EditingInComposedTreeStrategy = EditingAlgorithm<ComposedTreeTraversal>;
 
 } // namespace blink
 

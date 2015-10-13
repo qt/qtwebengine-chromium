@@ -46,6 +46,8 @@
         'core/browser/autofill_policy_handler.h',
         'core/browser/browser_policy_connector.cc',
         'core/browser/browser_policy_connector.h',
+        'core/browser/browser_policy_connector_base.cc',
+        'core/browser/browser_policy_connector_base.h',
         'core/browser/browser_policy_connector_ios.h',
         'core/browser/browser_policy_connector_ios.mm',
         'core/browser/cloud/message_util.cc',
@@ -61,6 +63,19 @@
         'core/browser/url_blacklist_policy_handler.cc',
         'core/browser/url_blacklist_policy_handler.h',
       ],
+      'conditions': [
+        ['OS=="android"', {
+          'sources': [
+            'core/browser/android/android_combined_policy_provider.cc',
+            'core/browser/android/android_combined_policy_provider.h',
+            'core/browser/android/component_jni_registrar.cc',
+            'core/browser/android/component_jni_registrar.h',
+            'core/browser/android/policy_converter.cc',
+            'core/browser/android/policy_converter.h',
+          ],
+          'dependencies': [ 'policy_jni_headers' ]
+        }]
+      ]
     }],
   ],
 }

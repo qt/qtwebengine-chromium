@@ -255,12 +255,12 @@ Process Process::DeprecatedGetProcessFromHandle(ProcessHandle handle) {
   return Process(handle);
 }
 
-#if !defined(OS_LINUX) && !defined(OS_MACOSX)
+#if !defined(OS_LINUX)
 // static
 bool Process::CanBackgroundProcesses() {
   return false;
 }
-#endif  // !defined(OS_LINUX) && !defined(OS_MACOSX)
+#endif  // !defined(OS_LINUX)
 
 bool Process::IsValid() const {
   return process_ != kNullProcessHandle;
@@ -356,7 +356,7 @@ bool Process::WaitForExitWithTimeout(TimeDelta timeout, int* exit_code) {
   return WaitForExitWithTimeoutImpl(Handle(), exit_code, timeout);
 }
 
-#if !defined(OS_LINUX) && !defined(OS_MACOSX)
+#if !defined(OS_LINUX)
 bool Process::IsProcessBackgrounded() const {
   // See SetProcessBackgrounded().
   DCHECK(IsValid());
@@ -364,13 +364,13 @@ bool Process::IsProcessBackgrounded() const {
 }
 
 bool Process::SetProcessBackgrounded(bool value) {
-  // Not implemented for POSIX systems other than Mac and Linux. With POSIX, if
-  // we were to lower the process priority we wouldn't be able to raise it back
-  // to its initial priority.
+  // Not implemented for POSIX systems other than Linux. With POSIX, if we were
+  // to lower the process priority we wouldn't be able to raise it back to its
+  // initial priority.
   NOTIMPLEMENTED();
   return false;
 }
-#endif  // !defined(OS_LINUX) && !defined(OS_MACOSX)
+#endif  // !defined(OS_LINUX)
 
 int Process::GetPriority() const {
   DCHECK(IsValid());

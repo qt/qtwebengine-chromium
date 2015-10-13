@@ -137,6 +137,8 @@ class MockTransferBuffer : public TransferBufferInterface {
   RingBuffer::Offset GetOffset(void* pointer) const override;
   void DiscardBlock(void* p) override;
   void FreePendingToken(void* p, unsigned int /* token */) override;
+  unsigned int GetSize() const override;
+  unsigned int GetFreeSize() const override;
 
   size_t MaxTransferBufferSize() {
     return size_ - result_size_;
@@ -309,6 +311,14 @@ void MockTransferBuffer::FreePendingToken(void* p, unsigned int /* token */) {
   last_alloc_ = NULL;
 }
 
+unsigned int MockTransferBuffer::GetSize() const {
+  return 0;
+}
+
+unsigned int MockTransferBuffer::GetFreeSize() const {
+  return 0;
+}
+
 // API wrapper for Buffers.
 class GenBuffersAPI {
  public:
@@ -412,7 +422,8 @@ class GLES2ImplementationTest : public testing::Test {
                     bool lose_context_when_out_of_memory,
                     bool transfer_buffer_initialize_fail,
                     bool sync_query,
-                    bool occlusion_query_boolean) {
+                    bool occlusion_query_boolean,
+                    bool timer_queries) {
       command_buffer_.reset(new StrictMock<MockClientCommandBuffer>());
       if (!command_buffer_->Initialize())
         return false;
@@ -457,6 +468,7 @@ class GLES2ImplementationTest : public testing::Test {
           bind_generates_resource_service ? 1 : 0;
       capabilities.sync_query = sync_query;
       capabilities.occlusion_query_boolean = occlusion_query_boolean;
+      capabilities.timer_queries = timer_queries;
       EXPECT_CALL(*gpu_control_, GetCapabilities())
           .WillOnce(testing::Return(capabilities));
 
@@ -542,6 +554,10 @@ class GLES2ImplementationTest : public testing::Test {
     return gl_->query_tracker_->GetQuery(id);
   }
 
+  QueryTracker* GetQueryTracker() {
+    return gl_->query_tracker_.get();
+  }
+
   struct ContextInitOptions {
     ContextInitOptions()
         : bind_generates_resource_client(true),
@@ -549,7 +565,8 @@ class GLES2ImplementationTest : public testing::Test {
           lose_context_when_out_of_memory(false),
           transfer_buffer_initialize_fail(false),
           sync_query(true),
-          occlusion_query_boolean(true) {}
+          occlusion_query_boolean(true),
+          timer_queries(true) {}
 
     bool bind_generates_resource_client;
     bool bind_generates_resource_service;
@@ -557,11 +574,13 @@ class GLES2ImplementationTest : public testing::Test {
     bool transfer_buffer_initialize_fail;
     bool sync_query;
     bool occlusion_query_boolean;
+    bool timer_queries;
   };
 
   bool Initialize(const ContextInitOptions& init_options) {
     bool success = true;
-    share_group_ = new ShareGroup(init_options.bind_generates_resource_client);
+    share_group_ = new ShareGroup(init_options.bind_generates_resource_client,
+                                  0 /* tracing_id */);
 
     for (int i = 0; i < kNumTestContexts; i++) {
       if (!test_contexts_[i].Initialize(
@@ -571,7 +590,8 @@ class GLES2ImplementationTest : public testing::Test {
               init_options.lose_context_when_out_of_memory,
               init_options.transfer_buffer_initialize_fail,
               init_options.sync_query,
-              init_options.occlusion_query_boolean))
+              init_options.occlusion_query_boolean,
+              init_options.timer_queries))
         success = false;
     }
 
@@ -2204,6 +2224,42 @@ TEST_F(GLES2ImplementationTest, GetIntegerCacheRead) {
   EXPECT_EQ(static_cast<GLenum>(GL_NO_ERROR), gl_->GetError());
 }
 
+TEST_F(GLES2ImplementationTest, GetIntegerDisjointValue) {
+  ExpectedMemoryInfo mem = GetExpectedMappedMemory(sizeof(DisjointValueSync));
+  gl_->SetDisjointValueSyncCHROMIUM();
+  ASSERT_EQ(mem.id, GetQueryTracker()->DisjointCountSyncShmID());
+  ASSERT_EQ(mem.offset, GetQueryTracker()->DisjointCountSyncShmOffset());
+  DisjointValueSync* disjoint_sync =
+      reinterpret_cast<DisjointValueSync*>(mem.ptr);
+
+  ClearCommands();
+  GLint disjoint_value = -1;
+  gl_->GetIntegerv(GL_GPU_DISJOINT_EXT, &disjoint_value);
+  EXPECT_TRUE(NoCommandsWritten());
+  EXPECT_EQ(0, disjoint_value);
+
+  // After setting disjoint, it should be true.
+  disjoint_value = -1;
+  disjoint_sync->SetDisjointCount(1);
+  gl_->GetIntegerv(GL_GPU_DISJOINT_EXT, &disjoint_value);
+  EXPECT_TRUE(NoCommandsWritten());
+  EXPECT_EQ(1, disjoint_value);
+
+  // After checking disjoint, it should be false again.
+  disjoint_value = -1;
+  gl_->GetIntegerv(GL_GPU_DISJOINT_EXT, &disjoint_value);
+  EXPECT_TRUE(NoCommandsWritten());
+  EXPECT_EQ(0, disjoint_value);
+
+  // Check for errors.
+  ExpectedMemoryInfo result1 =
+      GetExpectedResultMemory(sizeof(cmds::GetError::Result));
+  EXPECT_CALL(*command_buffer(), OnFlush())
+      .WillOnce(SetMemory(result1.ptr, GLuint(GL_NO_ERROR)))
+      .RetiresOnSaturation();
+  EXPECT_EQ(static_cast<GLenum>(GL_NO_ERROR), gl_->GetError());
+}
+
 TEST_F(GLES2ImplementationTest, GetIntegerCacheWrite) {
   struct PNameValue {
     GLenum pname;
@@ -2585,15 +2641,6 @@ TEST_F(GLES2ImplementationTest, TextureInvalidArguments) {
   gl_->TexImage2D(
       kTarget, kLevel, kFormat, kWidth, kHeight, kInvalidBorder, kFormat, kType,
       pixels);
-
-  EXPECT_TRUE(NoCommandsWritten());
-  EXPECT_EQ(GL_INVALID_VALUE, CheckError());
-
-  ClearCommands();
-
-  gl_->AsyncTexImage2DCHROMIUM(
-      kTarget, kLevel, kFormat, kWidth, kHeight, kInvalidBorder, kFormat, kType,
-      NULL);
 
   EXPECT_TRUE(NoCommandsWritten());
   EXPECT_EQ(GL_INVALID_VALUE, CheckError());
@@ -3217,6 +3264,7 @@ TEST_F(GLES2ImplementationManualInitTest, BadQueryTargets) {
   ContextInitOptions init_options;
   init_options.sync_query = false;
   init_options.occlusion_query_boolean = false;
+  init_options.timer_queries = false;
   ASSERT_TRUE(Initialize(init_options));
 
   GLuint id = 0;
@@ -3235,9 +3283,123 @@ TEST_F(GLES2ImplementationManualInitTest, BadQueryTargets) {
   EXPECT_EQ(GL_INVALID_OPERATION, CheckError());
   EXPECT_EQ(nullptr, GetQuery(id));
 
-  gl_->BeginQueryEXT(0x123, id);
+  gl_->BeginQueryEXT(GL_TIME_ELAPSED_EXT, id);
   EXPECT_EQ(GL_INVALID_OPERATION, CheckError());
   EXPECT_EQ(nullptr, GetQuery(id));
+
+  gl_->BeginQueryEXT(0x123, id);
+  EXPECT_EQ(GL_INVALID_ENUM, CheckError());
+  EXPECT_EQ(nullptr, GetQuery(id));
+
+  gl_->QueryCounterEXT(id, GL_TIMESTAMP_EXT);
+  EXPECT_EQ(GL_INVALID_OPERATION, CheckError());
+  EXPECT_EQ(nullptr, GetQuery(id));
+
+  gl_->QueryCounterEXT(id, 0x123);
+  EXPECT_EQ(GL_INVALID_ENUM, CheckError());
+  EXPECT_EQ(nullptr, GetQuery(id));
+}
+
+TEST_F(GLES2ImplementationTest, SetDisjointSync) {
+  struct SetDisjointSyncCmd {
+    cmds::SetDisjointValueSyncCHROMIUM disjoint_sync;
+  };
+  SetDisjointSyncCmd expected_disjoint_sync_cmd;
+  const void* commands = GetPut();
+  gl_->SetDisjointValueSyncCHROMIUM();
+  expected_disjoint_sync_cmd.disjoint_sync.Init(
+      GetQueryTracker()->DisjointCountSyncShmID(),
+      GetQueryTracker()->DisjointCountSyncShmOffset());
+
+  EXPECT_EQ(0, memcmp(&expected_disjoint_sync_cmd, commands,
+                      sizeof(expected_disjoint_sync_cmd)));
+}
+
+TEST_F(GLES2ImplementationTest, QueryCounterEXT) {
+  GLuint expected_ids[2] = { 1, 2 }; // These must match what's actually genned.
+  struct GenCmds {
+    cmds::GenQueriesEXTImmediate gen;
+    GLuint data[2];
+  };
+  GenCmds expected_gen_cmds;
+  expected_gen_cmds.gen.Init(arraysize(expected_ids), &expected_ids[0]);
+  GLuint ids[arraysize(expected_ids)] = { 0, };
+  gl_->GenQueriesEXT(arraysize(expected_ids), &ids[0]);
+  EXPECT_EQ(0, memcmp(
+      &expected_gen_cmds, commands_, sizeof(expected_gen_cmds)));
+  GLuint id1 = ids[0];
+  GLuint id2 = ids[1];
+  ClearCommands();
+
+  // Make sure disjoint value is synchronized already.
+  gl_->SetDisjointValueSyncCHROMIUM();
+  ClearCommands();
+
+  // Test QueryCounterEXT fails if id = 0.
+  gl_->QueryCounterEXT(0, GL_TIMESTAMP_EXT);
+  EXPECT_TRUE(NoCommandsWritten());
+  EXPECT_EQ(GL_INVALID_OPERATION, CheckError());
+
+  // Test QueryCounterEXT fails if target is unknown.
+  ClearCommands();
+  gl_->QueryCounterEXT(id1, GL_TIME_ELAPSED_EXT);
+  EXPECT_TRUE(NoCommandsWritten());
+  EXPECT_EQ(GL_INVALID_ENUM, CheckError());
+
+  // Test QueryCounterEXT inserts command.
+  struct QueryCounterCmds {
+    cmds::QueryCounterEXT query_counter;
+  };
+  QueryCounterCmds expected_query_counter_cmds;
+  const void* commands = GetPut();
+  gl_->QueryCounterEXT(id1, GL_TIMESTAMP_EXT);
+  EXPECT_EQ(GL_NO_ERROR, CheckError());
+  QueryTracker::Query* query = GetQuery(id1);
+  ASSERT_TRUE(query != NULL);
+  expected_query_counter_cmds.query_counter.Init(
+      id1, GL_TIMESTAMP_EXT, query->shm_id(), query->shm_offset(),
+      query->submit_count());
+  EXPECT_EQ(0, memcmp(&expected_query_counter_cmds, commands,
+                      sizeof(expected_query_counter_cmds)));
+  ClearCommands();
+
+  // Test 2nd QueryCounterEXT succeeds.
+  commands = GetPut();
+  gl_->QueryCounterEXT(id2, GL_TIMESTAMP_EXT);
+  EXPECT_EQ(GL_NO_ERROR, CheckError());
+  QueryTracker::Query* query2 = GetQuery(id2);
+  ASSERT_TRUE(query2 != NULL);
+  expected_query_counter_cmds.query_counter.Init(
+      id2, GL_TIMESTAMP_EXT, query2->shm_id(), query2->shm_offset(),
+      query2->submit_count());
+  EXPECT_EQ(0, memcmp(&expected_query_counter_cmds, commands,
+                      sizeof(expected_query_counter_cmds)));
+  ClearCommands();
+
+  // Test QueryCounterEXT increments count.
+  base::subtle::Atomic32 old_submit_count = query->submit_count();
+  commands = GetPut();
+  gl_->QueryCounterEXT(id1, GL_TIMESTAMP_EXT);
+  EXPECT_EQ(GL_NO_ERROR, CheckError());
+  EXPECT_NE(old_submit_count, query->submit_count());
+  expected_query_counter_cmds.query_counter.Init(
+      id1, GL_TIMESTAMP_EXT, query->shm_id(), query->shm_offset(),
+      query->submit_count());
+  EXPECT_EQ(0, memcmp(&expected_query_counter_cmds, commands,
+                      sizeof(expected_query_counter_cmds)));
+  ClearCommands();
+
+  // Test GetQueryObjectuivEXT CheckResultsAvailable
+  GLuint available = 0xBDu;
+  ClearCommands();
+  gl_->GetQueryObjectuivEXT(id1, GL_QUERY_RESULT_AVAILABLE_EXT, &available);
+  EXPECT_EQ(0u, available);
+
+  // Test GetQueryObjectui64vEXT CheckResultsAvailable
+  GLuint64 available2 = 0xBDu;
+  ClearCommands();
+  gl_->GetQueryObjectui64vEXT(id1, GL_QUERY_RESULT_AVAILABLE_EXT, &available2);
+  EXPECT_EQ(0u, available2);
 }
 
 TEST_F(GLES2ImplementationTest, ErrorQuery) {

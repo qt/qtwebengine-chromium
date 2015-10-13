@@ -195,9 +195,6 @@ public:
     virtual void blitFramebufferCHROMIUM(WGC3Dint srcX0, WGC3Dint srcY0, WGC3Dint srcX1, WGC3Dint srcY1, WGC3Dint dstX0, WGC3Dint dstY0, WGC3Dint dstX1, WGC3Dint dstY1, WGC3Dbitfield mask, WGC3Denum filter) = 0;
     virtual void renderbufferStorageMultisampleCHROMIUM(WGC3Denum target, WGC3Dsizei samples, WGC3Denum internalformat, WGC3Dsizei width, WGC3Dsizei height) = 0;
 
-    // GL_CHROMIUM_rate_limit_offscreen_context
-    virtual void rateLimitOffscreenContextCHROMIUM() { }
-
     // GL_CHROMIUM_lose_context
     virtual void loseContextCHROMIUM(WGC3Denum current, WGC3Denum other) { }
 
@@ -276,7 +273,7 @@ public:
     virtual WGC3Dint getUniformLocation(WebGLId program, const WGC3Dchar* name) = 0;
     virtual void getVertexAttribfv(WGC3Duint index, WGC3Denum pname, WGC3Dfloat* value) = 0;
     virtual void getVertexAttribiv(WGC3Duint index, WGC3Denum pname, WGC3Dint* value) = 0;
-    virtual WGC3Dsizeiptr getVertexAttribOffset(WGC3Duint index, WGC3Denum pname) = 0;
+    virtual WGC3Dintptr getVertexAttribOffset(WGC3Duint index, WGC3Denum pname) = 0;
 
     virtual void hint(WGC3Denum target, WGC3Denum mode) = 0;
     virtual WGC3Dboolean isBuffer(WebGLId buffer) = 0;
@@ -376,6 +373,9 @@ public:
 
     virtual WebString getTranslatedShaderSourceANGLE(WebGLId shader) = 0;
 
+    // GL_CHROMIUM_screen_space_antialiasing
+    virtual void applyScreenSpaceAntialiasingCHROMIUM() { }
+
     // GL_CHROMIUM_iosurface
     virtual void texImageIOSurface2DCHROMIUM(WGC3Denum target, WGC3Dint width, WGC3Dint height, WGC3Duint ioSurfaceId, WGC3Duint plane) { }
 
@@ -391,6 +391,10 @@ public:
     virtual void endQueryEXT(WGC3Denum target) { }
     virtual void getQueryivEXT(WGC3Denum target, WGC3Denum pname, WGC3Dint* params) { }
     virtual void getQueryObjectuivEXT(WebGLId query, WGC3Denum pname, WGC3Duint* params) { }
+
+    // GL_EXT_disjoint_timer_query
+    virtual void queryCounterEXT(WebGLId query, WGC3Denum target) {}
+    virtual void getQueryObjectui64vEXT(WebGLId query, WGC3Denum pname, WGC3Duint64* params) {}
 
     // GL_CHROMIUM_bind_uniform_location
     virtual void bindUniformLocationCHROMIUM(WebGLId program, WGC3Dint location, const WGC3Dchar* uniform) { }

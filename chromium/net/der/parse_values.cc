@@ -63,7 +63,6 @@ bool DecimalStringToUint(ByteReader& in, size_t digits, UINT* out) {
 // 0 and 60 (to allow for leap seconds; no validation is done that a leap
 // second is on a day that could be a leap second).
 bool ValidateGeneralizedTime(const GeneralizedTime& time) {
-  CHECK(time.year > 0 && time.year < 9999);
   if (time.month < 1 || time.month > 12)
     return false;
   if (time.day < 1)
@@ -112,6 +111,26 @@ bool ValidateGeneralizedTime(const GeneralizedTime& time) {
   return true;
 }
 
+// Returns the number of bytes of numeric precision in a DER encoded INTEGER
+// value. |in| must be a valid DER encoding of an INTEGER for this to work.
+//
+// Normally the precision of the number is exactly in.Length(). However when
+// encoding positive numbers using DER it is possible to have a leading zero
+// (to prevent number from being interpreted as negative).
+//
+// For instance a 160-bit positive number might take 21 bytes to encode. This
+// function will return 20 in such a case.
+size_t GetUnsignedIntegerLength(const Input& in) {
+  der::ByteReader reader(in);
+  uint8_t first_byte;
+  if (!reader.ReadByte(&first_byte))
+    return 0;  // Not valid DER  as |in| was empty.
+
+  if (first_byte == 0 && in.Length() > 1)
+    return in.Length() - 1;
+  return in.Length();
+}
+
 }  // namespace
 
 bool ParseBool(const Input& in, bool* out) {
@@ -126,41 +145,96 @@ bool ParseBoolRelaxed(const Input& in, bool* out) {
   return ParseBoolInternal(in, out, true /* relaxed */);
 }
 
+// ITU-T X.690 section 8.3.2 specifies that an integer value must be encoded
+// in the smallest number of octets. If the encoding consists of more than
+// one octet, then the bits of the first octet and the most significant bit
+// of the second octet must not be all zeroes or all ones.
+bool IsValidInteger(const Input& in, bool* negative) {
+  der::ByteReader reader(in);
+  uint8_t first_byte;
+
+  if (!reader.ReadByte(&first_byte))
+    return false;  // Empty inputs are not allowed.
+
+  uint8_t second_byte;
+  if (reader.ReadByte(&second_byte)) {
+    if ((first_byte == 0x00 || first_byte == 0xFF) &&
+        (first_byte & 0x80) == (second_byte & 0x80)) {
+      // Not a minimal encoding.
+      return false;
+    }
+  }
+
+  *negative = (first_byte & 0x80) == 0x80;
+  return true;
+}
+
 bool ParseUint64(const Input& in, uint64_t* out) {
+  // Reject non-minimally encoded numbers and negative numbers.
+  bool negative;
+  if (!IsValidInteger(in, &negative) || negative)
+    return false;
+
+  // Reject (non-negative) integers whose value would overflow the output type.
+  if (GetUnsignedIntegerLength(in) > sizeof(*out))
+    return false;
+
   ByteReader reader(in);
-  size_t bytes_read = 0;
   uint8_t data;
   uint64_t value = 0;
-  // Note that for simplicity, this check only admits integers up to 2^63-1.
-  if (in.Length() > sizeof(uint64_t) || in.Length() == 0)
-    return false;
+
   while (reader.ReadByte(&data)) {
-    if (bytes_read == 0 && (data & 0x80)) {
-      return false;
-    }
     value <<= 8;
     value |= data;
-    bytes_read++;
-  }
-  // ITU-T X.690 section 8.3.2 specifies that an integer value must be encoded
-  // in the smallest number of octets. If the encoding consists of more than
-  // one octet, then the bits of the first octet and the most significant bit
-  // of the second octet must not be all zeroes or all ones.
-  // Because this function only parses unsigned integers, there's no need to
-  // check for the all ones case.
-  if (bytes_read > 1) {
-    ByteReader first_bytes_reader(in);
-    uint8_t first_byte;
-    uint8_t second_byte;
-    if (!first_bytes_reader.ReadByte(&first_byte) ||
-        !first_bytes_reader.ReadByte(&second_byte)) {
-      return false;
-    }
-    if (first_byte == 0 && !(second_byte & 0x80)) {
-      return false;
-    }
   }
   *out = value;
+  return true;
+}
+
+BitString::BitString(const Input& bytes, uint8_t unused_bits)
+    : bytes_(bytes), unused_bits_(unused_bits) {
+  DCHECK_LT(unused_bits, 8);
+  DCHECK(unused_bits == 0 || bytes.Length() != 0);
+}
+
+bool ParseBitString(const Input& in, BitString* out) {
+  ByteReader reader(in);
+
+  // From ITU-T X.690, section 8.6.2.2 (applies to BER, CER, DER):
+  //
+  // The initial octet shall encode, as an unsigned binary integer with
+  // bit 1 as the least significant bit, the number of unused bits in the final
+  // subsequent octet. The number shall be in the range zero to seven.
+  uint8_t unused_bits;
+  if (!reader.ReadByte(&unused_bits))
+    return false;
+  if (unused_bits > 7)
+    return false;
+
+  Input bytes;
+  if (!reader.ReadBytes(reader.BytesLeft(), &bytes))
+    return false;  // Not reachable.
+
+  // Ensure that unused bits in the last byte are set to 0.
+  if (unused_bits > 0) {
+    // From ITU-T X.690, section 8.6.2.3 (applies to BER, CER, DER):
+    //
+    // If the bitstring is empty, there shall be no subsequent octets,
+    // and the initial octet shall be zero.
+    if (bytes.Length() == 0)
+      return false;
+    uint8_t last_byte = bytes.UnsafeData()[bytes.Length() - 1];
+
+    // From ITU-T X.690, section 11.2.1 (applies to CER and DER, but not BER):
+    //
+    // Each unused bit in the final octet of the encoding of a bit string value
+    // shall be set to zero.
+    uint8_t mask = 0xFF >> (8 - unused_bits);
+    if ((mask & last_byte) != 0)
+      return false;
+  }
+
+  *out = BitString(bytes, unused_bits);
   return true;
 }
 
@@ -202,19 +276,20 @@ bool ParseUTCTimeRelaxed(const Input& in, GeneralizedTime* value) {
   if (zulu == 'Z' && !zulu_reader.HasMore()) {
     time.seconds = 0;
     *value = time;
-    return true;
+  } else {
+    if (!DecimalStringToUint(reader, 2, &time.seconds))
+      return false;
+    if (!reader.ReadByte(&zulu) || zulu != 'Z' || reader.HasMore())
+      return false;
   }
-  if (!DecimalStringToUint(reader, 2, &time.seconds))
-    return false;
-  if (!reader.ReadByte(&zulu) || zulu != 'Z' || reader.HasMore())
-    return false;
-  if (!ValidateGeneralizedTime(time))
-    return false;
+
   if (time.year < 50) {
     time.year += 2000;
   } else {
     time.year += 1900;
   }
+  if (!ValidateGeneralizedTime(time))
+    return false;
   *value = time;
   return true;
 }
@@ -233,13 +308,13 @@ bool ParseUTCTime(const Input& in, GeneralizedTime* value) {
   uint8_t zulu;
   if (!reader.ReadByte(&zulu) || zulu != 'Z' || reader.HasMore())
     return false;
-  if (!ValidateGeneralizedTime(time))
-    return false;
   if (time.year < 50) {
     time.year += 2000;
   } else {
     time.year += 1900;
   }
+  if (!ValidateGeneralizedTime(time))
+    return false;
   *value = time;
   return true;
 }

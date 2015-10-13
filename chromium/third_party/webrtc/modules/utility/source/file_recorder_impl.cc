@@ -32,7 +32,6 @@ FileRecorderImpl::FileRecorderImpl(uint32_t instanceID,
       _fileFormat(fileFormat),
       _moduleFile(MediaFile::CreateMediaFile(_instanceID)),
       codec_info_(),
-      _amrFormat(AMRFileStorage),
       _audioBuffer(),
       _audioEncoder(instanceID),
       _audioResampler()
@@ -62,16 +61,13 @@ int32_t FileRecorderImpl::RegisterModuleFileCallback(
 int32_t FileRecorderImpl::StartRecordingAudioFile(
     const char* fileName,
     const CodecInst& codecInst,
-    uint32_t notificationTimeMs,
-    ACMAMRPackingFormat amrFormat)
+    uint32_t notificationTimeMs)
 {
     if(_moduleFile == NULL)
     {
         return -1;
     }
     codec_info_ = codecInst;
-    _amrFormat = amrFormat;
-
     int32_t retVal = 0;
     retVal =_moduleFile->StartRecordingAudioFile(fileName, _fileFormat,
                                                  codecInst,
@@ -97,12 +93,9 @@ int32_t FileRecorderImpl::StartRecordingAudioFile(
 int32_t FileRecorderImpl::StartRecordingAudioFile(
     OutStream& destStream,
     const CodecInst& codecInst,
-    uint32_t notificationTimeMs,
-    ACMAMRPackingFormat amrFormat)
+    uint32_t notificationTimeMs)
 {
     codec_info_ = codecInst;
-    _amrFormat = amrFormat;
-
     int32_t retVal = _moduleFile->StartRecordingAudioStream(
         destStream,
         _fileFormat,
@@ -156,7 +149,7 @@ int32_t FileRecorderImpl::RecordAudioToFile(
         tempAudioFrame.sample_rate_hz_ = incomingAudioFrame.sample_rate_hz_;
         tempAudioFrame.samples_per_channel_ =
           incomingAudioFrame.samples_per_channel_;
-        for (uint16_t i = 0;
+        for (size_t i = 0;
              i < (incomingAudioFrame.samples_per_channel_); i++)
         {
             // Sample value is the average of left and right buffer rounded to
@@ -174,7 +167,7 @@ int32_t FileRecorderImpl::RecordAudioToFile(
         tempAudioFrame.sample_rate_hz_ = incomingAudioFrame.sample_rate_hz_;
         tempAudioFrame.samples_per_channel_ =
           incomingAudioFrame.samples_per_channel_;
-        for (uint16_t i = 0;
+        for (size_t i = 0;
              i < (incomingAudioFrame.samples_per_channel_); i++)
         {
             // Duplicate sample to both channels
@@ -210,7 +203,7 @@ int32_t FileRecorderImpl::RecordAudioToFile(
             return -1;
         }
     } else {
-        int outLen = 0;
+        size_t outLen = 0;
         _audioResampler.ResetIfNeeded(ptrAudioFrame->sample_rate_hz_,
                                       codec_info_.plfreq,
                                       ptrAudioFrame->num_channels_);
@@ -240,7 +233,7 @@ int32_t FileRecorderImpl::SetUpAudioEncoder()
     if (_fileFormat == kFileFormatPreencodedFile ||
         STR_CASE_CMP(codec_info_.plname, "L16") != 0)
     {
-        if(_audioEncoder.SetEncodeCodec(codec_info_,_amrFormat) == -1)
+        if(_audioEncoder.SetEncodeCodec(codec_info_) == -1)
         {
             LOG(LS_ERROR) << "SetUpAudioEncoder() codec "
                           << codec_info_.plname << " not supported.";

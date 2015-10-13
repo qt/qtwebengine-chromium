@@ -35,11 +35,11 @@
 
 #include "bindings/core/v8/SerializedScriptValue.h"
 #include "core/dom/AXObjectCache.h"
-#include "core/dom/DocumentMarker.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/IconURL.h"
 #include "core/editing/SelectionType.h"
 #include "core/editing/TextAffinity.h"
+#include "core/editing/markers/DocumentMarker.h"
 #include "core/fileapi/FileError.h"
 #include "core/frame/Frame.h"
 #include "core/frame/Settings.h"
@@ -72,7 +72,6 @@
 #include "platform/fonts/FontDescription.h"
 #include "platform/fonts/FontSmoothingMode.h"
 #include "platform/graphics/filters/FilterOperation.h"
-#include "platform/graphics/media/MediaPlayer.h"
 #include "platform/mediastream/MediaStreamSource.h"
 #include "platform/network/ContentSecurityPolicyParsers.h"
 #include "platform/network/ResourceLoadPriority.h"
@@ -160,6 +159,7 @@ STATIC_ASSERT_MATCHING_ENUM(WebAXEventCheckedStateChanged, AXObjectCache::AXChec
 STATIC_ASSERT_MATCHING_ENUM(WebAXEventChildrenChanged, AXObjectCache::AXChildrenChanged);
 STATIC_ASSERT_MATCHING_ENUM(WebAXEventFocus, AXObjectCache::AXFocusedUIElementChanged);
 STATIC_ASSERT_MATCHING_ENUM(WebAXEventHide, AXObjectCache::AXHide);
+STATIC_ASSERT_MATCHING_ENUM(WebAXEventHover, AXObjectCache::AXHover);
 STATIC_ASSERT_MATCHING_ENUM(WebAXEventInvalidStatusChanged, AXObjectCache::AXInvalidStatusChanged);
 STATIC_ASSERT_MATCHING_ENUM(WebAXEventLayoutComplete, AXObjectCache::AXLayoutComplete);
 STATIC_ASSERT_MATCHING_ENUM(WebAXEventLiveRegionChanged, AXObjectCache::AXLiveRegionChanged);
@@ -454,25 +454,11 @@ STATIC_ASSERT_MATCHING_ENUM(WebIconURL::TypeFavicon, Favicon);
 STATIC_ASSERT_MATCHING_ENUM(WebIconURL::TypeTouch, TouchIcon);
 STATIC_ASSERT_MATCHING_ENUM(WebIconURL::TypeTouchPrecomposed, TouchPrecomposedIcon);
 
-STATIC_ASSERT_MATCHING_ENUM(WebNode::ElementNode, Node::ELEMENT_NODE);
-STATIC_ASSERT_MATCHING_ENUM(WebNode::AttributeNode, Node::ATTRIBUTE_NODE);
-STATIC_ASSERT_MATCHING_ENUM(WebNode::TextNode, Node::TEXT_NODE);
-STATIC_ASSERT_MATCHING_ENUM(WebNode::CDataSectionNode, Node::CDATA_SECTION_NODE);
-STATIC_ASSERT_MATCHING_ENUM(WebNode::ProcessingInstructionsNode, Node::PROCESSING_INSTRUCTION_NODE);
-STATIC_ASSERT_MATCHING_ENUM(WebNode::CommentNode, Node::COMMENT_NODE);
-STATIC_ASSERT_MATCHING_ENUM(WebNode::DocumentNode, Node::DOCUMENT_NODE);
-STATIC_ASSERT_MATCHING_ENUM(WebNode::DocumentTypeNode, Node::DOCUMENT_TYPE_NODE);
-STATIC_ASSERT_MATCHING_ENUM(WebNode::DocumentFragmentNode, Node::DOCUMENT_FRAGMENT_NODE);
-
 STATIC_ASSERT_MATCHING_ENUM(WebMediaPlayer::ReadyStateHaveNothing, HTMLMediaElement::HAVE_NOTHING);
 STATIC_ASSERT_MATCHING_ENUM(WebMediaPlayer::ReadyStateHaveMetadata, HTMLMediaElement::HAVE_METADATA);
 STATIC_ASSERT_MATCHING_ENUM(WebMediaPlayer::ReadyStateHaveCurrentData, HTMLMediaElement::HAVE_CURRENT_DATA);
 STATIC_ASSERT_MATCHING_ENUM(WebMediaPlayer::ReadyStateHaveFutureData, HTMLMediaElement::HAVE_FUTURE_DATA);
 STATIC_ASSERT_MATCHING_ENUM(WebMediaPlayer::ReadyStateHaveEnoughData, HTMLMediaElement::HAVE_ENOUGH_DATA);
-
-STATIC_ASSERT_MATCHING_ENUM(WebMediaPlayer::PreloadNone, MediaPlayer::None);
-STATIC_ASSERT_MATCHING_ENUM(WebMediaPlayer::PreloadMetaData, MediaPlayer::MetaData);
-STATIC_ASSERT_MATCHING_ENUM(WebMediaPlayer::PreloadAuto, MediaPlayer::Auto);
 
 STATIC_ASSERT_MATCHING_ENUM(WebMouseEvent::ButtonNone, NoButton);
 STATIC_ASSERT_MATCHING_ENUM(WebMouseEvent::ButtonLeft, LeftButton);
@@ -514,8 +500,8 @@ STATIC_ASSERT_MATCHING_ENUM(WebSettings::EditingBehaviorWin, EditingWindowsBehav
 STATIC_ASSERT_MATCHING_ENUM(WebSettings::EditingBehaviorUnix, EditingUnixBehavior);
 STATIC_ASSERT_MATCHING_ENUM(WebSettings::EditingBehaviorAndroid, EditingAndroidBehavior);
 
-STATIC_ASSERT_MATCHING_ENUM(WebTextAffinityUpstream, UPSTREAM);
-STATIC_ASSERT_MATCHING_ENUM(WebTextAffinityDownstream, DOWNSTREAM);
+STATIC_ASSERT_MATCHING_ENUM(WebTextAffinityUpstream, TextAffinity::Upstream);
+STATIC_ASSERT_MATCHING_ENUM(WebTextAffinityDownstream, TextAffinity::Downstream);
 
 STATIC_ASSERT_MATCHING_ENUM(WebIDBDatabaseExceptionUnknownError, UnknownError);
 STATIC_ASSERT_MATCHING_ENUM(WebIDBDatabaseExceptionConstraintError, ConstraintError);
@@ -717,7 +703,7 @@ STATIC_ASSERT_MATCHING_ENUM(WebFrameLoadType::Standard, FrameLoadTypeStandard);
 STATIC_ASSERT_MATCHING_ENUM(WebFrameLoadType::BackForward, FrameLoadTypeBackForward);
 STATIC_ASSERT_MATCHING_ENUM(WebFrameLoadType::Reload, FrameLoadTypeReload);
 STATIC_ASSERT_MATCHING_ENUM(WebFrameLoadType::Same, FrameLoadTypeSame);
-STATIC_ASSERT_MATCHING_ENUM(WebFrameLoadType::RedirectWithLockedBackForwardList, FrameLoadTypeRedirectWithLockedBackForwardList);
+STATIC_ASSERT_MATCHING_ENUM(WebFrameLoadType::ReplaceCurrentItem, FrameLoadTypeReplaceCurrentItem);
 STATIC_ASSERT_MATCHING_ENUM(WebFrameLoadType::InitialInChildFrame, FrameLoadTypeInitialInChildFrame);
 STATIC_ASSERT_MATCHING_ENUM(WebFrameLoadType::InitialHistoryLoad, FrameLoadTypeInitialHistoryLoad);
 STATIC_ASSERT_MATCHING_ENUM(WebFrameLoadType::ReloadFromOrigin, FrameLoadTypeReloadFromOrigin);

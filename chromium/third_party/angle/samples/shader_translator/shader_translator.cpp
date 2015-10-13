@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sstream>
 #include <vector>
 #include "angle_gl.h"
 
@@ -33,11 +34,15 @@ static void PrintVariable(const std::string &prefix, size_t index, const sh::Sha
 static void PrintActiveVariables(ShHandle compiler);
 
 // If NUM_SOURCE_STRINGS is set to a value > 1, the input file data is
-// broken into that many chunks.
-const unsigned int NUM_SOURCE_STRINGS = 2;
+// broken into that many chunks. This will affect file/line numbering in
+// the preprocessor.
+const unsigned int NUM_SOURCE_STRINGS = 1;
 typedef std::vector<char *> ShaderSource;
 static bool ReadShaderSource(const char *fileName, ShaderSource &source);
 static void FreeShaderSource(ShaderSource &source);
+
+static bool ParseGLSLOutputVersion(const std::string &, ShShaderOutput *outResult);
+static bool ParseIntValue(const std::string &, int emptyDefault, int *outValue);
 
 //
 // Set up the per compile resources
@@ -54,6 +59,7 @@ void GenerateResources(ShBuiltInResources *resources)
     resources->MaxTextureImageUnits = 8;
     resources->MaxFragmentUniformVectors = 16;
     resources->MaxDrawBuffers = 1;
+    resources->MaxDualSourceDrawBuffers     = 1;
 
     resources->OES_standard_derivatives = 0;
     resources->OES_EGL_image_external = 0;
@@ -131,7 +137,12 @@ int main(int argc, char *argv[])
                     switch (argv[0][3])
                     {
                       case 'e': output = SH_ESSL_OUTPUT; break;
-                      case 'g': output = SH_GLSL_OUTPUT; break;
+                      case 'g':
+                          if (!ParseGLSLOutputVersion(&argv[0][sizeof("-b=g") - 1], &output))
+                          {
+                              failCode = EFailUsage;
+                          }
+                          break;
                       case 'h':
                         if (argv[0][4] == '1' && argv[0][5] == '1')
                         {
@@ -153,17 +164,42 @@ int main(int argc, char *argv[])
               case 'x':
                 if (argv[0][2] == '=')
                 {
+                    // clang-format off
                     switch (argv[0][3])
                     {
                       case 'i': resources.OES_EGL_image_external = 1; break;
                       case 'd': resources.OES_standard_derivatives = 1; break;
                       case 'r': resources.ARB_texture_rectangle = 1; break;
+                      case 'b':
+                          if (ParseIntValue(&argv[0][sizeof("-x=b") - 1], 1,
+                                            &resources.MaxDualSourceDrawBuffers))
+                          {
+                              resources.EXT_blend_func_extended = 1;
+                          }
+                          else
+                          {
+                              failCode = EFailUsage;
+                          }
+                          break;
+                      case 'w':
+                          if (ParseIntValue(&argv[0][sizeof("-x=w") - 1], 1,
+                                            &resources.MaxDrawBuffers))
+                          {
+                              resources.EXT_draw_buffers = 1;
+                          }
+                          else
+                          {
+                              failCode = EFailUsage;
+                          }
+                          break;
+                      case 'g': resources.EXT_frag_depth = 1; break;
                       case 'l': resources.EXT_shader_texture_lod = 1; break;
                       case 'f': resources.EXT_shader_framebuffer_fetch = 1; break;
                       case 'n': resources.NV_shader_framebuffer_fetch = 1; break;
                       case 'a': resources.ARM_shader_framebuffer_fetch = 1; break;
                       default: failCode = EFailUsage;
                     }
+                    // clang-format on
                 }
                 else
                 {
@@ -251,11 +287,13 @@ int main(int argc, char *argv[])
 //
 void usage()
 {
-    printf("Usage: translate [-i -o -u -l -e -t -d -p -b=e -b=g -b=h9 -x=i -x=d] file1 file2 ...\n"
+    // clang-format off
+    printf(
+        "Usage: translate [-i -o -u -l -e -t -d -p -b=e -b=g -b=h9 -x=i -x=d] file1 file2 ...\n"
         "Where: filename : filename ending in .frag or .vert\n"
         "       -i       : print intermediate tree\n"
         "       -o       : print translated code\n"
-        "       -u       : print active attribs, uniforms, and varyings\n"
+        "       -u       : print active attribs, uniforms, varyings and program outputs\n"
         "       -l       : unroll for-loops with integer indices\n"
         "       -e       : emulate certain built-in functions (workaround for driver bugs)\n"
         "       -t       : enforce experimental timing restrictions\n"
@@ -267,16 +305,22 @@ void usage()
         "       -s=w2    : use WebGL 2 spec (in development)\n"
         "       -s=c     : use CSS Shaders spec\n"
         "       -b=e     : output GLSL ES code (this is by default)\n"
-        "       -b=g     : output GLSL code\n"
+        "       -b=g     : output GLSL code (compatibility profile)\n"
+        "       -b=g[NUM]: output GLSL code (NUM can be 130, 140, 150, 330, 400, 410, 420, 430, "
+        "440, 450)\n"
         "       -b=h9    : output HLSL9 code\n"
         "       -b=h11   : output HLSL11 code\n"
         "       -x=i     : enable GL_OES_EGL_image_external\n"
         "       -x=d     : enable GL_OES_EGL_standard_derivatives\n"
         "       -x=r     : enable ARB_texture_rectangle\n"
+        "       -x=b[NUM]: enable EXT_blend_func_extended (NUM default 1)\n"
+        "       -x=w[NUM]: enable EXT_draw_buffers (NUM default 1)\n"
+        "       -x=g     : enable EXT_frag_depth\n"
         "       -x=l     : enable EXT_shader_texture_lod\n"
         "       -x=f     : enable EXT_shader_framebuffer_fetch\n"
         "       -x=n     : enable NV_shader_framebuffer_fetch\n"
         "       -x=a     : enable ARM_shader_framebuffer_fetch\n");
+    // clang-format on
 }
 
 //
@@ -361,8 +405,8 @@ void PrintVariable(const std::string &prefix, size_t index, const sh::ShaderVari
       default: typeName = "UNKNOWN"; break;
     }
 
-    printf("%s %lu : name=%s, type=%s, arraySize=%u\n",
-           prefix.c_str(), index, var.name.c_str(), typeName.c_str(), var.arraySize);
+    printf("%s %u : name=%s, type=%s, arraySize=%u\n", prefix.c_str(),
+           static_cast<unsigned int>(index), var.name.c_str(), typeName.c_str(), var.arraySize);
     if (var.fields.size())
     {
         std::string structPrefix;
@@ -380,7 +424,8 @@ static void PrintActiveVariables(ShHandle compiler)
     const std::vector<sh::Uniform> *uniforms = ShGetUniforms(compiler);
     const std::vector<sh::Varying> *varyings = ShGetVaryings(compiler);
     const std::vector<sh::Attribute> *attributes = ShGetAttributes(compiler);
-    for (size_t varCategory = 0; varCategory < 3; ++varCategory)
+    const std::vector<sh::OutputVariable> *outputs = ShGetOutputVariables(compiler);
+    for (size_t varCategory = 0; varCategory < 4; ++varCategory)
     {
         size_t numVars = 0;
         std::string varCategoryName;
@@ -394,11 +439,17 @@ static void PrintActiveVariables(ShHandle compiler)
             numVars = varyings->size();
             varCategoryName = "varying";
         }
-        else
+        else if (varCategory == 2)
         {
             numVars = attributes->size();
             varCategoryName = "attribute";
         }
+        else
+        {
+            numVars         = outputs->size();
+            varCategoryName = "output";
+        }
+
         for (size_t i = 0; i < numVars; ++i)
         {
             const sh::ShaderVariable *var;
@@ -406,8 +457,11 @@ static void PrintActiveVariables(ShHandle compiler)
                 var = &((*uniforms)[i]);
             else if (varCategory == 1)
                 var = &((*varyings)[i]);
-            else
+            else if (varCategory == 2)
                 var = &((*attributes)[i]);
+            else
+                var = &((*outputs)[i]);
+
             PrintVariable(varCategoryName, i, *var);
         }
         printf("\n");
@@ -457,3 +511,72 @@ static void FreeShaderSource(ShaderSource &source)
     source.clear();
 }
 
+static bool ParseGLSLOutputVersion(const std::string &num, ShShaderOutput *outResult)
+{
+    if (num.length() == 0)
+    {
+        *outResult = SH_GLSL_COMPATIBILITY_OUTPUT;
+        return true;
+    }
+    std::istringstream input(num);
+    int value;
+    if (!(input >> value && input.eof()))
+    {
+        return false;
+    }
+
+    switch (value)
+    {
+        case 130:
+            *outResult = SH_GLSL_130_OUTPUT;
+            return true;
+        case 140:
+            *outResult = SH_GLSL_140_OUTPUT;
+            return true;
+        case 150:
+            *outResult = SH_GLSL_150_CORE_OUTPUT;
+            return true;
+        case 330:
+            *outResult = SH_GLSL_330_CORE_OUTPUT;
+            return true;
+        case 400:
+            *outResult = SH_GLSL_400_CORE_OUTPUT;
+            return true;
+        case 410:
+            *outResult = SH_GLSL_410_CORE_OUTPUT;
+            return true;
+        case 420:
+            *outResult = SH_GLSL_420_CORE_OUTPUT;
+            return true;
+        case 430:
+            *outResult = SH_GLSL_430_CORE_OUTPUT;
+            return true;
+        case 440:
+            *outResult = SH_GLSL_440_CORE_OUTPUT;
+            return true;
+        case 450:
+            *outResult = SH_GLSL_450_CORE_OUTPUT;
+            return true;
+        default:
+            break;
+    }
+    return false;
+}
+
+static bool ParseIntValue(const std::string &num, int emptyDefault, int *outValue)
+{
+    if (num.length() == 0)
+    {
+        *outValue = emptyDefault;
+        return true;
+    }
+
+    std::istringstream input(num);
+    int value;
+    if (!(input >> value && input.eof()))
+    {
+        return false;
+    }
+    *outValue = value;
+    return true;
+}

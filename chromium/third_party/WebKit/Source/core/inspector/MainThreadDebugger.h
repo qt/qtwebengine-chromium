@@ -34,6 +34,7 @@
 #include "core/CoreExport.h"
 #include "core/inspector/InspectorTaskRunner.h"
 #include "core/inspector/ScriptDebuggerBase.h"
+#include "platform/heap/Handle.h"
 #include <v8.h>
 
 namespace WTF {
@@ -42,47 +43,42 @@ class Mutex;
 
 namespace blink {
 
-class CORE_EXPORT MainThreadDebugger final : public NoBaseWillBeGarbageCollectedFinalized<MainThreadDebugger>, public ScriptDebuggerBase {
+class LocalFrame;
+
+class CORE_EXPORT MainThreadDebugger final : public ScriptDebuggerBase {
     WTF_MAKE_NONCOPYABLE(MainThreadDebugger);
-    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(MainThreadDebugger);
 public:
     class ClientMessageLoop {
+        WTF_MAKE_FAST_ALLOCATED(ClientMessageLoop);
     public:
         virtual ~ClientMessageLoop() { }
         virtual void run(LocalFrame*) = 0;
         virtual void quitNow() = 0;
     };
 
-    static PassOwnPtrWillBeRawPtr<MainThreadDebugger> create(PassOwnPtr<ClientMessageLoop> clientMessageLoop, v8::Isolate* isolate)
+    static PassOwnPtr<MainThreadDebugger> create(PassOwnPtr<ClientMessageLoop> clientMessageLoop, v8::Isolate* isolate)
     {
-        return adoptPtrWillBeNoop(new MainThreadDebugger(clientMessageLoop, isolate));
+        return adoptPtr(new MainThreadDebugger(clientMessageLoop, isolate));
     }
 
     ~MainThreadDebugger() override;
 
-    static void initializeContext(v8::Local<v8::Context>, int worldId);
-    void addListener(ScriptDebugListener*, LocalFrame*);
-    void removeListener(ScriptDebugListener*, LocalFrame*);
+    static void initializeContext(v8::Local<v8::Context>, LocalFrame*, int worldId);
+    static int contextGroupId(LocalFrame*);
 
     static MainThreadDebugger* instance();
     static void interruptMainThreadAndRun(PassOwnPtr<InspectorTaskRunner::Task>);
     InspectorTaskRunner* taskRunner() const { return m_taskRunner.get(); }
 
-    DECLARE_VIRTUAL_TRACE();
-
 private:
     MainThreadDebugger(PassOwnPtr<ClientMessageLoop>, v8::Isolate*);
 
-    ScriptDebugListener* getDebugListenerForContext(v8::Local<v8::Context>) override;
-    void runMessageLoopOnPause(v8::Local<v8::Context>) override;
+    void runMessageLoopOnPause(int contextGroupId) override;
     void quitMessageLoopOnPause() override;
 
     static WTF::Mutex& creationMutex();
 
-    using ListenersMap = WillBeHeapHashMap<RawPtrWillBeMember<LocalFrame>, ScriptDebugListener*>;
-    ListenersMap m_listenersMap;
     OwnPtr<ClientMessageLoop> m_clientMessageLoop;
-    RawPtrWillBeMember<LocalFrame> m_pausedFrame;
     OwnPtr<InspectorTaskRunner> m_taskRunner;
 
     static MainThreadDebugger* s_instance;

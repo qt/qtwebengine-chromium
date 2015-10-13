@@ -60,7 +60,6 @@ namespace blink {
 IDBObjectStore::IDBObjectStore(const IDBObjectStoreMetadata& metadata, IDBTransaction* transaction)
     : m_metadata(metadata)
     , m_transaction(transaction)
-    , m_deleted(false)
 {
     ASSERT(m_transaction);
 }
@@ -80,8 +79,8 @@ PassRefPtrWillBeRawPtr<DOMStringList> IDBObjectStore::indexNames() const
 {
     IDB_TRACE("IDBObjectStore::indexNames");
     RefPtrWillBeRawPtr<DOMStringList> indexNames = DOMStringList::create(DOMStringList::IndexedDB);
-    for (IDBObjectStoreMetadata::IndexMap::const_iterator it = m_metadata.indexes.begin(); it != m_metadata.indexes.end(); ++it)
-        indexNames->append(it->value.name);
+    for (const auto& it : m_metadata.indexes)
+        indexNames->append(it.value.name);
     indexNames->sort();
     return indexNames.release();
 }
@@ -126,10 +125,9 @@ IDBRequest* IDBObjectStore::getAll(ScriptState* scriptState, const ScriptValue& 
 IDBRequest* IDBObjectStore::getAll(ScriptState* scriptState, const ScriptValue& keyRange, unsigned long maxCount, ExceptionState& exceptionState)
 {
     IDB_TRACE("IDBObjectStore::getAll");
-    if (!maxCount) {
-        exceptionState.throwTypeError(IDBDatabase::notValidMaxCountErrorMessage);
-        return nullptr;
-    }
+    if (!maxCount)
+        maxCount = std::numeric_limits<uint32_t>::max();
+
     if (isDeleted()) {
         exceptionState.throwDOMException(InvalidStateError, IDBDatabase::objectStoreDeletedErrorMessage);
         return nullptr;
@@ -163,28 +161,27 @@ IDBRequest* IDBObjectStore::getAllKeys(ScriptState* scriptState, const ScriptVal
 IDBRequest* IDBObjectStore::getAllKeys(ScriptState* scriptState, const ScriptValue& keyRange, unsigned long maxCount, ExceptionState& exceptionState)
 {
     IDB_TRACE("IDBObjectStore::getAll");
-    if (!maxCount) {
-        exceptionState.throwTypeError(IDBDatabase::notValidMaxCountErrorMessage);
-        return 0;
-    }
+    if (!maxCount)
+        maxCount = std::numeric_limits<uint32_t>::max();
+
     if (isDeleted()) {
         exceptionState.throwDOMException(InvalidStateError, IDBDatabase::objectStoreDeletedErrorMessage);
-        return 0;
+        return nullptr;
     }
     if (m_transaction->isFinished() || m_transaction->isFinishing()) {
         exceptionState.throwDOMException(TransactionInactiveError, IDBDatabase::transactionFinishedErrorMessage);
-        return 0;
+        return nullptr;
     }
     if (!m_transaction->isActive()) {
         exceptionState.throwDOMException(TransactionInactiveError, IDBDatabase::transactionInactiveErrorMessage);
-        return 0;
+        return nullptr;
     }
     IDBKeyRange* range = IDBKeyRange::fromScriptValue(scriptState->executionContext(), keyRange, exceptionState);
     if (exceptionState.hadException())
-        return 0;
+        return nullptr;
     if (!backendDB()) {
         exceptionState.throwDOMException(InvalidStateError, IDBDatabase::databaseClosedErrorMessage);
-        return 0;
+        return nullptr;
     }
 
     IDBRequest* request = IDBRequest::create(scriptState, IDBAny::create(this), m_transaction.get());
@@ -327,12 +324,12 @@ IDBRequest* IDBObjectStore::put(ScriptState* scriptState, WebIDBPutMode putMode,
 
     Vector<int64_t> indexIds;
     HeapVector<IndexKeys> indexKeys;
-    for (IDBObjectStoreMetadata::IndexMap::const_iterator it = m_metadata.indexes.begin(); it != m_metadata.indexes.end(); ++it) {
+    for (const auto& it : m_metadata.indexes) {
         if (clone.isEmpty())
             clone = deserializeScriptValue(scriptState, serializedValue.get(), &blobInfo);
         IndexKeys keys;
-        generateIndexKeysForValue(scriptState->isolate(), it->value, clone, &keys);
-        indexIds.append(it->key);
+        generateIndexKeysForValue(scriptState->isolate(), it.value, clone, &keys);
+        indexIds.append(it.key);
         indexKeys.append(keys);
     }
 
@@ -419,14 +416,20 @@ namespace {
 // cursor success handlers are kept alive.
 class IndexPopulator final : public EventListener {
 public:
-    static PassRefPtr<IndexPopulator> create(ScriptState* scriptState, IDBDatabase* database, int64_t transactionId, int64_t objectStoreId, const IDBIndexMetadata& indexMetadata)
+    static PassRefPtrWillBeRawPtr<IndexPopulator> create(ScriptState* scriptState, IDBDatabase* database, int64_t transactionId, int64_t objectStoreId, const IDBIndexMetadata& indexMetadata)
     {
-        return adoptRef(new IndexPopulator(scriptState, database, transactionId, objectStoreId, indexMetadata));
+        return adoptRefWillBeNoop(new IndexPopulator(scriptState, database, transactionId, objectStoreId, indexMetadata));
     }
 
     bool operator==(const EventListener& other) override
     {
         return this == &other;
+    }
+
+    DEFINE_INLINE_VIRTUAL_TRACE()
+    {
+        visitor->trace(m_database);
+        EventListener::trace(visitor);
     }
 
 private:
@@ -480,7 +483,7 @@ private:
     }
 
     RefPtr<ScriptState> m_scriptState;
-    Persistent<IDBDatabase> m_database;
+    PersistentWillBeMember<IDBDatabase> m_database;
     const int64_t m_transactionId;
     const int64_t m_objectStoreId;
     const IDBIndexMetadata m_indexMetadata;
@@ -543,7 +546,7 @@ IDBIndex* IDBObjectStore::createIndex(ScriptState* scriptState, const String& na
     indexRequest->preventPropagation();
 
     // This is kept alive by being the success handler of the request, which is in turn kept alive by the owning transaction.
-    RefPtr<IndexPopulator> indexPopulator = IndexPopulator::create(scriptState, transaction()->db(), m_transaction->id(), id(), metadata);
+    RefPtrWillBeRawPtr<IndexPopulator> indexPopulator = IndexPopulator::create(scriptState, transaction()->db(), m_transaction->id(), id(), metadata);
     indexRequest->setOnsuccess(indexPopulator);
     return index;
 }
@@ -571,9 +574,9 @@ IDBIndex* IDBObjectStore::index(const String& name, ExceptionState& exceptionSta
     }
 
     const IDBIndexMetadata* indexMetadata(nullptr);
-    for (IDBObjectStoreMetadata::IndexMap::const_iterator it = m_metadata.indexes.begin(); it != m_metadata.indexes.end(); ++it) {
-        if (it->value.name == name) {
-            indexMetadata = &it->value;
+    for (const auto& it : m_metadata.indexes) {
+        if (it.value.name == name) {
+            indexMetadata = &it.value;
             break;
         }
     }
@@ -736,10 +739,10 @@ void IDBObjectStore::transactionFinished()
 
 int64_t IDBObjectStore::findIndexId(const String& name) const
 {
-    for (IDBObjectStoreMetadata::IndexMap::const_iterator it = m_metadata.indexes.begin(); it != m_metadata.indexes.end(); ++it) {
-        if (it->value.name == name) {
-            ASSERT(it->key != IDBIndexMetadata::InvalidId);
-            return it->key;
+    for (const auto& it : m_metadata.indexes) {
+        if (it.value.name == name) {
+            ASSERT(it.key != IDBIndexMetadata::InvalidId);
+            return it.key;
         }
     }
     return IDBIndexMetadata::InvalidId;

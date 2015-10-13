@@ -157,7 +157,7 @@
       "layouts": [
         "us"
       ],
-      "input_view": "inputview.html#id=zhuyin&language=zh-TW&passwordLayout=zhuyin&name=inputmethod_zhuyin",
+      "input_view": "inputview.html#id=zhuyin.compact.qwerty&language=zh-TW&passwordLayout=zhuyin.en.compact.qwerty&name=inputmethod_zhuyin",
       "options_page": "hmm_options.html?code=zh-hant-t-i0-und"
     },
     {
@@ -666,6 +666,19 @@
         "us"
       ],
       "input_view": "inputview.html#id=m17n:vi_viqr&language=vi&passwordLayout=us-ltr&name=keyboard_vietnamese_viqr"
+    },
+    {
+      "name": "__MSG_keyboard_vietnamese_vni__",
+      "type": "ime",
+      "id": "vkd_vi_vni",
+      "description": "",
+      "language": [
+        "vi"
+      ],
+      "layouts": [
+        "us"
+      ],
+      "input_view": "inputview.html#id=m17n:vi_vni&language=vi&passwordLayout=us-ltr&name=keyboard_vietnamese_vni"
     },
     {
       "name": "__MSG_keyboard_arabic__",

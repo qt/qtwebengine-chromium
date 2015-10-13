@@ -110,7 +110,6 @@ cr.define('cr.login', function() {
     this.skipForNow_ = false;
     this.authFlow = AuthFlow.DEFAULT;
     this.authDomain = '';
-    this.loaded_ = false;
     this.idpOrigin_ = null;
     this.continueUrl_ = null;
     this.continueUrlWithoutParams_ = null;
@@ -196,7 +195,6 @@ cr.define('cr.login', function() {
   Authenticator.prototype.load = function(authMode, data) {
     this.authMode = authMode;
     this.clearCredentials_();
-    this.loaded_ = false;
     // gaiaUrl parameter is used for testing. Once defined, it is never changed.
     this.idpOrigin_ = data.gaiaUrl || IDP_ORIGIN;
     this.continueUrl_ = data.continueUrl || CONTINUE_URL;
@@ -210,6 +208,7 @@ cr.define('cr.login', function() {
     this.gapsCookie_ = data.gapsCookie;
     this.gapsCookieSent_ = false;
     this.newGapsCookie_ = null;
+    this.dontResizeNonEmbeddedPages = data.dontResizeNonEmbeddedPages;
 
     this.initialFrameUrl_ = this.constructInitialFrameUrl_(data);
     this.reloadUrl_ = data.frameUrl || this.initialFrameUrl_;
@@ -243,7 +242,6 @@ cr.define('cr.login', function() {
    */
   Authenticator.prototype.reload = function() {
     this.clearCredentials_();
-    this.loaded_ = false;
     this.webview_.src = this.reloadUrl_;
   };
 
@@ -318,7 +316,12 @@ cr.define('cr.login', function() {
           }
         }
       }
-      if (!isEmbeddedPage) {
+
+      // In some cases, non-embedded pages should not be resized.  For
+      // example, on desktop when reauthenticating for purposes of unlocking
+      // a profile, resizing would cause a browser window to open in the
+      // system profile, which is not allowed.
+      if (!isEmbeddedPage && !this.dontResizeNonEmbeddedPages) {
         this.dispatchEvent(new CustomEvent('resize', {detail: currentUrl}));
         return;
       }
@@ -515,13 +518,13 @@ cr.define('cr.login', function() {
     var msg = e.data;
     if (msg.method == 'attemptLogin') {
       this.email_ = msg.email;
-      this.password_ = msg.password;
+      if (this.authMode == AuthMode.DESKTOP)
+        this.password_ = msg.password;
+
       this.chooseWhatToSync_ = msg.chooseWhatToSync;
       // We need to dispatch only first event, before user enters password.
-      if (!msg.password) {
-        this.dispatchEvent(
-            new CustomEvent('attemptLogin', {detail: msg.email}));
-      }
+      this.dispatchEvent(
+          new CustomEvent('attemptLogin', {detail: msg.email}));
     } else if (msg.method == 'dialogShown') {
       this.dispatchEvent(new Event('dialogShown'));
     } else if (msg.method == 'dialogHidden') {
@@ -581,13 +584,6 @@ cr.define('cr.login', function() {
         this.samlApiUsedCallback();
       }
       this.password_ = this.samlHandler_.apiPasswordBytes;
-      this.onAuthCompleted_();
-      return;
-    }
-
-    // TODO(achuith): Eliminate this branch when credential passing api is
-    // stable on prod. crbug.com/467778.
-    if (this.authFlow != AuthFlow.SAML) {
       this.onAuthCompleted_();
       return;
     }
@@ -703,6 +699,10 @@ cr.define('cr.login', function() {
       };
 
       this.webview_.contentWindow.postMessage(msg, currentUrl);
+
+      this.dispatchEvent(new Event('ready'));
+      // Focus webview after dispatching event when webview is already visible.
+      this.webview_.focus();
     }
   };
 
@@ -721,13 +721,6 @@ cr.define('cr.login', function() {
    * @private
    */
   Authenticator.prototype.onLoadStop_ = function(e) {
-    if (!this.loaded_) {
-      this.loaded_ = true;
-      this.dispatchEvent(new Event('ready'));
-      // Focus webview after dispatching event when webview is already visible.
-      this.webview_.focus();
-    }
-
     // Sends client id to EAFE on every loadstop after a small timeout. This is
     // needed because EAFE sits behind SSO and initialize asynchrounouly
     // and we don't know for sure when it is loaded and ready to listen

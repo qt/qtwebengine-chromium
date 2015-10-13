@@ -247,6 +247,8 @@
         '<(DEPTH)/skia/skia.gyp:skia',
         '<(angle_path)/src/angle.gyp:translator',
         '<(DEPTH)/third_party/iccjpeg/iccjpeg.gyp:iccjpeg',
+        '<(DEPTH)/third_party/icu/icu.gyp:icui18n',
+        '<(DEPTH)/third_party/icu/icu.gyp:icuuc',
         '<(DEPTH)/third_party/libpng/libpng.gyp:libpng',
         '<(DEPTH)/third_party/libwebp/libwebp.gyp:libwebp',
         '<(DEPTH)/third_party/libxml/libxml.gyp:libxml',
@@ -568,7 +570,7 @@
           ],
         }, { # OS!="mac"
           'sources!': [
-            'editing/SmartReplaceCF.cpp',
+            'editing/commands/SmartReplaceCF.cpp',
           ],
         }],
         ['OS=="win" and chromium_win_pch==1', {
@@ -650,6 +652,7 @@
       'dependencies': [
         '../config.gyp:config',
         '../wtf/wtf_tests.gyp:wtf_unittest_helpers',
+        'webcore_prerequisites',
       ],
       'defines': [
         'BLINK_IMPLEMENTATION=1',
@@ -822,7 +825,7 @@
               },
             },{ # OS!="mac"
               'sources!': [
-                'editing/SmartReplaceCF.cpp',
+                'editing/commands/SmartReplaceCF.cpp',
                 'layout/LayoutThemeMac.h',
                 'layout/LayoutThemeMac.mm',
               ],

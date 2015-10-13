@@ -70,7 +70,7 @@ LayoutObject* ProgressInnerElement::createLayoutObject(const ComputedStyle&)
 
 bool ProgressInnerElement::layoutObjectIsNeeded(const ComputedStyle& style)
 {
-    if (progressElement()->hasOpenShadowRoot())
+    if (progressElement()->openShadowRoot())
         return HTMLDivElement::layoutObjectIsNeeded(style);
 
     LayoutObject* progressLayoutObject = progressElement()->layoutObject();
@@ -91,7 +91,7 @@ ProgressValueElement::ProgressValueElement(Document& document)
 
 void ProgressValueElement::setWidthPercentage(double width)
 {
-    setInlineStyleProperty(CSSPropertyWidth, width, CSSPrimitiveValue::CSS_PERCENTAGE);
+    setInlineStyleProperty(CSSPropertyWidth, width, CSSPrimitiveValue::UnitType::Percentage);
 }
 
 DEFINE_NODE_FACTORY(ProgressValueElement)

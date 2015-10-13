@@ -95,8 +95,8 @@ protected:
 
 private:
     bool shouldHaveFocusAppearance() const final;
-    void dispatchFocusEvent(Element* oldFocusedElement, WebFocusType) override;
-    void dispatchBlurEvent(Element* newFocusedElement, WebFocusType) override;
+    void dispatchFocusEvent(Element* oldFocusedElement, WebFocusType, InputDeviceCapabilities* sourceCapabilities) override;
+    void dispatchBlurEvent(Element* newFocusedElement, WebFocusType, InputDeviceCapabilities* sourceCapabilities) override;
     bool isMouseFocusable() const override;
     bool isKeyboardFocusable() const override;
     void defaultEventHandler(Event*) final;

@@ -76,9 +76,6 @@ struct CONTENT_EXPORT RendererPreferences {
   SkColor inactive_selection_bg_color;
   SkColor inactive_selection_fg_color;
 
-  // Browser wants a look at all non-local top level navigation requests.
-  bool browser_handles_non_local_top_level_requests;
-
   // Browser wants a look at all top-level navigation requests.
   bool browser_handles_all_top_level_requests;
 
@@ -98,6 +95,12 @@ struct CONTENT_EXPORT RendererPreferences {
 
   // Set to false to indicate that WebRTC should use the OS default routing.
   bool enable_webrtc_multiple_routes;
+
+  // Set to false to indicate that WebRTC should not use non-proxied UDP to
+  // connect to peers and TURN servers, which effectively disables all WebRTC's
+  // UDP traffic for now, until UDP-based proxy support is available in
+  // Chromium. Default is true.
+  bool enable_webrtc_nonproxied_udp;
 
   // Default page zoom level.
   double default_zoom_level;
@@ -169,6 +172,8 @@ struct CONTENT_EXPORT RendererPreferences {
   int32 arrow_bitmap_width_horizontal_scroll_bar_in_dips;
 #endif
 
+  // The default font size used for rendering on Linux.
+  int default_font_size;
 };
 
 }  // namespace content

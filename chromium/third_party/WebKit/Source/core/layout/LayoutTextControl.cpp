@@ -77,7 +77,7 @@ void LayoutTextControl::styleDidChange(StyleDifference diff, const ComputedStyle
         innerEditorLayoutObject->setStyle(createInnerEditorStyle(styleRef()));
         innerEditor->setNeedsStyleRecalc(SubtreeStyleChange, StyleChangeReasonForTracing::create(StyleChangeReason::Control));
     }
-    textFormControlElement()->updatePlaceholderVisibility(false);
+    textFormControlElement()->updatePlaceholderVisibility();
 }
 
 static inline void updateUserModifyProperty(HTMLTextFormControlElement& node, ComputedStyle& style)
@@ -203,7 +203,7 @@ static const char* const fontFamiliesWithInvalidCharWidth[] = {
 // from the width of a '0'. This only seems to apply to a fixed number of Mac fonts,
 // but, in order to get similar rendering across platforms, we do this check for
 // all platforms.
-bool LayoutTextControl::hasValidAvgCharWidth(AtomicString family)
+bool LayoutTextControl::hasValidAvgCharWidth(const AtomicString& family)
 {
     static HashSet<AtomicString>* fontFamiliesWithInvalidCharWidthMap = nullptr;
 
@@ -220,7 +220,7 @@ bool LayoutTextControl::hasValidAvgCharWidth(AtomicString family)
     return !fontFamiliesWithInvalidCharWidthMap->contains(family);
 }
 
-float LayoutTextControl::getAvgCharWidth(AtomicString family)
+float LayoutTextControl::getAvgCharWidth(const AtomicString& family) const
 {
     if (hasValidAvgCharWidth(family))
         return roundf(style()->font().primaryFont()->avgCharWidth());
@@ -228,7 +228,7 @@ float LayoutTextControl::getAvgCharWidth(AtomicString family)
     const UChar ch = '0';
     const String str = String(&ch, 1);
     const Font& font = style()->font();
-    TextRun textRun = constructTextRun(this, font, str, styleRef(), TextRun::AllowTrailingExpansion);
+    TextRun textRun = constructTextRun(font, str, styleRef(), TextRun::AllowTrailingExpansion);
     return font.width(textRun);
 }
 
@@ -281,10 +281,9 @@ void LayoutTextControl::computePreferredLogicalWidths()
     clearPreferredLogicalWidthsDirty();
 }
 
-void LayoutTextControl::addFocusRingRects(Vector<LayoutRect>& rects, const LayoutPoint& additionalOffset) const
+void LayoutTextControl::addOutlineRects(Vector<LayoutRect>& rects, const LayoutPoint& additionalOffset, IncludeBlockVisualOverflowOrNot) const
 {
-    if (!size().isEmpty())
-        rects.append(LayoutRect(additionalOffset, size()));
+    rects.append(LayoutRect(additionalOffset, size()));
 }
 
 LayoutObject* LayoutTextControl::layoutSpecialExcludedChild(bool relayoutChildren, SubtreeLayoutScope& layoutScope)

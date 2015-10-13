@@ -29,7 +29,6 @@ source_set("sources") {
     "interface_factory.h",
     "interface_factory_impl.h",
     "lib/app_lifetime_helper.cc",
-    "lib/application_connection.cc",
     "lib/application_delegate.cc",
     "lib/application_impl.cc",
     "lib/application_runner.cc",
@@ -48,6 +47,7 @@ source_set("sources") {
     "//mojo/application/public/interfaces",
     "//mojo/common",
     "//mojo/environment:chromium",
+    "//mojo/message_pump",
     "//third_party/mojo/src/mojo/public/cpp/bindings",
     "//third_party/mojo/src/mojo/public/cpp/system",
   ]
@@ -66,7 +66,11 @@ source_set("content_handler") {
   ]
   deps = [
     ":cpp",
+
+    # TODO: this code should not depend on base.
     "//base",
+    "//mojo/application/public/interfaces:interfaces_cpp_sources",
+    "//mojo/message_pump",
     "//mojo/services/network/public/interfaces",
   ]
 }
@@ -83,6 +87,8 @@ source_set("test_support") {
     ":cpp",
     "//base",
     "//base/test:test_support",
+    "//mojo/application/public/interfaces:interfaces_cpp_sources",
+    "//mojo/logging",
     "//third_party/mojo/src/mojo/public/cpp/bindings",
     "//third_party/mojo/src/mojo/public/cpp/environment",
     "//third_party/mojo/src/mojo/public/cpp/system",

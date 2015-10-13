@@ -13,6 +13,7 @@
 #include <assert.h> //assert
 #include <string.h> //memcpy
 
+#include "webrtc/modules/rtp_rtcp/interface/rtp_rtcp_defines.h"
 #include "webrtc/modules/rtp_rtcp/source/byte_io.h"
 #include "webrtc/system_wrappers/interface/trace_event.h"
 
@@ -20,34 +21,31 @@ namespace webrtc {
 
 static const int kDtmfFrequencyHz = 8000;
 
-RTPSenderAudio::RTPSenderAudio(const int32_t id,
-                               Clock* clock,
+RTPSenderAudio::RTPSenderAudio(Clock* clock,
                                RTPSender* rtpSender,
-                               RtpAudioFeedback* audio_feedback) :
-    _id(id),
-    _clock(clock),
-    _rtpSender(rtpSender),
-    _audioFeedback(audio_feedback),
-    _sendAudioCritsect(CriticalSectionWrapper::CreateCriticalSection()),
-    _packetSizeSamples(160),
-    _dtmfEventIsOn(false),
-    _dtmfEventFirstPacketSent(false),
-    _dtmfPayloadType(-1),
-    _dtmfTimestamp(0),
-    _dtmfKey(0),
-    _dtmfLengthSamples(0),
-    _dtmfLevel(0),
-    _dtmfTimeLastSent(0),
-    _dtmfTimestampLastSent(0),
-    _REDPayloadType(-1),
-    _inbandVADactive(false),
-    _cngNBPayloadType(-1),
-    _cngWBPayloadType(-1),
-    _cngSWBPayloadType(-1),
-    _cngFBPayloadType(-1),
-    _lastPayloadType(-1),
-    _audioLevel_dBov(0) {
-}
+                               RtpAudioFeedback* audio_feedback)
+    : _clock(clock),
+      _rtpSender(rtpSender),
+      _audioFeedback(audio_feedback),
+      _sendAudioCritsect(CriticalSectionWrapper::CreateCriticalSection()),
+      _packetSizeSamples(160),
+      _dtmfEventIsOn(false),
+      _dtmfEventFirstPacketSent(false),
+      _dtmfPayloadType(-1),
+      _dtmfTimestamp(0),
+      _dtmfKey(0),
+      _dtmfLengthSamples(0),
+      _dtmfLevel(0),
+      _dtmfTimeLastSent(0),
+      _dtmfTimestampLastSent(0),
+      _REDPayloadType(-1),
+      _inbandVADactive(false),
+      _cngNBPayloadType(-1),
+      _cngWBPayloadType(-1),
+      _cngSWBPayloadType(-1),
+      _cngFBPayloadType(-1),
+      _lastPayloadType(-1),
+      _audioLevel_dBov(0) {}
 
 RTPSenderAudio::~RTPSenderAudio() {
 }
@@ -204,7 +202,7 @@ int32_t RTPSenderAudio::SendAudio(
   }
   if (dtmfToneStarted) {
     if (_audioFeedback)
-      _audioFeedback->OnPlayTelephoneEvent(_id, key, dtmfLengthMS, _dtmfLevel);
+      _audioFeedback->OnPlayTelephoneEvent(key, dtmfLengthMS, _dtmfLevel);
   }
 
   // A source MAY send events and coded audio packets for the same time
@@ -371,7 +369,7 @@ int32_t RTPSenderAudio::SendAudio(
                            _rtpSender->SequenceNumber());
     return _rtpSender->SendToNetwork(dataBuffer, payloadSize, rtpHeaderLength,
                                      -1, kAllowRetransmission,
-                                     PacedSender::kHighPriority);
+                                     RtpPacketSender::kHighPriority);
   }
 
     // Audio level magnitude and voice activity flag are set for each RTP packet
@@ -480,7 +478,7 @@ RTPSenderAudio::SendTelephoneEventPacket(bool ended,
                              _rtpSender->SequenceNumber());
         retVal = _rtpSender->SendToNetwork(dtmfbuffer, 4, 12, -1,
                                            kAllowRetransmission,
-                                           PacedSender::kHighPriority);
+                                           RtpPacketSender::kHighPriority);
         sendCount--;
 
     }while (sendCount > 0 && retVal == 0);

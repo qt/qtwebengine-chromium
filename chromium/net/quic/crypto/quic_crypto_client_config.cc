@@ -539,6 +539,15 @@ QuicErrorCode QuicCryptoClientConfig::FillClientHello(
   }
   out->SetStringPiece(kPUBS, out_params->client_key_exchange->public_value());
 
+  const vector<string>& certs = cached->certs();
+  if (preferred_version > QUIC_VERSION_25 && proof_verifier()) {
+    if (certs.empty()) {
+      *error_details = "No certs to calculate XLCT";
+      return QUIC_CRYPTO_INTERNAL_ERROR;
+    }
+    out->SetValue(kXLCT, CryptoUtils::ComputeLeafCertHash(certs[0]));
+  }
+
   if (channel_id_key) {
     // In order to calculate the encryption key for the CETV block we need to
     // serialise the client hello as it currently is (i.e. without the CETV
@@ -584,7 +593,7 @@ QuicErrorCode QuicCryptoClientConfig::FillClientHello(
     scoped_ptr<char[]> output(new char[encrypted_len]);
     size_t output_size = 0;
     if (!crypters.encrypter->EncryptPacket(
-            0 /* sequence number */, StringPiece() /* associated data */,
+            0 /* packet number */, StringPiece() /* associated data */,
             cetv_plaintext.AsStringPiece(), output.get(), &output_size,
             encrypted_len)) {
       *error_details = "Packet encryption failed";
@@ -608,6 +617,13 @@ QuicErrorCode QuicCryptoClientConfig::FillClientHello(
   out_params->hkdf_input_suffix.append(client_hello_serialized.data(),
                                        client_hello_serialized.length());
   out_params->hkdf_input_suffix.append(cached->server_config());
+  if (preferred_version > QUIC_VERSION_25 && proof_verifier()) {
+    if (certs.empty()) {
+      *error_details = "No certs found to include in KDF";
+      return QUIC_CRYPTO_INTERNAL_ERROR;
+    }
+    out_params->hkdf_input_suffix.append(certs[0]);
+  }
 
   string hkdf_input;
   const size_t label_len = strlen(QuicCryptoConfig::kInitialLabel) + 1;
@@ -904,7 +920,8 @@ bool QuicCryptoClientConfig::PopulateFromCanonicalConfig(
   DCHECK(server_state->IsEmpty());
   size_t i = 0;
   for (; i < canonical_suffixes_.size(); ++i) {
-    if (base::EndsWith(server_id.host(), canonical_suffixes_[i], false)) {
+    if (base::EndsWith(server_id.host(), canonical_suffixes_[i],
+                       base::CompareCase::INSENSITIVE_ASCII)) {
       break;
     }
   }

@@ -126,7 +126,7 @@ WebInspector.NetworkTimeCalculator.prototype = {
      */
     formatTime: function(value, precision)
     {
-        return Number.secondsToString(value);
+        return Number.secondsToString(value, !!precision);
     },
 
     /**
@@ -252,7 +252,17 @@ WebInspector.NetworkTimeCalculator.prototype = {
 
     _boundaryChanged: function()
     {
-        this._boundryChangedEventThrottler.schedule(this.dispatchEventToListeners.bind(this, WebInspector.NetworkTimeCalculator.Events.BoundariesChanged));
+        this._boundryChangedEventThrottler.schedule(dispatchEvent.bind(this));
+
+        /**
+         * @return {!Promise.<undefined>}
+         * @this {WebInspector.NetworkTimeCalculator}
+         */
+        function dispatchEvent()
+        {
+            this.dispatchEventToListeners(WebInspector.NetworkTimeCalculator.Events.BoundariesChanged);
+            return Promise.resolve();
+        }
     },
 
     /**
@@ -377,7 +387,7 @@ WebInspector.NetworkTransferTimeCalculator.prototype = {
      */
     formatTime: function(value, precision)
     {
-        return Number.secondsToString(value - this.zeroTime());
+        return Number.secondsToString(value - this.zeroTime(), !!precision);
     },
 
     /**
@@ -387,7 +397,7 @@ WebInspector.NetworkTransferTimeCalculator.prototype = {
      */
     _lowerBound: function(request)
     {
-        return request.startTime;
+        return request.issueTime();
     },
 
     /**
@@ -421,7 +431,7 @@ WebInspector.NetworkTransferDurationCalculator.prototype = {
      */
     formatTime: function(value, precision)
     {
-        return Number.secondsToString(value);
+        return Number.secondsToString(value, !!precision);
     },
 
     /**

@@ -38,7 +38,7 @@ class FocusRulesImpl : public wm::BaseFocusRules {
 NativeWidgetViewManager::NativeWidgetViewManager(
     views::internal::NativeWidgetDelegate* delegate,
     mojo::Shell* shell,
-    mojo::View* view)
+    mus::View* view)
     : NativeWidgetAura(delegate), view_(view) {
   view_->AddObserver(this);
   window_tree_host_.reset(new WindowTreeHostMojo(shell, view_));
@@ -72,11 +72,11 @@ void NativeWidgetViewManager::OnWindowVisibilityChanged(aura::Window* window,
                                                         bool visible) {
   view_->SetVisible(visible);
   // NOTE: We could also update aura::Window's visibility when the View's
-  // visibilty changes, but this code isn't going to be around for very long so
+  // visibility changes, but this code isn't going to be around for very long so
   // I'm not bothering.
 }
 
-void NativeWidgetViewManager::OnViewDestroyed(mojo::View* view) {
+void NativeWidgetViewManager::OnViewDestroyed(mus::View* view) {
   DCHECK_EQ(view, view_);
   view->RemoveObserver(this);
   view_ = NULL;
@@ -85,18 +85,33 @@ void NativeWidgetViewManager::OnViewDestroyed(mojo::View* view) {
 }
 
 void NativeWidgetViewManager::OnViewBoundsChanged(
-    mojo::View* view,
+    mus::View* view,
     const mojo::Rect& old_bounds,
     const mojo::Rect& new_bounds) {
   gfx::Rect view_rect = view->bounds().To<gfx::Rect>();
   GetWidget()->SetBounds(gfx::Rect(view_rect.size()));
 }
 
-void NativeWidgetViewManager::OnViewInputEvent(mojo::View* view,
+void NativeWidgetViewManager::OnViewFocusChanged(mus::View* gained_focus,
+                                                 mus::View* lost_focus) {
+  if (gained_focus == view_)
+    window_tree_host_->GetInputMethod()->OnFocus();
+  else if (lost_focus == view_)
+    window_tree_host_->GetInputMethod()->OnBlur();
+}
+
+void NativeWidgetViewManager::OnViewInputEvent(mus::View* view,
                                                const mojo::EventPtr& event) {
-  scoped_ptr<ui::Event> ui_event(event.To<scoped_ptr<ui::Event> >());
-  if (ui_event)
+  scoped_ptr<ui::Event> ui_event(event.To<scoped_ptr<ui::Event>>());
+  if (!ui_event)
+    return;
+
+  if (ui_event->IsKeyEvent()) {
+    window_tree_host_->GetInputMethod()->DispatchKeyEvent(
+        static_cast<ui::KeyEvent*>(ui_event.get()));
+  } else {
     window_tree_host_->SendEventToProcessor(ui_event.get());
+  }
 }
 
 }  // namespace mandoline

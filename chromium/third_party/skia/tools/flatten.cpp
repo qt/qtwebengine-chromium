@@ -11,6 +11,8 @@
 #include "SkPicture.h"
 #include "SkPictureRecorder.h"
 #include "SkStream.h"
+
+#include <stdlib.h>
 #include <stdio.h>
 
 __SK_FORCE_IMAGE_DECODER_LINKING;
@@ -19,7 +21,7 @@ __SK_FORCE_IMAGE_DECODER_LINKING;
 
 static bool lazy_decode_bitmap(const void* src, size_t size, SkBitmap* dst) {
     SkAutoTUnref<SkData> encoded(SkData::NewWithCopy(src, size));
-    return encoded && SkInstallDiscardablePixelRef(encoded, dst);
+    return encoded && SkDEPRECATED_InstallDiscardablePixelRef(encoded, dst);
 }
 
 int main(int argc, char** argv) {

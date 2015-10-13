@@ -30,7 +30,7 @@
 #include "core/xmlhttprequest/XMLHttpRequestEventTarget.h"
 #include "core/xmlhttprequest/XMLHttpRequestProgressEventThrottle.h"
 #include "platform/heap/Handle.h"
-#include "platform/network/FormData.h"
+#include "platform/network/EncodedFormData.h"
 #include "platform/network/HTTPHeaderMap.h"
 #include "platform/network/ResourceResponse.h"
 #include "platform/weborigin/KURL.h"
@@ -51,11 +51,11 @@ class Blob;
 class BlobDataHandle;
 class DOMArrayBuffer;
 class DOMArrayBufferView;
-class DOMFormData;
 class Document;
 class DocumentParser;
 class ExceptionState;
 class ExecutionContext;
+class FormData;
 class ScriptState;
 class SharedBuffer;
 class Stream;
@@ -134,7 +134,7 @@ public:
     String responseURL();
 
     // For Inspector.
-    void sendForInspectorXHRReplay(PassRefPtr<FormData>, ExceptionState&);
+    void sendForInspectorXHRReplay(PassRefPtr<EncodedFormData>, ExceptionState&);
 
     XMLHttpRequestUpload* upload();
 
@@ -199,12 +199,14 @@ private:
 
     bool areMethodAndURLValidForSend();
 
+    void throwForLoadFailureIfNeeded(ExceptionState&, const String&);
+
     bool initSend(ExceptionState&);
     void sendBytesData(const void*, size_t, ExceptionState&);
     void send(Document*, ExceptionState&);
     void send(const String&, ExceptionState&);
     void send(Blob*, ExceptionState&);
-    void send(DOMFormData*, ExceptionState&);
+    void send(FormData*, ExceptionState&);
     void send(DOMArrayBuffer*, ExceptionState&);
     void send(DOMArrayBufferView*, ExceptionState&);
 
@@ -229,7 +231,7 @@ private:
     void clearResponse();
     void clearRequest();
 
-    void createRequest(PassRefPtr<FormData>, ExceptionState&);
+    void createRequest(PassRefPtr<EncodedFormData>, ExceptionState&);
 
     // Dispatches a response ProgressEvent.
     void dispatchProgressEvent(const AtomicString&, long long, long long);

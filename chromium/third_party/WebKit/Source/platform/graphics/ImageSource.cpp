@@ -30,12 +30,11 @@
 
 #include "platform/graphics/DeferredImageDecoder.h"
 #include "platform/image-decoders/ImageDecoder.h"
+#include "third_party/skia/include/core/SkImage.h"
 
 namespace blink {
 
-ImageSource::ImageSource(ImageSource::AlphaOption alphaOption, ImageSource::GammaAndColorProfileOption gammaAndColorProfileOption)
-    : m_alphaOption(alphaOption)
-    , m_gammaAndColorProfileOption(gammaAndColorProfileOption)
+ImageSource::ImageSource()
 {
 }
 
@@ -53,7 +52,7 @@ void ImageSource::setData(SharedBuffer& data, bool allDataReceived)
     // Create a decoder by sniffing the encoded data. If insufficient data bytes are available to
     // determine the encoded image type, no decoder is created.
     if (!m_decoder)
-        m_decoder = DeferredImageDecoder::create(data, m_alphaOption, m_gammaAndColorProfileOption);
+        m_decoder = DeferredImageDecoder::create(data, ImageDecoder::AlphaPremultiplied, ImageDecoder::GammaAndColorProfileApplied);
 
     if (m_decoder)
         m_decoder->setData(data, allDataReceived);
@@ -86,7 +85,7 @@ IntSize ImageSource::frameSizeAtIndex(size_t index, RespectImageOrientationEnum 
 
     IntSize size = m_decoder->frameSizeAtIndex(index);
     if ((shouldRespectOrientation == RespectImageOrientation) && m_decoder->orientationAtIndex(index).usesWidthAsHeight())
-        return IntSize(size.height(), size.width());
+        return size.transposedSize();
 
     return size;
 }
@@ -106,9 +105,12 @@ size_t ImageSource::frameCount() const
     return m_decoder ? m_decoder->frameCount() : 0;
 }
 
-bool ImageSource::createFrameAtIndex(size_t index, SkBitmap* bitmap)
+PassRefPtr<SkImage> ImageSource::createFrameAtIndex(size_t index)
 {
-    return m_decoder && m_decoder->createFrameAtIndex(index, bitmap);
+    if (!m_decoder)
+        return nullptr;
+
+    return m_decoder->createFrameAtIndex(index);
 }
 
 float ImageSource::frameDurationAtIndex(size_t index) const

@@ -1,11 +1,11 @@
 /**
 @license
 Copyright (c) 2015 The Polymer Project Authors. All rights reserved.
-This code may only be used under the BSD style license found at http://polymer.github.io/LICENSE
-The complete set of authors may be found at http://polymer.github.io/AUTHORS
-The complete set of contributors may be found at http://polymer.github.io/CONTRIBUTORS
+This code may only be used under the BSD style license found at http://polymer.github.io/LICENSE.txt
+The complete set of authors may be found at http://polymer.github.io/AUTHORS.txt
+The complete set of contributors may be found at http://polymer.github.io/CONTRIBUTORS.txt
 Code distributed by Google as part of the polymer project is also
-subject to an additional IP rights grant found at http://polymer.github.io/PATENTS
+subject to an additional IP rights grant found at http://polymer.github.io/PATENTS.txt
 */
 
 :host {
@@ -17,24 +17,13 @@ subject to an additional IP rights grant found at http://polymer.github.io/PATEN
   -ms-user-select: none;
   user-select: none;
   -webkit-tap-highlight-color: rgba(0, 0, 0, 0);
+  --paper-progress-active-color: var(--paper-slider-active-color, --google-blue-700);
+  --paper-progress-secondary-color: var(--paper-slider-secondary-color, --google-blue-300);
+  --paper-progress-disabled-active-color: var(--paper-slider-disabled-active-color, --google-grey-500);
+  --paper-progress-disabled-secondary-color: var(--paper-slider-disabled-secondary-color, --google-grey-300);
 }
 
-:host(:not([disabled])) #sliderBar::shadow #activeProgress {
-  background-color: var(--paper-slider-active-color, --google-blue-700);
-}
-
-:host(:not([disabled])) #sliderBar::shadow #secondaryProgress {
-  background-color: var(--paper-slider-secondary-color, --google-blue-300);
-}
-
-:host([disabled]) #sliderBar::shadow #activeProgress {
-  background-color: var(--paper-slider-disabled-active-color, --google-grey-500);
-}
-
-:host([disabled]) #sliderBar::shadow #secondaryProgress {
-  background-color: var(--paper-slider-disabled-secondary-color, --google-grey-300);
-}
-
+/* focus shows the ripple */
 :host(:focus) {
   outline: none;
 }
@@ -79,10 +68,11 @@ subject to an additional IP rights grant found at http://polymer.github.io/PATEN
   position: absolute;
   top: 15px;
   left: 0;
-  height: 2px;
   width: 100%;
   padding: 8px 0;
   margin: -8px 0;
+  background-color: var(--paper-slider-bar-color, transparent);
+  --paper-progress-height: var(--paper-slider-height, 2px);
 }
 
 .ring #sliderBar {
@@ -113,11 +103,6 @@ subject to an additional IP rights grant found at http://polymer.github.io/PATEN
   height: 2px;
   border-radius: 50%;
   background-color: black;
-}
-
-.transiting #sliderBar::shadow #activeProgress {
-  -webkit-transition: -webkit-transform 0.08s ease;
-  transition: transform 0.08s ease;
 }
 
 #sliderKnob {
@@ -152,10 +137,12 @@ subject to an additional IP rights grant found at http://polymer.github.io/PATEN
 #sliderKnobInner {
   width: 12px;
   height: 12px;
-  box-sizing: border-box;
-  -moz-box-sizing: border-box;
   border-radius: 50%;
   background-color: var(--paper-slider-knob-color, --google-blue-700);
+
+  -moz-box-sizing: border-box;
+  box-sizing: border-box;
+
   transition-property: height, width, background-color, border;
   transition-duration: 0.1s;
   transition-timing-function: ease;
@@ -164,13 +151,14 @@ subject to an additional IP rights grant found at http://polymer.github.io/PATEN
 .expand:not(.pin) > #sliderKnob > #sliderKnobInner {
   width: 100%;
   height: 100%;
+
   -webkit-transform: translateZ(0);
   transform: translateZ(0);
 }
 
 .ring > #sliderKnob > #sliderKnobInner {
-  background-color: transparent;
-  border: 2px solid #c8c8c8;
+  background-color: var(--paper-slider-knob-start-color, transparent);
+  border: 2px solid var(--paper-slider-knob-start-border-color, #c8c8c8);
 }
 
 #sliderKnobInner::before {
@@ -186,6 +174,7 @@ subject to an additional IP rights grant found at http://polymer.github.io/PATEN
   height: 26px;
   margin-left: 3px;
   border-radius: 50% 50% 50% 0;
+
   -webkit-transform: rotate(-45deg) scale(0) translate(0);
   transform: rotate(-45deg) scale(0) translate(0);
 }
@@ -197,7 +186,7 @@ subject to an additional IP rights grant found at http://polymer.github.io/PATEN
 }
 
 .pin.ring > #sliderKnob > #sliderKnobInner::before {
-  background-color: #c8c8c8;
+  background-color: var(--paper-slider-pin-start-color, #c8c8c8);
 }
 
 .pin.expand > #sliderKnob > #sliderKnobInner::before {
@@ -215,6 +204,7 @@ subject to an additional IP rights grant found at http://polymer.github.io/PATEN
   text-align: center;
   color: var(--paper-slider-font-color, #fff);
   font-size: 10px;
+
   -webkit-transform: scale(0) translate(0);
   transform: scale(0) translate(0);
 }
@@ -231,9 +221,10 @@ subject to an additional IP rights grant found at http://polymer.github.io/PATEN
   overflow: hidden;
 }
 
-.slider-input::shadow input {
-  /* FIXME(ffu): should one be able set text-align directly on paper-input? */
-  text-align: center;
+.slider-input {
+  --paper-input-container-input: {
+    text-align: center;
+  };
 }
 
 /* disabled state */

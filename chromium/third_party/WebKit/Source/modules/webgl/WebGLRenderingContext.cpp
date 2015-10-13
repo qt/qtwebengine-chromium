@@ -34,6 +34,7 @@
 #include "modules/webgl/ANGLEInstancedArrays.h"
 #include "modules/webgl/CHROMIUMSubscribeUniform.h"
 #include "modules/webgl/EXTBlendMinMax.h"
+#include "modules/webgl/EXTDisjointTimerQuery.h"
 #include "modules/webgl/EXTFragDepth.h"
 #include "modules/webgl/EXTShaderTextureLOD.h"
 #include "modules/webgl/EXTTextureFilterAnisotropic.h"
@@ -45,6 +46,7 @@
 #include "modules/webgl/OESTextureHalfFloat.h"
 #include "modules/webgl/OESTextureHalfFloatLinear.h"
 #include "modules/webgl/OESVertexArrayObject.h"
+#include "modules/webgl/WebGLCompressedTextureASTC.h"
 #include "modules/webgl/WebGLCompressedTextureATC.h"
 #include "modules/webgl/WebGLCompressedTextureETC1.h"
 #include "modules/webgl/WebGLCompressedTexturePVRTC.h"
@@ -111,6 +113,7 @@ void WebGLRenderingContext::registerContextExtensions()
     registerExtension<ANGLEInstancedArrays>(m_angleInstancedArrays);
     registerExtension<CHROMIUMSubscribeUniform>(m_chromiumSubscribeUniform);
     registerExtension<EXTBlendMinMax>(m_extBlendMinMax);
+    registerExtension<EXTDisjointTimerQuery>(m_extDisjointTimerQuery, DraftExtension);
     registerExtension<EXTFragDepth>(m_extFragDepth);
     registerExtension<EXTShaderTextureLOD>(m_extShaderTextureLOD);
     registerExtension<EXTsRGB>(m_extsRGB);
@@ -122,6 +125,7 @@ void WebGLRenderingContext::registerContextExtensions()
     registerExtension<OESTextureHalfFloat>(m_oesTextureHalfFloat);
     registerExtension<OESTextureHalfFloatLinear>(m_oesTextureHalfFloatLinear);
     registerExtension<OESVertexArrayObject>(m_oesVertexArrayObject);
+    registerExtension<WebGLCompressedTextureASTC>(m_webglCompressedTextureASTC, DraftExtension);
     registerExtension<WebGLCompressedTextureATC>(m_webglCompressedTextureATC, ApprovedExtension, bothPrefixes);
     registerExtension<WebGLCompressedTextureETC1>(m_webglCompressedTextureETC1);
     registerExtension<WebGLCompressedTexturePVRTC>(m_webglCompressedTexturePVRTC, ApprovedExtension, bothPrefixes);
@@ -138,6 +142,7 @@ DEFINE_TRACE(WebGLRenderingContext)
     visitor->trace(m_angleInstancedArrays);
     visitor->trace(m_chromiumSubscribeUniform);
     visitor->trace(m_extBlendMinMax);
+    visitor->trace(m_extDisjointTimerQuery);
     visitor->trace(m_extFragDepth);
     visitor->trace(m_extShaderTextureLOD);
     visitor->trace(m_extsRGB);
@@ -153,6 +158,7 @@ DEFINE_TRACE(WebGLRenderingContext)
     visitor->trace(m_webglDebugRendererInfo);
     visitor->trace(m_webglDebugShaders);
     visitor->trace(m_webglDrawBuffers);
+    visitor->trace(m_webglCompressedTextureASTC);
     visitor->trace(m_webglCompressedTextureATC);
     visitor->trace(m_webglCompressedTextureETC1);
     visitor->trace(m_webglCompressedTexturePVRTC);

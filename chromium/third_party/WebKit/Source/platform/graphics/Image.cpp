@@ -96,26 +96,8 @@ bool Image::setData(PassRefPtr<SharedBuffer> data, bool allDataReceived)
     return dataChanged(allDataReceived);
 }
 
-void Image::fillWithSolidColor(GraphicsContext* ctxt, const FloatRect& dstRect, const Color& color, SkXfermode::Mode op)
-{
-    if (!color.alpha())
-        return;
-
-    SkXfermode::Mode xferMode = !color.hasAlpha() && op == SkXfermode::kSrcOver_Mode ?
-        SkXfermode::kSrc_Mode : op;
-    ctxt->fillRect(dstRect, color, xferMode);
-}
-
 void Image::drawTiled(GraphicsContext* ctxt, const FloatRect& destRect, const FloatPoint& srcPoint, const FloatSize& scaledTileSize, SkXfermode::Mode op, const IntSize& repeatSpacing)
 {
-    if (mayFillWithSolidColor()) {
-        fillWithSolidColor(ctxt, destRect, solidColor(), op);
-        return;
-    }
-
-    // See <https://webkit.org/b/59043>.
-    ASSERT(!isBitmapImage() || notSolidColor());
-
     FloatSize intrinsicTileSize = size();
     if (hasRelativeWidth())
         intrinsicTileSize.setWidth(scaledTileSize.width());
@@ -152,11 +134,6 @@ void Image::drawTiled(GraphicsContext* ctxt, const FloatRect& destRect, const Fl
 void Image::drawTiled(GraphicsContext* ctxt, const FloatRect& dstRect, const FloatRect& srcRect,
     const FloatSize& providedTileScaleFactor, TileRule hRule, TileRule vRule, SkXfermode::Mode op)
 {
-    if (mayFillWithSolidColor()) {
-        fillWithSolidColor(ctxt, dstRect, solidColor(), op);
-        return;
-    }
-
     // FIXME: We do not support 'space' yet. For now just map it to 'repeat'.
     if (hRule == SpaceTile)
         hRule = RepeatTile;
@@ -209,23 +186,21 @@ void Image::drawTiled(GraphicsContext* ctxt, const FloatRect& dstRect, const Flo
 
 namespace {
 
-PassRefPtr<SkShader> createPatternShader(const SkBitmap& bitmap, const SkMatrix& shaderMatrix,
+PassRefPtr<SkShader> createPatternShader(const SkImage* image, const SkMatrix& shaderMatrix,
     const SkPaint& paint, const FloatSize& spacing)
 {
-    if (spacing.isZero()) {
-        return adoptRef(SkShader::CreateBitmapShader(
-            bitmap, SkShader::kRepeat_TileMode, SkShader::kRepeat_TileMode, &shaderMatrix));
-    }
+    if (spacing.isZero())
+        return adoptRef(image->newShader(SkShader::kRepeat_TileMode, SkShader::kRepeat_TileMode, &shaderMatrix));
 
     // Arbitrary tiling is currently only supported for SkPictureShader - so we use it instead
     // of a plain bitmap shader to implement spacing.
     const SkRect tileRect = SkRect::MakeWH(
-        bitmap.width() + spacing.width(),
-        bitmap.height() + spacing.height());
+        image->width() + spacing.width(),
+        image->height() + spacing.height());
 
     SkPictureRecorder recorder;
     SkCanvas* canvas = recorder.beginRecording(tileRect);
-    canvas->drawBitmap(bitmap, 0, 0, &paint);
+    canvas->drawImage(image, 0, 0, &paint);
     RefPtr<const SkPicture> picture = adoptRef(recorder.endRecordingAsPicture());
 
     return adoptRef(SkShader::CreatePictureShader(
@@ -238,13 +213,14 @@ void Image::drawPattern(GraphicsContext* context, const FloatRect& floatSrcRect,
     const FloatPoint& phase, SkXfermode::Mode compositeOp, const FloatRect& destRect, const IntSize& repeatSpacing)
 {
     TRACE_EVENT0("skia", "Image::drawPattern");
-    SkBitmap bitmap;
-    if (!bitmapForCurrentFrame(&bitmap))
+
+    RefPtr<SkImage> image = imageForCurrentFrame();
+    if (!image)
         return;
 
     FloatRect normSrcRect = floatSrcRect;
 
-    normSrcRect.intersect(FloatRect(0, 0, bitmap.width(), bitmap.height()));
+    normSrcRect.intersect(FloatRect(0, 0, image->width(), image->height()));
     if (destRect.isEmpty() || normSrcRect.isEmpty())
         return; // nothing to draw
 
@@ -261,8 +237,12 @@ void Image::drawPattern(GraphicsContext* context, const FloatRect& floatSrcRect,
     // set to the pattern's transform, which just includes scale.
     localMatrix.preScale(scale.width(), scale.height());
 
-    SkBitmap bitmapToPaint;
-    bitmap.extractSubset(&bitmapToPaint, enclosingIntRect(normSrcRect));
+    // Fetch this now as subsetting may swap the image.
+    auto imageID = image->uniqueID();
+
+    image = adoptRef(image->newSubset(enclosingIntRect(normSrcRect)));
+    if (!image)
+        return;
 
     {
         SkPaint paint = context->fillPaint();
@@ -270,14 +250,14 @@ void Image::drawPattern(GraphicsContext* context, const FloatRect& floatSrcRect,
         paint.setXfermodeMode(compositeOp);
         paint.setFilterQuality(context->computeFilterQuality(this, destRect, normSrcRect));
         paint.setAntiAlias(context->shouldAntialias());
-        RefPtr<SkShader> shader = createPatternShader(bitmapToPaint, localMatrix, paint,
+        RefPtr<SkShader> shader = createPatternShader(image.get(), localMatrix, paint,
             FloatSize(repeatSpacing.width() / scale.width(), repeatSpacing.height() / scale.height()));
         paint.setShader(shader.get());
         context->drawRect(destRect, paint);
     }
 
-    if (DeferredImageDecoder::isLazyDecoded(bitmap))
-        PlatformInstrumentation::didDrawLazyPixelRef(bitmap.getGenerationID());
+    if (currentFrameIsLazyDecoded())
+        PlatformInstrumentation::didDrawLazyPixelRef(imageID);
 }
 
 void Image::computeIntrinsicDimensions(Length& intrinsicWidth, Length& intrinsicHeight, FloatSize& intrinsicRatio)
@@ -294,14 +274,11 @@ PassRefPtr<Image> Image::imageForDefaultFrame()
     return image.release();
 }
 
-bool Image::bitmapForCurrentFrame(SkBitmap* bitmap)
+bool Image::deprecatedBitmapForCurrentFrame(SkBitmap* bitmap)
 {
-    return false;
-}
+    RefPtr<SkImage> image = imageForCurrentFrame();
 
-PassRefPtr<SkImage> Image::skImage()
-{
-    return nullptr;
+    return image && image->asLegacyBitmap(bitmap, SkImage::kRO_LegacyBitmapMode);
 }
 
 } // namespace blink

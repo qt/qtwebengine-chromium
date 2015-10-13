@@ -104,8 +104,18 @@ class SSLCertChain {
 
   std::vector<SSLCertificate*> certs_;
 
-  DISALLOW_COPY_AND_ASSIGN(SSLCertChain);
+  RTC_DISALLOW_COPY_AND_ASSIGN(SSLCertChain);
 };
+
+// TODO(hbos,torbjorng): Don't change KT_DEFAULT without first updating
+// PeerConnectionFactory_nativeCreatePeerConnection's certificate generation
+// code.
+enum KeyType { KT_RSA, KT_ECDSA, KT_LAST, KT_DEFAULT = KT_RSA };
+
+// TODO(hbos): Remove once rtc::KeyType (to be modified) and
+// blink::WebRTCKeyType (to be landed) match. By using this function in Chromium
+// appropriately we can change KeyType enum -> class without breaking Chromium.
+KeyType IntKeyTypeFamilyToKeyType(int key_type_family);
 
 // Parameters for generating an identity for testing. If common_name is
 // non-empty, it will be used for the certificate's subject and issuer name,
@@ -115,6 +125,7 @@ struct SSLIdentityParams {
   std::string common_name;
   int not_before;  // in seconds.
   int not_after;  // in seconds.
+  KeyType key_type;
 };
 
 // Our identity in an SSL negotiation: a keypair and certificate (both
@@ -127,7 +138,8 @@ class SSLIdentity {
   // subject and issuer name, otherwise a random string will be used.
   // Returns NULL on failure.
   // Caller is responsible for freeing the returned object.
-  static SSLIdentity* Generate(const std::string& common_name);
+  static SSLIdentity* Generate(const std::string& common_name,
+                               KeyType key_type);
 
   // Generates an identity with the specified validity period.
   static SSLIdentity* GenerateForTest(const SSLIdentityParams& params);
@@ -141,6 +153,7 @@ class SSLIdentity {
   // Returns a new SSLIdentity object instance wrapping the same
   // identity information.
   // Caller is responsible for freeing the returned object.
+  // TODO(hbos,torbjorng): Rename to a less confusing name.
   virtual SSLIdentity* GetReference() const = 0;
 
   // Returns a temporary reference to the certificate.
@@ -157,6 +170,7 @@ class SSLIdentity {
 
 extern const char kPemTypeCertificate[];
 extern const char kPemTypeRsaPrivateKey[];
+extern const char kPemTypeEcPrivateKey[];
 
 }  // namespace rtc
 

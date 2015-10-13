@@ -6,8 +6,6 @@
  * found in the LICENSE file.
  */
 
-
-#include "GrTemplates.h"
 #include "GrFontScaler.h"
 #include "SkDescriptor.h"
 #include "SkDistanceFieldGen.h"
@@ -15,44 +13,9 @@
 
 ///////////////////////////////////////////////////////////////////////////////
 
-GrFontDescKey::GrFontDescKey(const SkDescriptor& desc) : fHash(desc.getChecksum()) {
-    size_t size = desc.getLength();
-    if (size <= sizeof(fStorage)) {
-        fDesc = GrTCast<SkDescriptor*>(fStorage);
-    } else {
-        fDesc = SkDescriptor::Alloc(size);
-    }
-    memcpy(fDesc, &desc, size);
-}
-
-GrFontDescKey::~GrFontDescKey() {
-    if (fDesc != GrTCast<SkDescriptor*>(fStorage)) {
-        SkDescriptor::Free(fDesc);
-    }
-}
-
-bool GrFontDescKey::lt(const GrFontDescKey& rh) const {
-    const SkDescriptor* srcDesc = (&rh)->fDesc;
-    size_t lenLH = fDesc->getLength();
-    size_t lenRH = srcDesc->getLength();
-    int cmp = memcmp(fDesc, srcDesc, SkTMin<size_t>(lenLH, lenRH));
-    if (0 == cmp) {
-        return lenLH < lenRH;
-    } else {
-        return cmp < 0;
-    }
-}
-
-bool GrFontDescKey::eq(const GrFontDescKey& rh) const {
-    const SkDescriptor* srcDesc = (&rh)->fDesc;
-    return fDesc->equals(*srcDesc);
-}
-
-///////////////////////////////////////////////////////////////////////////////
-
 GrFontScaler::GrFontScaler(SkGlyphCache* strike) {
     fStrike = strike;
-    fKey = NULL;
+    fKey = nullptr;
 }
 
 GrFontScaler::~GrFontScaler() {
@@ -77,8 +40,8 @@ GrMaskFormat GrFontScaler::getMaskFormat() const {
 }
 
 const GrFontDescKey* GrFontScaler::getKey() {
-    if (NULL == fKey) {
-        fKey = SkNEW_ARGS(GrFontDescKey, (fStrike->getDescriptor()));
+    if (nullptr == fKey) {
+        fKey = new GrFontDescKey(fStrike->getDescriptor());
     }
     return fKey;
 }
@@ -154,7 +117,7 @@ bool GrFontScaler::getPackedGlyphImage(const SkGlyph& glyph, int width, int heig
     SkASSERT(glyph.fWidth == width);
     SkASSERT(glyph.fHeight == height);
     const void* src = fStrike->findImage(glyph);
-    if (NULL == src) {
+    if (nullptr == src) {
         return false;
     }
 
@@ -208,7 +171,7 @@ bool GrFontScaler::getPackedGlyphDFImage(const SkGlyph& glyph, int width, int he
     SkASSERT(glyph.fWidth + 2*SK_DistanceFieldPad == width);
     SkASSERT(glyph.fHeight + 2*SK_DistanceFieldPad == height);
     const void* image = fStrike->findImage(glyph);
-    if (NULL == image) {
+    if (nullptr == image) {
         return false;
     }
     // now generate the distance field

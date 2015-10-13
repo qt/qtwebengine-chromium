@@ -82,7 +82,7 @@ public:
 
     void willBeDestroyed();
     WebDevToolsAgentClient* client() { return m_client; }
-    bool handleInputEvent(const WebInputEvent&);
+    InspectorOverlay* overlay() const { return m_overlay.get(); }
     void flushPendingProtocolNotifications();
     void dispatchMessageFromFrontend(const String& message);
     void registerAgent(PassOwnPtrWillBeRawPtr<InspectorAgent>);
@@ -106,7 +106,7 @@ public:
     void evaluateInWebInspector(long callId, const WebString& script) override;
 
 private:
-    WebDevToolsAgentImpl(WebLocalFrameImpl*, WebDevToolsAgentClient*, InspectorOverlay*);
+    WebDevToolsAgentImpl(WebLocalFrameImpl*, WebDevToolsAgentClient*, PassOwnPtrWillBeRawPtr<InspectorOverlay>);
 
     // InspectorStateClient implementation.
     void updateInspectorStateCookie(const WTF::String&) override;
@@ -128,12 +128,9 @@ private:
     void didProcessTask() override;
 
     void initializeDeferredAgents();
-    bool handleGestureEvent(LocalFrame*, const PlatformGestureEvent&);
-    bool handleMouseEvent(LocalFrame*, const PlatformMouseEvent&);
-    bool handleTouchEvent(LocalFrame*, const PlatformTouchEvent&);
 
     WebDevToolsAgentClient* m_client;
-    WebLocalFrameImpl* m_webLocalFrameImpl;
+    RawPtrWillBeMember<WebLocalFrameImpl> m_webLocalFrameImpl;
     bool m_attached;
 #if ENABLE(ASSERT)
     bool m_hasBeenDisposed;
@@ -143,7 +140,7 @@ private:
     OwnPtrWillBeMember<InjectedScriptManager> m_injectedScriptManager;
     OwnPtrWillBeMember<InspectorResourceContentLoader> m_resourceContentLoader;
     OwnPtrWillBeMember<InspectorCompositeState> m_state;
-    RawPtrWillBeMember<InspectorOverlay> m_overlay;
+    OwnPtrWillBeMember<InspectorOverlay> m_overlay;
 
     RawPtrWillBeMember<InspectorInspectorAgent> m_inspectorAgent;
     RawPtrWillBeMember<InspectorDOMAgent> m_domAgent;
@@ -158,7 +155,6 @@ private:
     RefPtrWillBeMember<InspectorBackendDispatcher> m_inspectorBackendDispatcher;
     OwnPtr<InspectorFrontend> m_inspectorFrontend;
     InspectorAgentRegistry m_agents;
-    OwnPtrWillBeMember<AsyncCallTracker> m_asyncCallTracker;
     bool m_deferredAgentsInitialized;
 
     typedef Vector<RefPtr<JSONObject>> NotificationQueue;

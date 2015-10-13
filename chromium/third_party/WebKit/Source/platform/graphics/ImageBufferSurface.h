@@ -43,6 +43,7 @@
 class SkBitmap;
 class SkCanvas;
 class SkImage;
+struct SkImageInfo;
 class SkPicture;
 
 namespace blink {
@@ -57,9 +58,10 @@ class PLATFORM_EXPORT ImageBufferSurface {
 public:
     virtual ~ImageBufferSurface();
 
-    virtual SkCanvas* canvas() const = 0;
-    virtual const SkBitmap& bitmap();
-    virtual void willAccessPixels() { }
+    virtual SkCanvas* canvas() = 0;
+    virtual void disableDeferral() { }
+    virtual const SkBitmap& deprecatedBitmapForOverwrite();
+    virtual void willOverwriteCanvas() { }
     virtual void didDraw(const FloatRect& rect) { }
     virtual bool isValid() const = 0;
     virtual bool restore() { return false; }
@@ -72,14 +74,16 @@ public:
     virtual void setImageBuffer(ImageBuffer*) { }
     virtual PassRefPtr<SkPicture> getPicture();
     virtual void finalizeFrame(const FloatRect &dirtyRect) { }
-    virtual void willDrawVideo() { }
-    virtual void willOverwriteCanvas() { }
     virtual void draw(GraphicsContext*, const FloatRect& destRect, const FloatRect& srcRect, SkXfermode::Mode);
     virtual void setHasExpensiveOp() { }
     virtual Platform3DObject getBackingTextureHandleForOverwrite() { return 0; }
+    virtual void flush(); // Execute all deferred rendering immediately
+    virtual void flushGpu() { flush(); } // Like flush, but flushes all the way down to the GPU context if the surface uses the GPU
+    virtual void prepareSurfaceForPaintingIfNeeded() { }
+    virtual bool writePixels(const SkImageInfo& origInfo, const void* pixels, size_t rowBytes, int x, int y);
 
     // May return nullptr if the surface is GPU-backed and the GPU context was lost.
-    virtual PassRefPtr<SkImage> newImageSnapshot() const = 0;
+    virtual PassRefPtr<SkImage> newImageSnapshot(AccelerationHint) = 0;
 
     OpacityMode opacityMode() const { return m_opacityMode; }
     const IntSize& size() const { return m_size; }

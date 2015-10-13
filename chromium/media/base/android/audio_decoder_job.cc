@@ -9,6 +9,7 @@
 #include "base/threading/thread.h"
 #include "media/base/android/media_codec_bridge.h"
 #include "media/base/audio_timestamp_helper.h"
+#include "media/base/timestamp_constants.h"
 
 namespace {
 
@@ -95,29 +96,46 @@ void AudioDecoderJob::ResetTimestampHelper() {
 
 void AudioDecoderJob::ReleaseOutputBuffer(
     int output_buffer_index,
+    size_t offset,
     size_t size,
     bool render_output,
+    bool /* is_late_frame */,
     base::TimeDelta current_presentation_timestamp,
     const ReleaseOutputCompletionCallback& callback) {
   render_output = render_output && (size != 0u);
+  bool is_audio_underrun = false;
   if (render_output) {
     int64 head_position = (static_cast<AudioCodecBridge*>(
         media_codec_bridge_.get()))->PlayOutputBuffer(
-            output_buffer_index, size);
+            output_buffer_index, size, offset);
+
+    base::TimeTicks current_time = base::TimeTicks::Now();
+
     size_t new_frames_count = size / bytes_per_frame_;
     frame_count_ += new_frames_count;
     audio_timestamp_helper_->AddFrames(new_frames_count);
     int64 frames_to_play = frame_count_ - head_position;
     DCHECK_GE(frames_to_play, 0);
+
+    const base::TimeDelta last_buffered =
+        audio_timestamp_helper_->GetTimestamp();
+
     current_presentation_timestamp =
-        audio_timestamp_helper_->GetTimestamp() -
+        last_buffered -
         audio_timestamp_helper_->GetFrameDuration(frames_to_play);
+
+    // Potential audio underrun is considered a late frame for UMA.
+    is_audio_underrun = !next_frame_time_limit_.is_null() &&
+                        next_frame_time_limit_ < current_time;
+
+    next_frame_time_limit_ =
+        current_time + (last_buffered - current_presentation_timestamp);
   } else {
     current_presentation_timestamp = kNoTimestamp();
   }
   media_codec_bridge_->ReleaseOutputBuffer(output_buffer_index, false);
 
-  callback.Run(current_presentation_timestamp,
+  callback.Run(is_audio_underrun, current_presentation_timestamp,
                audio_timestamp_helper_->GetTimestamp());
 }
 

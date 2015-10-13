@@ -9,18 +9,20 @@ subject to an additional IP rights grant found at http://polymer.github.io/PATEN
 <link rel="import" href="../paper-ripple/paper-ripple.html">
 <link rel="import" href="../paper-styles/default-theme.html">
 <link rel="import" href="../paper-behaviors/paper-inky-focus-behavior.html">
+<link rel="import" href="../iron-checked-element-behavior/iron-checked-element-behavior.html">
 
 <!--
 `paper-radio-button` is a button that can be either checked or unchecked.
-User can tap the radio button to check it.  But it cannot be unchecked by
-tapping once checked.
+User can tap the radio button to check or uncheck it.
 
-Use `paper-radio-group` to group a set of radio buttons.  When radio buttons
-are inside a radio group, only one radio button in the group can be checked.
+Use a `<paper-radio-group>` to group a set of radio buttons.  When radio buttons
+are inside a radio group, exactly one radio button in the group can be checked
+at any time.
 
 Example:
 
     <paper-radio-button></paper-radio-button>
+    <paper-radio-button>Item label</paper-radio-button>
 
 ### Styling
 
@@ -28,6 +30,7 @@ The following custom properties and mixins are available for styling:
 
 Custom property | Description | Default
 ----------------|-------------|----------
+`--paper-radio-button-unchecked-background-color` | Radio button background color when the input is not checked | `transparent`
 `--paper-radio-button-unchecked-color` | Radio button color when the input is not checked | `--primary-text-color`
 `--paper-radio-button-unchecked-ink-color` | Selected/focus ripple color when the input is not checked | `--primary-text-color`
 `--paper-radio-button-checked-color` | Radio button color when the input is checked | `--default-primary-color`
@@ -41,10 +44,113 @@ Custom property | Description | Default
 -->
 
 </head><body><dom-module id="paper-radio-button">
-
-  <link rel="import" type="css" href="paper-radio-button.css">
-
   <template>
+    <style>
+      :host {
+        display: inline-block;
+        white-space: nowrap;
+      }
+
+      :host(:focus) {
+        outline: none;
+      }
+
+      #radioContainer {
+        display: inline-block;
+        position: relative;
+        width: 16px;
+        height: 16px;
+        cursor: pointer;
+        vertical-align: middle;
+      }
+
+      :host #ink {
+        position: absolute;
+        top: -16px;
+        left: -16px;
+        width: 48px;
+        height: 48px;
+        color: var(--paper-radio-button-unchecked-ink-color, --primary-text-color);
+        opacity: 0.6;
+        pointer-events: none;
+      }
+
+      :host #ink[checked] {
+        color: var(--paper-radio-button-checked-ink-color, --default-primary-color);
+      }
+
+      :host #offRadio {
+        position: absolute;
+        box-sizing: content-box;
+        top: 0px;
+        left: 0px;
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        border: solid 2px;
+        background-color: var(--paper-radio-button-unchecked-background-color, transparent);
+        border-color: var(--paper-radio-button-unchecked-color, --primary-text-color);
+        transition: border-color 0.28s;
+      }
+
+      :host #onRadio {
+        position: absolute;
+        box-sizing: content-box;
+        top: 4px;
+        left: 4px;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background-color: var(--paper-radio-button-checked-color, --default-primary-color);
+        -webkit-transform: scale(0);
+        transform: scale(0);
+        transition: -webkit-transform ease 0.28s;
+        transition: transform ease 0.28s;
+      }
+
+      :host([checked]) #offRadio {
+        border-color: var(--paper-radio-button-checked-color, --default-primary-color);
+      }
+
+      :host([checked]) #onRadio {
+        -webkit-transform: scale(1);
+        transform: scale(1);
+      }
+
+      #radioLabel {
+        position: relative;
+        display: inline-block;
+        vertical-align: middle;
+        margin-left: 10px;
+        white-space: normal;
+        pointer-events: none;
+        color: var(--paper-radio-button-label-color, --primary-text-color);
+      }
+
+      #radioLabel[hidden] {
+        display: none;
+      }
+
+      /* disabled state */
+      :host([disabled]) {
+        pointer-events: none;
+      }
+
+      :host([disabled]) #offRadio {
+        border-color: var(--paper-radio-button-unchecked-color, --primary-text-color);
+        opacity: 0.5;
+      }
+
+      :host([disabled][checked]) #onRadio {
+        background-color: var(--paper-radio-button-unchecked-color, --primary-text-color);
+        opacity: 0.5;
+      }
+
+      :host([disabled]) #radioLabel {
+        /* slightly darker than the button, so that it's readable */
+        opacity: 0.65;
+      }
+    </style>
 
     <div id="radioContainer">
       <div id="offRadio"></div>
@@ -52,7 +158,7 @@ Custom property | Description | Default
       <paper-ripple id="ink" class="circle" center="" checked$="[[checked]]"></paper-ripple>
     </div>
 
-    <div id="radioLabel" aria-hidden="true"><content></content></div>
+    <div id="radioLabel"><content></content></div>
 
   </template>
 

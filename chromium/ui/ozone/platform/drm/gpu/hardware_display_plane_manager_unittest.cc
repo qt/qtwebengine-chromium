@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <drm_fourcc.h>
+
 #include <vector>
 
 #include "base/memory/scoped_ptr.h"
@@ -25,18 +27,22 @@ struct FakePlaneInfo {
 const FakePlaneInfo kOnePlanePerCrtc[] = {{10, 1}, {20, 2}};
 const FakePlaneInfo kTwoPlanesPerCrtc[] = {{10, 1}, {11, 1}, {20, 2}, {21, 2}};
 const FakePlaneInfo kOnePlanePerCrtcWithShared[] = {{10, 1}, {20, 2}, {50, 3}};
+const uint32_t kDummyFormat = 0;
 
 class FakeScanoutBuffer : public ui::ScanoutBuffer {
  public:
-  FakeScanoutBuffer() {}
+  FakeScanoutBuffer(uint32_t format) : format_(format) {}
 
   // ui::ScanoutBuffer:
   uint32_t GetFramebufferId() const override { return 1; }
   uint32_t GetHandle() const override { return 0; }
   gfx::Size GetSize() const override { return gfx::Size(1, 1); }
+  void SetFramebufferPixelFormat(uint32_t format) { format_ = format; }
+  uint32_t GetFramebufferPixelFormat() const override { return format_; }
 
  protected:
   ~FakeScanoutBuffer() override {}
+  uint32_t format_;
 };
 
 class FakePlaneManager : public ui::HardwareDisplayPlaneManager {
@@ -51,8 +57,12 @@ class FakePlaneManager : public ui::HardwareDisplayPlaneManager {
                    const std::vector<uint32_t>& crtcs) {
     crtcs_ = crtcs;
     for (size_t i = 0; i < count; i++) {
-      planes_.push_back(new ui::HardwareDisplayPlane(
+      scoped_ptr<ui::HardwareDisplayPlane> plane(new ui::HardwareDisplayPlane(
           planes[i].id, planes[i].allowed_crtc_mask));
+      // Add support to test more formats.
+      plane->Initialize(drm_, std::vector<uint32_t>(1, DRM_FORMAT_XRGB8888),
+                        false, true);
+      planes_.push_back(plane.Pass());
     }
     // The real HDPM uses sorted planes, so sort them for consistency.
     std::sort(planes_.begin(), planes_.end(),
@@ -62,7 +72,6 @@ class FakePlaneManager : public ui::HardwareDisplayPlaneManager {
   }
 
   bool Commit(ui::HardwareDisplayPlaneList* plane_list,
-              bool is_sync,
               bool test_only) override {
     return false;
   }
@@ -106,7 +115,7 @@ class HardwareDisplayPlaneManagerTest : public testing::Test {
 };
 
 void HardwareDisplayPlaneManagerTest::SetUp() {
-  fake_buffer_ = new FakeScanoutBuffer();
+  fake_buffer_ = new FakeScanoutBuffer(DRM_FORMAT_XRGB8888);
   plane_manager_.reset(new FakePlaneManager());
   default_crtcs_.push_back(100);
   default_crtcs_.push_back(200);
@@ -231,12 +240,34 @@ TEST_F(HardwareDisplayPlaneManagerTest, SharedPlanes) {
                                                    default_crtcs_[0], nullptr));
 }
 
+TEST_F(HardwareDisplayPlaneManagerTest, CheckFramebufferFormatMatch) {
+  ui::OverlayPlaneList assigns;
+  scoped_refptr<FakeScanoutBuffer> buffer = new FakeScanoutBuffer(kDummyFormat);
+  assigns.push_back(ui::OverlayPlane(buffer));
+  plane_manager_->InitForTest(kOnePlanePerCrtc, arraysize(kOnePlanePerCrtc),
+                              default_crtcs_);
+  plane_manager_->BeginFrame(&state_);
+  // This should return false as plane manager creates planes which support
+  // DRM_FORMAT_XRGB8888 while buffer returns kDummyFormat as its pixelFormat.
+  EXPECT_FALSE(plane_manager_->AssignOverlayPlanes(&state_, assigns,
+                                                   default_crtcs_[0], nullptr));
+  buffer->SetFramebufferPixelFormat(DRM_FORMAT_XRGB8888);
+  plane_manager_->BeginFrame(&state_);
+  EXPECT_TRUE(plane_manager_->AssignOverlayPlanes(&state_, assigns,
+                                                  default_crtcs_[0], nullptr));
+  buffer->SetFramebufferPixelFormat(DRM_FORMAT_ARGB8888);
+  plane_manager_->BeginFrame(&state_);
+  EXPECT_FALSE(plane_manager_->AssignOverlayPlanes(&state_, assigns,
+                                                   default_crtcs_[0], nullptr));
+}
+
 TEST(HardwareDisplayPlaneManagerLegacyTest, UnusedPlanesAreReleased) {
   std::vector<uint32_t> crtcs;
   crtcs.push_back(100);
   scoped_refptr<ui::MockDrmDevice> drm = new ui::MockDrmDevice(false, crtcs, 2);
   ui::OverlayPlaneList assigns;
-  scoped_refptr<FakeScanoutBuffer> fake_buffer = new FakeScanoutBuffer();
+  scoped_refptr<FakeScanoutBuffer> fake_buffer =
+      new FakeScanoutBuffer(DRM_FORMAT_XRGB8888);
   assigns.push_back(ui::OverlayPlane(fake_buffer));
   assigns.push_back(ui::OverlayPlane(fake_buffer));
   ui::HardwareDisplayPlaneList hdpl;
@@ -244,14 +275,14 @@ TEST(HardwareDisplayPlaneManagerLegacyTest, UnusedPlanesAreReleased) {
   drm->plane_manager()->BeginFrame(&hdpl);
   EXPECT_TRUE(drm->plane_manager()->AssignOverlayPlanes(&hdpl, assigns,
                                                         crtcs[0], &crtc));
-  EXPECT_TRUE(drm->plane_manager()->Commit(&hdpl, false, false));
+  EXPECT_TRUE(drm->plane_manager()->Commit(&hdpl, false));
   assigns.clear();
   assigns.push_back(ui::OverlayPlane(fake_buffer));
   drm->plane_manager()->BeginFrame(&hdpl);
   EXPECT_TRUE(drm->plane_manager()->AssignOverlayPlanes(&hdpl, assigns,
                                                         crtcs[0], &crtc));
   EXPECT_EQ(0, drm->get_overlay_clear_call_count());
-  EXPECT_TRUE(drm->plane_manager()->Commit(&hdpl, false, false));
+  EXPECT_TRUE(drm->plane_manager()->Commit(&hdpl, false));
   EXPECT_EQ(1, drm->get_overlay_clear_call_count());
 }
 

@@ -30,7 +30,7 @@
 #include "SkColorPriv.h"
 #include "platform/PlatformExport.h"
 #include "platform/SharedBuffer.h"
-#include "platform/graphics/ImageSource.h"
+#include "platform/graphics/ImageOrientation.h"
 #include "platform/image-decoders/ImageAnimation.h"
 #include "platform/image-decoders/ImageFrame.h"
 #include "public/platform/Platform.h"
@@ -73,9 +73,19 @@ public:
 
     static const size_t noDecodedImageByteLimit = Platform::noDecodedImageByteLimit;
 
-    ImageDecoder(ImageSource::AlphaOption alphaOption, ImageSource::GammaAndColorProfileOption gammaAndColorProfileOption, size_t maxDecodedBytes)
-        : m_premultiplyAlpha(alphaOption == ImageSource::AlphaPremultiplied)
-        , m_ignoreGammaAndColorProfile(gammaAndColorProfileOption == ImageSource::GammaAndColorProfileIgnored)
+    enum AlphaOption {
+        AlphaPremultiplied,
+        AlphaNotPremultiplied
+    };
+
+    enum GammaAndColorProfileOption {
+        GammaAndColorProfileApplied,
+        GammaAndColorProfileIgnored
+    };
+
+    ImageDecoder(AlphaOption alphaOption, GammaAndColorProfileOption colorOptions, size_t maxDecodedBytes)
+        : m_premultiplyAlpha(alphaOption == AlphaPremultiplied)
+        , m_ignoreGammaAndColorProfile(colorOptions == GammaAndColorProfileIgnored)
         , m_maxDecodedBytes(maxDecodedBytes)
         , m_sizeAvailable(false)
         , m_isAllDataReceived(false)
@@ -87,22 +97,22 @@ public:
     // we can't sniff a supported type from the provided data (possibly
     // because there isn't enough data yet).
     // Sets m_maxDecodedBytes to Platform::maxImageDecodedBytes().
-    static PassOwnPtr<ImageDecoder> create(const SharedBuffer& data, ImageSource::AlphaOption, ImageSource::GammaAndColorProfileOption);
-
-    // Returns a decoder with custom maxDecodedSize.
-    static PassOwnPtr<ImageDecoder> create(const SharedBuffer& data, ImageSource::AlphaOption, ImageSource::GammaAndColorProfileOption, size_t maxDecodedSize);
+    static PassOwnPtr<ImageDecoder> create(const SharedBuffer& data, AlphaOption, GammaAndColorProfileOption);
 
     virtual String filenameExtension() const = 0;
 
     bool isAllDataReceived() const { return m_isAllDataReceived; }
 
-    virtual void setData(SharedBuffer* data, bool allDataReceived)
+    void setData(SharedBuffer* data, bool allDataReceived)
     {
         if (m_failed)
             return;
         m_data = data;
         m_isAllDataReceived = allDataReceived;
+        onSetData(data);
     }
+
+    virtual void onSetData(SharedBuffer* data) { }
 
     bool isSizeAvailable()
     {

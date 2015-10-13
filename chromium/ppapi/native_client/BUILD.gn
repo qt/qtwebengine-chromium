@@ -3,13 +3,17 @@
 # found in the LICENSE file.
 
 import("//build/config/features.gni")
+import("//build/config/nacl/config.gni")
 
-if (enable_nacl && enable_nacl_untrusted) {
+if (is_nacl) {
   group("ppapi_lib") {
     deps = [
-      "//native_client/src/untrusted/pthread",
       "//ppapi/native_client/src/untrusted/irt_stub:ppapi_stub_lib",
     ]
+    if (!is_nacl_glibc) {
+      # Glibc has its version of pthread library.
+      deps += [ "//native_client/src/untrusted/pthread" ]
+    }
   }
 
   executable("nacl_irt") {
@@ -34,4 +38,30 @@ if (enable_nacl && enable_nacl_untrusted) {
       "//ppapi/shared_impl",
     ]
   }
+
+  copy("nacl_irt_copy") {
+    # TODO(phosek): We can remove this ugliness if we change the
+    # IRT file name in components/nacl/browser/nacl_browser.cc
+    if (target_cpu == "x86") {
+      suffix = "x86_32"
+    } else if (target_cpu == "x64") {
+      suffix = "x86_64"
+    } else if (target_cpu == "arm") {
+      suffix = "arm"
+    }
+
+    sources = [
+      "${root_out_dir}/nacl_irt.nexe",
+    ]
+    outputs = [
+      "${root_build_dir}/{{source_name_part}}_${suffix}.nexe",
+    ]
+    deps = [
+      ":nacl_irt",
+    ]
+  }
+}
+
+group("irt") {
+  data_deps = [ ":nacl_irt_copy(//build/toolchain/nacl:irt_${target_cpu})" ]
 }

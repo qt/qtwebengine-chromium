@@ -4,7 +4,7 @@
             "type": "@WebInspector.PanelFactory",
             "name": "profiles",
             "title": "Profiles",
-            "order": 4,
+            "order": 60,
             "className": "WebInspector.ProfilesPanelFactory"
         },
         {
@@ -35,6 +35,31 @@
             "settingName": "highResolutionCpuProfiling",
             "settingType": "boolean",
             "defaultValue": false
+        },
+        {
+            "type": "setting",
+            "category": "Profiler",
+            "title": "Show native functions in JS Profile",
+            "settingName": "showNativeFunctionsInJSProfile",
+            "settingType": "boolean",
+            "defaultValue": false
+        },
+        {
+            "type": "@WebInspector.ActionDelegate",
+            "actionId": "profiler.toggle-recording",
+            "iconClass": "record-toolbar-item",
+            "contextTypes": ["WebInspector.ProfilesPanel"],
+            "className": "WebInspector.ProfilesPanel.RecordActionDelegate",
+            "bindings": [
+                {
+                    "platform": "windows,linux",
+                    "shortcut": "Ctrl+E"
+                },
+                {
+                    "platform": "mac",
+                    "shortcut": "Meta+E"
+                }
+            ]
         }
     ],
     "dependencies": [

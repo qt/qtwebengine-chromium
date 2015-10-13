@@ -13,12 +13,12 @@
 #include "core/fetch/ResourceFetcher.h"
 #include "core/fileapi/File.h"
 #include "core/frame/LocalFrame.h"
-#include "core/html/DOMFormData.h"
+#include "core/html/FormData.h"
 #include "core/inspector/ConsoleMessage.h"
 #include "core/loader/MixedContentChecker.h"
 #include "platform/exported/WrappedResourceRequest.h"
 #include "platform/exported/WrappedResourceResponse.h"
-#include "platform/network/FormData.h"
+#include "platform/network/EncodedFormData.h"
 #include "platform/network/ParsedContentType.h"
 #include "platform/network/ResourceRequest.h"
 #include "public/platform/WebURLRequest.h"
@@ -37,12 +37,12 @@ protected:
     static unsigned long long beaconSize(const String&);
     static unsigned long long beaconSize(Blob*);
     static unsigned long long beaconSize(PassRefPtr<DOMArrayBufferView>);
-    static unsigned long long beaconSize(DOMFormData*);
+    static unsigned long long beaconSize(FormData*);
 
     static bool serialize(const String&, ResourceRequest&, int, int&);
     static bool serialize(Blob*, ResourceRequest&, int, int&);
     static bool serialize(PassRefPtr<DOMArrayBufferView>, ResourceRequest&, int, int&);
-    static bool serialize(DOMFormData*, ResourceRequest&, int, int&);
+    static bool serialize(FormData*, ResourceRequest&, int, int&);
 };
 
 template<typename Payload>
@@ -117,7 +117,7 @@ bool BeaconLoader::sendBeacon(LocalFrame* frame, int allowance, const KURL& beac
     return Sender::send(frame, allowance, beaconURL, beacon, payloadLength);
 }
 
-bool BeaconLoader::sendBeacon(LocalFrame* frame, int allowance, const KURL& beaconURL, DOMFormData* data, int& payloadLength)
+bool BeaconLoader::sendBeacon(LocalFrame* frame, int allowance, const KURL& beaconURL, FormData* data, int& payloadLength)
 {
     BeaconData<decltype(data)> beacon(data);
     return Sender::send(frame, allowance, beaconURL, beacon, payloadLength);
@@ -148,12 +148,9 @@ void BeaconLoader::willSendRequest(WebURLLoader*, WebURLRequest& passedNewReques
     StoredCredentials withCredentials = AllowStoredCredentials;
     ResourceLoaderOptions options;
     if (!CrossOriginAccessControl::handleRedirect(m_beaconOrigin.get(), newRequest, redirectResponse, withCredentials, options, errorDescription)) {
-        if (page() && page()->mainFrame()) {
-            if (page()->mainFrame()->isLocalFrame()) {
-                LocalFrame* localFrame = toLocalFrame(page()->mainFrame());
-                if (localFrame->document())
-                    localFrame->document()->addConsoleMessage(ConsoleMessage::create(JSMessageSource, ErrorMessageLevel, errorDescription));
-            }
+        if (LocalFrame* localFrame = frame()) {
+            if (localFrame->document())
+                localFrame->document()->addConsoleMessage(ConsoleMessage::create(JSMessageSource, ErrorMessageLevel, errorDescription));
         }
         // Cancel the load and self destruct.
         dispose();
@@ -172,7 +169,7 @@ unsigned long long Beacon::beaconSize(const String& data)
 
 bool Beacon::serialize(const String& data, ResourceRequest& request, int, int&)
 {
-    RefPtr<FormData> entityBody = FormData::create(data.utf8());
+    RefPtr<EncodedFormData> entityBody = EncodedFormData::create(data.utf8());
     request.setHTTPBody(entityBody);
     request.setHTTPContentType("text/plain;charset=UTF-8");
     return true;
@@ -186,7 +183,7 @@ unsigned long long Beacon::beaconSize(Blob* data)
 bool Beacon::serialize(Blob* data, ResourceRequest& request, int, int&)
 {
     ASSERT(data);
-    RefPtr<FormData> entityBody = FormData::create();
+    RefPtr<EncodedFormData> entityBody = EncodedFormData::create();
     if (data->hasBackingFile())
         entityBody->appendFile(toFile(data)->path());
     else
@@ -209,7 +206,7 @@ unsigned long long Beacon::beaconSize(PassRefPtr<DOMArrayBufferView> data)
 bool Beacon::serialize(PassRefPtr<DOMArrayBufferView> data, ResourceRequest& request, int, int&)
 {
     ASSERT(data);
-    RefPtr<FormData> entityBody = FormData::create(data->baseAddress(), data->byteLength());
+    RefPtr<EncodedFormData> entityBody = EncodedFormData::create(data->baseAddress(), data->byteLength());
     request.setHTTPBody(entityBody.release());
 
     // FIXME: a reasonable choice, but not in the spec; should it give a default?
@@ -219,16 +216,16 @@ bool Beacon::serialize(PassRefPtr<DOMArrayBufferView> data, ResourceRequest& req
     return true;
 }
 
-unsigned long long Beacon::beaconSize(DOMFormData* data)
+unsigned long long Beacon::beaconSize(FormData*)
 {
-    // DOMFormData's size cannot be determined until serialized.
+    // FormData's size cannot be determined until serialized.
     return 0;
 }
 
-bool Beacon::serialize(DOMFormData* data, ResourceRequest& request, int allowance, int& payloadLength)
+bool Beacon::serialize(FormData* data, ResourceRequest& request, int allowance, int& payloadLength)
 {
     ASSERT(data);
-    RefPtr<FormData> entityBody = data->createMultiPartFormData();
+    RefPtr<EncodedFormData> entityBody = data->encodeMultiPartFormData();
     unsigned long long entitySize = entityBody->sizeInBytes();
     if (allowance > 0 && static_cast<unsigned long long>(allowance) < entitySize)
         return false;

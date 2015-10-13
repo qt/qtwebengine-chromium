@@ -9,6 +9,7 @@
 #include "base/android/build_info.h"
 #include "base/android/jni_array.h"
 #include "base/android/jni_string.h"
+#include "base/bind.h"
 #include "base/callback_helpers.h"
 #include "base/containers/hash_tables.h"
 #include "base/lazy_instance.h"
@@ -16,6 +17,7 @@
 #include "base/logging.h"
 #include "base/single_thread_task_runner.h"
 #include "base/stl_util.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/sys_byteorder.h"
 #include "base/sys_info.h"
@@ -23,6 +25,7 @@
 #include "jni/MediaDrmBridge_jni.h"
 #include "media/base/android/media_client_android.h"
 #include "media/base/android/media_drm_bridge_delegate.h"
+#include "media/base/android/media_task_runner.h"
 #include "media/base/cdm_key_information.h"
 
 #include "widevine_cdm_version.h"  // In SHARED_INTERMEDIATE_DIR.
@@ -31,16 +34,30 @@ using base::android::AttachCurrentThread;
 using base::android::ConvertUTF8ToJavaString;
 using base::android::ConvertJavaStringToUTF8;
 using base::android::JavaByteArrayToByteVector;
+using base::android::ScopedJavaGlobalRef;
 using base::android::ScopedJavaLocalRef;
 
 namespace media {
 
 namespace {
 
-// DrmBridge supports session expiration event but doesn't provide detailed
-// status for each key ID, which is required by the EME spec. Use a dummy key ID
-// here to report session expiration info.
-const char kDummyKeyId[] = "Dummy Key Id";
+// These must be in sync with Android MediaDrm REQUEST_TYPE_XXX constants!
+// https://developer.android.com/reference/android/media/MediaDrm.KeyRequest.html
+enum class RequestType {
+  REQUEST_TYPE_INITIAL = 0,
+  REQUEST_TYPE_RENEWAL = 1,
+  REQUEST_TYPE_RELEASE = 2,
+};
+
+// These must be in sync with Android MediaDrm KEY_STATUS_XXX constants:
+// https://developer.android.com/reference/android/media/MediaDrm.KeyStatus.html
+enum class KeyStatus {
+  KEY_STATUS_USABLE = 0,
+  KEY_STATUS_EXPIRED = 1,
+  KEY_STATUS_OUTPUT_NOT_ALLOWED = 2,
+  KEY_STATUS_PENDING = 3,
+  KEY_STATUS_INTERNAL_ERROR = 4,
+};
 
 // Returns string session ID from jbyteArray (byte[] in Java).
 std::string GetSessionId(JNIEnv* env, jbyteArray j_session_id) {
@@ -70,6 +87,39 @@ std::string ConvertInitDataType(media::EmeInitDataType init_data_type) {
       NOTREACHED();
       return "unknown";
   }
+}
+
+MediaKeys::MessageType GetMessageType(RequestType request_type) {
+  switch (request_type) {
+    case RequestType::REQUEST_TYPE_INITIAL:
+      return MediaKeys::LICENSE_REQUEST;
+    case RequestType::REQUEST_TYPE_RENEWAL:
+      return MediaKeys::LICENSE_RENEWAL;
+    case RequestType::REQUEST_TYPE_RELEASE:
+      return MediaKeys::LICENSE_RELEASE;
+  }
+
+  NOTREACHED();
+  return MediaKeys::LICENSE_REQUEST;
+}
+
+CdmKeyInformation::KeyStatus ConvertKeyStatus(KeyStatus key_status) {
+  switch (key_status) {
+    case KeyStatus::KEY_STATUS_USABLE:
+      return CdmKeyInformation::USABLE;
+    case KeyStatus::KEY_STATUS_EXPIRED:
+      return CdmKeyInformation::EXPIRED;
+    case KeyStatus::KEY_STATUS_OUTPUT_NOT_ALLOWED:
+      return CdmKeyInformation::OUTPUT_RESTRICTED;
+    case KeyStatus::KEY_STATUS_PENDING:
+      // TODO(xhwang): This should probably be renamed to "PENDING".
+      return CdmKeyInformation::KEY_STATUS_PENDING;
+    case KeyStatus::KEY_STATUS_INTERNAL_ERROR:
+      return CdmKeyInformation::INTERNAL_ERROR;
+  }
+
+  NOTREACHED();
+  return CdmKeyInformation::INTERNAL_ERROR;
 }
 
 class KeySystemManager {
@@ -207,6 +257,7 @@ bool MediaDrmBridge::IsKeySystemSupportedWithType(
   return IsKeySystemSupportedWithTypeImpl(key_system, container_mime_type);
 }
 
+// static
 bool MediaDrmBridge::RegisterMediaDrmBridge(JNIEnv* env) {
   return RegisterNativesImpl(env);
 }
@@ -216,12 +267,21 @@ MediaDrmBridge::MediaDrmBridge(
     const SessionMessageCB& session_message_cb,
     const SessionClosedCB& session_closed_cb,
     const LegacySessionErrorCB& legacy_session_error_cb,
-    const SessionKeysChangeCB& session_keys_change_cb)
+    const SessionKeysChangeCB& session_keys_change_cb,
+    const SessionExpirationUpdateCB& session_expiration_update_cb)
     : scheme_uuid_(scheme_uuid),
       session_message_cb_(session_message_cb),
       session_closed_cb_(session_closed_cb),
       legacy_session_error_cb_(legacy_session_error_cb),
-      session_keys_change_cb_(session_keys_change_cb) {
+      session_keys_change_cb_(session_keys_change_cb),
+      session_expiration_update_cb_(session_expiration_update_cb),
+      cdm_promise_adapter_(new CdmPromiseAdapter()),
+      ui_task_runner_(base::ThreadTaskRunnerHandle::Get()),
+      use_media_thread_(UseMediaThreadForMediaPlayback()),
+      media_weak_factory_(this),
+      ui_weak_factory_(this) {
+  DVLOG(1) << __FUNCTION__;
+
   JNIEnv* env = AttachCurrentThread();
   CHECK(env);
 
@@ -231,23 +291,46 @@ MediaDrmBridge::MediaDrmBridge(
       env, j_scheme_uuid.obj(), reinterpret_cast<intptr_t>(this)));
 }
 
-MediaDrmBridge::~MediaDrmBridge() {
+void MediaDrmBridge::DeleteOnCorrectThread() {
+  DCHECK(ui_task_runner_->BelongsToCurrentThread());
+  DVLOG(1) << __FUNCTION__;
+
   JNIEnv* env = AttachCurrentThread();
-  player_tracker_.NotifyCdmUnset();
   if (!j_media_drm_.is_null())
     Java_MediaDrmBridge_destroy(env, j_media_drm_.obj());
+
+  // After the call to Java_MediaDrmBridge_destroy() Java won't call native
+  // methods anymore, this is ensured by MediaDrmBridge.java.
+
+  // CdmPromiseAdapter must be destroyed on the UI thread.
+  cdm_promise_adapter_.reset();
+
+  // Post deletion onto Media thread if we use it.
+  if (use_media_thread_) {
+    ui_weak_factory_.InvalidateWeakPtrs();
+    GetMediaTaskRunner()->DeleteSoon(FROM_HERE, this);
+  } else {
+    delete this;
+  }
+}
+
+MediaDrmBridge::~MediaDrmBridge() {
+  DVLOG(1) << __FUNCTION__;
+
+  DCHECK(!use_media_thread_ || GetMediaTaskRunner()->BelongsToCurrentThread());
+
+  player_tracker_.NotifyCdmUnset();
 }
 
 // static
-// TODO(xhwang): Enable SessionExpirationUpdateCB when it is supported.
-scoped_ptr<MediaDrmBridge> MediaDrmBridge::Create(
+ScopedMediaDrmBridgePtr MediaDrmBridge::Create(
     const std::string& key_system,
     const SessionMessageCB& session_message_cb,
     const SessionClosedCB& session_closed_cb,
     const LegacySessionErrorCB& legacy_session_error_cb,
     const SessionKeysChangeCB& session_keys_change_cb,
-    const SessionExpirationUpdateCB& /* session_expiration_update_cb */) {
-  scoped_ptr<MediaDrmBridge> media_drm_bridge;
+    const SessionExpirationUpdateCB& session_expiration_update_cb) {
+  scoped_ptr<MediaDrmBridge, BrowserCdmDeleter> media_drm_bridge;
   if (!IsAvailable())
     return media_drm_bridge.Pass();
 
@@ -257,7 +340,8 @@ scoped_ptr<MediaDrmBridge> MediaDrmBridge::Create(
 
   media_drm_bridge.reset(
       new MediaDrmBridge(scheme_uuid, session_message_cb, session_closed_cb,
-                         legacy_session_error_cb, session_keys_change_cb));
+                         legacy_session_error_cb, session_keys_change_cb,
+                         session_expiration_update_cb));
 
   if (media_drm_bridge->j_media_drm_.is_null())
     media_drm_bridge.reset();
@@ -266,8 +350,8 @@ scoped_ptr<MediaDrmBridge> MediaDrmBridge::Create(
 }
 
 // static
-scoped_ptr<MediaDrmBridge> MediaDrmBridge::CreateWithoutSessionSupport(
-    const std::string& key_system) {
+ScopedMediaDrmBridgePtr
+MediaDrmBridge::CreateWithoutSessionSupport(const std::string& key_system) {
   return MediaDrmBridge::Create(
       key_system, SessionMessageCB(), SessionClosedCB(), LegacySessionErrorCB(),
       SessionKeysChangeCB(), SessionExpirationUpdateCB());
@@ -357,7 +441,7 @@ void MediaDrmBridge::CreateSessionAndGenerateRequest(
 
   ScopedJavaLocalRef<jstring> j_mime =
       ConvertUTF8ToJavaString(env, ConvertInitDataType(init_data_type));
-  uint32_t promise_id = cdm_promise_adapter_.SavePromise(promise.Pass());
+  uint32_t promise_id = cdm_promise_adapter_->SavePromise(promise.Pass());
   Java_MediaDrmBridge_createSessionFromNative(env, j_media_drm_.obj(),
                                               j_init_data.obj(), j_mime.obj(),
                                               j_optional_parameters.obj(),
@@ -384,7 +468,7 @@ void MediaDrmBridge::UpdateSession(
   ScopedJavaLocalRef<jbyteArray> j_session_id = base::android::ToJavaByteArray(
       env, reinterpret_cast<const uint8_t*>(session_id.data()),
       session_id.size());
-  uint32_t promise_id = cdm_promise_adapter_.SavePromise(promise.Pass());
+  uint32_t promise_id = cdm_promise_adapter_->SavePromise(promise.Pass());
   Java_MediaDrmBridge_updateSession(env, j_media_drm_.obj(), j_session_id.obj(),
                                     j_response.obj(), promise_id);
 }
@@ -396,7 +480,7 @@ void MediaDrmBridge::CloseSession(const std::string& session_id,
   ScopedJavaLocalRef<jbyteArray> j_session_id = base::android::ToJavaByteArray(
       env, reinterpret_cast<const uint8_t*>(session_id.data()),
       session_id.size());
-  uint32_t promise_id = cdm_promise_adapter_.SavePromise(promise.Pass());
+  uint32_t promise_id = cdm_promise_adapter_->SavePromise(promise.Pass());
   Java_MediaDrmBridge_closeSession(env, j_media_drm_.obj(), j_session_id.obj(),
                                    promise_id);
 }
@@ -415,47 +499,75 @@ CdmContext* MediaDrmBridge::GetCdmContext() {
 
 int MediaDrmBridge::RegisterPlayer(const base::Closure& new_key_cb,
                                    const base::Closure& cdm_unset_cb) {
+  DCHECK(!use_media_thread_ || GetMediaTaskRunner()->BelongsToCurrentThread());
   return player_tracker_.RegisterPlayer(new_key_cb, cdm_unset_cb);
 }
 
 void MediaDrmBridge::UnregisterPlayer(int registration_id) {
+  DCHECK(!use_media_thread_ || GetMediaTaskRunner()->BelongsToCurrentThread());
   player_tracker_.UnregisterPlayer(registration_id);
 }
 
-void MediaDrmBridge::SetMediaCryptoReadyCB(const base::Closure& closure) {
-  if (closure.is_null()) {
+void MediaDrmBridge::SetMediaCryptoReadyCB(
+    const MediaCryptoReadyCB& media_crypto_ready_cb) {
+  DCHECK(ui_task_runner_->BelongsToCurrentThread());
+  DVLOG(1) << __FUNCTION__;
+
+  if (media_crypto_ready_cb.is_null()) {
     media_crypto_ready_cb_.Reset();
     return;
   }
 
   DCHECK(media_crypto_ready_cb_.is_null());
 
+  // |media_crypto_ready_cb| is already bound to the correct thread
+  // (either UI or Media).
   if (!GetMediaCrypto().is_null()) {
-    base::ThreadTaskRunnerHandle::Get()->PostTask(FROM_HERE, closure);
+    NotifyMediaCryptoReady(media_crypto_ready_cb);
     return;
   }
 
-  media_crypto_ready_cb_ = closure;
+  media_crypto_ready_cb_ = media_crypto_ready_cb;
 }
 
-void MediaDrmBridge::OnMediaCryptoReady(JNIEnv* env, jobject) {
+void MediaDrmBridge::OnMediaCryptoReady(JNIEnv* env, jobject j_media_drm) {
+  DCHECK(ui_task_runner_->BelongsToCurrentThread());
+  DVLOG(1) << __FUNCTION__;
+
   DCHECK(!GetMediaCrypto().is_null());
-  if (!media_crypto_ready_cb_.is_null())
-    base::ResetAndReturn(&media_crypto_ready_cb_).Run();
+
+  if (media_crypto_ready_cb_.is_null())
+    return;
+
+  NotifyMediaCryptoReady(base::ResetAndReturn(&media_crypto_ready_cb_));
+}
+
+void MediaDrmBridge::NotifyMediaCryptoReady(const MediaCryptoReadyCB& cb) {
+  DCHECK(ui_task_runner_->BelongsToCurrentThread());
+
+  DCHECK(!cb.is_null());
+  DCHECK(!GetMediaCrypto().is_null());
+
+  // We can use scoped_ptr to pass ScopedJavaGlobalRef with a callback.
+  scoped_ptr<ScopedJavaGlobalRef<jobject>> j_object_ptr(
+      new ScopedJavaGlobalRef<jobject>());
+  j_object_ptr->Reset(AttachCurrentThread(), GetMediaCrypto().obj());
+
+  cb.Run(j_object_ptr.Pass(), IsProtectedSurfaceRequired());
 }
 
 void MediaDrmBridge::OnPromiseResolved(JNIEnv* env,
                                        jobject j_media_drm,
                                        jint j_promise_id) {
-  cdm_promise_adapter_.ResolvePromise(j_promise_id);
+  cdm_promise_adapter_->ResolvePromise(j_promise_id);
 }
 
 void MediaDrmBridge::OnPromiseResolvedWithSession(JNIEnv* env,
                                                   jobject j_media_drm,
                                                   jint j_promise_id,
                                                   jbyteArray j_session_id) {
-  cdm_promise_adapter_.ResolvePromise(j_promise_id,
-                                      GetSessionId(env, j_session_id));
+  cdm_promise_adapter_->ResolvePromise(j_promise_id,
+                                       GetSessionId(env, j_session_id));
 }
 
 void MediaDrmBridge::OnPromiseRejected(JNIEnv* env,
@@ -463,23 +575,22 @@ void MediaDrmBridge::OnPromiseRejected(JNIEnv* env,
                                        jint j_promise_id,
                                        jstring j_error_message) {
   std::string error_message = ConvertJavaStringToUTF8(env, j_error_message);
-  cdm_promise_adapter_.RejectPromise(j_promise_id, MediaKeys::UNKNOWN_ERROR, 0,
-                                     error_message);
+  cdm_promise_adapter_->RejectPromise(j_promise_id, MediaKeys::UNKNOWN_ERROR, 0,
+                                      error_message);
 }
 
 void MediaDrmBridge::OnSessionMessage(JNIEnv* env,
                                       jobject j_media_drm,
                                       jbyteArray j_session_id,
+                                      jint j_message_type,
                                       jbyteArray j_message,
                                       jstring j_legacy_destination_url) {
   std::vector<uint8> message;
   JavaByteArrayToByteVector(env, j_message, &message);
   GURL legacy_destination_url =
       GURL(ConvertJavaStringToUTF8(env, j_legacy_destination_url));
-  // Note: Message type is not supported in MediaDrm. Do our best guess here.
-  media::MediaKeys::MessageType message_type =
-      legacy_destination_url.is_empty() ? media::MediaKeys::LICENSE_REQUEST
-                                        : media::MediaKeys::LICENSE_RENEWAL;
+  MediaKeys::MessageType message_type =
+      GetMessageType(static_cast<RequestType>(j_message_type));
 
   session_message_cb_.Run(GetSessionId(env, j_session_id), message_type,
                           message, legacy_destination_url);
@@ -494,21 +605,80 @@ void MediaDrmBridge::OnSessionClosed(JNIEnv* env,
 void MediaDrmBridge::OnSessionKeysChange(JNIEnv* env,
                                          jobject j_media_drm,
                                          jbyteArray j_session_id,
-                                         bool has_additional_usable_key,
-                                         jint j_key_status) {
+                                         jobjectArray j_keys_info,
+                                         bool has_additional_usable_key) {
   if (has_additional_usable_key)
-    player_tracker_.NotifyNewKey();
+    NotifyNewKeyOnCorrectThread();
 
-  scoped_ptr<CdmKeyInformation> cdm_key_information(new CdmKeyInformation());
-  cdm_key_information->key_id.assign(kDummyKeyId,
-                                     kDummyKeyId + sizeof(kDummyKeyId));
-  cdm_key_information->status =
-      static_cast<CdmKeyInformation::KeyStatus>(j_key_status);
   CdmKeysInfo cdm_keys_info;
-  cdm_keys_info.push_back(cdm_key_information.release());
+
+  size_t size = env->GetArrayLength(j_keys_info);
+  DCHECK_GT(size, 0u);
+
+  for (size_t i = 0; i < size; ++i) {
+    ScopedJavaLocalRef<jobject> j_key_status(
+        env, env->GetObjectArrayElement(j_keys_info, i));
+
+    ScopedJavaLocalRef<jbyteArray> j_key_id =
+        Java_KeyStatus_getKeyId(env, j_key_status.obj());
+    std::vector<uint8> key_id;
+    JavaByteArrayToByteVector(env, j_key_id.obj(), &key_id);
+    DCHECK(!key_id.empty());
+
+    jint j_status_code =
+        Java_KeyStatus_getStatusCode(env, j_key_status.obj());
+    CdmKeyInformation::KeyStatus key_status =
+        ConvertKeyStatus(static_cast<KeyStatus>(j_status_code));
+
+    DVLOG(2) << __FUNCTION__ << "Key status change: "
+             << base::HexEncode(&key_id[0], key_id.size()) << ", "
+             << key_status;
+
+    // TODO(xhwang): Update CdmKeyInformation to take key_id and status in the
+    // constructor.
+    scoped_ptr<CdmKeyInformation> cdm_key_information(new CdmKeyInformation());
+    cdm_key_information->key_id = key_id;
+    cdm_key_information->status = key_status;
+    cdm_keys_info.push_back(cdm_key_information.release());
+  }
 
   session_keys_change_cb_.Run(GetSessionId(env, j_session_id),
                               has_additional_usable_key, cdm_keys_info.Pass());
+}
+
+void MediaDrmBridge::NotifyNewKeyOnCorrectThread() {
+  // Repost this method onto the Media thread if |use_media_thread_| is true.
+  if (use_media_thread_ && !GetMediaTaskRunner()->BelongsToCurrentThread()) {
+    GetMediaTaskRunner()->PostTask(
+        FROM_HERE, base::Bind(&MediaDrmBridge::NotifyNewKeyOnCorrectThread,
+                              media_weak_factory_.GetWeakPtr()));
+    return;
+  }
+
+  DCHECK(!use_media_thread_ || GetMediaTaskRunner()->BelongsToCurrentThread());
+  DVLOG(1) << __FUNCTION__;
+
+  player_tracker_.NotifyNewKey();
+}
+
+// According to MeidaDrm documentation [1], zero |expiry_time_ms| means the keys
+// will never expire. This will be translated into a NULL base::Time() [2],
+// which will then be mapped to a zero Java time [3]. The zero Java time is
+// passed to Blink which will then be translated to NaN [4], which is what the
+// spec uses to indicate that the license will never expire [5].
+// [1] http://developer.android.com/reference/android/media/MediaDrm.OnExpirationUpdateListener.html
+// [2] See base::Time::FromDoubleT()
+// [3] See base::Time::ToJavaTime()
+// [4] See MediaKeySession::expirationChanged()
+// [5] https://github.com/w3c/encrypted-media/issues/58
+void MediaDrmBridge::OnSessionExpirationUpdate(JNIEnv* env,
+                                               jobject j_media_drm,
+                                               jbyteArray j_session_id,
+                                               jlong expiry_time_ms) {
+  DVLOG(2) << __FUNCTION__ << ": " << expiry_time_ms << " ms";
+  session_expiration_update_cb_.Run(
+      GetSessionId(env, j_session_id),
+      base::Time::FromDoubleT(expiry_time_ms / 1000.0));
 }
 
 void MediaDrmBridge::OnLegacySessionError(JNIEnv* env,
@@ -521,6 +691,8 @@ void MediaDrmBridge::OnLegacySessionError(JNIEnv* env,
 }
 
 ScopedJavaLocalRef<jobject> MediaDrmBridge::GetMediaCrypto() {
+  DCHECK(ui_task_runner_->BelongsToCurrentThread());
+
   JNIEnv* env = AttachCurrentThread();
   return Java_MediaDrmBridge_getMediaCrypto(env, j_media_drm_.obj());
 }
@@ -541,6 +713,10 @@ bool MediaDrmBridge::IsProtectedSurfaceRequired() {
 
   // For other key systems, assume true.
   return true;
+}
+
+base::WeakPtr<MediaDrmBridge> MediaDrmBridge::WeakPtrForUIThread() {
+  return ui_weak_factory_.GetWeakPtr();
 }
 
 void MediaDrmBridge::ResetDeviceCredentials(

@@ -4,6 +4,7 @@
 
 #include "cc/surfaces/surface_factory.h"
 
+#include "base/trace_event/trace_event.h"
 #include "cc/output/compositor_frame.h"
 #include "cc/output/copy_output_request.h"
 #include "cc/surfaces/surface.h"
@@ -47,15 +48,18 @@ void SurfaceFactory::Destroy(SurfaceId surface_id) {
   manager_->Destroy(surface_map_.take_and_erase(it));
 }
 
-void SurfaceFactory::SubmitFrame(SurfaceId surface_id,
-                                 scoped_ptr<CompositorFrame> frame,
-                                 const DrawCallback& callback) {
+void SurfaceFactory::SubmitCompositorFrame(SurfaceId surface_id,
+                                           scoped_ptr<CompositorFrame> frame,
+                                           const DrawCallback& callback) {
+  TRACE_EVENT0("cc", "SurfaceFactory::SubmitCompositorFrame");
   OwningSurfaceMap::iterator it = surface_map_.find(surface_id);
   DCHECK(it != surface_map_.end());
   DCHECK(it->second->factory().get() == this);
   it->second->QueueFrame(frame.Pass(), callback);
-  if (!manager_->SurfaceModified(surface_id))
+  if (!manager_->SurfaceModified(surface_id)) {
+    TRACE_EVENT_INSTANT0("cc", "Damage not visible.", TRACE_EVENT_SCOPE_THREAD);
     it->second->RunDrawCallbacks(SurfaceDrawStatus::DRAW_SKIPPED);
+  }
 }
 
 void SurfaceFactory::RequestCopyOfSurface(

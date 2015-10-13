@@ -9,9 +9,6 @@ namespace switches {
 // Allow users to specify a custom buffer size for debugging purpose.
 const char kAudioBufferSize[] = "audio-buffer-size";
 
-// Disables the new vsync driven video renderering path.
-const char kDisableNewVideoRenderer[] = "disable-new-video-renderer";
-
 // Set number of threads to use for video decoding.
 const char kVideoThreads[] = "video-threads";
 
@@ -96,7 +93,7 @@ const char kEnableAudioHangMonitor[] = "enable-audio-hang-monitor";
 const char kUseFakeDeviceForMediaStream[] = "use-fake-device-for-media-stream";
 
 // Use an .y4m file to play as the webcam. See the comments in
-// media/video/capture/file_video_capture_device.h for more details.
+// media/capture/video/file_video_capture_device.h for more details.
 const char kUseFileForFakeVideoCapture[] = "use-file-for-fake-video-capture";
 
 // Play a .wav file as the microphone. Note that for WebRTC calls we'll treat
@@ -118,5 +115,9 @@ const char kRequireAudioHardwareForTesting[] =
 // declare the underflow state for the video stream when audio is present.
 // TODO(dalecurtis): Remove once experiments for http://crbug.com/470940 finish.
 const char kVideoUnderflowThresholdMs[] = "video-underflow-threshold-ms";
+
+// Use the new rendering algorithm for webrtc, which is designed to improve
+// smoothness.
+const char kEnableRTCSmoothnessAlgorithm[] = "enable-rtc-smoothness-algorithm";
 
 }  // namespace switches

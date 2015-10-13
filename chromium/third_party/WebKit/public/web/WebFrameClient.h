@@ -60,7 +60,7 @@ enum class WebTreeScopeType;
 class WebApplicationCacheHost;
 class WebApplicationCacheHostClient;
 class WebAppBannerClient;
-class WebCachedURLRequest;
+class WebBluetooth;
 class WebColorChooser;
 class WebColorChooserClient;
 class WebContentDecryptionModule;
@@ -80,7 +80,6 @@ class WebPermissionClient;
 class WebServiceWorkerProvider;
 class WebSocketHandle;
 class WebPlugin;
-class WebPluginPlaceholder;
 class WebPresentationClient;
 class WebPushClient;
 class WebRTCPeerConnectionHandler;
@@ -88,8 +87,10 @@ class WebScreenOrientationClient;
 class WebString;
 class WebURL;
 class WebURLResponse;
+class WebUSBClient;
 class WebUserMediaClient;
 class WebVRClient;
+class WebWakeLockClient;
 class WebWorkerContentSettingsClientProxy;
 struct WebColorSuggestion;
 struct WebConsoleMessage;
@@ -104,13 +105,7 @@ public:
     // Factory methods -----------------------------------------------------
 
     // May return null.
-    virtual WebPluginPlaceholder* createPluginPlaceholder(WebLocalFrame*, const WebPluginParams&) { return 0; }
-
-    // May return null.
     virtual WebPlugin* createPlugin(WebLocalFrame*, const WebPluginParams&) { return 0; }
-
-    // TODO(srirama): Remove this method once chromium updated.
-    virtual WebMediaPlayer* createMediaPlayer(WebLocalFrame*, const WebURL&, WebMediaPlayerClient*, WebContentDecryptionModule*) { return 0; }
 
     // May return null.
     // WebContentDecryptionModule* may be null if one has not yet been set.
@@ -156,9 +151,9 @@ public:
     // frameDetached().
     virtual WebFrame* createChildFrame(WebLocalFrame* parent, WebTreeScopeType, const WebString& frameName, WebSandboxFlags sandboxFlags) { return nullptr; }
 
-    // This frame set its opener to null, disowning it.
-    // See http://html.spec.whatwg.org/#dom-opener.
-    virtual void didDisownOpener(WebLocalFrame*) { }
+    // This frame has set its opener to another frame, or disowned the opener
+    // if opener is null. See http://html.spec.whatwg.org/#dom-opener.
+    virtual void didChangeOpener(WebFrame*) { }
 
     // Specifies the reason for the detachment.
     enum class DetachType { Remove, Swap };
@@ -197,7 +192,6 @@ public:
     // The client should handle the navigation externally.
     virtual void loadURLExternally(
         WebLocalFrame*, const WebURLRequest&, WebNavigationPolicy, const WebString& downloadName) { }
-
 
     // Navigational queries ------------------------------------------------
 
@@ -241,6 +235,8 @@ public:
     // This returns such a history item if appropriate.
     virtual WebHistoryItem historyItemForNewChildFrame(WebFrame*) { return WebHistoryItem(); }
 
+    // Whether the client is handling a navigation request.
+    virtual bool hasPendingNavigation(WebLocalFrame*) { return false; }
 
     // Navigational notifications ------------------------------------------
 
@@ -297,7 +293,7 @@ public:
     virtual void didChangeIcon(WebLocalFrame*, WebIconURL::Type) { }
 
     // The frame's document finished loading.
-    virtual void didFinishDocumentLoad(WebLocalFrame*) { }
+    virtual void didFinishDocumentLoad(WebLocalFrame*, bool documentIsEmpty) { }
 
     // The 'load' event was dispatched.
     virtual void didHandleOnloadEvents(WebLocalFrame*) { }
@@ -322,9 +318,6 @@ public:
 
     // The frame's manifest has changed.
     virtual void didChangeManifest(WebLocalFrame*) { }
-
-    // The frame's presentation URL has changed.
-    virtual void didChangeDefaultPresentation(WebLocalFrame*) { }
 
     // The frame's theme color has changed.
     virtual void didChangeThemeColor() { }
@@ -410,9 +403,6 @@ public:
 
     // Low-level resource notifications ------------------------------------
 
-    // An element will request a resource.
-    virtual void willRequestResource(WebLocalFrame*, const WebCachedURLRequest&) { }
-
     // A request is about to be sent out, and the client may modify it.  Request
     // is writable, and changes to the URL, for example, will change the request
     // made.  If this request is the result of a redirect, then redirectResponse
@@ -439,18 +429,21 @@ public:
 
     // This frame has displayed inactive content (such as an image) from an
     // insecure source.  Inactive content cannot spread to other frames.
-    virtual void didDisplayInsecureContent(WebLocalFrame*) { }
+    virtual void didDisplayInsecureContent() { }
 
     // The indicated security origin has run active content (such as a
     // script) from an insecure source.  Note that the insecure content can
     // spread to other frames in the same origin.
-    virtual void didRunInsecureContent(WebLocalFrame*, const WebSecurityOrigin&, const WebURL& insecureURL) { }
+    virtual void didRunInsecureContent(const WebSecurityOrigin&, const WebURL& insecureURL) { }
 
     // A reflected XSS was encountered in the page and suppressed.
-    virtual void didDetectXSS(WebLocalFrame*, const WebURL&, bool didBlockEntirePage) { }
+    virtual void didDetectXSS(const WebURL&, bool didBlockEntirePage) { }
 
     // A PingLoader was created, and a request dispatched to a URL.
     virtual void didDispatchPingLoader(WebLocalFrame*, const WebURL&) { }
+
+    // A performance timing event (e.g. first paint) occurred
+    virtual void didChangePerformanceTiming() { }
 
     // The loaders in this frame have been stopped.
     virtual void didAbortLoading(WebLocalFrame*) { }
@@ -468,9 +461,6 @@ public:
 
 
     // Geometry notifications ----------------------------------------------
-
-    // The frame's document finished the initial non-empty layout of a page.
-    virtual void didFirstVisuallyNonEmptyLayout(WebLocalFrame*) { }
 
     // The main frame scrolled.
     virtual void didChangeScrollOffset(WebLocalFrame*) { }
@@ -518,6 +508,9 @@ public:
     // A WebSocket object is going to open a new WebSocket connection.
     virtual void willOpenWebSocket(WebSocketHandle*) { }
 
+    // Wake Lock -----------------------------------------------------
+
+    virtual WebWakeLockClient* wakeLockClient() { return 0; }
 
     // Geolocation ---------------------------------------------------------
 
@@ -576,9 +569,6 @@ public:
     // given reason (one of the GL_ARB_robustness status codes; see
     // Extensions3D.h in WebCore/platform/graphics).
     virtual void didLoseWebGLContext(WebLocalFrame*, int) { }
-
-    // Send initial drawing parameters to a child frame that is being rendered out of process.
-    virtual void initializeChildFrame(const WebRect& frameRect, float scaleFactor) { }
 
 
     // Screen Orientation --------------------------------------------------
@@ -666,6 +656,12 @@ public:
     {
         return WebCustomHandlersNew;
     }
+
+    // Bluetooth -----------------------------------------------------------
+    virtual WebBluetooth* bluetooth() { return 0; }
+
+    // WebUSB --------------------------------------------------------------
+    virtual WebUSBClient* usbClient() { return nullptr; }
 
 protected:
     virtual ~WebFrameClient() { }

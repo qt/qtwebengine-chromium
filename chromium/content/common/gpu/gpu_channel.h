@@ -5,20 +5,21 @@
 #ifndef CONTENT_COMMON_GPU_GPU_CHANNEL_H_
 #define CONTENT_COMMON_GPU_GPU_CHANNEL_H_
 
-#include <deque>
 #include <string>
 
-#include "base/id_map.h"
+#include "base/containers/hash_tables.h"
+#include "base/containers/scoped_ptr_hash_map.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/memory/scoped_vector.h"
 #include "base/memory/weak_ptr.h"
 #include "base/process/process.h"
 #include "base/trace_event/memory_dump_provider.h"
 #include "build/build_config.h"
+#include "content/common/content_export.h"
 #include "content/common/gpu/gpu_command_buffer_stub.h"
 #include "content/common/gpu/gpu_memory_manager.h"
 #include "content/common/gpu/gpu_result_codes.h"
+#include "content/common/gpu/gpu_stream_priority.h"
 #include "content/common/message_router.h"
 #include "gpu/command_buffer/service/valuebuffer_manager.h"
 #include "ipc/ipc_sync_channel.h"
@@ -35,6 +36,8 @@ class WaitableEvent;
 
 namespace gpu {
 class PreemptionFlag;
+class SyncPointClientState;
+class SyncPointManager;
 union ValueState;
 class ValueStateMap;
 namespace gles2 {
@@ -43,52 +46,53 @@ class SubscriptionRefSet;
 }
 
 namespace IPC {
-class AttachmentBroker;
 class MessageFilter;
 }
 
 namespace content {
 class GpuChannelManager;
 class GpuChannelMessageFilter;
+class GpuChannelMessageQueue;
 class GpuJpegDecodeAccelerator;
 class GpuWatchdog;
 
 // Encapsulates an IPC channel between the GPU process and one renderer
 // process. On the renderer side there's a corresponding GpuChannelHost.
-class GpuChannel : public IPC::Listener,
-                   public IPC::Sender,
-                   public gpu::gles2::SubscriptionRefSet::Observer,
-                   public base::trace_event::MemoryDumpProvider {
+class CONTENT_EXPORT GpuChannel
+    : public IPC::Listener,
+      public IPC::Sender,
+      public gpu::gles2::SubscriptionRefSet::Observer {
  public:
   // Takes ownership of the renderer process handle.
   GpuChannel(GpuChannelManager* gpu_channel_manager,
              GpuWatchdog* watchdog,
              gfx::GLShareGroup* share_group,
              gpu::gles2::MailboxManager* mailbox_manager,
+             gpu::PreemptionFlag* preempting_flag,
+             base::SingleThreadTaskRunner* task_runner,
+             base::SingleThreadTaskRunner* io_task_runner,
              int client_id,
-             bool software,
-             bool allow_future_sync_points);
+             uint64_t client_tracing_id,
+             bool allow_future_sync_points,
+             bool allow_real_time_streams);
   ~GpuChannel() override;
 
-  void Init(base::SingleThreadTaskRunner* io_task_runner,
-            base::WaitableEvent* shutdown_event,
-            IPC::AttachmentBroker* broker);
+  // Initializes the IPC channel. Caller takes ownership of the client FD in
+  // the returned handle and is responsible for closing it.
+  virtual IPC::ChannelHandle Init(base::WaitableEvent* shutdown_event);
 
   // Get the GpuChannelManager that owns this channel.
   GpuChannelManager* gpu_channel_manager() const {
     return gpu_channel_manager_;
   }
 
-  // Returns the name of the associated IPC channel.
-  std::string GetChannelName();
+  const std::string& channel_id() const { return channel_id_; }
 
-#if defined(OS_POSIX)
-  base::ScopedFD TakeRendererFileDescriptor();
-#endif  // defined(OS_POSIX)
-
-  base::ProcessId renderer_pid() const { return channel_->GetPeerPID(); }
+  virtual base::ProcessId GetClientPID() const;
 
   int client_id() const { return client_id_; }
+
+  uint64_t client_tracing_id() const { return client_tracing_id_; }
 
   scoped_refptr<base::SingleThreadTaskRunner> io_task_runner() const {
     return io_task_runner_;
@@ -101,29 +105,17 @@ class GpuChannel : public IPC::Listener,
   // IPC::Sender implementation:
   bool Send(IPC::Message* msg) override;
 
-  // Requeue the message that is currently being processed to the beginning of
-  // the queue. Used when the processing of a message gets aborted because of
-  // unscheduling conditions.
-  void RequeueMessage();
-
   // SubscriptionRefSet::Observer implementation
   void OnAddSubscription(unsigned int target) override;
   void OnRemoveSubscription(unsigned int target) override;
 
-  // This is called when a command buffer transitions from the unscheduled
-  // state to the scheduled state, which potentially means the channel
-  // transitions from the unscheduled to the scheduled state. When this occurs
-  // deferred IPC messaged are handled.
-  void OnScheduled();
-
   // This is called when a command buffer transitions between scheduled and
   // descheduled states. When any stub is descheduled, we stop preempting
   // other channels.
-  void StubSchedulingChanged(bool scheduled);
+  void OnStubSchedulingChanged(GpuCommandBufferStub* stub, bool scheduled);
 
   CreateCommandBufferResult CreateViewCommandBuffer(
       const gfx::GLSurfaceHandle& window,
-      int32 surface_id,
       const GPUCreateCommandBufferConfig& init_params,
       int32 route_id);
 
@@ -141,10 +133,7 @@ class GpuChannel : public IPC::Listener,
   // Called to remove a listener for a particular message routing ID.
   void RemoveRoute(int32 route_id);
 
-  gpu::PreemptionFlag* GetPreemptionFlag();
-
-  bool handle_messages_scheduled() const { return handle_messages_scheduled_; }
-  uint64 messages_processed() const { return messages_processed_; }
+  void SetPreemptingFlag(gpu::PreemptionFlag* flag);
 
   // If |preemption_flag->IsSet()|, any stub on this channel
   // should stop issuing GL commands. Setting this to NULL stops deferral.
@@ -161,7 +150,7 @@ class GpuChannel : public IPC::Listener,
   scoped_refptr<gfx::GLImage> CreateImageForGpuMemoryBuffer(
       const gfx::GpuMemoryBufferHandle& handle,
       const gfx::Size& size,
-      gfx::GpuMemoryBuffer::Format format,
+      gfx::BufferFormat format,
       uint32 internalformat);
 
   bool allow_future_sync_points() const { return allow_future_sync_points_; }
@@ -174,17 +163,61 @@ class GpuChannel : public IPC::Listener,
     return pending_valuebuffer_state_.get();
   }
 
-  // base::trace_event::MemoryDumpProvider implementation.
-  bool OnMemoryDump(base::trace_event::ProcessMemoryDump* pmd) override;
+  // Visible for testing.
+  GpuChannelMessageFilter* filter() const { return filter_.get(); }
+
+  // Returns the global order number for the last processed IPC message.
+  uint32_t GetProcessedOrderNum() const;
+
+  // Returns the global order number for the last unprocessed IPC message.
+  uint32_t GetUnprocessedOrderNum() const;
+
+  // Returns the shared sync point client state.
+  scoped_refptr<gpu::SyncPointClientState> GetSyncPointClientState();
+
+  void HandleMessage();
+
+  // Some messages such as WaitForGetOffsetInRange and WaitForTokenInRange are
+  // processed as soon as possible because the client is blocked until they
+  // are completed.
+  void HandleOutOfOrderMessage(const IPC::Message& msg);
+
+#if defined(OS_ANDROID)
+  const GpuCommandBufferStub* GetOneStub() const;
+#endif
+
+ protected:
+  // The message filter on the io thread.
+  scoped_refptr<GpuChannelMessageFilter> filter_;
+
+  // Map of routing id to command buffer stub.
+  base::ScopedPtrHashMap<int32, scoped_ptr<GpuCommandBufferStub>> stubs_;
 
  private:
-  friend class GpuChannelMessageFilter;
+  class StreamState {
+   public:
+    StreamState(int32 id, GpuStreamPriority priority);
+    ~StreamState();
+
+    int32 id() const { return id_; }
+    GpuStreamPriority priority() const { return priority_; }
+
+    void AddRoute(int32 route_id);
+    void RemoveRoute(int32 route_id);
+    bool HasRoute(int32 route_id) const;
+    bool HasRoutes() const;
+
+   private:
+    int32 id_;
+    GpuStreamPriority priority_;
+    base::hash_set<int32> routes_;
+  };
 
   void OnDestroy();
 
   bool OnControlMessageReceived(const IPC::Message& msg);
 
-  void HandleMessage();
+  void ScheduleHandleMessage();
 
   // Message handlers.
   void OnCreateOffscreenCommandBuffer(
@@ -195,9 +228,6 @@ class GpuChannel : public IPC::Listener,
   void OnDestroyCommandBuffer(int32 route_id);
   void OnCreateJpegDecoder(int32 route_id, IPC::Message* reply_msg);
 
-  // Decrement the count of unhandled IPC messages and defer preemption.
-  void MessageProcessed();
-
   // The lifetime of objects of this class is managed by a GpuChannelManager.
   // The GpuChannelManager destroy all the GpuChannels that they own when they
   // are destroyed. So a raw pointer is safe.
@@ -205,7 +235,11 @@ class GpuChannel : public IPC::Listener,
 
   scoped_ptr<IPC::SyncChannel> channel_;
 
-  uint64 messages_processed_;
+  // Uniquely identifies the channel within this GPU process.
+  std::string channel_id_;
+
+  // Used to implement message routing functionality to CommandBuffer objects
+  MessageRouter router_;
 
   // Whether the processing of IPCs on this channel is stalled and we should
   // preempt other GpuChannels.
@@ -215,16 +249,17 @@ class GpuChannel : public IPC::Listener,
   // commands (via their GpuScheduler) when preempted_flag_->IsSet()
   scoped_refptr<gpu::PreemptionFlag> preempted_flag_;
 
-  std::deque<IPC::Message*> deferred_messages_;
+  scoped_refptr<GpuChannelMessageQueue> message_queue_;
 
   // The id of the client who is on the other side of the channel.
   int client_id_;
 
-  // Uniquely identifies the channel within this GPU process.
-  std::string channel_id_;
+  // The tracing ID used for memory allocations associated with this client.
+  uint64_t client_tracing_id_;
 
-  // Used to implement message routing functionality to CommandBuffer objects
-  MessageRouter router_;
+  // The task runners for the main thread and the io thread.
+  scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
+  scoped_refptr<base::SingleThreadTaskRunner> io_task_runner_;
 
   // The share group that all contexts associated with a particular renderer
   // process use.
@@ -236,24 +271,18 @@ class GpuChannel : public IPC::Listener,
 
   scoped_refptr<gpu::ValueStateMap> pending_valuebuffer_state_;
 
-  typedef IDMap<GpuCommandBufferStub, IDMapOwnPointer> StubMap;
-  StubMap stubs_;
-
   scoped_ptr<GpuJpegDecodeAccelerator> jpeg_decoder_;
 
-  bool log_messages_;  // True if we should log sent and received messages.
   gpu::gles2::DisallowedFeatures disallowed_features_;
   GpuWatchdog* watchdog_;
-  bool software_;
-  bool handle_messages_scheduled_;
-  IPC::Message* currently_processing_message_;
-
-  scoped_refptr<GpuChannelMessageFilter> filter_;
-  scoped_refptr<base::SingleThreadTaskRunner> io_task_runner_;
 
   size_t num_stubs_descheduled_;
 
+  // Map of stream id to stream state.
+  base::hash_map<int32, StreamState> streams_;
+
   bool allow_future_sync_points_;
+  bool allow_real_time_streams_;
 
   // Member variables should appear before the WeakPtrFactory, to ensure
   // that any WeakPtrs to Controller are invalidated before its members
@@ -261,6 +290,183 @@ class GpuChannel : public IPC::Listener,
   base::WeakPtrFactory<GpuChannel> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(GpuChannel);
+};
+
+// This filter does three things:
+// - it counts and timestamps each message forwarded to the channel
+//   so that we can preempt other channels if a message takes too long to
+//   process. To guarantee fairness, we must wait a minimum amount of time
+//   before preempting and we limit the amount of time that we can preempt in
+//   one shot (see constants above).
+// - it handles the GpuCommandBufferMsg_InsertSyncPoint message on the IO
+//   thread, generating the sync point ID and responding immediately, and then
+//   posting a task to insert the GpuCommandBufferMsg_RetireSyncPoint message
+//   into the channel's queue.
+// - it generates mailbox names for clients of the GPU process on the IO thread.
+class GpuChannelMessageFilter : public IPC::MessageFilter {
+ public:
+  GpuChannelMessageFilter(const base::WeakPtr<GpuChannel>& gpu_channel,
+                          GpuChannelMessageQueue* message_queue,
+                          gpu::SyncPointManager* sync_point_manager,
+                          base::SingleThreadTaskRunner* task_runner,
+                          gpu::PreemptionFlag* preempting_flag,
+                          bool future_sync_points);
+
+  // IPC::MessageFilter implementation.
+  void OnFilterAdded(IPC::Sender* sender) override;
+  void OnFilterRemoved() override;
+  void OnChannelConnected(int32 peer_pid) override;
+  void OnChannelError() override;
+  void OnChannelClosing() override;
+  bool OnMessageReceived(const IPC::Message& message) override;
+
+  void AddChannelFilter(scoped_refptr<IPC::MessageFilter> filter);
+  void RemoveChannelFilter(scoped_refptr<IPC::MessageFilter> filter);
+
+  void OnMessageProcessed();
+
+  void UpdateStubSchedulingState(bool a_stub_is_descheduled);
+
+  bool Send(IPC::Message* message);
+
+ protected:
+  ~GpuChannelMessageFilter() override;
+
+ private:
+  enum PreemptionState {
+    // Either there's no other channel to preempt, there are no messages
+    // pending processing, or we just finished preempting and have to wait
+    // before preempting again.
+    IDLE,
+    // We are waiting kPreemptWaitTimeMs before checking if we should preempt.
+    WAITING,
+    // We can preempt whenever any IPC processing takes more than
+    // kPreemptWaitTimeMs.
+    CHECKING,
+    // We are currently preempting (i.e. no stub is descheduled).
+    PREEMPTING,
+    // We would like to preempt, but some stub is descheduled.
+    WOULD_PREEMPT_DESCHEDULED,
+  };
+
+  void UpdatePreemptionState();
+
+  void TransitionToIdleIfCaughtUp();
+  void TransitionToIdle();
+  void TransitionToWaiting();
+  void TransitionToChecking();
+  void TransitionToPreempting();
+  void TransitionToWouldPreemptDescheduled();
+
+  PreemptionState preemption_state_;
+
+  // Maximum amount of time that we can spend in PREEMPTING.
+  // It is reset when we transition to IDLE.
+  base::TimeDelta max_preemption_time_;
+
+  base::WeakPtr<GpuChannel> gpu_channel_;
+  // The message_queue_ is used to handle messages on the main thread.
+  scoped_refptr<GpuChannelMessageQueue> message_queue_;
+  IPC::Sender* sender_;
+  base::ProcessId peer_pid_;
+  gpu::SyncPointManager* sync_point_manager_;
+  scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
+  scoped_refptr<gpu::PreemptionFlag> preempting_flag_;
+  std::vector<scoped_refptr<IPC::MessageFilter>> channel_filters_;
+
+  // This timer is created and destroyed on the IO thread.
+  scoped_ptr<base::OneShotTimer> timer_;
+
+  bool a_stub_is_descheduled_;
+
+  // True if this channel can create future sync points.
+  bool future_sync_points_;
+};
+
+struct GpuChannelMessage {
+  uint32_t order_number;
+  base::TimeTicks time_received;
+  IPC::Message message;
+
+  // TODO(dyen): Temporary sync point data, remove once new sync point lands.
+  bool retire_sync_point;
+  uint32 sync_point;
+
+  GpuChannelMessage(const IPC::Message& msg)
+      : order_number(0),
+        time_received(base::TimeTicks()),
+        message(msg),
+        retire_sync_point(false),
+        sync_point(0) {}
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(GpuChannelMessage);
+};
+
+class GpuChannelMessageQueue
+    : public base::RefCountedThreadSafe<GpuChannelMessageQueue> {
+ public:
+  static scoped_refptr<GpuChannelMessageQueue> Create(
+      const base::WeakPtr<GpuChannel>& gpu_channel,
+      base::SingleThreadTaskRunner* task_runner);
+
+  scoped_refptr<gpu::SyncPointClientState> GetSyncPointClientState();
+
+  // Returns the global order number for the last unprocessed IPC message.
+  uint32_t GetUnprocessedOrderNum() const;
+
+  // Returns the global order number for the last unprocessed IPC message.
+  uint32_t GetProcessedOrderNum() const;
+
+  bool HasQueuedMessages() const;
+
+  base::TimeTicks GetNextMessageTimeTick() const;
+
+  GpuChannelMessage* GetNextMessage() const;
+
+  void BeginMessageProcessing(const GpuChannelMessage* msg);
+
+  // Should be called after a message returned by GetNextMessage is processed.
+  // Returns true if there are more messages on the queue.
+  bool MessageProcessed();
+
+  void PushBackMessage(gpu::SyncPointManager* sync_point_manager,
+                       const IPC::Message& message);
+
+  bool GenerateSyncPointMessage(gpu::SyncPointManager* sync_point_manager,
+                                const IPC::Message& message,
+                                bool retire_sync_point,
+                                uint32_t* sync_point_number);
+
+  void DeleteAndDisableMessages(GpuChannelManager* gpu_channel_manager);
+
+ private:
+  friend class base::RefCountedThreadSafe<GpuChannelMessageQueue>;
+
+  GpuChannelMessageQueue(const base::WeakPtr<GpuChannel>& gpu_channel,
+                         base::SingleThreadTaskRunner* task_runner);
+  ~GpuChannelMessageQueue();
+
+  void ScheduleHandleMessage();
+
+  void PushMessageHelper(gpu::SyncPointManager* sync_point_manager,
+                         scoped_ptr<GpuChannelMessage> msg);
+
+  bool enabled_;
+
+  // Both deques own the messages.
+  std::deque<GpuChannelMessage*> channel_messages_;
+
+  // This lock protects enabled_ and channel_messages_.
+  mutable base::Lock channel_messages_lock_;
+
+  // Keeps track of sync point related state such as message order numbers.
+  scoped_refptr<gpu::SyncPointClientState> sync_point_client_state_;
+
+  base::WeakPtr<GpuChannel> gpu_channel_;
+  scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
+
+  DISALLOW_COPY_AND_ASSIGN(GpuChannelMessageQueue);
 };
 
 }  // namespace content

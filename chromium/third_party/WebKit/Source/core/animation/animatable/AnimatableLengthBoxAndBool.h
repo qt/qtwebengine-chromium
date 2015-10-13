@@ -37,30 +37,28 @@ namespace blink {
 
 class AnimatableLengthBoxAndBool final : public AnimatableValue {
 public:
-    virtual ~AnimatableLengthBoxAndBool() { }
-    static PassRefPtrWillBeRawPtr<AnimatableLengthBoxAndBool> create(PassRefPtrWillBeRawPtr<AnimatableValue> box, bool flag)
+    ~AnimatableLengthBoxAndBool() override { }
+    static PassRefPtr<AnimatableLengthBoxAndBool> create(PassRefPtr<AnimatableValue> box, bool flag)
     {
-        return adoptRefWillBeNoop(new AnimatableLengthBoxAndBool(box, flag));
+        return adoptRef(new AnimatableLengthBoxAndBool(box, flag));
     }
     const AnimatableValue* box() const { return m_box.get(); }
     bool flag() const { return m_flag; }
 
-    DECLARE_VIRTUAL_TRACE();
-
 protected:
-    virtual PassRefPtrWillBeRawPtr<AnimatableValue> interpolateTo(const AnimatableValue*, double fraction) const override;
-    virtual bool usesDefaultInterpolationWith(const AnimatableValue*) const override;
+    PassRefPtr<AnimatableValue> interpolateTo(const AnimatableValue*, double fraction) const override;
+    bool usesDefaultInterpolationWith(const AnimatableValue*) const override;
 
 private:
-    AnimatableLengthBoxAndBool(PassRefPtrWillBeRawPtr<AnimatableValue> box, bool flag)
+    AnimatableLengthBoxAndBool(PassRefPtr<AnimatableValue> box, bool flag)
         : m_box(box)
         , m_flag(flag)
     {
     }
-    virtual AnimatableType type() const override { return TypeLengthBoxAndBool; }
-    virtual bool equalTo(const AnimatableValue*) const override;
+    AnimatableType type() const override { return TypeLengthBoxAndBool; }
+    bool equalTo(const AnimatableValue*) const override;
 
-    RefPtrWillBeMember<AnimatableValue> m_box;
+    RefPtr<AnimatableValue> m_box;
     bool m_flag;
 };
 

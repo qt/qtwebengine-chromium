@@ -2,7 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/toolchain/clang.gni")
 import("//build/toolchain/gcc_toolchain.gni")
 
 declare_args() {
@@ -32,4 +31,6 @@ gcc_toolchain("target") {
   toolchain_cpu = "${target_cpu}"
   toolchain_os = "linux"
   is_clang = is_clang
+  use_ccache = false
+  use_goma = false
 }

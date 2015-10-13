@@ -4,11 +4,10 @@
 
 #include "chromecast/browser/cast_content_window.h"
 
-#include "base/command_line.h"
 #include "base/threading/thread_restrictions.h"
-#include "chromecast/base/chromecast_switches.h"
 #include "chromecast/base/metrics/cast_metrics_helper.h"
 #include "chromecast/browser/cast_browser_process.h"
+#include "chromecast/media/base/video_plane_controller.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
@@ -18,12 +17,12 @@
 #include "chromecast/graphics/cast_screen.h"
 #include "ui/aura/env.h"
 #include "ui/aura/layout_manager.h"
-#include "ui/aura/test/test_focus_client.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_tree_host.h"
 #endif
 
 namespace chromecast {
+namespace shell {
 
 #if defined(USE_AURA)
 class CastFillLayout : public aura::LayoutManager {
@@ -56,7 +55,8 @@ class CastFillLayout : public aura::LayoutManager {
 };
 #endif
 
-CastContentWindow::CastContentWindow() {}
+CastContentWindow::CastContentWindow() : transparent_(false) {
+}
 
 CastContentWindow::~CastContentWindow() {
 #if defined(USE_AURA)
@@ -77,6 +77,8 @@ void CastContentWindow::CreateWindowTree(
     gfx::Screen::SetScreenInstance(gfx::SCREEN_TYPE_NATIVE, cast_screen);
   if (cast_screen->GetPrimaryDisplay().size() != initial_size)
     cast_screen->UpdateDisplaySize(initial_size);
+  media::VideoPlaneController::GetInstance()->OnGraphicsPlaneResolutionChanged(
+      Size(initial_size.width(), initial_size.height()));
 
   CHECK(aura::Env::GetInstance());
   window_tree_host_.reset(
@@ -85,18 +87,12 @@ void CastContentWindow::CreateWindowTree(
   window_tree_host_->window()->SetLayoutManager(
       new CastFillLayout(window_tree_host_->window()));
 
-  const base::CommandLine* command_line(base::CommandLine::ForCurrentProcess());
-  if (command_line->HasSwitch(switches::kEnableTransparentBackground)) {
+  if (transparent_) {
     window_tree_host_->compositor()->SetBackgroundColor(SK_ColorTRANSPARENT);
     window_tree_host_->compositor()->SetHostHasTransparentBackground(true);
   } else {
     window_tree_host_->compositor()->SetBackgroundColor(SK_ColorBLACK);
   }
-
-  focus_client_.reset(new aura::test::TestFocusClient());
-  aura::client::SetFocusClient(
-      window_tree_host_->window(), focus_client_.get());
-
   window_tree_host_->Show();
 
   // Add and show content's view/window
@@ -135,12 +131,11 @@ void CastContentWindow::MediaStartedPlaying() {
 
 void CastContentWindow::RenderViewCreated(
     content::RenderViewHost* render_view_host) {
-  const base::CommandLine* command_line(base::CommandLine::ForCurrentProcess());
-  if (command_line->HasSwitch(switches::kEnableTransparentBackground)) {
-    content::RenderWidgetHostView* view = render_view_host->GetView();
-    if (view)
-      view->SetBackgroundColor(SK_ColorTRANSPARENT);
-  }
+  content::RenderWidgetHostView* view = render_view_host->GetView();
+  if (view)
+    view->SetBackgroundColor(transparent_ ? SK_ColorTRANSPARENT
+                                          : SK_ColorBLACK);
 }
 
+}  // namespace shell
 }  // namespace chromecast

@@ -31,6 +31,7 @@
 #include "platform/graphics/paint/DisplayItemClient.h"
 #include "platform/heap/Handle.h"
 #include "platform/weborigin/KURL.h"
+#include "wtf/Allocator.h"
 
 namespace blink {
 
@@ -62,7 +63,11 @@ public:
     void stopAnimation() override;
     void resetAnimation() override;
 
-    bool bitmapForCurrentFrame(SkBitmap*) override;
+    // Advances an animated image. This will trigger an animation update for CSS
+    // and advance the SMIL timeline by one frame.
+    void advanceAnimationForTesting() override;
+
+    PassRefPtr<SkImage> imageForCurrentFrame() override;
 
     // Returns the SVG image document's frame.
     FrameView* frameView() const;
@@ -104,7 +109,7 @@ private:
     void drawPatternForContainer(GraphicsContext*, const FloatSize, float, const FloatRect&, const FloatSize&, const FloatPoint&,
         SkXfermode::Mode, const FloatRect&, const IntSize& repeatSpacing);
 
-    OwnPtr<SVGImageChromeClient> m_chromeClient;
+    OwnPtrWillBePersistent<SVGImageChromeClient> m_chromeClient;
     OwnPtrWillBePersistent<Page> m_page;
     IntSize m_intrinsicSize;
     KURL m_url;
@@ -113,6 +118,7 @@ private:
 DEFINE_IMAGE_TYPE_CASTS(SVGImage);
 
 class ImageObserverDisabler {
+    STACK_ALLOCATED();
     WTF_MAKE_NONCOPYABLE(ImageObserverDisabler);
 public:
     ImageObserverDisabler(Image* image)

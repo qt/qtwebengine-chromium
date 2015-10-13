@@ -37,7 +37,7 @@
 
 namespace blink {
 
-class AudioContext;
+class AbstractAudioContext;
 
 // AudioBufferSourceNode is an AudioNode representing an audio source from an in-memory audio asset represented by an AudioBuffer.
 // It generally will be used for short sounds which require a high degree of scheduling flexibility (can playback in rhythmically perfect ways).
@@ -67,7 +67,11 @@ public:
     // and with how it's described in the specification, the proper attribute name is .loop
     // The old attribute is kept for backwards compatibility.
     bool loop() const { return m_isLooping; }
-    void setLoop(bool looping) { m_isLooping = looping; }
+    void setLoop(bool looping)
+    {
+        m_isLooping = looping;
+        m_didSetLooping = m_didSetLooping || looping;
+    }
 
     // Loop times in seconds.
     double loopStart() const { return m_loopStart; }
@@ -116,6 +120,9 @@ private:
     // If true, it will wrap around to the start of the buffer each time it reaches the end.
     bool m_isLooping;
 
+    // True if the source .loop attribute was ever set.
+    bool m_didSetLooping;
+
     double m_loopStart;
     double m_loopEnd;
 
@@ -145,9 +152,6 @@ private:
     // AudioBufferSourceNode should have Member<PannerNode>.
     RefPtr<PannerHandler> m_pannerNode;
 
-    // This synchronizes process() with setBuffer() which can cause dynamic channel count changes.
-    mutable Mutex m_processLock;
-
     // The minimum playbackRate value ever used for this source.  This includes any adjustments
     // caused by doppler too.
     double m_minPlaybackRate;
@@ -156,7 +160,7 @@ private:
 class AudioBufferSourceNode final : public AudioScheduledSourceNode {
     DEFINE_WRAPPERTYPEINFO();
 public:
-    static AudioBufferSourceNode* create(AudioContext&, float sampleRate);
+    static AudioBufferSourceNode* create(AbstractAudioContext&, float sampleRate);
     DECLARE_VIRTUAL_TRACE();
     AudioBufferSourceHandler& audioBufferSourceHandler() const;
 
@@ -177,7 +181,7 @@ public:
     void start(double when, double grainOffset, double grainDuration, ExceptionState&);
 
 private:
-    AudioBufferSourceNode(AudioContext&, float sampleRate);
+    AudioBufferSourceNode(AbstractAudioContext&, float sampleRate);
 
     Member<AudioParam> m_playbackRate;
     Member<AudioParam> m_detune;

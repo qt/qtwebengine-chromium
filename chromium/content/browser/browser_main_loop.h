@@ -27,6 +27,10 @@ class TraceEventSystemStatsMonitor;
 }  // namespace trace_event
 }  // namespace base
 
+namespace IPC {
+class ScopedIPCSupport;
+}
+
 namespace media {
 class AudioManager;
 class UserInputMonitor;
@@ -38,6 +42,12 @@ class MidiManager;
 namespace net {
 class NetworkChangeNotifier;
 }  // namespace net
+
+#if defined(USE_OZONE)
+namespace ui {
+class ClientNativePixmapFactory;
+}  // namespace ui
+#endif
 
 namespace content {
 class BrowserMainParts;
@@ -110,7 +120,9 @@ class CONTENT_EXPORT BrowserMainLoop {
   media::midi::MidiManager* midi_manager() const { return midi_manager_.get(); }
   base::Thread* indexed_db_thread() const { return indexed_db_thread_.get(); }
 
-  bool is_tracing_startup() const { return is_tracing_startup_; }
+  bool is_tracing_startup_for_duration() const {
+    return is_tracing_startup_for_duration_;
+  }
 
   const base::FilePath& startup_trace_file() const {
     return startup_trace_file_;
@@ -146,7 +158,7 @@ class CONTENT_EXPORT BrowserMainLoop {
 
   base::FilePath GetStartupTraceFileName(
       const base::CommandLine& command_line) const;
-  void InitStartupTracing(const base::CommandLine& command_line);
+  void InitStartupTracingForDuration(const base::CommandLine& command_line);
   void EndStartupTracing();
 
   bool UsingInProcessGpu() const;
@@ -160,7 +172,7 @@ class CONTENT_EXPORT BrowserMainLoop {
   // MainMessageLoopStart()
   //   InitializeMainThread()
   // PostMainMessageLoopStart()
-  //   InitStartupTracing()
+  //   InitStartupTracingForDuration()
   // CreateStartupTasks()
   //   PreCreateThreads()
   //   CreateThreads()
@@ -171,7 +183,7 @@ class CONTENT_EXPORT BrowserMainLoop {
   const base::CommandLine& parsed_command_line_;
   int result_code_;
   bool created_threads_;  // True if the non-UI threads were created.
-  bool is_tracing_startup_;
+  bool is_tracing_startup_for_duration_;
 
   // Members initialized in |MainMessageLoopStart()| ---------------------------
   scoped_ptr<base::MessageLoop> main_message_loop_;
@@ -200,11 +212,11 @@ class CONTENT_EXPORT BrowserMainLoop {
   scoped_ptr<MemoryObserver> memory_observer_;
   scoped_ptr<base::trace_event::TraceMemoryController> trace_memory_controller_;
 
-  // Members initialized in |InitStartupTracing()| -----------------------------
+  // Members initialized in |InitStartupTracingForDuration()| ------------------
   base::FilePath startup_trace_file_;
 
   // This timer initiates trace file saving.
-  base::OneShotTimer<BrowserMainLoop> startup_trace_timer_;
+  base::OneShotTimer startup_trace_timer_;
 
   // Members initialized in |Init()| -------------------------------------------
   // Destroy |parts_| before |main_message_loop_| (required) and before other
@@ -233,6 +245,7 @@ class CONTENT_EXPORT BrowserMainLoop {
   // Members initialized in |BrowserThreadsStarted()| --------------------------
   scoped_ptr<base::Thread> indexed_db_thread_;
   scoped_ptr<MojoShellContext> mojo_shell_context_;
+  scoped_ptr<IPC::ScopedIPCSupport> mojo_ipc_support_;
 
   // |user_input_monitor_| has to outlive |audio_manager_|, so declared first.
   scoped_ptr<media::UserInputMonitor> user_input_monitor_;
@@ -244,6 +257,9 @@ class CONTENT_EXPORT BrowserMainLoop {
   scoped_ptr<DeviceMonitorLinux> device_monitor_linux_;
 #elif defined(OS_MACOSX) && !defined(OS_IOS)
   scoped_ptr<DeviceMonitorMac> device_monitor_mac_;
+#endif
+#if defined(USE_OZONE)
+  scoped_ptr<ui::ClientNativePixmapFactory> client_native_pixmap_factory_;
 #endif
 
   scoped_ptr<ResourceDispatcherHostImpl> resource_dispatcher_host_;

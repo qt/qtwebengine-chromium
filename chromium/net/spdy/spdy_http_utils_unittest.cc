@@ -7,6 +7,7 @@
 #include "base/basictypes.h"
 #include "net/http/http_request_info.h"
 #include "net/spdy/spdy_framer.h"
+#include "net/spdy/spdy_test_utils.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace net {
@@ -185,8 +186,9 @@ TEST(SpdyHttpUtilsTest, CreateSpdyHeadersFromHttpRequestConnectHTTP2) {
                                    kDirect, &headers);
   EXPECT_EQ("CONNECT", headers[":method"]);
   EXPECT_TRUE(headers.end() == headers.find(":scheme"));
-  EXPECT_EQ("www.google.com", headers[":authority"]);
-  EXPECT_EQ("www.google.com:443", headers[":path"]);
+  EXPECT_EQ("www.google.com:443", headers[":authority"]);
+  EXPECT_EQ(headers.end(), headers.find(":path"));
+  EXPECT_EQ(headers.end(), headers.find(":scheme"));
   EXPECT_TRUE(headers.end() == headers.find(":version"));
   EXPECT_EQ("Chrome/1.1", headers["user-agent"]);
 }

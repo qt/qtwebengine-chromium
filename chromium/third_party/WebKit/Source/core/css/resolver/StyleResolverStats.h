@@ -38,6 +38,7 @@
 namespace blink {
 
 class StyleResolverStats {
+    WTF_MAKE_FAST_ALLOCATED(StyleResolverStats);
 public:
     static PassOwnPtr<StyleResolverStats> create()
     {
@@ -62,6 +63,12 @@ public:
     unsigned rulesFastRejected;
     unsigned rulesRejected;
     unsigned rulesMatched;
+    unsigned stylesChanged;
+    unsigned stylesUnchanged;
+    unsigned stylesAnimated;
+    unsigned elementsStyled;
+    unsigned pseudoElementsStyled;
+    unsigned baseStylesUsed;
 
 private:
     StyleResolverStats()

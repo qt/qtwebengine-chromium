@@ -4,15 +4,8 @@
             "type": "@WebInspector.PanelFactory",
             "name": "sources",
             "title": "Sources",
-            "order": 2,
+            "order": 30,
             "className": "WebInspector.SourcesPanelFactory"
-        },
-        {
-            "type": "drawer-view",
-            "name": "sources.search",
-            "title": "Search",
-            "order": "1",
-            "className": "WebInspector.AdvancedSearchView"
         },
         {
             "type": "@WebInspector.ContextMenu.Provider",
@@ -119,6 +112,7 @@
         {
             "type": "@WebInspector.ActionDelegate",
             "actionId": "sources.search.toggle",
+            "title": "Search all files",
             "className": "WebInspector.AdvancedSearchView.ActionDelegate",
             "bindings": [
                 {
@@ -130,6 +124,28 @@
                     "shortcut": "Ctrl+Shift+F"
                 }
             ]
+        },
+        {
+            "type": "@WebInspector.ActionDelegate",
+            "actionId": "debugger.toggle-breakpoints-active",
+            "iconClass": "breakpoint-toolbar-item",
+            "className": "WebInspector.SourcesPanel.DebuggingActionDelegate",
+            "contextTypes": ["WebInspector.SourcesPanel"],
+            "bindings": [
+                {
+                    "platform": "windows,linux",
+                    "shortcut": "Ctrl+F8"
+                },
+                {
+                    "platform": "mac",
+                    "shortcut": "Meta+F8"
+                }
+            ]
+        },
+        {
+            "type": "context-menu-item",
+            "location": "mainMenu/navigate",
+            "actionId": "sources.search.toggle"
         },
         {
             "type": "@WebInspector.Revealer",
@@ -285,12 +301,13 @@
         }
     ],
     "dependencies": [
+        "components",
+        "diff",
         "source_frame",
         "snippets",
         "extensions"
     ],
     "scripts": [
-        "jsdifflib.js",
         "UIList.js",
         "AddSourceMapURLDialog.js",
         "AsyncOperationsSidebarPane.js",
@@ -325,9 +342,6 @@
         "XHRBreakpointsSidebarPane.js",
         "JavaScriptCompiler.js",
         "ObjectEventListenersSidebarPane.js"
-    ],
-    "skip_compilation": [
-        "jsdifflib.js"
     ],
     "resources": [
         "filteredItemSelectionDialog.css",

@@ -10,7 +10,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "base/timer/timer.h"
-#include "base/trace_event/trace_event_impl.h"
+#include "base/trace_event/trace_log.h"
 
 // TODO(jamescook): Windows support for memory tracing.
 #if !defined(NO_TCMALLOC) && !defined(OS_NACL) && \
@@ -43,7 +43,7 @@ class BASE_EXPORT TraceMemoryController
                         HeapProfilerStartFunction heap_profiler_start_function,
                         HeapProfilerStopFunction heap_profiler_stop_function,
                         GetHeapProfileFunction get_heap_profile_function);
-  virtual ~TraceMemoryController();
+  ~TraceMemoryController() override;
 
   // base::trace_event::TraceLog::EnabledStateChangedObserver overrides:
   void OnTraceLogEnabled() override;
@@ -73,7 +73,7 @@ class BASE_EXPORT TraceMemoryController
   GetHeapProfileFunction get_heap_profile_function_;
 
   // Timer to schedule memory profile dumps.
-  RepeatingTimer<TraceMemoryController> dump_timer_;
+  RepeatingTimer dump_timer_;
 
   WeakPtrFactory<TraceMemoryController> weak_factory_;
 

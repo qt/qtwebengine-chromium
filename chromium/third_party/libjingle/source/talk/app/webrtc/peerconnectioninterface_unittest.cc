@@ -32,7 +32,7 @@
 #include "talk/app/webrtc/mediastreaminterface.h"
 #include "talk/app/webrtc/peerconnectioninterface.h"
 #include "talk/app/webrtc/test/fakeconstraints.h"
-#include "talk/app/webrtc/test/fakedtlsidentityservice.h"
+#include "talk/app/webrtc/test/fakedtlsidentitystore.h"
 #include "talk/app/webrtc/test/mockpeerconnectionobservers.h"
 #include "talk/app/webrtc/test/testsdpstrings.h"
 #include "talk/app/webrtc/videosource.h"
@@ -264,17 +264,17 @@ class PeerConnectionInterfaceTest : public testing::Test {
           webrtc::MediaConstraintsInterface::kEnableDtlsSrtp, false);
     }
 
-    FakeIdentityService* dtls_service = NULL;
+    scoped_ptr<webrtc::DtlsIdentityStoreInterface> dtls_identity_store;
     bool dtls;
     if (FindConstraint(constraints,
                        webrtc::MediaConstraintsInterface::kEnableDtlsSrtp,
                        &dtls,
-                       NULL) && dtls) {
-      dtls_service = new FakeIdentityService();
+                       nullptr) && dtls) {
+      dtls_identity_store.reset(new FakeDtlsIdentityStore());
     }
     pc_ = pc_factory_->CreatePeerConnection(servers, constraints,
                                             port_allocator_factory_.get(),
-                                            dtls_service,
+                                            dtls_identity_store.Pass(),
                                             &observer_);
     ASSERT_TRUE(pc_.get() != NULL);
     observer_.SetPeerConnectionInterface(pc_.get());
@@ -1101,7 +1101,7 @@ TEST_F(PeerConnectionInterfaceTest, ReceiveFireFoxOffer) {
   AddAudioVideoStream(kStreamLabel1, "audio_label", "video_label");
   SessionDescriptionInterface* desc =
       webrtc::CreateSessionDescription(SessionDescriptionInterface::kOffer,
-                                       webrtc::kFireFoxSdpOffer);
+                                       webrtc::kFireFoxSdpOffer, nullptr);
   EXPECT_TRUE(DoSetSessionDescription(desc, false));
   CreateAnswerAsLocalDescription();
   ASSERT_TRUE(pc_->local_description() != NULL);
@@ -1134,12 +1134,13 @@ TEST_F(PeerConnectionInterfaceTest, ReceiveUpdatedAudioOfferWithBadCodecs) {
 
   SessionDescriptionInterface* answer =
       webrtc::CreateSessionDescription(SessionDescriptionInterface::kAnswer,
-                                       webrtc::kAudioSdp);
+                                       webrtc::kAudioSdp, nullptr);
   EXPECT_TRUE(DoSetSessionDescription(answer, false));
 
   SessionDescriptionInterface* updated_offer =
       webrtc::CreateSessionDescription(SessionDescriptionInterface::kOffer,
-                                       webrtc::kAudioSdpWithUnsupportedCodecs);
+                                       webrtc::kAudioSdpWithUnsupportedCodecs,
+                                       nullptr);
   EXPECT_TRUE(DoSetSessionDescription(updated_offer, false));
   CreateAnswerAsLocalDescription();
 }

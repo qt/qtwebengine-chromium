@@ -29,6 +29,7 @@
 #include "ppapi/c/ppb_audio.h"
 #include "ppapi/c/ppb_audio_buffer.h"
 #include "ppapi/c/ppb_audio_config.h"
+#include "ppapi/c/ppb_audio_encoder.h"
 #include "ppapi/c/ppb_compositor.h"
 #include "ppapi/c/ppb_compositor_layer.h"
 #include "ppapi/c/ppb_console.h"
@@ -86,7 +87,6 @@
 #include "ppapi/c/private/ppb_flash_message_loop.h"
 #include "ppapi/c/private/ppb_flash_print.h"
 #include "ppapi/c/private/ppb_host_resolver_private.h"
-#include "ppapi/c/private/ppb_input_event_private.h"
 #include "ppapi/c/private/ppb_isolated_file_system_private.h"
 #include "ppapi/c/private/ppb_net_address_private.h"
 #include "ppapi/c/private/ppb_output_protection_private.h"
@@ -319,7 +319,7 @@ InterfaceList::~InterfaceList() {
 InterfaceList* InterfaceList::GetInstance() {
   // CAUTION: This function is called without the ProxyLock to avoid excessive
   // excessive locking from C++ wrappers. (See also GetBrowserInterface.)
-  return Singleton<InterfaceList>::get();
+  return base::Singleton<InterfaceList>::get();
 }
 
 // static

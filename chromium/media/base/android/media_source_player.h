@@ -23,6 +23,7 @@
 #include "media/base/android/media_decoder_job.h"
 #include "media/base/android/media_drm_bridge.h"
 #include "media/base/android/media_player_android.h"
+#include "media/base/android/media_statistics.h"
 #include "media/base/media_export.h"
 #include "media/base/time_delta_interpolator.h"
 
@@ -38,11 +39,12 @@ class MEDIA_EXPORT MediaSourcePlayer : public MediaPlayerAndroid,
  public:
   // Constructs a player with the given ID and demuxer. |manager| must outlive
   // the lifetime of this object.
-  MediaSourcePlayer(int player_id,
-                    MediaPlayerManager* manager,
-                    const RequestMediaResourcesCB& request_media_resources_cb,
-                    scoped_ptr<DemuxerAndroid> demuxer,
-                    const GURL& frame_url);
+  MediaSourcePlayer(
+      int player_id,
+      MediaPlayerManager* manager,
+      const OnDecoderResourcesReleasedCB& on_decoder_resources_released_cb,
+      scoped_ptr<DemuxerAndroid> demuxer,
+      const GURL& frame_url);
   ~MediaSourcePlayer() override;
 
   // MediaPlayerAndroid implementation.
@@ -83,10 +85,11 @@ class MEDIA_EXPORT MediaSourcePlayer : public MediaPlayerAndroid,
   void PlaybackCompleted(bool is_audio);
 
   // Called when the decoder finishes its task.
-  void MediaDecoderCallback(
-        bool is_audio, MediaCodecStatus status,
-        base::TimeDelta current_presentation_timestamp,
-        base::TimeDelta max_presentation_timestamp);
+  void MediaDecoderCallback(bool is_audio,
+                            MediaCodecStatus status,
+                            bool is_late_frame,
+                            base::TimeDelta current_presentation_timestamp,
+                            base::TimeDelta max_presentation_timestamp);
 
   bool IsPrerollFinished(bool is_audio) const;
 
@@ -94,7 +97,8 @@ class MEDIA_EXPORT MediaSourcePlayer : public MediaPlayerAndroid,
   base::android::ScopedJavaLocalRef<jobject> GetMediaCrypto();
 
   // Callback to notify that MediaCrypto is ready in |drm_bridge_|.
-  void OnMediaCryptoReady();
+  void OnMediaCryptoReady(MediaDrmBridge::JavaObjectPtr media_crypto,
+                          bool needs_protected_surface);
 
   // Handle pending events if all the decoder jobs are not currently decoding.
   void ProcessPendingEvents();
@@ -266,6 +270,10 @@ class MEDIA_EXPORT MediaSourcePlayer : public MediaPlayerAndroid,
 
   // Whether audio or video decoder is in the process of prerolling.
   bool prerolling_;
+
+  // Gathers and reports playback quality statistics to UMA.
+  // Use pointer to enable replacement of this object for tests.
+  scoped_ptr<MediaStatistics> media_stat_;
 
   // Weak pointer passed to media decoder jobs for callbacks.
   base::WeakPtr<MediaSourcePlayer> weak_this_;

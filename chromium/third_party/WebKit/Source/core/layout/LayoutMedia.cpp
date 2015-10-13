@@ -28,6 +28,7 @@
 #include "core/layout/LayoutMedia.h"
 
 #include "core/html/HTMLMediaElement.h"
+#include "core/html/shadow/MediaControls.h"
 #include "core/layout/LayoutView.h"
 
 namespace blink {
@@ -87,6 +88,10 @@ void LayoutMedia::layout()
     }
 
     clearNeedsLayout();
+
+    // Notify our MediaControls that a layout has happened.
+    if (mediaElement() && mediaElement()->mediaControls() && newSize.width() != oldSize.width())
+        mediaElement()->mediaControls()->notifyPanelWidthChanged(newSize.width());
 }
 
 bool LayoutMedia::isChildAllowed(LayoutObject* child, const ComputedStyle&) const
@@ -110,7 +115,7 @@ bool LayoutMedia::isChildAllowed(LayoutObject* child, const ComputedStyle&) cons
     return false;
 }
 
-void LayoutMedia::paintReplaced(const PaintInfo&, const LayoutPoint&)
+void LayoutMedia::paintReplaced(const PaintInfo&, const LayoutPoint&) const
 {
 }
 

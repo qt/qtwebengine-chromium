@@ -7,10 +7,10 @@
 #include "base/thread_task_runner_handle.h"
 #include "cc/layers/append_quads_data.h"
 #include "cc/quads/draw_quad.h"
+#include "cc/test/fake_display_list_raster_source.h"
 #include "cc/test/fake_impl_proxy.h"
 #include "cc/test/fake_layer_tree_host_impl.h"
 #include "cc/test/fake_output_surface.h"
-#include "cc/test/fake_picture_pile_impl.h"
 #include "cc/test/test_shared_bitmap_manager.h"
 #include "cc/test/test_task_graph_runner.h"
 #include "cc/tiles/tile_priority.h"
@@ -43,12 +43,13 @@ class PictureImageLayerImplTest : public testing::Test {
  public:
   PictureImageLayerImplTest()
       : proxy_(base::ThreadTaskRunnerHandle::Get()),
+        output_surface_(FakeOutputSurface::Create3d()),
         host_impl_(PictureLayerImplImageTestSettings(),
                    &proxy_,
                    &shared_bitmap_manager_,
                    &task_graph_runner_) {
     host_impl_.CreatePendingTree();
-    host_impl_.InitializeRenderer(FakeOutputSurface::Create3d());
+    host_impl_.InitializeRenderer(output_surface_.get());
   }
 
   scoped_ptr<TestablePictureImageLayerImpl> CreateLayer(int id,
@@ -64,7 +65,7 @@ class PictureImageLayerImplTest : public testing::Test {
     }
     TestablePictureImageLayerImpl* layer =
         new TestablePictureImageLayerImpl(tree, id);
-    layer->raster_source_ = FakePicturePileImpl::CreateInfiniteFilledPile();
+    layer->raster_source_ = FakeDisplayListRasterSource::CreateInfiniteFilled();
     layer->SetBounds(layer->raster_source_->GetSize());
     return make_scoped_ptr(layer);
   }
@@ -93,6 +94,7 @@ class PictureImageLayerImplTest : public testing::Test {
   FakeImplProxy proxy_;
   TestSharedBitmapManager shared_bitmap_manager_;
   TestTaskGraphRunner task_graph_runner_;
+  scoped_ptr<OutputSurface> output_surface_;
   FakeLayerTreeHostImpl host_impl_;
 };
 

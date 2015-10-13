@@ -67,7 +67,6 @@ const char IDBDatabase::transactionInactiveErrorMessage[] = "The transaction is 
 const char IDBDatabase::transactionFinishedErrorMessage[] = "The transaction has finished.";
 const char IDBDatabase::transactionReadOnlyErrorMessage[] = "The transaction is read-only.";
 const char IDBDatabase::databaseClosedErrorMessage[] = "The database connection is closed.";
-const char IDBDatabase::notValidMaxCountErrorMessage[] = "The maxCount provided must not be 0.";
 
 IDBDatabase* IDBDatabase::create(ExecutionContext* context, PassOwnPtr<WebIDBDatabase> database, IDBDatabaseCallbacks* callbacks)
 {
@@ -79,8 +78,6 @@ IDBDatabase* IDBDatabase::create(ExecutionContext* context, PassOwnPtr<WebIDBDat
 IDBDatabase::IDBDatabase(ExecutionContext* context, PassOwnPtr<WebIDBDatabase> backend, IDBDatabaseCallbacks* callbacks)
     : ActiveDOMObject(context)
     , m_backend(backend)
-    , m_closePending(false)
-    , m_contextStopped(false)
     , m_databaseCallbacks(callbacks)
 {
     m_databaseCallbacks->connect(this);
@@ -96,9 +93,7 @@ DEFINE_TRACE(IDBDatabase)
 {
     visitor->trace(m_versionChangeTransaction);
     visitor->trace(m_transactions);
-#if ENABLE(OILPAN)
     visitor->trace(m_enqueuedEvents);
-#endif
     visitor->trace(m_databaseCallbacks);
     RefCountedGarbageCollectedEventTargetWithInlineData<IDBDatabase>::trace(visitor);
     ActiveDOMObject::trace(visitor);
@@ -169,8 +164,8 @@ void IDBDatabase::onComplete(int64_t transactionId)
 PassRefPtrWillBeRawPtr<DOMStringList> IDBDatabase::objectStoreNames() const
 {
     RefPtrWillBeRawPtr<DOMStringList> objectStoreNames = DOMStringList::create(DOMStringList::IndexedDB);
-    for (IDBDatabaseMetadata::ObjectStoreMap::const_iterator it = m_metadata.objectStores.begin(); it != m_metadata.objectStores.end(); ++it)
-        objectStoreNames->append(it->value.name);
+    for (const auto& it : m_metadata.objectStores)
+        objectStoreNames->append(it.value.name);
     objectStoreNames->sort();
     return objectStoreNames.release();
 }
@@ -331,8 +326,8 @@ IDBTransaction* IDBDatabase::transaction(ScriptState* scriptState, const StringO
 
 void IDBDatabase::forceClose()
 {
-    for (TransactionMap::const_iterator::Values it = m_transactions.begin().values(), end = m_transactions.end().values(); it != end; ++it)
-        (*it)->abort(IGNORE_EXCEPTION);
+    for (const auto& it : m_transactions)
+        it.value->abort(IGNORE_EXCEPTION);
     this->close();
     enqueueEvent(Event::create(EventTypeNames::close));
 }
@@ -401,7 +396,7 @@ void IDBDatabase::enqueueEvent(PassRefPtrWillBeRawPtr<Event> event)
     m_enqueuedEvents.append(event);
 }
 
-bool IDBDatabase::dispatchEvent(PassRefPtrWillBeRawPtr<Event> event)
+bool IDBDatabase::dispatchEventInternal(PassRefPtrWillBeRawPtr<Event> event)
 {
     IDB_TRACE("IDBDatabase::dispatchEvent");
     if (m_contextStopped || !executionContext())
@@ -412,7 +407,7 @@ bool IDBDatabase::dispatchEvent(PassRefPtrWillBeRawPtr<Event> event)
             m_enqueuedEvents.remove(i);
     }
 
-    bool result = EventTarget::dispatchEvent(event.get());
+    bool result = EventTarget::dispatchEventInternal(event.get());
     if (event->type() == EventTypeNames::versionchange && !m_closePending && m_backend)
         m_backend->versionChangeIgnored();
     return result;
@@ -420,10 +415,10 @@ bool IDBDatabase::dispatchEvent(PassRefPtrWillBeRawPtr<Event> event)
 
 int64_t IDBDatabase::findObjectStoreId(const String& name) const
 {
-    for (IDBDatabaseMetadata::ObjectStoreMap::const_iterator it = m_metadata.objectStores.begin(); it != m_metadata.objectStores.end(); ++it) {
-        if (it->value.name == name) {
-            ASSERT(it->key != IDBObjectStoreMetadata::InvalidId);
-            return it->key;
+    for (const auto& it : m_metadata.objectStores) {
+        if (it.value.name == name) {
+            ASSERT(it.key != IDBObjectStoreMetadata::InvalidId);
+            return it.key;
         }
     }
     return IDBObjectStoreMetadata::InvalidId;

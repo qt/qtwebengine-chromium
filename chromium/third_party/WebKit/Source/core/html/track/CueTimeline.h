@@ -16,13 +16,20 @@ namespace blink {
 class HTMLMediaElement;
 class TextTrackCueList;
 
+// TODO(Oilpan): This needs to be PODIntervalTree<double, Member<TextTrackCue>>.
+// However, it is not easy to move PODIntervalTree to the heap (for a C++-template
+// reason) so we leave it as a raw pointer at the moment. This is safe
+// because CueTimeline and TextTrackCue are guaranteed to die at the same time
+// when the owner HTMLMediaElement dies. Thus the raw TextTrackCue* cannot
+// become stale pointers.
 typedef PODIntervalTree<double, TextTrackCue*> CueIntervalTree;
 typedef CueIntervalTree::IntervalType CueInterval;
 typedef Vector<CueInterval> CueList;
 
 // This class manages the timeline and rendering updates of cues associated
 // with TextTracks. Owned by a HTMLMediaElement.
-class CueTimeline : public NoBaseWillBeGarbageCollectedFinalized<CueTimeline> {
+class CueTimeline final : public NoBaseWillBeGarbageCollectedFinalized<CueTimeline> {
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(CueTimeline);
 public:
     CueTimeline(HTMLMediaElement&);
 

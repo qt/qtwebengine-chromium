@@ -36,6 +36,8 @@ class LayerAnimationValueProvider;
 class CC_EXPORT LayerAnimationController
     : public base::RefCounted<LayerAnimationController> {
  public:
+  enum class ObserverType { ACTIVE, PENDING };
+
   static scoped_refptr<LayerAnimationController> Create(int id);
 
   int id() const { return id_; }
@@ -79,10 +81,16 @@ class CC_EXPORT LayerAnimationController
   // Returns true if there are any animations at all to process.
   bool has_any_animation() const { return !animations_.empty(); }
 
-  // Returns true if there is an animation currently animating the given
-  // property, or if there is an animation scheduled to animate this property in
-  // the future.
-  bool IsAnimatingProperty(Animation::TargetProperty target_property) const;
+  // Returns true if there is an animation that is either currently animating
+  // the given property or scheduled to animate this property in the future, and
+  // that affects the given observer type.
+  bool IsPotentiallyAnimatingProperty(Animation::TargetProperty target_property,
+                                      ObserverType observer_type) const;
+
+  // Returns true if there is an animation that is currently animating the given
+  // property and that affects the given observer type.
+  bool IsCurrentlyAnimatingProperty(Animation::TargetProperty target_property,
+                                    ObserverType observer_type) const;
 
   void SetAnimationRegistrar(AnimationRegistrar* registrar);
   AnimationRegistrar* animation_registrar() { return registrar_; }
@@ -130,19 +138,21 @@ class CC_EXPORT LayerAnimationController
 
   bool HasAnimationThatAffectsScale() const;
 
-  bool HasOnlyTranslationTransforms() const;
+  bool HasOnlyTranslationTransforms(ObserverType observer_type) const;
 
   bool AnimationsPreserveAxisAlignment() const;
 
   // Sets |start_scale| to the maximum of starting animation scale along any
   // dimension at any destination in active animations. Returns false if the
   // starting scale cannot be computed.
-  bool AnimationStartScale(float* start_scale) const;
+  bool AnimationStartScale(ObserverType observer_type,
+                           float* start_scale) const;
 
   // Sets |max_scale| to the maximum scale along any dimension at any
   // destination in active animations. Returns false if the maximum scale cannot
   // be computed.
-  bool MaximumTargetScale(float* max_scale) const;
+  bool MaximumTargetScale(ObserverType event_observers_,
+                          float* max_scale) const;
 
   // When a scroll animation is removed on the main thread, its compositor
   // thread counterpart continues producing scroll deltas until activation.
@@ -203,6 +213,12 @@ class CC_EXPORT LayerAnimationController
 
   void NotifyObserversAnimationWaitingForDeletion();
 
+  void NotifyObserversTransformIsPotentiallyAnimatingChanged(
+      bool notify_active_observers,
+      bool notify_pending_observers);
+
+  void UpdatePotentiallyAnimatingTransform();
+
   bool HasValueObserver();
   bool HasActiveValueObserver();
 
@@ -227,6 +243,9 @@ class CC_EXPORT LayerAnimationController
   bool needs_to_start_animations_;
 
   bool scroll_offset_animation_was_interrupted_;
+
+  bool potentially_animating_transform_for_active_observers_;
+  bool potentially_animating_transform_for_pending_observers_;
 
   DISALLOW_COPY_AND_ASSIGN(LayerAnimationController);
 };

@@ -39,19 +39,19 @@ class ExceptionState;
 class ExecutionContext;
 class GenericEventQueue;
 
-class MediaController final : public EventTargetWithInlineData, public RefCountedWillBeNoBase<MediaController> {
+class MediaController final : public RefCountedGarbageCollectedEventTargetWithInlineData<MediaController> {
     DEFINE_WRAPPERTYPEINFO();
-    REFCOUNTED_EVENT_TARGET(MediaController);
+    REFCOUNTED_GARBAGE_COLLECTED_EVENT_TARGET(MediaController);
 public:
-    static PassRefPtrWillBeRawPtr<MediaController> create(ExecutionContext*);
+    static MediaController* create(ExecutionContext*);
     ~MediaController() override;
 
     void addMediaElement(HTMLMediaElement*);
     void removeMediaElement(HTMLMediaElement*);
 
-    PassRefPtrWillBeRawPtr<TimeRanges> buffered() const;
-    PassRefPtrWillBeRawPtr<TimeRanges> seekable() const;
-    PassRefPtrWillBeRawPtr<TimeRanges> played();
+    TimeRanges* buffered() const;
+    TimeRanges* seekable() const;
+    TimeRanges* played();
 
     double duration() const;
     double currentTime() const;

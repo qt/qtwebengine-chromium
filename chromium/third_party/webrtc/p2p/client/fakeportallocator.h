@@ -33,7 +33,7 @@ class FakePortAllocatorSession : public PortAllocatorSession {
                            const std::string& ice_ufrag,
                            const std::string& ice_pwd)
       : PortAllocatorSession(content_name, component, ice_ufrag, ice_pwd,
-                             cricket::PORTALLOCATOR_ENABLE_SHARED_UFRAG),
+                             cricket::kDefaultPortAllocatorFlags),
         worker_thread_(worker_thread),
         factory_(factory),
         network_("network", "unittest",
@@ -53,7 +53,8 @@ class FakePortAllocatorSession : public PortAllocatorSession {
                                            0,
                                            username(),
                                            password(),
-                                           std::string()));
+                                           std::string(),
+                                           false));
       AddPort(port_.get());
     }
     ++port_config_count_;
@@ -62,6 +63,8 @@ class FakePortAllocatorSession : public PortAllocatorSession {
 
   virtual void StopGettingPorts() { running_ = false; }
   virtual bool IsGettingPorts() { return running_; }
+  virtual void ClearGettingPorts() {}
+
   int port_config_count() { return port_config_count_; }
 
   void AddPort(cricket::Port* port) {

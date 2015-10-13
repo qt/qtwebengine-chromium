@@ -24,6 +24,11 @@
 
 namespace content {
 
+// TODO(ericrk): Use gfx::GenericSharedMemoryId as the |io_surface_id| in
+// this file. Allows for more type-safe usage of GpuMemoryBufferIds as the
+// type of the |io_surface_id|, as it is a typedef of
+// gfx::GenericSharedMemoryId.
+
 // Implementation of IOSurfaceManager that provides a mechanism for child
 // processes to register and acquire IOSurfaces through a Mach service.
 class CONTENT_EXPORT BrowserIOSurfaceManager : public IOSurfaceManager {
@@ -35,12 +40,15 @@ class CONTENT_EXPORT BrowserIOSurfaceManager : public IOSurfaceManager {
   // the bootstrap server. |pid| is the process ID of the service.
   static base::mac::ScopedMachSendRight LookupServicePort(pid_t pid);
 
+  // Returns the name of the service registered with the bootstrap server.
+  static std::string GetMachPortName();
+
   // Overridden from IOSurfaceManager:
-  bool RegisterIOSurface(int io_surface_id,
+  bool RegisterIOSurface(IOSurfaceId io_surface_id,
                          int client_id,
                          IOSurfaceRef io_surface) override;
-  void UnregisterIOSurface(int io_surface_id, int client_id) override;
-  IOSurfaceRef AcquireIOSurface(int io_surface_id) override;
+  void UnregisterIOSurface(IOSurfaceId io_surface_id, int client_id) override;
+  IOSurfaceRef AcquireIOSurface(IOSurfaceId io_surface_id) override;
 
   // Performs any necessary setup that cannot happen in the constructor.
   void EnsureRunning();
@@ -61,7 +69,7 @@ class CONTENT_EXPORT BrowserIOSurfaceManager : public IOSurfaceManager {
 
  private:
   friend class BrowserIOSurfaceManagerTest;
-  friend struct DefaultSingletonTraits<BrowserIOSurfaceManager>;
+  friend struct base::DefaultSingletonTraits<BrowserIOSurfaceManager>;
 
   BrowserIOSurfaceManager();
   ~BrowserIOSurfaceManager() override;
@@ -74,12 +82,12 @@ class CONTENT_EXPORT BrowserIOSurfaceManager : public IOSurfaceManager {
   void HandleRequest();
 
   // Message handlers that are invoked from HandleRequest.
-  bool HandleRegisterIOSurfaceRequest(
+  void HandleRegisterIOSurfaceRequest(
       const IOSurfaceManagerHostMsg_RegisterIOSurface& request,
       IOSurfaceManagerMsg_RegisterIOSurfaceReply* reply);
   bool HandleUnregisterIOSurfaceRequest(
       const IOSurfaceManagerHostMsg_UnregisterIOSurface& request);
-  bool HandleAcquireIOSurfaceRequest(
+  void HandleAcquireIOSurfaceRequest(
       const IOSurfaceManagerHostMsg_AcquireIOSurface& request,
       IOSurfaceManagerMsg_AcquireIOSurfaceReply* reply);
 
@@ -94,7 +102,7 @@ class CONTENT_EXPORT BrowserIOSurfaceManager : public IOSurfaceManager {
 
   // Stores the IOSurfaces for all GPU clients. The key contains the IOSurface
   // id and the Child process unique id of the owner.
-  using IOSurfaceMapKey = std::pair<int, int>;
+  using IOSurfaceMapKey = std::pair<IOSurfaceId, int>;
   using IOSurfaceMap =
       base::ScopedPtrHashMap<IOSurfaceMapKey,
                              scoped_ptr<base::mac::ScopedMachSendRight>>;

@@ -58,8 +58,7 @@ WebInspector.ConsoleView = function()
      */
     this._regexMatchRanges = [];
 
-    this._clearConsoleButton = new WebInspector.ToolbarButton(WebInspector.UIString("Clear console log."), "clear-toolbar-item");
-    this._clearConsoleButton.addEventListener("click", this._requestClearMessages, this);
+    this._clearConsoleButton = WebInspector.ToolbarButton.createActionButton("console.clear");
 
     this._executionContextComboBox = new WebInspector.ToolbarComboBox(null, "console-context");
     this._executionContextComboBox.setMaxWidth(200);
@@ -70,7 +69,7 @@ WebInspector.ConsoleView = function()
 
     this._filterBar = new WebInspector.FilterBar("consoleView");
 
-    this._preserveLogCheckbox = new WebInspector.ToolbarCheckbox(WebInspector.UIString("Preserve log"), WebInspector.UIString("Do not clear log on page reload / navigation."), WebInspector.moduleSetting("preserveConsoleLog"));
+    this._preserveLogCheckbox = new WebInspector.ToolbarCheckbox(WebInspector.UIString("Preserve log"), WebInspector.UIString("Do not clear log on page reload / navigation"), WebInspector.moduleSetting("preserveConsoleLog"));
     this._progressToolbarItem = new WebInspector.ToolbarItem(createElement("div"));
 
     var toolbar = new WebInspector.Toolbar(this._contentsElement);
@@ -174,7 +173,7 @@ WebInspector.ConsoleView.prototype = {
     _onMainFrameNavigated: function(event)
     {
         var frame = /** @type {!WebInspector.ResourceTreeFrame} */(event.data);
-        WebInspector.console.addMessage(WebInspector.UIString("Navigated to %s", frame.url));
+        WebInspector.console.log(WebInspector.UIString("Navigated to %s", frame.url));
     },
 
     _initConsoleMessages: function()
@@ -373,10 +372,10 @@ WebInspector.ConsoleView.prototype = {
     _scheduleViewportRefresh: function()
     {
         /**
-         * @param {!WebInspector.Throttler.FinishCallback} finishCallback
          * @this {WebInspector.ConsoleView}
+         * @return {!Promise.<undefined>}
          */
-        function invalidateViewport(finishCallback)
+        function invalidateViewport()
         {
             if (this._needsFullUpdate) {
                 this._updateMessageList();
@@ -384,7 +383,7 @@ WebInspector.ConsoleView.prototype = {
             } else {
                 this._viewport.invalidate();
             }
-            finishCallback();
+            return Promise.resolve();
         }
         this._viewportThrottler.schedule(invalidateViewport.bind(this));
     },
@@ -579,7 +578,7 @@ WebInspector.ConsoleView.prototype = {
         unhideAll.setEnabled(hasFilters);
 
         contextMenu.appendSeparator();
-        contextMenu.appendItem(WebInspector.UIString.capitalize("Clear ^console"), this._requestClearMessages.bind(this));
+        contextMenu.appendAction("console.clear");
         contextMenu.appendItem(WebInspector.UIString("Save as..."), this._saveConsole.bind(this));
 
         var request = consoleMessage ? consoleMessage.request : null;
@@ -708,11 +707,9 @@ WebInspector.ConsoleView.prototype = {
         var section = WebInspector.shortcutsScreen.section(WebInspector.UIString("Console"));
 
         var shortcutL = shortcut.makeDescriptor("l", WebInspector.KeyboardShortcut.Modifiers.Ctrl);
-        this._shortcuts[shortcutL.key] = this._requestClearMessages.bind(this);
         var keys = [shortcutL];
         if (WebInspector.isMac()) {
             var shortcutK = shortcut.makeDescriptor("k", WebInspector.KeyboardShortcut.Modifiers.Meta);
-            this._shortcuts[shortcutK.key] = this._requestClearMessages.bind(this);
             keys.unshift(shortcutK);
         }
         section.addAlternateKeys(keys, WebInspector.UIString("Clear console"));
@@ -744,13 +741,6 @@ WebInspector.ConsoleView.prototype = {
     _clearPromptBackwards: function()
     {
         this._prompt.setText("");
-    },
-
-    _requestClearMessages: function()
-    {
-        var targets = WebInspector.targetManager.targets();
-        for (var i = 0; i < targets.length; ++i)
-            targets[i].consoleModel.requestClearMessages();
     },
 
     _promptKeyDown: function(event)
@@ -815,7 +805,7 @@ WebInspector.ConsoleView.prototype = {
         if (currentExecutionContext) {
             WebInspector.ConsoleModel.evaluateCommandInConsole(currentExecutionContext, text, useCommandLineAPI);
             if (WebInspector.inspectorView.currentPanel() && WebInspector.inspectorView.currentPanel().name === "console")
-                WebInspector.userMetrics.CommandEvaluatedInConsolePanel.record();
+                WebInspector.userMetrics.actionTaken(WebInspector.UserMetrics.Action.CommandEvaluatedInConsolePanel);
         }
     },
 
@@ -1289,11 +1279,11 @@ WebInspector.ConsoleGroup.prototype = {
  * @constructor
  * @implements {WebInspector.ActionDelegate}
  */
-WebInspector.ConsoleView.ShowConsoleActionDelegate = function()
+WebInspector.ConsoleView.ActionDelegate = function()
 {
 }
 
-WebInspector.ConsoleView.ShowConsoleActionDelegate.prototype = {
+WebInspector.ConsoleView.ActionDelegate.prototype = {
     /**
      * @override
      * @param {!WebInspector.Context} context
@@ -1301,7 +1291,10 @@ WebInspector.ConsoleView.ShowConsoleActionDelegate.prototype = {
      */
     handleAction: function(context, actionId)
     {
-        WebInspector.console.show();
+        if (actionId === "console.show")
+            WebInspector.console.show();
+        else if (actionId === "console.clear")
+            WebInspector.ConsoleModel.clearConsole();
     }
 }
 

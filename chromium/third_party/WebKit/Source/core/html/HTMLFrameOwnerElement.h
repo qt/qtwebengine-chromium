@@ -27,6 +27,7 @@
 #include "core/html/HTMLElement.h"
 #include "platform/heap/Handle.h"
 #include "platform/scroll/ScrollTypes.h"
+#include "platform/weborigin/SecurityPolicy.h"
 #include "wtf/HashCountedSet.h"
 
 namespace blink {
@@ -67,6 +68,7 @@ public:
     Widget* ownedWidget() const;
 
     class UpdateSuspendScope {
+        STACK_ALLOCATED();
     public:
         UpdateSuspendScope();
         ~UpdateSuspendScope();
@@ -87,11 +89,13 @@ protected:
     HTMLFrameOwnerElement(const QualifiedName& tagName, Document&);
     void setSandboxFlags(SandboxFlags);
 
-    bool loadOrRedirectSubframe(const KURL&, const AtomicString& frameName, bool lockBackForwardList);
+    bool loadOrRedirectSubframe(const KURL&, const AtomicString& frameName, bool replaceCurrentItem);
 
 private:
     bool isKeyboardFocusable() const override;
     bool isFrameOwnerElement() const final { return true; }
+
+    virtual ReferrerPolicy referrerPolicyAttribute() { return ReferrerPolicyDefault; }
 
     RawPtrWillBeMember<Frame> m_contentFrame;
     RefPtrWillBeMember<Widget> m_widget;

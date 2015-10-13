@@ -29,8 +29,6 @@
       'target_name': 'rtc_base_approved',
       'type': 'static_library',
       'sources': [
-        '../overrides/webrtc/base/basictypes.h',
-        '../overrides/webrtc/base/constructormagic.h',
         'atomicops.h',
         'basictypes.h',
         'bitbuffer.cc',
@@ -67,10 +65,13 @@
         'ratetracker.h',
         'safe_conversions.h',
         'safe_conversions_impl.h',
+        'scoped_ptr.h',
         'stringencode.cc',
         'stringencode.h',
         'stringutils.cc',
         'stringutils.h',
+        'systeminfo.cc',
+        'systeminfo.h',
         'template_util.h',
         'thread_annotations.h',
         'thread_checker.h',
@@ -83,18 +84,11 @@
       'conditions': [
         ['build_with_chromium==1', {
           'include_dirs': [
-            '../overrides',
+            '../../webrtc_overrides',
           ],
           'sources!': [
-            'basictypes.h',
-            'constructormagic.h',
             'logging.cc',
             'logging.h',
-          ],
-        }, {
-          'sources!': [
-            '../overrides/webrtc/base/basictypes.h',
-            '../overrides/webrtc/base/constructormagic.h',
           ],
         }],
       ],
@@ -108,14 +102,14 @@
       ],
       'defines': [
         'FEATURE_ENABLE_SSL',
+        'SSL_USE_OPENSSL',
+        'HAVE_OPENSSL_SSL_H',
         'LOGGING=1',
       ],
       'sources': [
         'arraysize.h',
         'asyncfile.cc',
         'asyncfile.h',
-        'asynchttprequest.cc',
-        'asynchttprequest.h',
         'asyncinvoker.cc',
         'asyncinvoker.h',
         'asyncinvoker-inl.h',
@@ -140,8 +134,6 @@
         'callback.h',
         'common.cc',
         'common.h',
-        'cpumonitor.cc',
-        'cpumonitor.h',
         'crc32.cc',
         'crc32.h',
         'cryptstring.cc',
@@ -152,6 +144,8 @@
         'diskcache.h',
         'diskcache_win32.cc',
         'diskcache_win32.h',
+        'filerotatingstream.cc',
+        'filerotatingstream.h',
         'fileutils.cc',
         'fileutils.h',
         'fileutils_mock.h',
@@ -190,6 +184,8 @@
         'linuxfdwalk.c',
         'linuxfdwalk.h',
         'linked_ptr.h',
+        'logsinks.cc',
+        'logsinks.h',
         'macasyncsocket.cc',
         'macasyncsocket.h',
         'maccocoasocketserver.h',
@@ -224,6 +220,15 @@
         'network.cc',
         'network.h',
         'nullsocketserver.h',
+        'openssl.h',
+        'openssladapter.cc',
+        'openssladapter.h',
+        'openssldigest.cc',
+        'openssldigest.h',
+        'opensslidentity.cc',
+        'opensslidentity.h',
+        'opensslstreamadapter.cc',
+        'opensslstreamadapter.h',
         'optionsfile.cc',
         'optionsfile.h',
         'pathutils.cc',
@@ -245,11 +250,12 @@
         'refcount.h',
         'referencecountedsingletonfactory.h',
         'rollingaccumulator.h',
+        'rtccertificate.cc',
+        'rtccertificate.h',
         'schanneladapter.cc',
         'schanneladapter.h',
         'scoped_autorelease_pool.h',
         'scoped_autorelease_pool.mm',
-        'scoped_ptr.h',
         'scoped_ref_ptr.h',
         'scopedptrcollection.h',
         'sec_buffer.h',
@@ -293,8 +299,6 @@
         'sslstreamadapterhelper.h',
         'stream.cc',
         'stream.h',
-        'systeminfo.cc',
-        'systeminfo.h',
         'task.cc',
         'task.h',
         'taskparent.cc',
@@ -343,9 +347,6 @@
         'worker.h',
         'x11windowpicker.cc',
         'x11windowpicker.h',
-        '../overrides/webrtc/base/logging.cc',
-        '../overrides/webrtc/base/logging.h',
-        '../overrides/webrtc/base/win32socketinit.cc',
       ],
       # TODO(henrike): issue 3307, make rtc_base build without disabling
       # these flags.
@@ -362,6 +363,8 @@
         ],
         'defines': [
           'FEATURE_ENABLE_SSL',
+          'SSL_USE_OPENSSL',
+          'HAVE_OPENSSL_SSL_H',
         ],
       },
       'include_dirs': [
@@ -371,8 +374,13 @@
       'conditions': [
         ['build_with_chromium==1', {
           'include_dirs': [
-            '../overrides',
+            '../../webrtc_overrides',
             '../../boringssl/src/include',
+          ],
+          'sources': [
+            '../../webrtc_overrides/webrtc/base/win32socketinit.cc',
+            '../../webrtc_overrides/webrtc/base/logging.cc',
+            '../../webrtc_overrides/webrtc/base/logging.h',
           ],
           'sources!': [
             'atomicops.h',
@@ -401,6 +409,8 @@
             'x11windowpicker.h',
             'logging.cc',
             'logging.h',
+            'logsinks.cc',
+            'logsinks.h',
             'macasyncsocket.cc',
             'macasyncsocket.h',
             'maccocoasocketserver.h',
@@ -483,90 +493,6 @@
               ],
             }],
           ],
-          'sources!': [
-            '../overrides/webrtc/base/win32socketinit.cc',
-            '../overrides/webrtc/base/logging.cc',
-            '../overrides/webrtc/base/logging.h',
-          ],
-        }],
-        ['use_openssl==1', {
-          'defines': [
-            'SSL_USE_OPENSSL',
-            'HAVE_OPENSSL_SSL_H',
-          ],
-          'direct_dependent_settings': {
-            'defines': [
-              'SSL_USE_OPENSSL',
-              'HAVE_OPENSSL_SSL_H',
-            ],
-          },
-          'sources': [
-            'openssl.h',
-            'openssladapter.cc',
-            'openssladapter.h',
-            'openssldigest.cc',
-            'openssldigest.h',
-            'opensslidentity.cc',
-            'opensslidentity.h',
-            'opensslstreamadapter.cc',
-            'opensslstreamadapter.h',
-          ],
-          'conditions': [
-            ['build_ssl==1', {
-              'dependencies': [
-                '<(DEPTH)/third_party/boringssl/boringssl.gyp:boringssl',
-              ],
-            }, {
-              'include_dirs': [
-                '<(ssl_root)',
-              ],
-            }],
-          ],
-        }, {
-          'sources': [
-            'nssidentity.cc',
-            'nssidentity.h',
-            'nssstreamadapter.cc',
-            'nssstreamadapter.h',
-          ],
-          'conditions': [
-            ['use_legacy_ssl_defaults!=1', {
-              'defines': [
-                'SSL_USE_NSS',
-                'HAVE_NSS_SSL_H',
-                'SSL_USE_NSS_RNG',
-              ],
-              'direct_dependent_settings': {
-                'defines': [
-                  'SSL_USE_NSS',
-                  'HAVE_NSS_SSL_H',
-                  'SSL_USE_NSS_RNG',
-                ],
-              },
-            }],
-            ['build_ssl==1', {
-              'conditions': [
-                # On some platforms, the rest of NSS is bundled. On others,
-                # it's pulled from the system.
-                ['OS == "mac" or OS == "ios"', {
-                  'dependencies': [
-                    '<(DEPTH)/net/third_party/nss/ssl.gyp:libssl',
-                    '<(DEPTH)/third_party/nss/nss.gyp:nspr',
-                    '<(DEPTH)/third_party/nss/nss.gyp:nss',
-                  ],
-                }],
-                ['os_posix == 1 and OS != "mac" and OS != "ios" and OS != "android"', {
-                  'dependencies': [
-                    '<(DEPTH)/build/linux/system.gyp:ssl',
-                  ],
-                }],
-              ],
-            }, {
-              'include_dirs': [
-                '<(ssl_root)',
-              ],
-            }],
-          ],
         }],
         ['OS == "android"', {
           'link_settings': {
@@ -588,6 +514,7 @@
           'all_dependent_settings': {
             'xcode_settings': {
               'OTHER_LDFLAGS': [
+                '-framework CFNetwork',
                 '-framework Foundation',
                 '-framework Security',
                 '-framework SystemConfiguration',
@@ -733,6 +660,15 @@
           'sources!': [
             'linux.cc',
             'linux.h',
+          ],
+        }],
+        ['build_ssl==1', {
+          'dependencies': [
+            '<(DEPTH)/third_party/boringssl/boringssl.gyp:boringssl',
+          ],
+        }, {
+          'include_dirs': [
+            '<(ssl_root)',
           ],
         }],
       ],

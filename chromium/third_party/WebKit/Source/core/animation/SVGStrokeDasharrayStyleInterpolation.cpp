@@ -48,21 +48,21 @@ bool SVGStrokeDasharrayStyleInterpolation::canCreateFrom(const CSSValue& value)
     return true;
 }
 
-PassRefPtrWillBeRawPtr<SVGStrokeDasharrayStyleInterpolation> SVGStrokeDasharrayStyleInterpolation::maybeCreate(const CSSValue& start, const CSSValue& end, CSSPropertyID id)
+PassRefPtr<SVGStrokeDasharrayStyleInterpolation> SVGStrokeDasharrayStyleInterpolation::maybeCreate(const CSSValue& start, const CSSValue& end, CSSPropertyID id)
 {
     if (!canCreateFrom(start) || !canCreateFrom(end))
         return nullptr;
 
     RefPtrWillBeRawPtr<CSSValueList> singleZero = CSSValueList::createCommaSeparated();
-    singleZero->append(CSSPrimitiveValue::create(0, CSSPrimitiveValue::CSS_PX));
+    singleZero->append(CSSPrimitiveValue::create(0, CSSPrimitiveValue::UnitType::Pixels));
 
     const CSSValueList& valueListStart = start.isValueList() ? toCSSValueList(start) : *singleZero;
     const CSSValueList& valueListEnd = end.isValueList() ? toCSSValueList(end) : *singleZero;
     size_t size = lowestCommonMultiple(valueListStart.length(), valueListEnd.length());
     ASSERT(size > 0);
 
-    OwnPtrWillBeRawPtr<InterpolableList> interpolableStart = InterpolableList::create(size);
-    OwnPtrWillBeRawPtr<InterpolableList> interpolableEnd = InterpolableList::create(size);
+    OwnPtr<InterpolableList> interpolableStart = InterpolableList::create(size);
+    OwnPtr<InterpolableList> interpolableEnd = InterpolableList::create(size);
 
     for (size_t i = 0; i < size; ++i) {
         const CSSPrimitiveValue& from = *toCSSPrimitiveValue(valueListStart.item(i % valueListStart.length()));
@@ -71,7 +71,7 @@ PassRefPtrWillBeRawPtr<SVGStrokeDasharrayStyleInterpolation> SVGStrokeDasharrayS
         interpolableStart->set(i, LengthStyleInterpolation::toInterpolableValue(from));
         interpolableEnd->set(i, LengthStyleInterpolation::toInterpolableValue(to));
     }
-    return adoptRefWillBeNoop(new SVGStrokeDasharrayStyleInterpolation(interpolableStart.release(), interpolableEnd.release(), id));
+    return adoptRef(new SVGStrokeDasharrayStyleInterpolation(interpolableStart.release(), interpolableEnd.release(), id));
 }
 
 void SVGStrokeDasharrayStyleInterpolation::apply(StyleResolverState& state) const

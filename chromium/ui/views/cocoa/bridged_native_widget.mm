@@ -11,6 +11,7 @@
 #include "base/mac/mac_util.h"
 #import "base/mac/sdk_forward_declarations.h"
 #include "base/thread_task_runner_handle.h"
+#include "ui/accelerated_widget_mac/window_resize_helper_mac.h"
 #import "ui/base/cocoa/constrained_window/constrained_window_animation.h"
 #include "ui/base/hit_test.h"
 #include "ui/base/ime/input_method.h"
@@ -32,6 +33,16 @@
 #include "ui/views/widget/widget_aura_utils.h"
 #include "ui/views/widget/widget_delegate.h"
 
+extern "C" {
+
+typedef int32_t CGSConnection;
+CGSConnection _CGSDefaultConnection();
+CGError CGSSetWindowBackgroundBlurRadius(CGSConnection connection,
+                                         NSInteger windowNumber,
+                                         int radius);
+
+}
+
 // The NSView that hosts the composited CALayer drawing the UI. It fills the
 // window but is not hittable so that accessibility hit tests always go to the
 // BridgedContentView.
@@ -44,7 +55,35 @@
 }
 @end
 
+// This class overrides NSAnimation methods to invalidate the shadow for each
+// frame. It is required because the show animation uses CGSSetWindowWarp()
+// which is touchy about the consistency of the points it is given. The show
+// animation includes a translate, which fails to apply properly to the window
+// shadow, when that shadow is derived from a layer-hosting view. So invalidate
+// it. This invalidation is only needed to cater for the translate. It is not
+// required if CGSSetWindowWarp() is used in a way that keeps the center point
+// of the window stationary (e.g. a scale). It's also not required for the hide
+// animation: in that case, the shadow is never invalidated so retains the
+// shadow calculated before a translate is applied.
+@interface ModalShowAnimationWithLayer : ConstrainedWindowAnimationShow
+@end
+
+@implementation ModalShowAnimationWithLayer
+- (void)stopAnimation {
+  [super stopAnimation];
+  [window_ invalidateShadow];
+}
+- (void)setCurrentProgress:(NSAnimationProgress)progress {
+  [super setCurrentProgress:progress];
+  [window_ invalidateShadow];
+}
+@end
+
 namespace {
+
+const CGFloat kMavericksMenuOpacity = 251.0 / 255.0;
+const CGFloat kYosemiteMenuOpacity = 194.0 / 255.0;
+const int kYosemiteMenuBlur = 80;
 
 int kWindowPropertiesKey;
 
@@ -175,6 +214,18 @@ void SetupDragEventMonitor() {
       }];
 }
 
+// Returns a task runner for creating a ui::Compositor. This allows compositor
+// tasks to be funneled through ui::WindowResizeHelper's task runner to allow
+// resize operations to coordinate with frames provided by the GPU process.
+scoped_refptr<base::SingleThreadTaskRunner> GetCompositorTaskRunner() {
+  // If the WindowResizeHelper's pumpable task runner is set, it means the GPU
+  // process is directing messages there, and the compositor can synchronize
+  // with it. Otherwise, just use the UI thread.
+  scoped_refptr<base::SingleThreadTaskRunner> task_runner =
+      ui::WindowResizeHelperMac::Get()->task_runner();
+  return task_runner ? task_runner : base::ThreadTaskRunnerHandle::Get();
+}
+
 }  // namespace
 
 namespace views {
@@ -268,6 +319,19 @@ void BridgedNativeWidget::Init(base::scoped_nsobject<NSWindow> window,
       parent_ = new WidgetOwnerNSWindowAdapter(this, params.parent);
     }
   }
+
+  // OSX likes to put shadows on most things. However, frameless windows (with
+  // styleMask = NSBorderlessWindowMask) default to no shadow. So change that.
+  // SHADOW_TYPE_DROP is used for Menus, which get the same shadow style on Mac.
+  switch (params.shadow_type) {
+    case Widget::InitParams::SHADOW_TYPE_NONE:
+      [window_ setHasShadow:NO];
+      break;
+    case Widget::InitParams::SHADOW_TYPE_DEFAULT:
+    case Widget::InitParams::SHADOW_TYPE_DROP:
+      [window_ setHasShadow:YES];
+      break;
+  }  // No default case, to pick up new types.
 
   // Set a meaningful initial bounds. Note that except for frameless widgets
   // with no WidgetDelegate, the bounds will be set again by Widget after
@@ -393,14 +457,7 @@ void BridgedNativeWidget::SetVisibilityState(WindowVisibilityState new_state) {
     return;
 
   if (native_widget_mac_->IsWindowModalSheet()) {
-    NSWindow* parent_window = parent_->GetNSWindow();
-    DCHECK(parent_window);
-
-    [NSApp beginSheet:window_
-        modalForWindow:parent_window
-         modalDelegate:[window_ delegate]
-        didEndSelector:@selector(sheetDidEnd:returnCode:contextInfo:)
-           contextInfo:nullptr];
+    ShowAsModalSheet();
     return;
   }
 
@@ -424,7 +481,7 @@ void BridgedNativeWidget::SetVisibilityState(WindowVisibilityState new_state) {
   // the window appear.
   if (native_widget_mac_->GetWidget()->IsModal()) {
     base::scoped_nsobject<NSAnimation> show_animation(
-        [[ConstrainedWindowAnimationShow alloc] initWithWindow:window_]);
+        [[ModalShowAnimationWithLayer alloc] initWithWindow:window_]);
     // The default mode is blocking, which would block the UI thread for the
     // duration of the animation, but would keep it smooth. The window also
     // hasn't yet received a frame from the compositor at this stage, so it is
@@ -568,8 +625,11 @@ void BridgedNativeWidget::ToggleDesiredFullscreenState() {
 void BridgedNativeWidget::OnSizeChanged() {
   gfx::Size new_size = GetClientAreaSize();
   native_widget_mac_->GetWidget()->OnNativeWidgetSizeChanged(new_size);
-  if (layer())
+  if (layer()) {
     UpdateLayerProperties();
+    if ([window_ inLiveResize])
+      MaybeWaitForFrame(new_size);
+  }
 }
 
 void BridgedNativeWidget::OnVisibilityChanged() {
@@ -741,7 +801,14 @@ void BridgedNativeWidget::CreateLayer(ui::LayerType layer_type,
   // Transparent window support.
   layer()->GetCompositor()->SetHostHasTransparentBackground(translucent);
   layer()->SetFillsBoundsOpaquely(!translucent);
-  if (translucent) {
+
+  // Use the regular window background for window modal sheets. The layer() will
+  // still paint over most of it, but the native -[NSApp beginSheet:] animation
+  // blocks the UI thread, so there's no way to invalidate the shadow to match
+  // the composited layer. This assumes the native window shape is a good match
+  // for the composited NonClientFrameView, which should be the case since the
+  // native shape is what's most appropriate for displaying sheets on Mac.
+  if (translucent && !native_widget_mac_->IsWindowModalSheet()) {
     [window_ setOpaque:NO];
     [window_ setBackgroundColor:[NSColor clearColor]];
   }
@@ -752,12 +819,15 @@ void BridgedNativeWidget::CreateLayer(ui::LayerType layer_type,
 ////////////////////////////////////////////////////////////////////////////////
 // BridgedNativeWidget, internal::InputMethodDelegate:
 
-bool BridgedNativeWidget::DispatchKeyEventPostIME(const ui::KeyEvent& key) {
+ui::EventDispatchDetails BridgedNativeWidget::DispatchKeyEventPostIME(
+    ui::KeyEvent* key) {
   DCHECK(focus_manager_);
-  native_widget_mac_->GetWidget()->OnKeyEvent(const_cast<ui::KeyEvent*>(&key));
-  if (!key.handled())
-    return !focus_manager_->OnKeyEvent(key);
-  return key.handled();
+  native_widget_mac_->GetWidget()->OnKeyEvent(key);
+  if (!key->handled()) {
+    if (!focus_manager_->OnKeyEvent(*key))
+      key->StopPropagation();
+  }
+  return ui::EventDispatchDetails();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -822,8 +892,24 @@ bool BridgedNativeWidget::AcceleratedWidgetShouldIgnoreBackpressure() const {
   return true;
 }
 
+void BridgedNativeWidget::AcceleratedWidgetGetVSyncParameters(
+  base::TimeTicks* timebase, base::TimeDelta* interval) const {
+  // TODO(tapted): Add vsync support.
+  *timebase = base::TimeTicks();
+  *interval = base::TimeDelta();
+}
+
 void BridgedNativeWidget::AcceleratedWidgetSwapCompleted(
     const std::vector<ui::LatencyInfo>& latency_info) {
+  // Ignore frames arriving "late" for an old size. A frame at the new size
+  // should arrive soon.
+  if (!compositor_widget_->HasFrameOfSize(GetClientAreaSize()))
+    return;
+
+  if (invalidate_shadow_on_frame_swap_) {
+    invalidate_shadow_on_frame_swap_ = false;
+    [window_ invalidateShadow];
+  }
 }
 
 void BridgedNativeWidget::AcceleratedWidgetHitError() {
@@ -940,9 +1026,10 @@ void BridgedNativeWidget::CreateCompositor() {
 
   compositor_widget_.reset(
       new ui::AcceleratedWidgetMac(needs_gl_finish_workaround));
-  compositor_.reset(new ui::Compositor(compositor_widget_->accelerated_widget(),
-                                       context_factory,
-                                       base::ThreadTaskRunnerHandle::Get()));
+  compositor_.reset(
+      new ui::Compositor(context_factory, GetCompositorTaskRunner()));
+  compositor_->SetAcceleratedWidgetAndStartCompositor(
+      compositor_widget_->accelerated_widget());
   compositor_widget_->SetNSView(this);
 }
 
@@ -956,8 +1043,15 @@ void BridgedNativeWidget::InitCompositor() {
 }
 
 void BridgedNativeWidget::DestroyCompositor() {
-  if (layer())
+  if (layer()) {
+    // LayerOwner supports a change in ownership, e.g., to animate a closing
+    // window, but that won't work as expected for the root layer in
+    // BridgedNativeWidget.
+    DCHECK_EQ(this, layer()->owner());
+    layer()->CompleteAllAnimations();
+    layer()->SuppressPaint();
     layer()->set_delegate(nullptr);
+  }
   DestroyLayer();
 
   if (!compositor_widget_) {
@@ -988,6 +1082,22 @@ void BridgedNativeWidget::AddCompositorSuperview() {
   [background_layer
       setAutoresizingMask:kCALayerWidthSizable | kCALayerHeightSizable];
 
+  if (widget_type_ == Widget::InitParams::TYPE_MENU) {
+    // Giving the canvas opacity messes up subpixel font rendering, so use a
+    // solid background, but make the CALayer transparent.
+    if (base::mac::IsOSYosemiteOrLater()) {
+      [background_layer setOpacity:kYosemiteMenuOpacity];
+      CGSSetWindowBackgroundBlurRadius(
+          _CGSDefaultConnection(), [window_ windowNumber], kYosemiteMenuBlur);
+      // The blur effect does not occur with a fully transparent (or fully
+      // layer-backed) window. Setting a window background will use square
+      // corners, so ask the contentView to draw one instead.
+      [bridged_view_ setDrawMenuBackgroundForBlur:YES];
+    } else {
+      [background_layer setOpacity:kMavericksMenuOpacity];
+    }
+  }
+
   // Set the layer first to create a layer-hosting view (not layer-backed).
   [compositor_superview_ setLayer:background_layer];
   [compositor_superview_ setWantsLayer:YES];
@@ -1007,6 +1117,52 @@ void BridgedNativeWidget::UpdateLayerProperties() {
   float scale_factor = GetDeviceScaleFactorFromView(compositor_superview_);
   compositor_->SetScaleAndSize(scale_factor,
                                ConvertSizeToPixel(scale_factor, size_in_dip));
+
+  // For a translucent window, the shadow calculation needs to be carried out
+  // after the frame from the compositor arrives.
+  if (![window_ isOpaque])
+    invalidate_shadow_on_frame_swap_ = true;
+}
+
+void BridgedNativeWidget::MaybeWaitForFrame(const gfx::Size& size_in_dip) {
+  if (!layer()->IsDrawn() || compositor_widget_->HasFrameOfSize(size_in_dip))
+    return;
+
+  const int kPaintMsgTimeoutMS = 50;
+  const base::TimeTicks start_time = base::TimeTicks::Now();
+  const base::TimeTicks timeout_time =
+      start_time + base::TimeDelta::FromMilliseconds(kPaintMsgTimeoutMS);
+
+  ui::WindowResizeHelperMac* resize_helper = ui::WindowResizeHelperMac::Get();
+  for (base::TimeTicks now = start_time; now < timeout_time;
+       now = base::TimeTicks::Now()) {
+    if (!resize_helper->WaitForSingleTaskToRun(timeout_time - now))
+      return;  // Timeout.
+
+    // Since the UI thread is blocked, the size shouldn't change.
+    DCHECK(size_in_dip == GetClientAreaSize());
+    if (compositor_widget_->HasFrameOfSize(size_in_dip))
+      return;  // Frame arrived.
+  }
+}
+
+void BridgedNativeWidget::ShowAsModalSheet() {
+  // -[NSApp beginSheet:] will block the UI thread while the animation runs.
+  // So that it doesn't animate a fully transparent window, first wait for a
+  // frame. The first step is to pretend that the window is already visible.
+  window_visible_ = true;
+  layer()->SetVisible(true);
+  native_widget_mac_->GetWidget()->OnNativeWidgetVisibilityChanged(true);
+  MaybeWaitForFrame(GetClientAreaSize());
+
+  NSWindow* parent_window = parent_->GetNSWindow();
+  DCHECK(parent_window);
+
+  [NSApp beginSheet:window_
+      modalForWindow:parent_window
+       modalDelegate:[window_ delegate]
+      didEndSelector:@selector(sheetDidEnd:returnCode:contextInfo:)
+         contextInfo:nullptr];
 }
 
 NSMutableDictionary* BridgedNativeWidget::GetWindowProperties() const {

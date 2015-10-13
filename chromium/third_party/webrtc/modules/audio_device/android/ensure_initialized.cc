@@ -12,9 +12,10 @@
 
 #include <pthread.h>
 
+// Note: this dependency is dangerous since it reaches into Chromium's base.
+// There's a risk of e.g. macro clashes. This file may only be used in tests.
 #include "base/android/jni_android.h"
 #include "webrtc/base/checks.h"
-#include "webrtc/modules/audio_device/android/audio_device_template.h"
 #include "webrtc/modules/audio_device/android/audio_record_jni.h"
 #include "webrtc/modules/audio_device/android/audio_track_jni.h"
 #include "webrtc/modules/utility/interface/jvm_android.h"
@@ -25,10 +26,10 @@ namespace audiodevicemodule {
 static pthread_once_t g_initialize_once = PTHREAD_ONCE_INIT;
 
 void EnsureInitializedOnce() {
-  CHECK(::base::android::IsVMInitialized());
+  RTC_CHECK(::base::android::IsVMInitialized());
   JNIEnv* jni = ::base::android::AttachCurrentThread();
   JavaVM* jvm = NULL;
-  CHECK_EQ(0, jni->GetJavaVM(&jvm));
+  RTC_CHECK_EQ(0, jni->GetJavaVM(&jvm));
   jobject context = ::base::android::GetApplicationContext();
 
   // Initialize the Java environment (currently only used by the audio manager).
@@ -36,7 +37,7 @@ void EnsureInitializedOnce() {
 }
 
 void EnsureInitialized() {
-  CHECK_EQ(0, pthread_once(&g_initialize_once, &EnsureInitializedOnce));
+  RTC_CHECK_EQ(0, pthread_once(&g_initialize_once, &EnsureInitializedOnce));
 }
 
 }  // namespace audiodevicemodule

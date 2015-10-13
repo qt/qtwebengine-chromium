@@ -30,6 +30,7 @@
 #include "platform/network/HTTPParsers.h"
 #include "platform/text/SuffixTree.h"
 #include "platform/weborigin/KURL.h"
+#include "wtf/Allocator.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/text/TextEncoding.h"
 
@@ -41,6 +42,7 @@ class XSSInfo;
 class XSSAuditorDelegate;
 
 struct FilterTokenRequest {
+    STACK_ALLOCATED();
     FilterTokenRequest(HTMLToken& token, HTMLSourceTracker& sourceTracker, bool shouldAllowCDATA)
         : token(token)
         , sourceTracker(sourceTracker)
@@ -53,6 +55,7 @@ struct FilterTokenRequest {
 };
 
 class XSSAuditor {
+    WTF_MAKE_FAST_ALLOCATED(XSSAuditor);
     WTF_MAKE_NONCOPYABLE(XSSAuditor);
 public:
     XSSAuditor();
@@ -64,6 +67,8 @@ public:
     bool isSafeToSendToAnotherThread() const;
 
     void setEncoding(const WTF::TextEncoding&);
+
+    bool isEnabled() const { return m_isEnabled; }
 
 private:
     static const size_t kMaximumFragmentLengthTarget = 100;
@@ -94,7 +99,6 @@ private:
     bool filterObjectToken(const FilterTokenRequest&);
     bool filterParamToken(const FilterTokenRequest&);
     bool filterEmbedToken(const FilterTokenRequest&);
-    bool filterAppletToken(const FilterTokenRequest&);
     bool filterFrameToken(const FilterTokenRequest&);
     bool filterMetaToken(const FilterTokenRequest&);
     bool filterBaseToken(const FilterTokenRequest&);

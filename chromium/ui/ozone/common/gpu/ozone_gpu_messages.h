@@ -15,6 +15,7 @@
 #include "ui/gfx/geometry/point.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/ipc/gfx_param_traits.h"
+#include "ui/gfx/ipc/gfx_param_traits_macros.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/ozone/common/gpu/ozone_gpu_message_params.h"
 #include "ui/ozone/ozone_export.h"
@@ -30,9 +31,6 @@ IPC_ENUM_TRAITS_MAX_VALUE(ui::DisplayConnectionType,
 IPC_ENUM_TRAITS_MAX_VALUE(ui::HDCPState, ui::HDCP_STATE_LAST)
 
 IPC_ENUM_TRAITS_MAX_VALUE(gfx::OverlayTransform, gfx::OVERLAY_TRANSFORM_LAST)
-
-IPC_ENUM_TRAITS_MAX_VALUE(ui::SurfaceFactoryOzone::BufferFormat,
-                          ui::SurfaceFactoryOzone::BUFFER_FORMAT_LAST)
 
 // clang-format off
 IPC_STRUCT_TRAITS_BEGIN(ui::DisplayMode_Params)
@@ -69,7 +67,10 @@ IPC_STRUCT_TRAITS_BEGIN(ui::OverlayCheck_Params)
   IPC_STRUCT_TRAITS_MEMBER(transform)
   IPC_STRUCT_TRAITS_MEMBER(format)
   IPC_STRUCT_TRAITS_MEMBER(display_rect)
+  IPC_STRUCT_TRAITS_MEMBER(crop_rect)
   IPC_STRUCT_TRAITS_MEMBER(plane_z_order)
+  IPC_STRUCT_TRAITS_MEMBER(weight)
+  IPC_STRUCT_TRAITS_MEMBER(plane_ids)
 IPC_STRUCT_TRAITS_END()
 
 // clang-format on
@@ -174,7 +175,8 @@ IPC_MESSAGE_CONTROL1(OzoneHostMsg_DisplayControlTaken, bool /* success */)
 IPC_MESSAGE_CONTROL1(OzoneHostMsg_DisplayControlRelinquished,
                      bool /* success */)
 
-// Response for OzoneGpuMsg_CheckOverlayCapabilities
+// Response to OzoneGpuMsg_CheckOverlayCapabilities. Returns list of supported
+// params.
 IPC_MESSAGE_CONTROL2(OzoneHostMsg_OverlayCapabilitiesReceived,
                      gfx::AcceleratedWidget /* widget */,
-                     bool /* result */)
+                     std::vector<ui::OverlayCheck_Params> /* overlays */)

@@ -41,9 +41,14 @@ public:
     LineClampValue lineClamps;
     DraggableRegionMode draggableRegions;
 
-    void* dataRefs[9];
+    void* dataRefs[10];
     void* ownPtrs[4];
+#if ENABLE(OILPAN)
+    Persistent<void*> persistentHandles[2];
+    void* refPtrs[2];
+#else
     void* refPtrs[4];
+#endif
 
     FillLayer fillLayers;
     NinePieceImage ninePieces;
@@ -104,20 +109,23 @@ StyleRareNonInheritedData::StyleRareNonInheritedData()
     , m_hasCurrentOpacityAnimation(false)
     , m_hasCurrentTransformAnimation(false)
     , m_hasCurrentFilterAnimation(false)
+    , m_hasCurrentBackdropFilterAnimation(false)
     , m_runningOpacityAnimationOnCompositor(false)
     , m_runningTransformAnimationOnCompositor(false)
     , m_runningFilterAnimationOnCompositor(false)
+    , m_runningBackdropFilterAnimationOnCompositor(false)
     , m_effectiveBlendMode(ComputedStyle::initialBlendMode())
     , m_touchAction(ComputedStyle::initialTouchAction())
     , m_objectFit(ComputedStyle::initialObjectFit())
     , m_isolation(ComputedStyle::initialIsolation())
     , m_scrollBehavior(ComputedStyle::initialScrollBehavior())
-    , m_scrollBlocksOn(ComputedStyle::initialScrollBlocksOn())
     , m_scrollSnapType(ComputedStyle::initialScrollSnapType())
     , m_requiresAcceleratedCompositingForExternalReasons(false)
     , m_hasInlineTransform(false)
     , m_resize(ComputedStyle::initialResize())
     , m_hasCompositorProxy(false)
+    , m_hasAuthorBackground(false)
+    , m_hasAuthorBorder(false)
 {
     m_maskBoxImage.setMaskDefaults();
 }
@@ -138,6 +146,7 @@ StyleRareNonInheritedData::StyleRareNonInheritedData(const StyleRareNonInherited
     , m_transform(o.m_transform)
     , m_willChange(o.m_willChange)
     , m_filter(o.m_filter)
+    , m_backdropFilter(o.m_backdropFilter)
     , m_grid(o.m_grid)
     , m_gridItem(o.m_gridItem)
     , m_scrollSnap(o.m_scrollSnap)
@@ -181,20 +190,23 @@ StyleRareNonInheritedData::StyleRareNonInheritedData(const StyleRareNonInherited
     , m_hasCurrentOpacityAnimation(o.m_hasCurrentOpacityAnimation)
     , m_hasCurrentTransformAnimation(o.m_hasCurrentTransformAnimation)
     , m_hasCurrentFilterAnimation(o.m_hasCurrentFilterAnimation)
+    , m_hasCurrentBackdropFilterAnimation(o.m_hasCurrentBackdropFilterAnimation)
     , m_runningOpacityAnimationOnCompositor(o.m_runningOpacityAnimationOnCompositor)
     , m_runningTransformAnimationOnCompositor(o.m_runningTransformAnimationOnCompositor)
     , m_runningFilterAnimationOnCompositor(o.m_runningFilterAnimationOnCompositor)
+    , m_runningBackdropFilterAnimationOnCompositor(o.m_runningBackdropFilterAnimationOnCompositor)
     , m_effectiveBlendMode(o.m_effectiveBlendMode)
     , m_touchAction(o.m_touchAction)
     , m_objectFit(o.m_objectFit)
     , m_isolation(o.m_isolation)
     , m_scrollBehavior(o.m_scrollBehavior)
-    , m_scrollBlocksOn(o.m_scrollBlocksOn)
     , m_scrollSnapType(o.m_scrollSnapType)
     , m_requiresAcceleratedCompositingForExternalReasons(o.m_requiresAcceleratedCompositingForExternalReasons)
     , m_hasInlineTransform(o.m_hasInlineTransform)
     , m_resize(o.m_resize)
     , m_hasCompositorProxy(o.m_hasCompositorProxy)
+    , m_hasAuthorBackground(o.m_hasAuthorBackground)
+    , m_hasAuthorBorder(o.m_hasAuthorBorder)
 {
 }
 
@@ -203,6 +215,10 @@ StyleRareNonInheritedData::~StyleRareNonInheritedData()
     const FilterOperations& filterOperations = m_filter->m_operations;
     for (unsigned i = 0; i < filterOperations.size(); ++i)
         ReferenceFilterBuilder::clearDocumentResourceReference(filterOperations.at(i));
+
+    const FilterOperations& backdropFilterOperations = m_backdropFilter->m_operations;
+    for (unsigned i = 0; i < backdropFilterOperations.size(); ++i)
+        ReferenceFilterBuilder::clearDocumentResourceReference(backdropFilterOperations.at(i));
 }
 
 bool StyleRareNonInheritedData::operator==(const StyleRareNonInheritedData& o) const
@@ -221,6 +237,7 @@ bool StyleRareNonInheritedData::operator==(const StyleRareNonInheritedData& o) c
         && m_transform == o.m_transform
         && m_willChange == o.m_willChange
         && m_filter == o.m_filter
+        && m_backdropFilter == o.m_backdropFilter
         && m_grid == o.m_grid
         && m_gridItem == o.m_gridItem
         && m_scrollSnap == o.m_scrollSnap
@@ -265,17 +282,19 @@ bool StyleRareNonInheritedData::operator==(const StyleRareNonInheritedData& o) c
         && m_hasCurrentOpacityAnimation == o.m_hasCurrentOpacityAnimation
         && m_hasCurrentTransformAnimation == o.m_hasCurrentTransformAnimation
         && m_hasCurrentFilterAnimation == o.m_hasCurrentFilterAnimation
+        && m_hasCurrentBackdropFilterAnimation == o.m_hasCurrentBackdropFilterAnimation
         && m_effectiveBlendMode == o.m_effectiveBlendMode
         && m_touchAction == o.m_touchAction
         && m_objectFit == o.m_objectFit
         && m_isolation == o.m_isolation
         && m_scrollBehavior == o.m_scrollBehavior
-        && m_scrollBlocksOn == o.m_scrollBlocksOn
-        && m_scrollBlocksOn == o.m_scrollSnapType
+        && m_scrollSnapType == o.m_scrollSnapType
         && m_requiresAcceleratedCompositingForExternalReasons == o.m_requiresAcceleratedCompositingForExternalReasons
         && m_hasInlineTransform == o.m_hasInlineTransform
         && m_resize == o.m_resize
-        && m_hasCompositorProxy == o.m_hasCompositorProxy;
+        && m_hasCompositorProxy == o.m_hasCompositorProxy
+        && m_hasAuthorBackground == o.m_hasAuthorBackground
+        && m_hasAuthorBorder == o.m_hasAuthorBorder;
 }
 
 bool StyleRareNonInheritedData::contentDataEquivalent(const StyleRareNonInheritedData& o) const
@@ -327,6 +346,11 @@ bool StyleRareNonInheritedData::transitionDataEquivalent(const StyleRareNonInher
 bool StyleRareNonInheritedData::hasFilters() const
 {
     return m_filter.get() && !m_filter->m_operations.isEmpty();
+}
+
+bool StyleRareNonInheritedData::hasBackdropFilters() const
+{
+    return m_backdropFilter.get() && !m_backdropFilter->m_operations.isEmpty();
 }
 
 bool StyleRareNonInheritedData::shapeOutsideDataEquivalent(const StyleRareNonInheritedData& o) const

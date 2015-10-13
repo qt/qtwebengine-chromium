@@ -33,7 +33,6 @@
 
 #include "core/CoreExport.h"
 #include "core/inspector/InspectorDebuggerAgent.h"
-#include "core/inspector/InspectorOverlay.h"
 
 using blink::TypeBuilder::Debugger::ExceptionDetails;
 using blink::TypeBuilder::Debugger::ScriptId;
@@ -46,13 +45,11 @@ class InspectorPageAgent;
 class MainThreadDebugger;
 
 class CORE_EXPORT PageDebuggerAgent final
-    : public InspectorDebuggerAgent
-    , public InspectorOverlay::Listener {
+    : public InspectorDebuggerAgent {
     WTF_MAKE_NONCOPYABLE(PageDebuggerAgent);
     WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(PageDebuggerAgent);
-    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(PageDebuggerAgent);
 public:
-    static PassOwnPtrWillBeRawPtr<PageDebuggerAgent> create(MainThreadDebugger*, InspectorPageAgent*, InjectedScriptManager*, InspectorOverlay*);
+    static PassOwnPtrWillBeRawPtr<PageDebuggerAgent> create(MainThreadDebugger*, InspectorPageAgent*, InjectedScriptManager*);
     ~PageDebuggerAgent() override;
     DECLARE_VIRTUAL_TRACE();
 
@@ -63,30 +60,19 @@ public:
 
     void didStartProvisionalLoad(LocalFrame*);
     void didClearDocumentOfWindowObject(LocalFrame*);
-    void didCommitLoadForLocalFrame(LocalFrame*) override;
-
-protected:
-    void enable() override;
-    void disable() override;
 
 private:
-    void startListeningV8Debugger() override;
-    void stopListeningV8Debugger() override;
-    V8Debugger& debugger() override;
+    // V8DebuggerAgent::Client implemntation.
+    void debuggerAgentEnabled() override;
+    void debuggerAgentDisabled() override;
     void muteConsole() override;
     void unmuteConsole() override;
 
-    // InspectorOverlay::Listener implementation.
-    void overlayResumed() override;
-    void overlaySteppedOver() override;
-
-    InjectedScript injectedScriptForEval(ErrorString*, const int* executionContextId) override;
+    InjectedScript defaultInjectedScript() override;
     bool canExecuteScripts() const;
 
-    PageDebuggerAgent(MainThreadDebugger*, InspectorPageAgent*, InjectedScriptManager*, InspectorOverlay*);
-    RawPtrWillBeMember<MainThreadDebugger> m_mainThreadDebugger;
+    PageDebuggerAgent(MainThreadDebugger*, InspectorPageAgent*, InjectedScriptManager*);
     RawPtrWillBeMember<InspectorPageAgent> m_pageAgent;
-    RawPtrWillBeMember<InspectorOverlay> m_overlay;
     HashMap<String, String> m_compiledScriptURLs;
 };
 

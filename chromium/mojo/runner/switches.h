@@ -5,9 +5,6 @@
 #ifndef MOJO_RUNNER_SWITCHES_H_
 #define MOJO_RUNNER_SWITCHES_H_
 
-#include <set>
-#include <string>
-
 namespace switches {
 
 // All switches in alphabetical order. The switches should be documented
@@ -15,13 +12,13 @@ namespace switches {
 extern const char kApp[];
 extern const char kChildProcess[];
 extern const char kContentHandlers[];
-extern const char kDisableCache[];
+extern const char kEnableSandbox[];
 extern const char kForceInProcess[];
 extern const char kHelp[];
 extern const char kMapOrigin[];
-extern const char kOrigin[];
-extern const char kTraceStartup[];
 extern const char kURLMappings[];
+extern const char kUseTemporaryUserDataDir[];
+extern const char kUserDataDir[];
 
 }  // namespace switches
 

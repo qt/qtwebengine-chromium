@@ -94,7 +94,7 @@
         '<(DEPTH)/media/media.gyp:media',
         '<(DEPTH)/media/media.gyp:shared_memory_support',
         '<(DEPTH)/third_party/opus/opus.gyp:opus',
-        '<(DEPTH)/third_party/libvpx/libvpx.gyp:libvpx',
+        '<(DEPTH)/third_party/libvpx_new/libvpx.gyp:libvpx_new',
         '<(DEPTH)/ui/gfx/gfx.gyp:gfx_geometry',
       ],
       'sources': [
@@ -125,7 +125,7 @@
           'dependencies!': [
             '<(DEPTH)/media/media.gyp:media',
             '<(DEPTH)/third_party/opus/opus.gyp:opus',
-            '<(DEPTH)/third_party/libvpx/libvpx.gyp:libvpx',
+            '<(DEPTH)/third_party/libvpx_new/libvpx.gyp:libvpx_new',
           ],
         }], # OS=="ios"
       ], # conditions
@@ -143,7 +143,7 @@
         '<(DEPTH)/media/media.gyp:media',
         '<(DEPTH)/media/media.gyp:shared_memory_support',
         '<(DEPTH)/third_party/opus/opus.gyp:opus',
-        '<(DEPTH)/third_party/libvpx/libvpx.gyp:libvpx',
+        '<(DEPTH)/third_party/libvpx_new/libvpx.gyp:libvpx_new',
         '<(DEPTH)/ui/gfx/gfx.gyp:gfx_geometry',
       ], # dependencies
       'sources': [
@@ -178,6 +178,8 @@
         'sender/video_sender.h',
         'sender/vp8_encoder.cc',
         'sender/vp8_encoder.h',
+        'sender/vp8_quantizer_parser.h',
+        'sender/vp8_quantizer_parser.cc',
       ], # source
       'conditions': [
         # use a restricted subset of media and no software codecs on iOS
@@ -186,7 +188,7 @@
           'dependencies!': [
             '<(DEPTH)/media/media.gyp:media',
             '<(DEPTH)/third_party/opus/opus.gyp:opus',
-            '<(DEPTH)/third_party/libvpx/libvpx.gyp:libvpx',
+            '<(DEPTH)/third_party/libvpx_new/libvpx.gyp:libvpx_new',
           ],
           'sources!': [
             'sender/external_video_encoder.cc',
@@ -195,6 +197,8 @@
             'sender/video_encoder_impl.h',
             'sender/vp8_encoder.cc',
             'sender/vp8_encoder.h',
+            'sender/vp8_quantizer_parser.cc',
+	    'sender/vp8_quantizer_parser.h', 
           ],
         }], # OS=="ios"
         # iOS and OS X encoders

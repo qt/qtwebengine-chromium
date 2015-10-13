@@ -63,6 +63,12 @@ public:
         const WebRect& clip,
         PaintingControlSetting = PaintDefaultBehavior) = 0;
 
+    // Returns an estimate of the current memory usage within this object,
+    // excluding memory shared with painting artifacts (i.e.,
+    // WebDisplayItemList). Should be invoked after paintContents, so that the
+    // result includes data cached internally during painting.
+    virtual size_t approximateUnsharedMemoryUsage() const { return 0; }
+
 protected:
     virtual ~WebContentLayerClient() { }
 };

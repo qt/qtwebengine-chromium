@@ -8,6 +8,7 @@
 #include "core/CoreExport.h"
 #include "core/css/parser/CSSParserToken.h"
 #include "core/html/parser/InputStreamPreprocessor.h"
+#include "wtf/Allocator.h"
 #include "wtf/text/WTFString.h"
 
 #include <climits>
@@ -24,6 +25,7 @@ class CORE_EXPORT CSSTokenizer {
     WTF_MAKE_FAST_ALLOCATED(CSSTokenizer);
 public:
     class CORE_EXPORT Scope {
+        DISALLOW_ALLOCATION();
     public:
         Scope(const String&);
         Scope(const String&, CSSParserObserverWrapper&); // For the inspector
@@ -75,7 +77,7 @@ private:
     CSSParserToken blockStart(CSSParserTokenType blockType, CSSParserTokenType, CSSParserString);
     CSSParserToken blockEnd(CSSParserTokenType, CSSParserTokenType startType);
 
-    typedef CSSParserToken (CSSTokenizer::*CodePoint)(UChar);
+    using CodePoint = CSSParserToken (CSSTokenizer::*)(UChar);
 
     static const CodePoint codePoints[];
     Vector<CSSParserTokenType> m_blockStack;

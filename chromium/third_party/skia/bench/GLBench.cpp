@@ -13,28 +13,26 @@
 
 const GrGLContext* GLBench::getGLContext(SkCanvas* canvas) {
     // This bench exclusively tests GL calls directly
-    if (NULL == canvas->getGrContext()) {
-        return NULL;
+    if (nullptr == canvas->getGrContext()) {
+        return nullptr;
     }
     GrContext* context = canvas->getGrContext();
-
-    GrTestTarget tt;
-    context->getTestTarget(&tt);
-    if (!tt.target()) {
-        SkDebugf("Couldn't get Gr test target.");
-        return NULL;
+    GrGpu* gpu = context->getGpu();
+    if (!gpu) {
+        SkDebugf("Couldn't get Gr gpu.");
+        return nullptr;
     }
 
-    const GrGLContext* ctx = tt.glContext();
+    const GrGLContext* ctx = gpu->glContextForTesting();
     if (!ctx) {
         SkDebugf("Couldn't get an interface\n");
-        return NULL;
+        return nullptr;
     }
 
     return this->onGetGLContext(ctx);
 }
 
-void GLBench::onPerCanvasPreDraw(SkCanvas* canvas) {
+void GLBench::onPreDraw(SkCanvas* canvas) {
     // This bench exclusively tests GL calls directly
     const GrGLContext* ctx = this->getGLContext(canvas);
     if (!ctx) {
@@ -43,7 +41,7 @@ void GLBench::onPerCanvasPreDraw(SkCanvas* canvas) {
     this->setup(ctx);
 }
 
-void GLBench::onPerCanvasPostDraw(SkCanvas* canvas) {
+void GLBench::onPostDraw(SkCanvas* canvas) {
     // This bench exclusively tests GL calls directly
     const GrGLContext* ctx = this->getGLContext(canvas);
     if (!ctx) {
@@ -52,7 +50,7 @@ void GLBench::onPerCanvasPostDraw(SkCanvas* canvas) {
     this->teardown(ctx->interface());
 }
 
-void GLBench::onDraw(const int loops, SkCanvas* canvas) {
+void GLBench::onDraw(int loops, SkCanvas* canvas) {
     const GrGLContext* ctx = this->getGLContext(canvas);
     if (!ctx) {
         return;
@@ -66,17 +64,17 @@ GrGLuint GLBench::CompileShader(const GrGLInterface* gl, const char* shaderSrc, 
     GR_GL_CALL_RET(gl, shader, CreateShader(type));
 
     // Load the shader source
-    GR_GL_CALL(gl, ShaderSource(shader, 1, &shaderSrc, NULL));
+    GR_GL_CALL(gl, ShaderSource(shader, 1, &shaderSrc, nullptr));
 
     // Compile the shader
     GR_GL_CALL(gl, CompileShader(shader));
 
     // Check for compile time errors
-    GrGLint success;
+    GrGLint success = GR_GL_INIT_ZERO;
     GrGLchar infoLog[512];
     GR_GL_CALL(gl, GetShaderiv(shader, GR_GL_COMPILE_STATUS, &success));
     if (!success) {
-        GR_GL_CALL(gl, GetShaderInfoLog(shader, 512, NULL, infoLog));
+        GR_GL_CALL(gl, GetShaderInfoLog(shader, 512, nullptr, infoLog));
         SkDebugf("ERROR::SHADER::COMPLIATION_FAILED: %s\n", infoLog);
     }
 
@@ -95,11 +93,11 @@ GrGLuint GLBench::CreateProgram(const GrGLInterface* gl, const char* vshader, co
     GR_GL_CALL(gl, LinkProgram(shaderProgram));
 
     // Check for linking errors
-    GrGLint success;
+    GrGLint success = GR_GL_INIT_ZERO;
     GrGLchar infoLog[512];
     GR_GL_CALL(gl, GetProgramiv(shaderProgram, GR_GL_LINK_STATUS, &success));
     if (!success) {
-        GR_GL_CALL(gl, GetProgramInfoLog(shaderProgram, 512, NULL, infoLog));
+        GR_GL_CALL(gl, GetProgramInfoLog(shaderProgram, 512, nullptr, infoLog));
         SkDebugf("Linker Error: %s\n", infoLog);
     }
     GR_GL_CALL(gl, DeleteShader(vertexShader));
@@ -126,7 +124,7 @@ GrGLuint GLBench::SetupFramebuffer(const GrGLInterface* gl, int screenWidth, int
                               0, //border
                               GR_GL_RGBA, //format
                               GR_GL_UNSIGNED_BYTE, // type
-                              NULL));
+                              nullptr));
 
     // bind framebuffer
     GrGLuint framebuffer;

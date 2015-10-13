@@ -28,12 +28,10 @@
 #include <stdio.h>
 #include <vector>
 
-#include "talk/media/base/fakemediaprocessor.h"
 #include "talk/media/base/fakevideocapturer.h"
 #include "talk/media/base/fakevideorenderer.h"
 #include "talk/media/base/testutils.h"
 #include "talk/media/base/videocapturer.h"
-#include "talk/media/base/videoprocessor.h"
 #include "webrtc/base/gunit.h"
 #include "webrtc/base/logging.h"
 #include "webrtc/base/thread.h"
@@ -49,26 +47,6 @@ const uint32 kTimeout = 5000U;
 
 }  // namespace
 
-// Sets the elapsed time in the video frame to 0.
-class VideoProcessor0 : public cricket::VideoProcessor {
- public:
-  virtual void OnFrame(uint32 /*ssrc*/, cricket::VideoFrame* frame,
-                       bool* drop_frame) {
-    frame->SetElapsedTime(0u);
-  }
-};
-
-// Adds one to the video frame's elapsed time. Note that VideoProcessor0 and
-// VideoProcessor1 are not commutative.
-class VideoProcessor1 : public cricket::VideoProcessor {
- public:
-  virtual void OnFrame(uint32 /*ssrc*/, cricket::VideoFrame* frame,
-                       bool* drop_frame) {
-    int64 elapsed_time = frame->GetElapsedTime();
-    frame->SetElapsedTime(elapsed_time + 1);
-  }
-};
-
 class VideoCapturerTest
     : public sigslot::has_slots<>,
       public testing::Test {
@@ -77,7 +55,6 @@ class VideoCapturerTest
       : capture_state_(cricket::CS_STOPPED),
         num_state_changes_(0),
         video_frames_received_(0),
-        last_frame_elapsed_time_(0),
         expects_rotation_applied_(true) {
     capturer_.SignalVideoFrame.connect(this, &VideoCapturerTest::OnVideoFrame);
     capturer_.SignalStateChange.connect(this,
@@ -91,7 +68,6 @@ class VideoCapturerTest
  protected:
   void OnVideoFrame(cricket::VideoCapturer*, const cricket::VideoFrame* frame) {
     ++video_frames_received_;
-    last_frame_elapsed_time_ = frame->GetElapsedTime();
     if (expects_rotation_applied_) {
       EXPECT_EQ(webrtc::kVideoRotation_0, frame->GetRotation());
     } else {
@@ -109,13 +85,11 @@ class VideoCapturerTest
   int video_frames_received() const {
     return video_frames_received_;
   }
-  int64 last_frame_elapsed_time() const { return last_frame_elapsed_time_; }
 
   cricket::FakeVideoCapturer capturer_;
   cricket::CaptureState capture_state_;
   int num_state_changes_;
   int video_frames_received_;
-  int64 last_frame_elapsed_time_;
   cricket::FakeVideoRenderer renderer_;
   bool expects_rotation_applied_;
 };
@@ -805,47 +779,6 @@ TEST_F(VideoCapturerTest, VideoFrame) {
   EXPECT_EQ(0, video_frames_received());
   EXPECT_TRUE(capturer_.CaptureFrame());
   EXPECT_EQ(1, video_frames_received());
-}
-
-TEST_F(VideoCapturerTest, ProcessorChainTest) {
-  VideoProcessor0 processor0;
-  VideoProcessor1 processor1;
-  EXPECT_EQ(cricket::CS_RUNNING, capturer_.Start(cricket::VideoFormat(
-      640,
-      480,
-      cricket::VideoFormat::FpsToInterval(30),
-      cricket::FOURCC_I420)));
-  EXPECT_TRUE(capturer_.IsRunning());
-  EXPECT_EQ(0, video_frames_received());
-  // First processor sets elapsed time to 0.
-  capturer_.AddVideoProcessor(&processor0);
-  // Second processor adds 1 to the elapsed time. I.e. a frames elapsed time
-  // should now always be 1 (and not 0).
-  capturer_.AddVideoProcessor(&processor1);
-  EXPECT_TRUE(capturer_.CaptureFrame());
-  EXPECT_EQ(1, video_frames_received());
-  EXPECT_EQ(1u, last_frame_elapsed_time());
-  capturer_.RemoveVideoProcessor(&processor1);
-  EXPECT_TRUE(capturer_.CaptureFrame());
-  // Since processor1 has been removed the elapsed time should now be 0.
-  EXPECT_EQ(2, video_frames_received());
-  EXPECT_EQ(0u, last_frame_elapsed_time());
-}
-
-TEST_F(VideoCapturerTest, ProcessorDropFrame) {
-  cricket::FakeMediaProcessor dropping_processor_;
-  dropping_processor_.set_drop_frames(true);
-  EXPECT_EQ(cricket::CS_RUNNING, capturer_.Start(cricket::VideoFormat(
-      640,
-      480,
-      cricket::VideoFormat::FpsToInterval(30),
-      cricket::FOURCC_I420)));
-  EXPECT_TRUE(capturer_.IsRunning());
-  EXPECT_EQ(0, video_frames_received());
-  // Install a processor that always drop frames.
-  capturer_.AddVideoProcessor(&dropping_processor_);
-  EXPECT_TRUE(capturer_.CaptureFrame());
-  EXPECT_EQ(0, video_frames_received());
 }
 #endif  // HAVE_WEBRTC_VIDEO
 

@@ -36,7 +36,7 @@
 
 namespace blink {
 
-class WebSerializedOrigin;
+class WebSecurityOrigin;
 class WebSocketHandleClient;
 class WebString;
 class WebURL;
@@ -57,7 +57,7 @@ public:
 
     virtual ~WebSocketHandle() { }
 
-    virtual void connect(const WebURL& /* url */, const WebVector<WebString>& protocols, const WebSerializedOrigin& /* origin */, WebSocketHandleClient*) = 0;
+    virtual void connect(const WebURL&, const WebVector<WebString>& protocols, const WebSecurityOrigin&, WebSocketHandleClient*) = 0;
     virtual void send(bool fin, MessageType, const char* data, size_t /* size */) = 0;
     virtual void flowControl(int64_t quota) = 0;
     virtual void close(unsigned short code, const WebString& reason) = 0;

@@ -112,6 +112,8 @@
  * [including the GNU Public Licence.]
  */
 
+#include <openssl/ssl.h>
+
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
@@ -127,6 +129,7 @@
 #include <openssl/rand.h>
 
 #include "internal.h"
+
 
 static int dtls1_get_hello_verify(SSL *s);
 
@@ -188,9 +191,8 @@ int dtls1_connect(SSL *s) {
       case SSL3_ST_CW_CLNT_HELLO_B:
         s->shutdown = 0;
 
-        /* every DTLS ClientHello resets Finished MAC */
-        if (!ssl3_init_finished_mac(s)) {
-          OPENSSL_PUT_ERROR(SSL, dtls1_connect, ERR_R_INTERNAL_ERROR);
+        if (!ssl3_init_handshake_buffer(s)) {
+          OPENSSL_PUT_ERROR(SSL, ERR_R_INTERNAL_ERROR);
           ret = -1;
           goto end;
         }
@@ -261,12 +263,22 @@ int dtls1_connect(SSL *s) {
           if (s->s3->tmp.certificate_status_expected) {
             s->state = SSL3_ST_CR_CERT_STATUS_A;
           } else {
-            s->state = SSL3_ST_CR_KEY_EXCH_A;
+            s->state = SSL3_ST_VERIFY_SERVER_CERT;
           }
         } else {
           skip = 1;
           s->state = SSL3_ST_CR_KEY_EXCH_A;
         }
+        s->init_num = 0;
+        break;
+
+      case SSL3_ST_VERIFY_SERVER_CERT:
+        ret = ssl3_verify_server_cert(s);
+        if (ret <= 0) {
+          goto end;
+        }
+
+        s->state = SSL3_ST_CR_KEY_EXCH_A;
         s->init_num = 0;
         break;
 
@@ -419,7 +431,7 @@ int dtls1_connect(SSL *s) {
         if (ret <= 0) {
           goto end;
         }
-        s->state = SSL3_ST_CR_KEY_EXCH_A;
+        s->state = SSL3_ST_VERIFY_SERVER_CERT;
         s->init_num = 0;
         break;
 
@@ -476,7 +488,7 @@ int dtls1_connect(SSL *s) {
         goto end;
 
       default:
-        OPENSSL_PUT_ERROR(SSL, dtls1_connect, SSL_R_UNKNOWN_STATE);
+        OPENSSL_PUT_ERROR(SSL, SSL_R_UNKNOWN_STATE);
         ret = -1;
         goto end;
     }
@@ -531,7 +543,7 @@ static int dtls1_get_hello_verify(SSL *s) {
       !CBS_get_u8_length_prefixed(&hello_verify_request, &cookie) ||
       CBS_len(&hello_verify_request) != 0) {
     al = SSL_AD_DECODE_ERROR;
-    OPENSSL_PUT_ERROR(SSL, dtls1_get_hello_verify, SSL_R_DECODE_ERROR);
+    OPENSSL_PUT_ERROR(SSL, SSL_R_DECODE_ERROR);
     goto f_err;
   }
 

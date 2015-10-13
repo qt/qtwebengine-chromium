@@ -76,7 +76,7 @@ class VideoProcessingModule : public Module {
 
      \return Pointer to a VPM object.
   */
-  static VideoProcessingModule* Create(int32_t id);
+  static VideoProcessingModule* Create();
 
   /**
      Destroys a VPM object.
@@ -213,6 +213,8 @@ class VideoProcessingModule : public Module {
   virtual int32_t SetTargetResolution(uint32_t width,
                                       uint32_t height,
                                       uint32_t frame_rate) = 0;
+
+  virtual void SetTargetFramerate(int frame_rate) {}
 
   /**
   Get decimated(target) frame rate

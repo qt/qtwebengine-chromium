@@ -40,7 +40,7 @@ namespace blink {
 class DistributedNodes final {
     DISALLOW_ALLOCATION();
 public:
-    DistributedNodes() { m_nodes.reserveInitialCapacity(32); }
+    DistributedNodes() { }
 
     PassRefPtrWillBeRawPtr<Node> first() const { return m_nodes.first(); }
     PassRefPtrWillBeRawPtr<Node> last() const { return m_nodes.last(); }
@@ -59,8 +59,6 @@ public:
     Node* previousTo(const Node*) const;
 
     void swap(DistributedNodes& other);
-
-    const WillBeHeapVector<RefPtrWillBeMember<Node>>& nodes() const { return m_nodes; }
 
     DECLARE_TRACE();
 

@@ -12,12 +12,12 @@
 
 namespace net {
 
-void NotifyKeyChainChanged(JNIEnv* env, jclass clazz) {
+void NotifyKeyChainChanged(JNIEnv* env, const JavaParamRef<jclass>& clazz) {
   CertDatabase::GetInstance()->OnAndroidKeyChainChanged();
 }
 
 void RecordCertVerifyCapabilitiesHistogram(JNIEnv* env,
-                                           jclass clazz,
+                                           const JavaParamRef<jclass>& clazz,
                                            jboolean found_system_trust_roots) {
   // Only record the histogram for 4.2 and up. Before 4.2, the platform doesn't
   // return the certificate chain anyway.
@@ -27,8 +27,14 @@ void RecordCertVerifyCapabilitiesHistogram(JNIEnv* env,
   }
 }
 
-jobject GetApplicationContext(JNIEnv* env, jclass clazz) {
-  return base::android::GetApplicationContext();
+ScopedJavaLocalRef<jobject> GetApplicationContext(
+    JNIEnv* env,
+    const JavaParamRef<jclass>& clazz) {
+  ScopedJavaLocalRef<jobject> r;
+  // Must use Reset to force creation of a new local ref, instead of trying to
+  // adopt the global-ref'ed jobject as a local ref as the constructor would.
+  r.Reset(env, base::android::GetApplicationContext());
+  return r;
 }
 
 bool RegisterX509Util(JNIEnv* env) {

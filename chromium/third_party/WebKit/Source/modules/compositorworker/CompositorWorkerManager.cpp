@@ -20,13 +20,13 @@ namespace {
 
 static CompositorWorkerManager* s_instance = nullptr;
 
-static Mutex& singletonMutex()
+Mutex& singletonMutex()
 {
     AtomicallyInitializedStaticReference(Mutex, mutex, new Mutex);
     return mutex;
 }
 
-static void destroyThread(WebThreadSupportingGC* thread)
+void destroyThread(WebThread* thread)
 {
     delete thread;
 }
@@ -69,7 +69,11 @@ WebThreadSupportingGC& CompositorWorkerManager::compositorWorkerThread()
     if (!m_thread) {
         ASSERT(isMainThread());
         ASSERT(!m_workerCount);
-        m_thread = WebThreadSupportingGC::create("CompositorWorker Thread");
+        // TODO(sadrul): Instead of creating a new thread, retrieve the thread from
+        // Platform using a more specialized function
+        // (e.g. Platform::compositorWorkerThread()).
+        m_platformThread = adoptPtr(Platform::current()->createThread("CompositorWorker Thread"));
+        m_thread = WebThreadSupportingGC::createForThread(m_platformThread.get());
     }
     return *m_thread.get();
 }
@@ -89,8 +93,8 @@ void CompositorWorkerManager::initializeBackingThread()
     m_isolate = V8PerIsolateData::initialize();
     V8Initializer::initializeWorker(m_isolate);
 
-    m_interruptor = adoptPtr(new V8IsolateInterruptor(m_isolate));
-    ThreadState::current()->addInterruptor(m_interruptor.get());
+    OwnPtr<V8IsolateInterruptor> interruptor = adoptPtr(new V8IsolateInterruptor(m_isolate));
+    ThreadState::current()->addInterruptor(interruptor.release());
     ThreadState::current()->registerTraceDOMWrappers(m_isolate, V8GCController::traceDOMWrappers);
 }
 
@@ -102,8 +106,8 @@ void CompositorWorkerManager::shutdownBackingThread()
     --m_workerCount;
     if (m_workerCount == 0) {
         m_thread->shutdown();
-        Platform::current()->mainThread()->postTask(FROM_HERE, threadSafeBind(destroyThread, AllowCrossThreadAccess(m_thread.leakPtr())));
         m_thread = nullptr;
+        Platform::current()->mainThread()->taskRunner()->postTask(FROM_HERE, threadSafeBind(destroyThread, AllowCrossThreadAccess(m_platformThread.leakPtr())));
     }
 }
 
@@ -121,10 +125,8 @@ void CompositorWorkerManager::willDestroyIsolate()
 {
     MutexLocker lock(m_mutex);
     ASSERT(m_thread->isCurrentThread());
-    if (m_workerCount == 1) {
+    if (m_workerCount == 1)
         V8PerIsolateData::willBeDestroyed(m_isolate);
-        ThreadState::current()->removeInterruptor(m_interruptor.get());
-    }
 }
 
 void CompositorWorkerManager::destroyIsolate()

@@ -98,9 +98,9 @@ void SVGFEImageElement::buildPendingResource()
     AtomicString id;
     Element* target = SVGURIReference::targetElementFromIRIString(hrefString(), treeScope(), &id);
     if (!target) {
-        if (id.isEmpty())
+        if (id.isEmpty()) {
             fetchImageResource();
-        else {
+        } else {
             document().accessSVGExtensions().addPendingResource(id, this);
             ASSERT(hasPendingResources());
         }
@@ -159,8 +159,13 @@ void SVGFEImageElement::notifyFinished(Resource*)
 
 PassRefPtrWillBeRawPtr<FilterEffect> SVGFEImageElement::build(SVGFilterBuilder*, Filter* filter)
 {
-    if (m_cachedImage)
-        return FEImage::createWithImage(filter, m_cachedImage->imageForLayoutObject(layoutObject()), m_preserveAspectRatio->currentValue());
+    if (m_cachedImage) {
+        // Don't use the broken image icon on image loading errors.
+        RefPtr<Image> image = m_cachedImage->errorOccurred() ?
+            nullptr : m_cachedImage->imageForLayoutObject(layoutObject());
+        return FEImage::createWithImage(filter, image, m_preserveAspectRatio->currentValue());
+    }
+
     return FEImage::createWithIRIReference(filter, treeScope(), hrefString(), m_preserveAspectRatio->currentValue());
 }
 

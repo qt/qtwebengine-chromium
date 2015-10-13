@@ -48,7 +48,6 @@ class ConnectionIdCleanUpAlarm : public QuicAlarm::Delegate {
   DISALLOW_COPY_AND_ASSIGN(ConnectionIdCleanUpAlarm);
 };
 
-
 // This class stores pending public reset packets to be sent to clients.
 // server_address - server address on which a packet what was received for
 //                  a connection_id in time wait state.
@@ -157,7 +156,7 @@ void QuicTimeWaitListManager::ProcessPacket(
     const IPEndPoint& server_address,
     const IPEndPoint& client_address,
     QuicConnectionId connection_id,
-    QuicPacketSequenceNumber sequence_number,
+    QuicPacketNumber packet_number,
     const QuicEncryptedPacket& /*packet*/) {
   DCHECK(IsConnectionIdInTimeWait(connection_id));
   DVLOG(1) << "Processing " << connection_id << " in time wait state.";
@@ -177,10 +176,8 @@ void QuicTimeWaitListManager::ProcessPacket(
     // Takes ownership of the packet.
     SendOrQueuePacket(queued_packet);
   } else if (!connection_data->connection_rejected_statelessly) {
-    SendPublicReset(server_address,
-                    client_address,
-                    connection_id,
-                    sequence_number);
+    SendPublicReset(server_address, client_address, connection_id,
+                    packet_number);
   } else {
     DVLOG(3) << "Time wait list not sending response for connection "
              << connection_id << " due to previous stateless reject.";
@@ -198,12 +195,12 @@ void QuicTimeWaitListManager::SendPublicReset(
     const IPEndPoint& server_address,
     const IPEndPoint& client_address,
     QuicConnectionId connection_id,
-    QuicPacketSequenceNumber rejected_sequence_number) {
+    QuicPacketNumber rejected_packet_number) {
   QuicPublicResetPacket packet;
   packet.public_header.connection_id = connection_id;
   packet.public_header.reset_flag = true;
   packet.public_header.version_flag = false;
-  packet.rejected_sequence_number = rejected_sequence_number;
+  packet.rejected_packet_number = rejected_packet_number;
   // TODO(satyamshekhar): generate a valid nonce for this connection_id.
   packet.nonce_proof = 1010101;
   packet.client_address = client_address;
@@ -262,8 +259,8 @@ void QuicTimeWaitListManager::SetConnectionIdCleanUpAlarm() {
         connection_id_map_.begin()->second.time_added;
     QuicTime now = clock_->ApproximateNow();
     if (now.Subtract(oldest_connection_id) < time_wait_period_) {
-      next_alarm_interval = oldest_connection_id.Add(time_wait_period_)
-                                                .Subtract(now);
+      next_alarm_interval =
+          oldest_connection_id.Add(time_wait_period_).Subtract(now);
     } else {
       LOG(ERROR) << "ConnectionId lingered for longer than time_wait_period_";
     }

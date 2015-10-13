@@ -9,6 +9,7 @@
 
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/metrics/sparse_histogram.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/string_split.h"
@@ -68,8 +69,8 @@ std::string GetVersionFromString(const std::string& version_string) {
       sub_string = version_string.substr(begin, end - begin);
     else
       sub_string = version_string.substr(begin);
-    std::vector<std::string> pieces;
-    base::SplitString(sub_string, '.', &pieces);
+    std::vector<std::string> pieces = base::SplitString(
+        sub_string, ".", base::TRIM_WHITESPACE, base::SPLIT_WANT_ALL);
     if (pieces.size() >= 2)
       return pieces[0] + "." + pieces[1];
   }
@@ -98,12 +99,13 @@ CollectInfoResult CollectGraphicsInfoGL(GPUInfo* gpu_info) {
 
   gpu_info->gl_renderer = GetGLString(GL_RENDERER);
   gpu_info->gl_vendor = GetGLString(GL_VENDOR);
-  gpu_info->gl_extensions = GetGLString(GL_EXTENSIONS);
+  gpu_info->gl_extensions = gfx::GetGLExtensionsFromCurrentContext();
   gpu_info->gl_version = GetGLString(GL_VERSION);
   std::string glsl_version_string = GetGLString(GL_SHADING_LANGUAGE_VERSION);
   GLint max_samples = 0;
   glGetIntegerv(GL_MAX_SAMPLES, &max_samples);
   gpu_info->max_msaa_samples = base::IntToString(max_samples);
+  UMA_HISTOGRAM_SPARSE_SLOWLY("GPU.MaxMSAASampleCount", max_samples);
 
   gfx::GLWindowSystemBindingInfo window_system_binding_info;
   if (GetGLWindowSystemBindingInfo(&window_system_binding_info)) {
@@ -160,12 +162,15 @@ void MergeGPUInfoGL(GPUInfo* basic_gpu_info,
   basic_gpu_info->can_lose_context = context_gpu_info.can_lose_context;
   basic_gpu_info->sandboxed = context_gpu_info.sandboxed;
   basic_gpu_info->direct_rendering = context_gpu_info.direct_rendering;
+  basic_gpu_info->in_process_gpu = context_gpu_info.in_process_gpu;
   basic_gpu_info->context_info_state = context_gpu_info.context_info_state;
   basic_gpu_info->initialization_time = context_gpu_info.initialization_time;
   basic_gpu_info->video_decode_accelerator_supported_profiles =
       context_gpu_info.video_decode_accelerator_supported_profiles;
   basic_gpu_info->video_encode_accelerator_supported_profiles =
       context_gpu_info.video_encode_accelerator_supported_profiles;
+  basic_gpu_info->jpeg_decode_accelerator_supported =
+      context_gpu_info.jpeg_decode_accelerator_supported;
 }
 
 }  // namespace gpu

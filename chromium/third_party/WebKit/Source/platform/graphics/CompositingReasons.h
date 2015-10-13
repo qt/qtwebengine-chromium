@@ -29,7 +29,7 @@ const uint64_t CompositingReasonOverflowScrollingParent                  = UINT6
 const uint64_t CompositingReasonOutOfFlowClipping                        = UINT64_C(1) << 11;
 const uint64_t CompositingReasonVideoOverlay                             = UINT64_C(1) << 12;
 const uint64_t CompositingReasonWillChangeCompositingHint                = UINT64_C(1) << 13;
-const uint64_t CompositingReasonScrollBlocksOn                           = UINT64_C(1) << 14;
+const uint64_t CompositingReasonBackdropFilter                           = UINT64_C(1) << 14;
 
 // Overlap reasons that require knowing what's behind you in paint-order before knowing the answer
 const uint64_t CompositingReasonAssumedOverlap                           = UINT64_C(1) << 15;
@@ -47,7 +47,7 @@ const uint64_t CompositingReasonSquashedLayerClipsCompositingDescendants = UINT6
 const uint64_t CompositingReasonSquashingLayoutPartIsDisallowed          = UINT64_C(1) << 27;
 const uint64_t CompositingReasonSquashingReflectionIsDisallowed          = UINT64_C(1) << 28;
 const uint64_t CompositingReasonSquashingBlendingIsDisallowed            = UINT64_C(1) << 29;
-const uint64_t CompositingReasonSquashingPositionFixedIsDisallowed       = UINT64_C(1) << 30;
+const uint64_t CompositingReasonSquashingNearestFixedPositionMismatch    = UINT64_C(1) << 30;
 const uint64_t CompositingReasonScrollChildWithCompositedDescendants     = UINT64_C(1) << 31;
 
 // Subtree reasons that require knowing what the status of your subtree is before knowing the answer
@@ -107,8 +107,8 @@ const uint64_t CompositingReasonComboAllDirectReasons =
     | CompositingReasonOutOfFlowClipping
     | CompositingReasonVideoOverlay
     | CompositingReasonWillChangeCompositingHint
-    | CompositingReasonScrollBlocksOn
-    | CompositingReasonCompositorProxy;
+    | CompositingReasonCompositorProxy
+    | CompositingReasonBackdropFilter;
 
 const uint64_t CompositingReasonComboAllDirectStyleDeterminedReasons =
     CompositingReason3DTransform
@@ -116,8 +116,8 @@ const uint64_t CompositingReasonComboAllDirectStyleDeterminedReasons =
     | CompositingReasonActiveAnimation
     | CompositingReasonTransitionProperty
     | CompositingReasonWillChangeCompositingHint
-    | CompositingReasonScrollBlocksOn
-    | CompositingReasonCompositorProxy;
+    | CompositingReasonCompositorProxy
+    | CompositingReasonBackdropFilter;
 
 const uint64_t CompositingReasonComboCompositedDescendants =
     CompositingReasonTransformWithCompositedDescendants
@@ -163,8 +163,9 @@ const uint64_t CompositingReasonComboReasonsThatRequireOwnBacking =
     | CompositingReasonBlendingWithCompositedDescendants
     | CompositingReasonIsolateCompositedDescendants
     | CompositingReasonPreserve3DWith3DDescendants // preserve-3d has to create backing store to ensure that 3d-transformed elements intersect.
-    | CompositingReasonSquashingPositionFixedIsDisallowed
-    | CompositingReasonScrollChildWithCompositedDescendants;
+    | CompositingReasonSquashingNearestFixedPositionMismatch
+    | CompositingReasonScrollChildWithCompositedDescendants
+    | CompositingReasonBackdropFilter;
 
 const uint64_t CompositingReasonComboSquashableReasons =
     CompositingReasonOverlap

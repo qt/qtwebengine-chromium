@@ -16,16 +16,31 @@ namespace device {
 
 class MockUsbDevice : public UsbDevice {
  public:
-  MockUsbDevice(uint16 vendor_id, uint16 product_id);
-  MockUsbDevice(uint16 vendor_id,
-                uint16 product_id,
+  MockUsbDevice(uint16_t vendor_id, uint16_t product_id);
+  MockUsbDevice(uint16_t vendor_id,
+                uint16_t product_id,
                 const std::string& manufacturer_string,
                 const std::string& product_string,
                 const std::string& serial_number);
+  MockUsbDevice(uint16_t vendor_id,
+                uint16_t product_id,
+                const std::string& manufacturer_string,
+                const std::string& product_string,
+                const std::string& serial_number,
+                const GURL& webusb_landing_page);
+  MockUsbDevice(uint16_t vendor_id,
+                uint16_t product_id,
+                const UsbConfigDescriptor& configuration);
+  MockUsbDevice(uint16_t vendor_id,
+                uint16_t product_id,
+                const std::string& manufacturer_string,
+                const std::string& product_string,
+                const std::string& serial_number,
+                const std::vector<UsbConfigDescriptor>& configurations);
 
   MOCK_METHOD1(Open, void(const OpenCallback&));
   MOCK_METHOD1(Close, bool(scoped_refptr<UsbDeviceHandle>));
-  MOCK_METHOD0(GetConfiguration, const device::UsbConfigDescriptor*());
+  MOCK_METHOD0(GetActiveConfiguration, const device::UsbConfigDescriptor*());
 
  private:
   ~MockUsbDevice() override;

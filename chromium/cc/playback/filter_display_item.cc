@@ -43,9 +43,14 @@ void FilterDisplayItem::Raster(SkCanvas* canvas,
   skia::RefPtr<SkImageFilter> image_filter =
       RenderSurfaceFilters::BuildImageFilter(
           filters_, gfx::SizeF(bounds_.width(), bounds_.height()));
+#ifdef SK_SAVE_LAYER_BOUNDS_ARE_FILTERED
+  // TODO(senorblanco): remove this once callsites updated (crbug.com/525748)
   SkRect boundaries;
   image_filter->computeFastBounds(
       SkRect::MakeWH(bounds_.width(), bounds_.height()), &boundaries);
+#else
+  SkRect boundaries = SkRect::MakeWH(bounds_.width(), bounds_.height());
+#endif
 
   SkPaint paint;
   paint.setXfermodeMode(SkXfermode::kSrcOver_Mode);
@@ -53,6 +58,12 @@ void FilterDisplayItem::Raster(SkCanvas* canvas,
   canvas->saveLayer(&boundaries, &paint);
 
   canvas->translate(-bounds_.x(), -bounds_.y());
+}
+
+void FilterDisplayItem::ProcessForBounds(
+    DisplayItemListBoundsCalculator* calculator) const {
+  calculator->AddStartingDisplayItem();
+  calculator->Save();
 }
 
 void FilterDisplayItem::AsValueInto(
@@ -74,6 +85,12 @@ void EndFilterDisplayItem::Raster(SkCanvas* canvas,
                                   SkPicture::AbortCallback* callback) const {
   canvas->restore();
   canvas->restore();
+}
+
+void EndFilterDisplayItem::ProcessForBounds(
+    DisplayItemListBoundsCalculator* calculator) const {
+  calculator->Restore();
+  calculator->AddEndingDisplayItem();
 }
 
 void EndFilterDisplayItem::AsValueInto(

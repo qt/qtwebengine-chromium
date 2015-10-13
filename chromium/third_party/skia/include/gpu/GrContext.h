@@ -15,10 +15,11 @@
 #include "GrRenderTarget.h"
 #include "GrTextureProvider.h"
 #include "SkMatrix.h"
+#include "../private/SkMutex.h"
 #include "SkPathEffect.h"
 #include "SkTypes.h"
 
-class GrAARectRenderer;
+struct GrBatchAtlasConfig;
 class GrBatchFontCache;
 class GrCaps;
 struct GrContextOptions;
@@ -26,7 +27,6 @@ class GrDrawContext;
 class GrDrawTarget;
 class GrFragmentProcessor;
 class GrGpu;
-class GrGpuTraceMarker;
 class GrIndexBuffer;
 class GrLayerCache;
 class GrOvalRenderer;
@@ -43,6 +43,7 @@ class GrTextureParams;
 class GrVertexBuffer;
 class GrStrokeInfo;
 class GrSoftwarePathRenderer;
+class SkTraceMemoryDump;
 
 class SK_API GrContext : public SkRefCnt {
 public:
@@ -228,8 +229,8 @@ public:
     };
 
     /**
-     * Reads a rectangle of pixels from a render target.
-     * @param target        the render target to read from.
+     * Reads a rectangle of pixels from a surface.
+     * @param surface       the surface to read from.
      * @param left          left edge of the rectangle to read (inclusive)
      * @param top           top edge of the rectangle to read (inclusive)
      * @param width         width of rectangle to read in pixels.
@@ -241,14 +242,13 @@ public:
      * @param pixelOpsFlags see PixelOpsFlags enum above.
      *
      * @return true if the read succeeded, false if not. The read can fail because of an unsupported
-     *         pixel config or because no render target is currently set and NULL was passed for
-     *         target.
+     *         pixel configs
      */
-    bool readRenderTargetPixels(GrRenderTarget* target,
-                                int left, int top, int width, int height,
-                                GrPixelConfig config, void* buffer,
-                                size_t rowBytes = 0,
-                                uint32_t pixelOpsFlags = 0);
+    bool readSurfacePixels(GrSurface* surface,
+                           int left, int top, int width, int height,
+                           GrPixelConfig config, void* buffer,
+                           size_t rowBytes = 0,
+                           uint32_t pixelOpsFlags = 0);
 
     /**
      * Writes a rectangle of pixels to a surface.
@@ -333,9 +333,6 @@ public:
     // Called by tests that draw directly to the context via GrDrawTarget
     void getTestTarget(GrTestTarget*);
 
-    void addGpuTraceMarker(const GrGpuTraceMarker* marker);
-    void removeGpuTraceMarker(const GrGpuTraceMarker* marker);
-
     GrPathRenderer* getPathRenderer(
                     const GrDrawTarget* target,
                     const GrPipelineBuilder*,
@@ -353,6 +350,17 @@ public:
     /** Prints GPU stats to the string if GR_GPU_STATS == 1. */
     void dumpGpuStats(SkString*) const;
     void printGpuStats() const;
+
+    /** Specify the TextBlob cache limit. If the current cache exceeds this limit it will purge.
+        this is for testing only */
+    void setTextBlobCacheLimit_ForTesting(size_t bytes);
+
+    /** Specify the sizes of the GrAtlasTextContext atlases.  The configs pointer below should be
+        to an array of 3 entries */
+    void setTextContextAtlasSizes_ForTesting(const GrBatchAtlasConfig* configs);
+
+    /** Enumerates all cached GPU resources and dumps their memory to traceMemoryDump. */
+    void dumpMemoryStatistics(SkTraceMemoryDump* traceMemoryDump) const;
 
 private:
     GrGpu*                          fGpu;
@@ -377,6 +385,18 @@ private:
     bool                            fDidTestPMConversions;
     int                             fPMToUPMConversion;
     int                             fUPMToPMConversion;
+    // The sw backend may call GrContext::readSurfacePixels on multiple threads
+    // We may transfer the responsibilty for using a mutex to the sw backend
+    // when there are fewer code paths that lead to a readSurfacePixels call
+    // from the sw backend. readSurfacePixels is reentrant in one case - when performing
+    // the PM conversions test. To handle this we do the PM conversions test outside
+    // of fReadPixelsMutex and use a separate mutex to guard it. When it re-enters
+    // readSurfacePixels it will grab fReadPixelsMutex and release it before the outer
+    // readSurfacePixels proceeds to grab it.
+    // TODO: Stop pretending to make GrContext thread-safe for sw rasterization and provide
+    // a mechanism to make a SkPicture safe for multithreaded sw rasterization.
+    SkMutex                         fReadPixelsMutex;
+    SkMutex                         fTestPMConversionsMutex;
 
     struct CleanUpData {
         PFCleanUpFunc fFunc;
@@ -443,9 +463,16 @@ private:
      * return NULL.
      */
     const GrFragmentProcessor* createPMToUPMEffect(GrProcessorDataManager*, GrTexture*,
-                                                   bool swapRAndB, const SkMatrix&);
+                                                   bool swapRAndB, const SkMatrix&) const;
     const GrFragmentProcessor* createUPMToPMEffect(GrProcessorDataManager*, GrTexture*,
-                                                   bool swapRAndB, const SkMatrix&);
+                                                   bool swapRAndB, const SkMatrix&) const;
+    /** Called before either of the above two functions to determine the appropriate fragment
+        processors for conversions. This must be called by readSurfacePixels befor a mutex is taken,
+        since testingvPM conversions itself will call readSurfacePixels */
+    void testPMConversionsIfNecessary(uint32_t flags);
+    /** Returns true if we've already determined that createPMtoUPMEffect and createUPMToPMEffect
+        will fail. In such cases fall back to SW conversion. */
+    bool didFailPMUPMConversionTest() const;
 
     /**
      *  This callback allows the resource cache to callback into the GrContext

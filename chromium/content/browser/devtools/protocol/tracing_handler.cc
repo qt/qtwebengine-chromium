@@ -7,17 +7,21 @@
 #include <cmath>
 
 #include "base/bind.h"
+#include "base/format_macros.h"
 #include "base/strings/string_split.h"
 #include "base/strings/stringprintf.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
+#include "base/trace_event/memory_dump_manager.h"
 #include "base/trace_event/trace_event_impl.h"
+#include "components/tracing/trace_config_file.h"
+#include "content/browser/devtools/devtools_io_context.h"
 
 namespace content {
 namespace devtools {
 namespace tracing {
 
-typedef DevToolsProtocolClient::Response Response;
+using Response = DevToolsProtocolClient::Response;
 
 namespace {
 
@@ -43,13 +47,50 @@ class DevToolsTraceSinkProxy : public TracingController::TraceDataSink {
   base::WeakPtr<TracingHandler> tracing_handler_;
 };
 
+class DevToolsStreamTraceSink : public TracingController::TraceDataSink {
+ public:
+  explicit DevToolsStreamTraceSink(
+      base::WeakPtr<TracingHandler> handler,
+      const scoped_refptr<DevToolsIOContext::Stream>& stream)
+      : stream_(stream),
+        tracing_handler_(handler),
+        first_chunk_(true) {}
+
+  void AddTraceChunk(const std::string& chunk) override {
+    // FIXME: change interface to pass chunks as refcounted strings.
+    scoped_refptr<base::RefCountedString> ref_counted_chunk
+        = new base::RefCountedString();
+    std::string prefix = first_chunk_ ? "[" : ",";
+    ref_counted_chunk->data() = prefix + chunk;
+    first_chunk_ = false;
+    stream_->Append(ref_counted_chunk);
+  }
+
+  void Close() override {
+    if (TracingHandler* h = tracing_handler_.get()) {
+      std::string suffix = "]";
+      stream_->Append(base::RefCountedString::TakeString(&suffix));
+      h->OnTraceToStreamComplete(stream_->handle());
+    }
+  }
+
+ private:
+  ~DevToolsStreamTraceSink() override {}
+
+  scoped_refptr<DevToolsIOContext::Stream> stream_;
+  base::WeakPtr<TracingHandler> tracing_handler_;
+  bool first_chunk_;
+};
+
 }  // namespace
 
-TracingHandler::TracingHandler(TracingHandler::Target target)
+TracingHandler::TracingHandler(TracingHandler::Target target,
+                               DevToolsIOContext* io_context)
     : target_(target),
+      io_context_(io_context),
       did_initiate_recording_(false),
-      weak_factory_(this) {
-}
+      return_as_stream_(false),
+      weak_factory_(this) {}
 
 TracingHandler::~TracingHandler() {
 }
@@ -59,8 +100,8 @@ void TracingHandler::SetClient(scoped_ptr<Client> client) {
 }
 
 void TracingHandler::Detached() {
-  if (IsRecording())
-    DisableRecording(true);
+  if (did_initiate_recording_)
+    DisableRecording(scoped_refptr<TracingController::TraceDataSink>());
 }
 
 void TracingHandler::OnTraceDataCollected(const std::string& trace_fragment) {
@@ -79,15 +120,22 @@ void TracingHandler::OnTraceComplete() {
   client_->TracingComplete(TracingCompleteParams::Create());
 }
 
+void TracingHandler::OnTraceToStreamComplete(const std::string& stream_handle) {
+  client_->TracingComplete(
+      TracingCompleteParams::Create()->set_stream(stream_handle));
+}
+
 Response TracingHandler::Start(DevToolsCommandId command_id,
                                const std::string* categories,
                                const std::string* options,
-                               const double* buffer_usage_reporting_interval) {
+                               const double* buffer_usage_reporting_interval,
+                               const std::string* transfer_mode) {
   if (IsRecording())
     return Response::InternalError("Tracing is already started");
 
   did_initiate_recording_ = true;
-
+  return_as_stream_ =
+      transfer_mode && *transfer_mode == start::kTransferModeReturnAsStream;
   base::trace_event::TraceConfig trace_config(
       categories ? *categories : std::string(),
       options ? *options : std::string());
@@ -112,10 +160,20 @@ Response TracingHandler::Start(DevToolsCommandId command_id,
 }
 
 Response TracingHandler::End(DevToolsCommandId command_id) {
-  if (!IsRecording())
+  // Startup tracing triggered by --trace-config-file is a special case, where
+  // tracing is started automatically upon browser startup and can be stopped
+  // via DevTools.
+  if (!did_initiate_recording_ && !IsStartupTracingActive())
     return Response::InternalError("Tracing is not started");
 
-  DisableRecording(false);
+  scoped_refptr<TracingController::TraceDataSink> proxy;
+  if (return_as_stream_) {
+    proxy = new DevToolsStreamTraceSink(
+        weak_factory_.GetWeakPtr(), io_context_->CreateTempFileBackedStream());
+  } else {
+    proxy = new DevToolsTraceSinkProxy(weak_factory_.GetWeakPtr());
+  }
+  DisableRecording(proxy);
   // If inspected target is a render process Tracing.end will be handled by
   // tracing agent in the renderer.
   return target_ == Renderer ? Response::FallThrough() : Response::OK();
@@ -153,6 +211,28 @@ void TracingHandler::OnCategoriesReceived(
       GetCategoriesResponse::Create()->set_categories(categories));
 }
 
+Response TracingHandler::RequestMemoryDump(DevToolsCommandId command_id) {
+  if (!IsRecording())
+    return Response::InternalError("Tracing is not started");
+
+  base::trace_event::MemoryDumpManager::GetInstance()->RequestGlobalDump(
+      base::trace_event::MemoryDumpType::EXPLICITLY_TRIGGERED,
+      base::trace_event::MemoryDumpLevelOfDetail::DETAILED,
+      base::Bind(&TracingHandler::OnMemoryDumpFinished,
+                 weak_factory_.GetWeakPtr(), command_id));
+  return Response::OK();
+}
+
+void TracingHandler::OnMemoryDumpFinished(DevToolsCommandId command_id,
+                                          uint64 dump_guid,
+                                          bool success) {
+  client_->SendRequestMemoryDumpResponse(
+      command_id,
+      RequestMemoryDumpResponse::Create()
+          ->set_dump_guid(base::StringPrintf("0x%" PRIx64, dump_guid))
+          ->set_success(success));
+}
+
 void TracingHandler::SetupTimer(double usage_reporting_interval) {
   if (usage_reporting_interval == 0) return;
 
@@ -171,15 +251,20 @@ void TracingHandler::SetupTimer(double usage_reporting_interval) {
   buffer_usage_poll_timer_->Reset();
 }
 
-void TracingHandler::DisableRecording(bool abort) {
+void TracingHandler::DisableRecording(
+    const scoped_refptr<TracingController::TraceDataSink>& trace_data_sink) {
   buffer_usage_poll_timer_.reset();
-  TracingController::GetInstance()->DisableRecording(
-      abort ? nullptr : new DevToolsTraceSinkProxy(weak_factory_.GetWeakPtr()));
+  TracingController::GetInstance()->DisableRecording(trace_data_sink);
   did_initiate_recording_ = false;
 }
 
 bool TracingHandler::IsRecording() const {
   return TracingController::GetInstance()->IsRecording();
+}
+
+bool TracingHandler::IsStartupTracingActive() {
+  return ::tracing::TraceConfigFile::GetInstance()->IsEnabled() &&
+      TracingController::GetInstance()->IsRecording();
 }
 
 }  // namespace tracing

@@ -55,7 +55,6 @@ using cricket::ICE_CANDIDATE_COMPONENT_RTP;
 using cricket::kFecSsrcGroupSemantics;
 using cricket::LOCAL_PORT_TYPE;
 using cricket::NS_JINGLE_DRAFT_SCTP;
-using cricket::NS_JINGLE_ICE_UDP;
 using cricket::NS_JINGLE_RTP;
 using cricket::RtpHeaderExtension;
 using cricket::RELAY_PORT_TYPE;
@@ -580,13 +579,11 @@ class WebRtcSdpTest : public testing::Test {
     // TransportInfo
     EXPECT_TRUE(desc_.AddTransportInfo(
         TransportInfo(kAudioContentName,
-                      TransportDescription(NS_JINGLE_ICE_UDP,
-                                           kCandidateUfragVoice,
+                      TransportDescription(kCandidateUfragVoice,
                                            kCandidatePwdVoice))));
     EXPECT_TRUE(desc_.AddTransportInfo(
         TransportInfo(kVideoContentName,
-                      TransportDescription(NS_JINGLE_ICE_UDP,
-                                           kCandidateUfragVideo,
+                      TransportDescription(kCandidateUfragVideo,
                                            kCandidatePwdVideo))));
 
     // v4 host
@@ -778,9 +775,6 @@ class WebRtcSdpTest : public testing::Test {
       EXPECT_EQ(ext1.uri, ext2.uri);
       EXPECT_EQ(ext1.id, ext2.id);
     }
-
-    // buffered mode latency
-    EXPECT_EQ(cd1->buffered_mode_latency(), cd2->buffered_mode_latency());
   }
 
 
@@ -866,8 +860,6 @@ class WebRtcSdpTest : public testing::Test {
       const cricket::TransportInfo transport1 = transports1.at(i);
       const cricket::TransportInfo transport2 = transports2.at(i);
       EXPECT_EQ(transport1.content_name, transport2.content_name);
-      EXPECT_EQ(transport1.description.transport_type,
-                transport2.description.transport_type);
       EXPECT_EQ(transport1.description.ice_ufrag,
                 transport2.description.ice_ufrag);
       EXPECT_EQ(transport1.description.ice_pwd,
@@ -948,8 +940,7 @@ class WebRtcSdpTest : public testing::Test {
       ASSERT(false);
     }
     TransportInfo transport_info(
-        content_name, TransportDescription(NS_JINGLE_ICE_UDP,
-                                           ufrag, pwd));
+        content_name, TransportDescription(ufrag, pwd));
     SessionDescription* desc =
         const_cast<SessionDescription*>(jdesc->description());
     desc->RemoveTransportInfoByName(content_name);
@@ -986,8 +977,7 @@ class WebRtcSdpTest : public testing::Test {
                                           sizeof(kIdentityDigest));
     EXPECT_TRUE(desc_.AddTransportInfo(
         TransportInfo(kAudioContentName,
-                      TransportDescription(NS_JINGLE_ICE_UDP,
-                                           std::vector<std::string>(),
+                      TransportDescription(std::vector<std::string>(),
                                            kCandidateUfragVoice,
                                            kCandidatePwdVoice,
                                            cricket::ICEMODE_FULL,
@@ -995,8 +985,7 @@ class WebRtcSdpTest : public testing::Test {
                                            &fingerprint, Candidates()))));
     EXPECT_TRUE(desc_.AddTransportInfo(
         TransportInfo(kVideoContentName,
-                      TransportDescription(NS_JINGLE_ICE_UDP,
-                                           std::vector<std::string>(),
+                      TransportDescription(std::vector<std::string>(),
                                            kCandidateUfragVideo,
                                            kCandidatePwdVideo,
                                            cricket::ICEMODE_FULL,
@@ -1076,8 +1065,7 @@ class WebRtcSdpTest : public testing::Test {
     desc_.AddContent(kDataContentName, NS_JINGLE_DRAFT_SCTP, data.release());
     EXPECT_TRUE(desc_.AddTransportInfo(
            TransportInfo(kDataContentName,
-                         TransportDescription(NS_JINGLE_ICE_UDP,
-                                              kCandidateUfragData,
+                         TransportDescription(kCandidateUfragData,
                                               kCandidatePwdData))));
   }
 
@@ -1100,8 +1088,7 @@ class WebRtcSdpTest : public testing::Test {
     desc_.AddContent(kDataContentName, NS_JINGLE_RTP, data.release());
     EXPECT_TRUE(desc_.AddTransportInfo(
            TransportInfo(kDataContentName,
-                         TransportDescription(NS_JINGLE_ICE_UDP,
-                                              kCandidateUfragData,
+                         TransportDescription(kCandidateUfragData,
                                               kCandidatePwdData))));
   }
 
@@ -1721,22 +1708,6 @@ TEST_F(WebRtcSdpTest, SerializeSessionDescriptionWithExtmap) {
   EXPECT_EQ(sdp_with_extmap, message);
 }
 
-TEST_F(WebRtcSdpTest, SerializeSessionDescriptionWithBufferLatency) {
-  VideoContentDescription* vcd = static_cast<VideoContentDescription*>(
-      GetFirstVideoContent(&desc_)->description);
-  vcd->set_buffered_mode_latency(128);
-
-  ASSERT_TRUE(jdesc_.Initialize(desc_.Copy(),
-                                jdesc_.session_id(),
-                                jdesc_.session_version()));
-  std::string message = webrtc::SdpSerialize(jdesc_);
-  std::string sdp_with_buffer_latency = kSdpFullString;
-  InjectAfter("a=rtpmap:120 VP8/90000\r\n",
-              "a=x-google-buffer-latency:128\r\n",
-              &sdp_with_buffer_latency);
-  EXPECT_EQ(sdp_with_buffer_latency, message);
-}
-
 TEST_F(WebRtcSdpTest, SerializeCandidates) {
   std::string message = webrtc::SdpSerializeCandidate(*jcandidate_);
   EXPECT_EQ(std::string(kRawCandidate), message);
@@ -1960,24 +1931,6 @@ TEST_F(WebRtcSdpTest, DeserializeSessionDescriptionWithUfragPwd) {
       "session+level+iceufrag", "session+level+icepwd"));
   EXPECT_TRUE(SdpDeserialize(sdp_with_ufrag_pwd, &jdesc_with_ufrag_pwd));
   EXPECT_TRUE(CompareSessionDescription(jdesc_, jdesc_with_ufrag_pwd));
-}
-
-TEST_F(WebRtcSdpTest, DeserializeSessionDescriptionWithBufferLatency) {
-  JsepSessionDescription jdesc_with_buffer_latency(kDummyString);
-  std::string sdp_with_buffer_latency = kSdpFullString;
-  InjectAfter("a=rtpmap:120 VP8/90000\r\n",
-              "a=x-google-buffer-latency:128\r\n",
-              &sdp_with_buffer_latency);
-
-  EXPECT_TRUE(
-      SdpDeserialize(sdp_with_buffer_latency, &jdesc_with_buffer_latency));
-  VideoContentDescription* vcd = static_cast<VideoContentDescription*>(
-      GetFirstVideoContent(&desc_)->description);
-  vcd->set_buffered_mode_latency(128);
-  ASSERT_TRUE(jdesc_.Initialize(desc_.Copy(),
-                                jdesc_.session_id(),
-                                jdesc_.session_version()));
-  EXPECT_TRUE(CompareSessionDescription(jdesc_, jdesc_with_buffer_latency));
 }
 
 TEST_F(WebRtcSdpTest, DeserializeSessionDescriptionWithRecvOnlyContent) {
@@ -2438,10 +2391,6 @@ TEST_F(WebRtcSdpTest, DeserializeSdpWithInvalidAttributeValue) {
   ExpectParseFailureWithNewLines("a=mid:video_content_name\r\n",
                                  "a=extmap:badvalue http://example.com\r\n",
                                  "a=extmap:badvalue http://example.com");
-  // x-google-buffer-latency
-  ExpectParseFailureWithNewLines("a=mid:video_content_name\r\n",
-                                 "a=x-google-buffer-latency:badvalue\r\n",
-                                 "a=x-google-buffer-latency:badvalue");
 }
 
 TEST_F(WebRtcSdpTest, DeserializeSdpWithReorderedPltypes) {

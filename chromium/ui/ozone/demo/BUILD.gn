@@ -24,12 +24,12 @@ executable("ozone_demo") {
 
   deps = [
     "//base",
+    "//build/config/sanitizers:deps",
     "//skia",
     "//ui/events/ozone:events_ozone_layout",
     "//ui/gfx/geometry",
     "//ui/gl",
     "//ui/ozone",
-    "//ui/ozone/gpu",
     "//ui/ozone:ozone_base",
   ]
 }

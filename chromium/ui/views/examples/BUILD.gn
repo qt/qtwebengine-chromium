@@ -56,6 +56,8 @@ component("views_examples_lib") {
     "throbber_example.h",
     "tree_view_example.cc",
     "tree_view_example.h",
+    "vector_example.cc",
+    "vector_example.h",
     "views_examples_export.h",
     "widget_example.cc",
     "widget_example.h",
@@ -64,7 +66,10 @@ component("views_examples_lib") {
   # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
   configs += [ "//build/config/compiler:no_size_t_to_int_warning" ]
 
-  defines = [ "VIEWS_EXAMPLES_IMPLEMENTATION" ]
+  defines = [
+    "GFX_VECTOR_ICONS_UNSAFE",
+    "VIEWS_EXAMPLES_IMPLEMENTATION",
+  ]
 
   deps = [
     "//base",
@@ -98,6 +103,7 @@ executable("views_examples_exe") {
   deps = [
     ":views_examples_lib",
     "//base",
+    "//build/config/sanitizers:deps",
     "//base:i18n",
     "//ui/base",
     "//ui/compositor",
@@ -154,6 +160,7 @@ executable("views_examples_with_content_exe") {
   deps = [
     ":views_examples_with_content_lib",
     "//base",
+    "//build/config/sanitizers:deps",
     "//content",
     "//content:startup_helper_win",
     "//ui/views_content_client",

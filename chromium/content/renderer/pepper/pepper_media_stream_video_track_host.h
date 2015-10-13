@@ -42,8 +42,7 @@ class PepperMediaStreamVideoTrackHost : public PepperMediaStreamTrackHostBase,
   blink::WebMediaStreamTrack track() { return track_; }
 
  private:
-
-  virtual ~PepperMediaStreamVideoTrackHost();
+  ~PepperMediaStreamVideoTrackHost() override;
 
   void InitBuffers();
 
@@ -56,7 +55,7 @@ class PepperMediaStreamVideoTrackHost : public PepperMediaStreamTrackHostBase,
   int32_t SendFrameToTrack(int32_t index);
 
   void OnVideoFrame(const scoped_refptr<media::VideoFrame>& frame,
-                    const base::TimeTicks& estimated_capture_time);
+                    base::TimeTicks estimated_capture_time);
 
   // MediaStreamVideoSource overrides:
   void GetCurrentSupportedFormats(

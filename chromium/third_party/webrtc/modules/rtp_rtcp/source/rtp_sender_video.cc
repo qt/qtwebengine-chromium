@@ -21,6 +21,7 @@
 #include "webrtc/modules/rtp_rtcp/source/producer_fec.h"
 #include "webrtc/modules/rtp_rtcp/source/rtp_format_video_generic.h"
 #include "webrtc/modules/rtp_rtcp/source/rtp_format_vp8.h"
+#include "webrtc/modules/rtp_rtcp/source/rtp_format_vp9.h"
 #include "webrtc/system_wrappers/interface/critical_section_wrapper.h"
 #include "webrtc/system_wrappers/interface/logging.h"
 #include "webrtc/system_wrappers/interface/trace_event.h"
@@ -76,6 +77,8 @@ RtpUtility::Payload* RTPSenderVideo::CreateVideoPayload(
   RtpVideoCodecTypes videoType = kRtpVideoGeneric;
   if (RtpUtility::StringCompare(payloadName, "VP8", 3)) {
     videoType = kRtpVideoVp8;
+  } else if (RtpUtility::StringCompare(payloadName, "VP9", 3)) {
+    videoType = kRtpVideoVp9;
   } else if (RtpUtility::StringCompare(payloadName, "H264", 4)) {
     videoType = kRtpVideoH264;
   } else if (RtpUtility::StringCompare(payloadName, "I420", 4)) {
@@ -101,7 +104,7 @@ void RTPSenderVideo::SendVideoPacket(uint8_t* data_buffer,
                                      StorageType storage) {
   if (_rtpSender.SendToNetwork(data_buffer, payload_length, rtp_header_length,
                                capture_time_ms, storage,
-                               PacedSender::kNormalPriority) == 0) {
+                               RtpPacketSender::kNormalPriority) == 0) {
     _videoBitrate.Update(payload_length + rtp_header_length);
     TRACE_EVENT_INSTANT2(TRACE_DISABLED_BY_DEFAULT("webrtc_rtp"),
                          "Video::PacketNormal", "timestamp", capture_timestamp,
@@ -139,7 +142,7 @@ void RTPSenderVideo::SendVideoPacketAsRed(uint8_t* data_buffer,
       fec_packets = producer_fec_.GetFecPackets(
           _payloadTypeRED, _payloadTypeFEC, next_fec_sequence_number,
           rtp_header_length);
-      DCHECK_EQ(num_fec_packets, fec_packets.size());
+      RTC_DCHECK_EQ(num_fec_packets, fec_packets.size());
       if (_retransmissionSettings & kRetransmitFECPackets)
         fec_storage = kAllowRetransmission;
     }
@@ -147,7 +150,7 @@ void RTPSenderVideo::SendVideoPacketAsRed(uint8_t* data_buffer,
   if (_rtpSender.SendToNetwork(
           red_packet->data(), red_packet->length() - rtp_header_length,
           rtp_header_length, capture_time_ms, media_packet_storage,
-          PacedSender::kNormalPriority) == 0) {
+          RtpPacketSender::kNormalPriority) == 0) {
     _videoBitrate.Update(red_packet->length());
     TRACE_EVENT_INSTANT2(TRACE_DISABLED_BY_DEFAULT("webrtc_rtp"),
                          "Video::PacketRed", "timestamp", capture_timestamp,
@@ -159,7 +162,7 @@ void RTPSenderVideo::SendVideoPacketAsRed(uint8_t* data_buffer,
     if (_rtpSender.SendToNetwork(
             fec_packet->data(), fec_packet->length() - rtp_header_length,
             rtp_header_length, capture_time_ms, fec_storage,
-            PacedSender::kNormalPriority) == 0) {
+            RtpPacketSender::kNormalPriority) == 0) {
       _fecOverheadRate.Update(fec_packet->length());
       TRACE_EVENT_INSTANT2(TRACE_DISABLED_BY_DEFAULT("webrtc_rtp"),
                            "Video::PacketFec", "timestamp", capture_timestamp,
@@ -189,8 +192,8 @@ int32_t RTPSenderVideo::SendRTPIntraRequest() {
   TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("webrtc_rtp"),
                        "Video::IntraRequest", "seqnum",
                        _rtpSender.SequenceNumber());
-  return _rtpSender.SendToNetwork(
-      data, 0, length, -1, kDontStore, PacedSender::kNormalPriority);
+  return _rtpSender.SendToNetwork(data, 0, length, -1, kDontStore,
+                                  RtpPacketSender::kNormalPriority);
 }
 
 void RTPSenderVideo::SetGenericFECStatus(const bool enable,
@@ -233,8 +236,8 @@ size_t RTPSenderVideo::FECPacketOverhead() const {
 void RTPSenderVideo::SetFecParameters(const FecProtectionParams* delta_params,
                                       const FecProtectionParams* key_params) {
   CriticalSectionScoped cs(crit_.get());
-  DCHECK(delta_params);
-  DCHECK(key_params);
+  RTC_DCHECK(delta_params);
+  RTC_DCHECK(key_params);
   delta_fec_params_ = *delta_params;
   key_fec_params_ = *key_params;
 }
@@ -310,14 +313,14 @@ int32_t RTPSenderVideo::SendVideo(const RtpVideoCodecTypes videoType,
     // value sent.
     // Here we are adding it to every packet of every frame at this point.
     if (!rtpHdr) {
-      DCHECK(!_rtpSender.IsRtpHeaderExtensionRegistered(
+      RTC_DCHECK(!_rtpSender.IsRtpHeaderExtensionRegistered(
           kRtpExtensionVideoRotation));
     } else if (cvo_mode == RTPSenderInterface::kCVOActivated) {
       // Checking whether CVO header extension is registered will require taking
       // a lock. It'll be a no-op if it's not registered.
       // TODO(guoweis): For now, all packets sent will carry the CVO such that
       // the RTP header length is consistent, although the receiver side will
-      // only exam the packets with market bit set.
+      // only exam the packets with marker bit set.
       size_t packetSize = payloadSize + rtp_header_length;
       RtpUtility::RtpHeaderParser rtp_parser(dataBuffer, packetSize);
       RTPHeader rtp_header;

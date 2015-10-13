@@ -23,6 +23,7 @@
 #include "ui/aura/window_property.h"
 #include "ui/base/dragdrop/os_exchange_data_provider_aurax11.h"
 #include "ui/base/hit_test.h"
+#include "ui/base/ime/input_method.h"
 #include "ui/base/x/x11_util.h"
 #include "ui/events/devices/x11/device_data_manager_x11.h"
 #include "ui/events/devices/x11/device_list_cache_x11.h"
@@ -975,16 +976,17 @@ void DesktopWindowTreeHostX11::SetBounds(
   unsigned value_mask = 0;
 
   if (size_changed) {
+    // Update the minimum and maximum sizes in case they have changed.
+    UpdateMinAndMaxSize();
+
     if (bounds_in_pixels.width() < min_size_in_pixels_.width() ||
         bounds_in_pixels.height() < min_size_in_pixels_.height() ||
         (!max_size_in_pixels_.IsEmpty() &&
          (bounds_in_pixels.width() > max_size_in_pixels_.width() ||
           bounds_in_pixels.height() > max_size_in_pixels_.height()))) {
-      // Update the minimum and maximum sizes in case they have changed.
-      UpdateMinAndMaxSize();
-
       gfx::Size size_in_pixels = bounds_in_pixels.size();
-      size_in_pixels.SetToMin(max_size_in_pixels_);
+      if (!max_size_in_pixels_.IsEmpty())
+        size_in_pixels.SetToMin(max_size_in_pixels_);
       size_in_pixels.SetToMax(min_size_in_pixels_);
       bounds_in_pixels.set_size(size_in_pixels);
     }
@@ -1274,7 +1276,8 @@ void DesktopWindowTreeHostX11::InitX11Window(
   if (window_icon) {
     SetWindowIcons(gfx::ImageSkia(), *window_icon);
   }
-  CreateCompositor(GetAcceleratedWidget());
+  CreateCompositor();
+  OnAcceleratedWidgetAvailable();
 }
 
 gfx::Size DesktopWindowTreeHostX11::AdjustSize(
@@ -1517,6 +1520,10 @@ void DesktopWindowTreeHostX11::DispatchTouchEvent(ui::TouchEvent* event) {
   }
 }
 
+void DesktopWindowTreeHostX11::DispatchKeyEvent(ui::KeyEvent* event) {
+  GetInputMethod()->DispatchKeyEvent(event);
+}
+
 void DesktopWindowTreeHostX11::ConvertEventToDifferentHost(
     ui::LocatedEvent* located_event,
     DesktopWindowTreeHostX11* host) {
@@ -1745,7 +1752,7 @@ uint32_t DesktopWindowTreeHostX11::DispatchEvent(
     }
     case KeyPress: {
       ui::KeyEvent keydown_event(xev);
-      SendEventToProcessor(&keydown_event);
+      DispatchKeyEvent(&keydown_event);
       break;
     }
     case KeyRelease: {
@@ -1756,7 +1763,7 @@ uint32_t DesktopWindowTreeHostX11::DispatchEvent(
         break;
 
       ui::KeyEvent key_event(xev);
-      SendEventToProcessor(&key_event);
+      DispatchKeyEvent(&key_event);
       break;
     }
     case ButtonPress:
@@ -1881,7 +1888,7 @@ uint32_t DesktopWindowTreeHostX11::DispatchEvent(
         case ui::ET_KEY_PRESSED:
         case ui::ET_KEY_RELEASED: {
           ui::KeyEvent key_event(xev);
-          SendEventToProcessor(&key_event);
+          DispatchKeyEvent(&key_event);
           break;
         }
         case ui::ET_UNKNOWN:
@@ -2021,14 +2028,14 @@ gfx::Rect DesktopWindowTreeHostX11::GetWorkAreaBoundsInPixels() const {
 
 gfx::Rect DesktopWindowTreeHostX11::ToDIPRect(
     const gfx::Rect& rect_in_pixels) const {
-  gfx::RectF rect_in_dip = rect_in_pixels;
+  gfx::RectF rect_in_dip = gfx::RectF(rect_in_pixels);
   GetRootTransform().TransformRectReverse(&rect_in_dip);
   return gfx::ToEnclosingRect(rect_in_dip);
 }
 
 gfx::Rect DesktopWindowTreeHostX11::ToPixelRect(
     const gfx::Rect& rect_in_dip) const {
-  gfx::RectF rect_in_pixels = rect_in_dip;
+  gfx::RectF rect_in_pixels = gfx::RectF(rect_in_dip);
   GetRootTransform().TransformRect(&rect_in_pixels);
   return gfx::ToEnclosingRect(rect_in_pixels);
 }

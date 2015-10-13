@@ -27,66 +27,91 @@
 
 namespace blink {
 
+// LayoutReplaced is the base class for a replaced element as defined by CSS:
+//
+// "An element whose content is outside the scope of the CSS formatting model,
+// such as an image, embedded document, or applet."
+// http://www.w3.org/TR/CSS2/conform.html#defs
+//
+// Blink consider that replaced elements have an intrinsic sizes (e.g. the
+// natural size of an image or a video). The intrinsic size is stored by
+// m_intrinsicSize.
+//
+// The computation sometimes ask for the intrinsic ratio, defined as follow:
+//
+//                      intrinsicWidth
+//   intrinsicRatio = -------------------
+//                      intrinsicHeight
+//
+// The intrinsic ratio is used to keep the same proportion as the intrinsic
+// size (thus avoiding visual distortions if width / height doesn't match
+// the intrinsic value).
 class CORE_EXPORT LayoutReplaced : public LayoutBox {
 public:
     LayoutReplaced(Element*);
     LayoutReplaced(Element*, const LayoutSize& intrinsicSize);
-    virtual ~LayoutReplaced();
+    ~LayoutReplaced() override;
 
-    virtual LayoutUnit computeReplacedLogicalWidth(ShouldComputePreferred  = ComputeActual) const override;
-    virtual LayoutUnit computeReplacedLogicalHeight() const override;
+    LayoutUnit computeReplacedLogicalWidth(ShouldComputePreferred  = ComputeActual) const override;
+    LayoutUnit computeReplacedLogicalHeight() const override;
 
     bool hasReplacedLogicalHeight() const;
     LayoutRect replacedContentRect(const LayoutSize* overriddenIntrinsicSize = nullptr) const;
 
-    virtual bool needsPreferredWidthsRecalculation() const override;
+    bool needsPreferredWidthsRecalculation() const override;
 
     // These values are specified to be 300 and 150 pixels in the CSS 2.1 spec.
     // http://www.w3.org/TR/CSS2/visudet.html#inline-replaced-width
     static const int defaultWidth;
     static const int defaultHeight;
-    virtual bool canHaveChildren() const override { return false; }
+    bool canHaveChildren() const override { return false; }
     bool shouldPaint(const PaintInfo&, const LayoutPoint&) const;
-    virtual void paintReplaced(const PaintInfo&, const LayoutPoint&) { }
+    virtual void paintReplaced(const PaintInfo&, const LayoutPoint&) const { }
     LayoutRect localSelectionRect(bool checkWhetherSelected = true) const; // This is in local coordinates, but it's a physical rect (so the top left corner is physical top left).
 
-    virtual void paint(const PaintInfo&, const LayoutPoint&) override;
+    void paint(const PaintInfo&, const LayoutPoint&) const override;
 
     bool isSelected() const;
 
 protected:
-    virtual void willBeDestroyed() override;
+    void willBeDestroyed() override;
 
-    virtual void layout() override;
+    void layout() override;
 
-    virtual LayoutSize intrinsicSize() const override final { return m_intrinsicSize; }
-    virtual void computeIntrinsicRatioInformation(FloatSize& intrinsicSize, double& intrinsicRatio) const override;
+    LayoutSize intrinsicSize() const final { return m_intrinsicSize; }
+    void computeIntrinsicRatioInformation(FloatSize& intrinsicSize, double& intrinsicRatio) const override;
 
-    virtual void computeIntrinsicLogicalWidths(LayoutUnit& minLogicalWidth, LayoutUnit& maxLogicalWidth) const override final;
+    void computeIntrinsicLogicalWidths(LayoutUnit& minLogicalWidth, LayoutUnit& maxLogicalWidth) const final;
 
     virtual LayoutUnit intrinsicContentLogicalHeight() const { return intrinsicLogicalHeight(); }
 
     virtual LayoutUnit minimumReplacedHeight() const { return LayoutUnit(); }
 
-    virtual void setSelectionState(SelectionState) override final;
+    void setSelectionState(SelectionState) final;
 
-    virtual void styleDidChange(StyleDifference, const ComputedStyle* oldStyle) override;
+    void styleDidChange(StyleDifference, const ComputedStyle* oldStyle) override;
 
     void setIntrinsicSize(const LayoutSize& intrinsicSize) { m_intrinsicSize = intrinsicSize; }
+
+    // This callback is invoked whenever the intrinsic size changed.
+    //
+    // The intrinsic size can change due to the network (from the default
+    // intrinsic size [see above] to the actual intrinsic size) or to some
+    // CSS properties like 'zoom' or 'image-orientation'.
     virtual void intrinsicSizeChanged();
 
     virtual LayoutBox* embeddedContentBox() const { return nullptr; }
 
 private:
-    virtual void computePreferredLogicalWidths() override final;
+    void computePreferredLogicalWidths() final;
 
-    virtual LayoutRect clippedOverflowRectForPaintInvalidation(const LayoutBoxModelObject* paintInvalidationContainer, const PaintInvalidationState* = nullptr) const override;
+    LayoutRect clippedOverflowRectForPaintInvalidation(const LayoutBoxModelObject* paintInvalidationContainer, const PaintInvalidationState* = nullptr) const override;
 
-    virtual PositionWithAffinity positionForPoint(const LayoutPoint&) override final;
+    PositionWithAffinity positionForPoint(const LayoutPoint&) final;
 
-    virtual bool canBeSelectionLeaf() const override { return true; }
+    bool canBeSelectionLeaf() const override { return true; }
 
-    virtual LayoutRect selectionRectForPaintInvalidation(const LayoutBoxModelObject* paintInvalidationContainer) const override final;
+    LayoutRect selectionRectForPaintInvalidation(const LayoutBoxModelObject* paintInvalidationContainer) const final;
     void computeAspectRatioInformationForLayoutBox(LayoutBox*, FloatSize& constrainedSize, double& intrinsicRatio) const;
 
     mutable LayoutSize m_intrinsicSize;

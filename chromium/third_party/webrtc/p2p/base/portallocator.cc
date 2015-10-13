@@ -8,6 +8,7 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
+#include "webrtc/base/checks.h"
 #include "webrtc/p2p/base/portallocator.h"
 
 namespace cricket {
@@ -21,11 +22,10 @@ PortAllocatorSession::PortAllocatorSession(const std::string& content_name,
       component_(component),
       flags_(flags),
       generation_(0),
-      // If PORTALLOCATOR_ENABLE_SHARED_UFRAG flag is not enabled, ignore the
-      // incoming ufrag and pwd, which will cause each Port to generate one
-      // by itself.
-      username_(flags_ & PORTALLOCATOR_ENABLE_SHARED_UFRAG ? ice_ufrag : ""),
-      password_(flags_ & PORTALLOCATOR_ENABLE_SHARED_UFRAG ? ice_pwd : "") {
+      ice_ufrag_(ice_ufrag),
+      ice_pwd_(ice_pwd) {
+  RTC_DCHECK(!ice_ufrag.empty());
+  RTC_DCHECK(!ice_pwd.empty());
 }
 
 PortAllocatorSession* PortAllocator::CreateSession(

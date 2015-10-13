@@ -49,7 +49,7 @@ class PlatformInfo(object):
         self._platform_module = platform_module
         self.os_name = self._determine_os_name(sys_module.platform)
         if self.os_name == 'linux':
-            self.os_version = self._determine_linux_version()
+            self.os_version = self._determine_linux_version(platform_module)
         if self.os_name == 'freebsd':
             self.os_version = platform_module.release()
         if self.os_name.startswith('mac'):
@@ -157,18 +157,30 @@ class PlatformInfo(object):
         assert release_version >= min(version_strings.keys())
         return version_strings.get(release_version, 'future')
 
-    def _determine_linux_version(self):
-        # FIXME: we ignore whatever the real version is and pretend it's lucid for now.
-        return 'lucid'
+    def _determine_linux_version(self, platform_module):
+        # Default to trusty if version is not recognized, this supports third party integrations.
+        version = platform_module.linux_distribution()[2]
+        officially_supported_versions = ['precise', 'trusty']
+        return 'trusty' if version not in officially_supported_versions else version
 
     def _determine_win_version(self, win_version_tuple):
+        if win_version_tuple[:2] == (10, 0):
+            return '10'
+        if win_version_tuple[:2] == (6, 3):
+            return '8.1'
+        if win_version_tuple[:2] == (6, 2):
+            return '8'
+        if win_version_tuple[:3] == (6, 1, 7601):
+            return '7sp1'
         if win_version_tuple[:3] == (6, 1, 7600):
             return '7sp0'
         if win_version_tuple[:2] == (6, 0):
             return 'vista'
         if win_version_tuple[:2] == (5, 1):
             return 'xp'
-        assert win_version_tuple[0] > 6 or win_version_tuple[1] >= 1, 'Unrecognized Windows version tuple: "%s"' % (win_version_tuple,)
+        assert (win_version_tuple[0] > 10 or
+                win_version_tuple[0] == 10 and win_version_tuple[1] > 0), (
+            'Unrecognized Windows version tuple: "%s"' % (win_version_tuple,))
         return 'future'
 
     def _win_version_tuple(self, sys_module):

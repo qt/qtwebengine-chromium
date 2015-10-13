@@ -42,9 +42,9 @@ class InlineTextBox;
 class LayoutText;
 class LayoutTextFragment;
 
-CORE_EXPORT String plainText(const Position& start, const Position& end, TextIteratorBehaviorFlags = TextIteratorDefaultBehavior);
+CORE_EXPORT String plainText(const EphemeralRange&, TextIteratorBehaviorFlags = TextIteratorDefaultBehavior);
 
-String plainText(const PositionInComposedTree& start, const PositionInComposedTree& end, TextIteratorBehaviorFlags = TextIteratorDefaultBehavior);
+String plainText(const EphemeralRangeInComposedTree&, TextIteratorBehaviorFlags = TextIteratorDefaultBehavior);
 
 // Iterates through the DOM range, returning all the text, and 0-length boundaries
 // at points where replaced elements break up the text flow.  The text comes back in
@@ -55,22 +55,22 @@ class CORE_TEMPLATE_CLASS_EXPORT TextIteratorAlgorithm {
     STACK_ALLOCATED();
 public:
     // [start, end] indicates the document range that the iteration should take place within (both ends inclusive).
-    TextIteratorAlgorithm(const typename Strategy::PositionType& start, const typename Strategy::PositionType& end, TextIteratorBehaviorFlags = TextIteratorDefaultBehavior);
+    TextIteratorAlgorithm(const PositionTemplate<Strategy>& start, const PositionTemplate<Strategy>& end, TextIteratorBehaviorFlags = TextIteratorDefaultBehavior);
     ~TextIteratorAlgorithm();
 
     bool atEnd() const { return !m_textState.positionNode() || m_shouldStop; }
     void advance();
     bool isInsideReplacedElement() const;
 
-    EphemeralRange range() const;
+    EphemeralRangeTemplate<Strategy> range() const;
     Node* node() const;
 
     Document* ownerDocument() const;
     Node* currentContainer() const;
     int startOffsetInCurrentContainer() const;
     int endOffsetInCurrentContainer() const;
-    typename Strategy::PositionType startPositionInCurrentContainer() const;
-    typename Strategy::PositionType endPositionInCurrentContainer() const;
+    PositionTemplate<Strategy> startPositionInCurrentContainer() const;
+    PositionTemplate<Strategy> endPositionInCurrentContainer() const;
 
     const TextIteratorTextState& text() const { return m_textState; }
     int length() const { return m_textState.length(); }
@@ -82,8 +82,7 @@ public:
     // replaced elements. When |forSelectionPreservation| is set to true, it
     // also emits spaces for other non-text nodes using the
     // |TextIteratorEmitsCharactersBetweenAllVisiblePosition| mode.
-    static int rangeLength(const typename Strategy::PositionType& start, const typename Strategy::PositionType& end, bool forSelectionPreservation = false);
-    static EphemeralRange subrange(const Position& start, const Position& end, int characterOffset, int characterCount);
+    static int rangeLength(const PositionTemplate<Strategy>& start, const PositionTemplate<Strategy>& end, bool forSelectionPreservation = false);
 
     static bool shouldEmitTabBeforeNode(Node*);
     static bool shouldEmitNewlineBeforeNode(Node&);
@@ -137,6 +136,8 @@ private:
     bool entersOpenShadowRoots() const { return m_behavior & TextIteratorEntersOpenShadowRoots; }
 
     bool emitsObjectReplacementCharacter() const { return m_behavior & TextIteratorEmitsObjectReplacementCharacter; }
+
+    bool excludesAutofilledValue() const { return m_behavior & TextIteratorExcludeAutofilledValue; }
 
     // Current position, not necessarily of the text being returned, but position
     // as we walk through the DOM tree.

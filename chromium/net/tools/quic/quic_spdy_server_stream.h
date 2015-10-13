@@ -32,17 +32,21 @@ class QuicSpdyServerStream : public QuicDataStream {
   // QuicDataStream
   void OnStreamHeadersComplete(bool fin, size_t frame_len) override;
 
-  // ReliableQuicStream implementation called by the session when there's
-  // data for us.
-  uint32 ProcessData(const char* data, uint32 data_len) override;
-  void OnFinRead() override;
+  // ReliableQuicStream implementation called by the sequencer when there is
+  // data (or a FIN) to be read.
+  void OnDataAvailable() override;
 
  protected:
   // Sends a basic 200 response using SendHeaders for the headers and WriteData
   // for the body.
   virtual void SendResponse();
 
+  void SendHeadersAndBody(const SpdyHeaderBlock& response_headers,
+                          base::StringPiece body);
+
   SpdyHeaderBlock* request_headers() { return &request_headers_; }
+
+  const std::string& body() { return body_; }
 
  private:
   friend class test::QuicSpdyServerStreamPeer;
@@ -54,9 +58,6 @@ class QuicSpdyServerStream : public QuicDataStream {
   // Sends a basic 500 response using SendHeaders for the headers and WriteData
   // for the body
   void SendErrorResponse();
-
-  void SendHeadersAndBody(const SpdyHeaderBlock& response_headers,
-                          base::StringPiece body);
 
   // Returns the key for |request_headers_| which identifies the host.
   const std::string GetHostKey();

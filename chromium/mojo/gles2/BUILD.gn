@@ -10,6 +10,23 @@ config("gles2_use_mojo") {
   defines = [ "GLES2_USE_MOJO" ]
 }
 
+source_set("headers") {
+  sources = [
+    "command_buffer_client_impl.h",
+    "gles2_context.h",
+  ]
+
+  public_deps = [
+    "//base",
+    "//components/mus/public/interfaces",
+    "//gpu/command_buffer/client",
+    "//gpu/command_buffer/client:gles2_implementation",
+    "//gpu/command_buffer/common",
+    "//third_party/mojo/src/mojo/public/c/gles2:headers",
+    "//third_party/mojo/src/mojo/public/cpp/bindings",
+  ]
+}
+
 source_set("gles2") {
   sources = [
     "command_buffer_client_impl.cc",
@@ -34,14 +51,16 @@ source_set("gles2") {
   deps = [
     "//base",
     "//base/third_party/dynamic_annotations",
-    "//components/view_manager/gles2:lib",
-    "//components/view_manager/public/interfaces",
+    "//components/mus/gles2:lib",
+    "//components/mus/public/interfaces",
     "//gpu/command_buffer/client",
     "//gpu/command_buffer/client:gles2_cmd_helper",
     "//gpu/command_buffer/client:gles2_implementation",
     "//gpu/command_buffer/client:gles2_interface",
+    "//gpu/command_buffer/service:service_sources",
     "//gpu/command_buffer/common",
     "//mojo/environment:chromium",
+    "//mojo/platform_handle:defs",
     "//third_party/mojo/src/mojo/public/c/gles2:headers",
     "//third_party/mojo/src/mojo/public/c/system",
     "//third_party/mojo/src/mojo/public/cpp/bindings",

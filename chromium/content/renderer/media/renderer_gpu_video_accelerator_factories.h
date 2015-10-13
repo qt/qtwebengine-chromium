@@ -47,6 +47,7 @@ class CONTENT_EXPORT RendererGpuVideoAcceleratorFactories
       GpuChannelHost* gpu_channel_host,
       const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
       const scoped_refptr<ContextProviderCommandBuffer>& context_provider,
+      bool enable_gpu_memory_buffer_video_frames,
       unsigned image_texture_target,
       bool enable_video_accelerator);
 
@@ -68,11 +69,12 @@ class CONTENT_EXPORT RendererGpuVideoAcceleratorFactories
 
   scoped_ptr<gfx::GpuMemoryBuffer> AllocateGpuMemoryBuffer(
       const gfx::Size& size,
-      gfx::GpuMemoryBuffer::Format format,
-      gfx::GpuMemoryBuffer::Usage usage) override;
+      gfx::BufferFormat format,
+      gfx::BufferUsage usage) override;
 
-  bool IsTextureRGSupported() override;
+  bool ShouldUseGpuMemoryBuffersForVideoFrames() const override;
   unsigned ImageTextureTarget() override;
+  media::VideoPixelFormat VideoFrameOutputFormat() override;
   gpu::gles2::GLES2Interface* GetGLES2Interface() override;
   scoped_ptr<base::SharedMemory> CreateSharedMemory(size_t size) override;
   scoped_refptr<base::SingleThreadTaskRunner> GetTaskRunner() override;
@@ -88,6 +90,7 @@ class CONTENT_EXPORT RendererGpuVideoAcceleratorFactories
       GpuChannelHost* gpu_channel_host,
       const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
       const scoped_refptr<ContextProviderCommandBuffer>& context_provider,
+      bool enable_gpu_memory_buffer_video_frames,
       unsigned image_texture_target,
       bool enable_video_accelerator);
 
@@ -106,6 +109,8 @@ class CONTENT_EXPORT RendererGpuVideoAcceleratorFactories
   scoped_refptr<GpuChannelHost> gpu_channel_host_;
   scoped_refptr<ContextProviderCommandBuffer> context_provider_;
 
+  // Whether gpu memory buffers should be used to hold video frames data.
+  bool enable_gpu_memory_buffer_video_frames_;
   const unsigned image_texture_target_;
   // Whether video acceleration encoding/decoding should be enabled.
   const bool video_accelerator_enabled_;

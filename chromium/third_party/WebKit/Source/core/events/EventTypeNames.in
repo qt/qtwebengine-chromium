@@ -34,6 +34,7 @@ beforeunload
 beginEvent
 blocked
 blur
+bufferedamountlow
 boundary
 cached
 cancel
@@ -51,12 +52,12 @@ compositionstart
 compositionupdate
 connect
 connecting
+connectionavailable
 contextlost
 contextmenu
 contextrestored
 controllerchange
 copy
-crossoriginconnect
 crossoriginmessage
 cuechange
 cut
@@ -70,6 +71,7 @@ dischargingtimechange
 disconnect
 display
 downloading
+dataavailable
 drag
 dragend
 dragenter
@@ -106,6 +108,7 @@ gestureshowpress
 gesturetap
 gesturetapdown
 gesturetapunconfirmed
+gestureflingstart
 gotpointercapture
 hashchange
 icecandidate
@@ -180,6 +183,7 @@ removetrack
 repeatEvent
 reset
 resize
+resourcetimingbufferfull
 result
 resume
 scroll
@@ -201,6 +205,7 @@ speechend
 speechstart
 stalled
 start
+stop
 statechange
 storage
 submit

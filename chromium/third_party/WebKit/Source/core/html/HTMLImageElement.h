@@ -53,8 +53,8 @@ public:
     ~HTMLImageElement() override;
     DECLARE_VIRTUAL_TRACE();
 
-    int width(bool ignorePendingStylesheets = false);
-    int height(bool ignorePendingStylesheets = false);
+    int width();
+    int height();
 
     int naturalWidth() const;
     int naturalHeight() const;
@@ -93,10 +93,11 @@ public:
     HTMLFormElement* formOwner() const override;
     void formRemovedFromTree(const Node& formRoot);
     virtual void ensureFallbackContent();
+    virtual void ensureFallbackForGeneratedContent();
     virtual void ensurePrimaryContent();
 
     // CanvasImageSource implementation
-    PassRefPtr<Image> getSourceImageForCanvas(SourceImageMode, SourceImageStatus*) const override;
+    PassRefPtr<Image> getSourceImageForCanvas(SourceImageStatus*, AccelerationHint) const override;
     bool wouldTaintOrigin(SecurityOrigin*) const override;
     FloatSize elementSize() const override;
     FloatSize defaultDestinationSize() const override;
@@ -156,11 +157,7 @@ private:
 
     OwnPtrWillBeMember<HTMLImageLoader> m_imageLoader;
     RefPtrWillBeMember<ViewportChangeListener> m_listener;
-#if ENABLE(OILPAN)
-    Member<HTMLFormElement> m_form;
-#else
-    WeakPtr<HTMLFormElement> m_form;
-#endif
+    WeakPtrWillBeMember<HTMLFormElement> m_form;
     AtomicString m_bestFitImageURL;
     float m_imageDevicePixelRatio;
     unsigned m_formWasSetByParser : 1;
@@ -169,6 +166,8 @@ private:
     unsigned m_intrinsicSizingViewportDependant : 1;
     unsigned m_useFallbackContent : 1;
     unsigned m_isFallbackImage : 1;
+
+    ReferrerPolicy m_referrerPolicy;
 };
 
 } // namespace blink

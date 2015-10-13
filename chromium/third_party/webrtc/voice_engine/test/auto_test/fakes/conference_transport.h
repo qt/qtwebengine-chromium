@@ -19,6 +19,7 @@
 #include "webrtc/base/basictypes.h"
 #include "webrtc/base/scoped_ptr.h"
 #include "webrtc/common_types.h"
+#include "webrtc/modules/rtp_rtcp/interface/rtp_header_parser.h"
 #include "webrtc/system_wrappers/interface/critical_section_wrapper.h"
 #include "webrtc/system_wrappers/interface/event_wrapper.h"
 #include "webrtc/system_wrappers/interface/thread_wrapper.h"
@@ -27,7 +28,7 @@
 #include "webrtc/voice_engine/include/voe_file.h"
 #include "webrtc/voice_engine/include/voe_network.h"
 #include "webrtc/voice_engine/include/voe_rtp_rtcp.h"
-
+#include "webrtc/voice_engine/test/auto_test/fakes/loudest_filter.h"
 
 static const size_t kMaxPacketSizeByte = 1500;
 
@@ -57,9 +58,13 @@ class ConferenceTransport: public webrtc::Transport {
   /* AddStream()
    * Adds a stream in the conference.
    *
+   * Input:
+   *   file_name : name of the file to be added as microphone input.
+   *   format    : format of the input file.
+   *
    * Returns stream id.
    */
-  unsigned int AddStream();
+  unsigned int AddStream(std::string file_name, webrtc::FileFormats format);
 
   /* RemoveStream()
    * Removes a stream with specified ID from the conference.
@@ -93,24 +98,22 @@ class ConferenceTransport: public webrtc::Transport {
   bool GetReceiverStatistics(unsigned int id, webrtc::CallStatistics* stats);
 
   // Inherit from class webrtc::Transport.
-  int SendPacket(int channel, const void *data, size_t len) override;
-  int SendRTCPPacket(int channel, const void *data, size_t len) override;
+  bool SendRtp(const uint8_t* data,
+               size_t len,
+               const webrtc::PacketOptions& options) override;
+  bool SendRtcp(const uint8_t *data, size_t len) override;
 
  private:
   struct Packet {
     enum Type { Rtp, Rtcp, } type_;
 
     Packet() : len_(0) {}
-    Packet(Type type, int channel, const void* data, size_t len, uint32 time_ms)
-        : type_(type),
-          channel_(channel),
-          len_(len),
-          send_time_ms_(time_ms) {
+    Packet(Type type, const void* data, size_t len, uint32 time_ms)
+        : type_(type), len_(len), send_time_ms_(time_ms) {
       EXPECT_LE(len_, kMaxPacketSizeByte);
       memcpy(data_, data, len_);
     }
 
-    int channel_;
     uint8_t data_[kMaxPacketSizeByte];
     size_t len_;
     uint32 send_time_ms_;
@@ -121,9 +124,8 @@ class ConferenceTransport: public webrtc::Transport {
   }
 
   int GetReceiverChannelForSsrc(unsigned int sender_ssrc) const;
-  void StorePacket(Packet::Type type, int channel, const void* data,
-                   size_t len);
-  void SendPacket(const Packet& packet) const;
+  void StorePacket(Packet::Type type, const void* data, size_t len);
+  void SendPacket(const Packet& packet);
   bool DispatchPackets();
 
   const rtc::scoped_ptr<webrtc::CriticalSectionWrapper> pq_crit_;
@@ -152,6 +154,10 @@ class ConferenceTransport: public webrtc::Transport {
   webrtc::VoERTP_RTCP* remote_rtp_rtcp_;
   webrtc::VoENetwork* remote_network_;
   webrtc::VoEFile* remote_file_;
+
+  LoudestFilter loudest_filter_;
+
+  const rtc::scoped_ptr<webrtc::RtpHeaderParser> rtp_header_parser_;
 };
 }  // namespace voetest
 

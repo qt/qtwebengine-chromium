@@ -27,6 +27,7 @@
 #include "media/base/limits.h"
 #include "media/base/media_log.h"
 #include "media/base/text_renderer.h"
+#include "media/base/timestamp_constants.h"
 #include "media/base/video_frame.h"
 #include "media/blink/texttrack_impl.h"
 #include "media/blink/webaudiosourceprovider_impl.h"
@@ -38,6 +39,8 @@
 #include "media/filters/chunk_demuxer.h"
 #include "media/filters/ffmpeg_demuxer.h"
 #include "third_party/WebKit/public/platform/WebEncryptedMediaTypes.h"
+#include "third_party/WebKit/public/platform/WebMediaPlayerClient.h"
+#include "third_party/WebKit/public/platform/WebMediaPlayerEncryptedMediaClient.h"
 #include "third_party/WebKit/public/platform/WebMediaSource.h"
 #include "third_party/WebKit/public/platform/WebRect.h"
 #include "third_party/WebKit/public/platform/WebSize.h"
@@ -103,6 +106,7 @@ STATIC_ASSERT_MATCHING_ENUM(UseCredentials);
 WebMediaPlayerImpl::WebMediaPlayerImpl(
     blink::WebLocalFrame* frame,
     blink::WebMediaPlayerClient* client,
+    blink::WebMediaPlayerEncryptedMediaClient* encrypted_client,
     base::WeakPtr<WebMediaPlayerDelegate> delegate,
     scoped_ptr<RendererFactory> renderer_factory,
     CdmFactory* cdm_factory,
@@ -113,6 +117,7 @@ WebMediaPlayerImpl::WebMediaPlayerImpl(
       preload_(BufferedDataSource::AUTO),
       main_task_runner_(base::ThreadTaskRunnerHandle::Get()),
       media_task_runner_(params.media_task_runner()),
+      worker_task_runner_(params.worker_task_runner()),
       media_log_(params.media_log()),
       pipeline_(media_task_runner_, media_log_.get()),
       load_type_(LoadTypeURL),
@@ -124,6 +129,7 @@ WebMediaPlayerImpl::WebMediaPlayerImpl(
       pending_seek_(false),
       should_notify_time_changed_(false),
       client_(client),
+      encrypted_client_(encrypted_client),
       delegate_(delegate),
       defer_load_cb_(params.defer_load_cb()),
       context_3d_cb_(params.context_3d_cb()),
@@ -139,7 +145,7 @@ WebMediaPlayerImpl::WebMediaPlayerImpl(
           BIND_TO_RENDER_LOOP(&WebMediaPlayerImpl::OnNaturalSizeChanged),
           BIND_TO_RENDER_LOOP(&WebMediaPlayerImpl::OnOpacityChanged))),
       encrypted_media_support_(cdm_factory,
-                               client,
+                               encrypted_client,
                                params.media_permission(),
                                base::Bind(&WebMediaPlayerImpl::SetCdm,
                                           AsWeakPtr(),
@@ -293,18 +299,18 @@ void WebMediaPlayerImpl::seek(double seconds) {
   if (ready_state_ > WebMediaPlayer::ReadyStateHaveMetadata)
     SetReadyState(WebMediaPlayer::ReadyStateHaveMetadata);
 
-  base::TimeDelta new_seek_time = ConvertSecondsToTimestamp(seconds);
+  base::TimeDelta new_seek_time = base::TimeDelta::FromSecondsD(seconds);
 
   if (seeking_) {
     if (new_seek_time == seek_time_) {
       if (chunk_demuxer_) {
-        if (!pending_seek_) {
-          // If using media source demuxer, only suppress redundant seeks if
-          // there is no pending seek. This enforces that any pending seek that
-          // results in a demuxer seek is preceded by matching
-          // CancelPendingSeek() and StartWaitingForSeek() calls.
-          return;
-        }
+        // Don't suppress any redundant in-progress MSE seek. There could have
+        // been changes to the underlying buffers after seeking the demuxer and
+        // before receiving OnPipelineSeeked() for the currently in-progress
+        // seek.
+        MEDIA_LOG(DEBUG, media_log_)
+            << "Detected MediaSource seek to same time as in-progress seek to "
+            << seek_time_ << ".";
       } else {
         // Suppress all redundant seeks if unrestricted by media source demuxer
         // API.
@@ -324,11 +330,16 @@ void WebMediaPlayerImpl::seek(double seconds) {
   media_log_->AddEvent(media_log_->CreateSeekEvent(seconds));
 
   // Update our paused time.
-  // In paused state ignore the seek operations to current time if the loading
-  // is completed and generate OnPipelineBufferingStateChanged event to
-  // eventually fire seeking and seeked events
+  // For non-MSE playbacks, in paused state ignore the seek operations to
+  // current time if the loading is completed and generate
+  // OnPipelineBufferingStateChanged event to eventually fire seeking and seeked
+  // events. We don't short-circuit MSE seeks in this logic because the
+  // underlying buffers around the seek time might have changed (or even been
+  // removed) since previous seek/preroll/pause action, and the pipeline might
+  // need to flush so the new buffers are decoded and rendered instead of the
+  // old ones.
   if (paused_) {
-    if (paused_time_ != new_seek_time) {
+    if (paused_time_ != new_seek_time || chunk_demuxer_) {
       paused_time_ = new_seek_time;
     } else if (old_state == ReadyStateHaveEnoughData) {
       main_task_runner_->PostTask(
@@ -387,15 +398,20 @@ void WebMediaPlayerImpl::setVolume(double volume) {
 }
 
 void WebMediaPlayerImpl::setSinkId(const blink::WebString& device_id,
-                                   WebSetSinkIdCB* web_callbacks) {
+                                   WebSetSinkIdCB* web_callback) {
   DCHECK(main_task_runner_->BelongsToCurrentThread());
-  std::string device_id_str(device_id.utf8());
-  GURL security_origin(frame_->securityOrigin().toString().utf8());
-  DVLOG(1) << __FUNCTION__
-           << "(" << device_id_str << ", " << security_origin << ")";
-  audio_source_provider_->SwitchOutputDevice(
-      device_id_str, security_origin,
-      ConvertToSwitchOutputDeviceCB(web_callbacks));
+  DVLOG(1) << __FUNCTION__;
+  media::SwitchOutputDeviceCB callback =
+      media::ConvertToSwitchOutputDeviceCB(web_callback);
+  OutputDevice* output_device = audio_source_provider_->GetOutputDevice();
+  if (output_device) {
+    std::string device_id_str(device_id.utf8());
+    url::Origin security_origin(
+        GURL(frame_->securityOrigin().toString().utf8()));
+    output_device->SwitchOutputDevice(device_id_str, security_origin, callback);
+  } else {
+    callback.Run(OUTPUT_DEVICE_STATUS_ERROR_INTERNAL);
+  }
 }
 
 #define STATIC_ASSERT_MATCHING_ENUM(webkit_name, chromium_name) \
@@ -562,8 +578,9 @@ void WebMediaPlayerImpl::paint(blink::WebCanvas* canvas,
     if (!context_3d.gl)
       return;
   }
-  skcanvas_video_renderer_.Paint(video_frame, canvas, gfx_rect, alpha, mode,
-                                 pipeline_metadata_.video_rotation, context_3d);
+  skcanvas_video_renderer_.Paint(video_frame, canvas, gfx::RectF(gfx_rect),
+                                 alpha, mode, pipeline_metadata_.video_rotation,
+                                 context_3d);
 }
 
 bool WebMediaPlayerImpl::hasSingleSecurityOrigin() const {
@@ -579,7 +596,7 @@ bool WebMediaPlayerImpl::didPassCORSAccessCheck() const {
 }
 
 double WebMediaPlayerImpl::mediaTimeForTimeValue(double timeValue) const {
-  return ConvertSecondsToTimestamp(timeValue).InSecondsF();
+  return base::TimeDelta::FromSecondsD(timeValue).InSecondsF();
 }
 
 unsigned WebMediaPlayerImpl::decodedFrameCount() const {
@@ -718,18 +735,18 @@ void WebMediaPlayerImpl::OnEncryptedMediaInitData(
 
   encrypted_media_support_.SetInitDataType(init_data_type);
 
-  client_->encrypted(ConvertToWebInitDataType(init_data_type),
-                     vector_as_array(&init_data),
-                     base::saturated_cast<unsigned int>(init_data.size()));
+  encrypted_client_->encrypted(
+      ConvertToWebInitDataType(init_data_type), vector_as_array(&init_data),
+      base::saturated_cast<unsigned int>(init_data.size()));
 }
 
 void WebMediaPlayerImpl::OnWaitingForDecryptionKey() {
-  client_->didBlockPlaybackWaitingForKey();
+  encrypted_client_->didBlockPlaybackWaitingForKey();
 
   // TODO(jrummell): didResumePlaybackBlockedForKey() should only be called
   // when a key has been successfully added (e.g. OnSessionKeysChange() with
   // |has_additional_usable_key| = true). http://crbug.com/461903
-  client_->didResumePlaybackBlockedForKey();
+  encrypted_client_->didResumePlaybackBlockedForKey();
 }
 
 void WebMediaPlayerImpl::SetCdm(const CdmAttachedCB& cdm_attached_cb,
@@ -827,7 +844,8 @@ void WebMediaPlayerImpl::OnPipelineMetadata(
     }
 
     video_weblayer_.reset(new cc_blink::WebLayerImpl(layer));
-    video_weblayer_->setOpaque(opaque_);
+    video_weblayer_->layer()->SetContentsOpaque(opaque_);
+    video_weblayer_->SetContentsOpaqueIsFixed(true);
     client_->setWebLayer(video_weblayer_.get());
   }
 }
@@ -857,8 +875,8 @@ void WebMediaPlayerImpl::OnPipelineBufferingStateChanged(
 
 void WebMediaPlayerImpl::OnDemuxerOpened() {
   DCHECK(main_task_runner_->BelongsToCurrentThread());
-  client_->mediaSourceOpened(new WebMediaSourceImpl(
-      chunk_demuxer_, base::Bind(&MediaLog::AddLogEvent, media_log_)));
+  client_->mediaSourceOpened(
+      new WebMediaSourceImpl(chunk_demuxer_, media_log_));
 }
 
 void WebMediaPlayerImpl::OnAddTextTrack(
@@ -925,8 +943,7 @@ void WebMediaPlayerImpl::StartPipeline() {
 
     chunk_demuxer_ = new ChunkDemuxer(
         BIND_TO_RENDER_LOOP(&WebMediaPlayerImpl::OnDemuxerOpened),
-        encrypted_media_init_data_cb,
-        base::Bind(&MediaLog::AddLogEvent, media_log_), media_log_, true);
+        encrypted_media_init_data_cb, media_log_, true);
     demuxer_.reset(chunk_demuxer_);
   }
 
@@ -934,9 +951,9 @@ void WebMediaPlayerImpl::StartPipeline() {
   seeking_ = true;
 
   pipeline_.Start(
-      demuxer_.get(),
-      renderer_factory_->CreateRenderer(
-          media_task_runner_, audio_source_provider_.get(), compositor_),
+      demuxer_.get(), renderer_factory_->CreateRenderer(
+                          media_task_runner_, worker_task_runner_,
+                          audio_source_provider_.get(), compositor_),
       BIND_TO_RENDER_LOOP(&WebMediaPlayerImpl::OnPipelineEnded),
       BIND_TO_RENDER_LOOP(&WebMediaPlayerImpl::OnPipelineError),
       BIND_TO_RENDER_LOOP1(&WebMediaPlayerImpl::OnPipelineSeeked, false),
@@ -1008,8 +1025,10 @@ void WebMediaPlayerImpl::OnOpacityChanged(bool opaque) {
   DCHECK_NE(ready_state_, WebMediaPlayer::ReadyStateHaveNothing);
 
   opaque_ = opaque;
+  // Modify content opaqueness of cc::Layer directly so that
+  // SetContentsOpaqueIsFixed is ignored.
   if (video_weblayer_)
-    video_weblayer_->setOpaque(opaque_);
+    video_weblayer_->layer()->SetContentsOpaque(opaque_);
 }
 
 static void GetCurrentFrameAndSignal(

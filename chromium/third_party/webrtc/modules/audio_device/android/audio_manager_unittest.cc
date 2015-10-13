@@ -9,6 +9,7 @@
  */
 
 #include "testing/gtest/include/gtest/gtest.h"
+#include "webrtc/base/format_macros.h"
 #include "webrtc/base/scoped_ptr.h"
 #include "webrtc/modules/audio_device/android/build_info.h"
 #include "webrtc/modules/audio_device/android/audio_manager.h"
@@ -60,6 +61,16 @@ TEST_F(AudioManagerTest, IsAcousticEchoCancelerSupported) {
         audio_manager()->IsAcousticEchoCancelerSupported() ? "Yes" : "No");
 }
 
+TEST_F(AudioManagerTest, IsAutomaticGainControlSupported) {
+  PRINT("%sAutomatic Gain Control support: %s\n", kTag,
+        audio_manager()->IsAutomaticGainControlSupported() ? "Yes" : "No");
+}
+
+TEST_F(AudioManagerTest, IsNoiseSuppressorSupported) {
+  PRINT("%sNoise Suppressor support: %s\n", kTag,
+        audio_manager()->IsNoiseSuppressorSupported() ? "Yes" : "No");
+}
+
 TEST_F(AudioManagerTest, IsLowLatencyPlayoutSupported) {
   PRINT("%sLow latency output support: %s\n", kTag,
         audio_manager()->IsLowLatencyPlayoutSupported() ? "Yes" : "No");
@@ -72,14 +83,14 @@ TEST_F(AudioManagerTest, ShowAudioParameterInfo) {
         low_latency_out ? "Low latency OpenSL" : "Java/JNI based AudioTrack");
   PRINT("%ssample rate: %d Hz\n", kTag, playout_parameters_.sample_rate());
   PRINT("%schannels: %d\n", kTag, playout_parameters_.channels());
-  PRINT("%sframes per buffer: %d <=> %.2f ms\n", kTag,
+  PRINT("%sframes per buffer: %" PRIuS " <=> %.2f ms\n", kTag,
         playout_parameters_.frames_per_buffer(),
         playout_parameters_.GetBufferSizeInMilliseconds());
   PRINT("RECORD: \n");
   PRINT("%saudio layer: %s\n", kTag, "Java/JNI based AudioRecord");
   PRINT("%ssample rate: %d Hz\n", kTag, record_parameters_.sample_rate());
   PRINT("%schannels: %d\n", kTag, record_parameters_.channels());
-  PRINT("%sframes per buffer: %d <=> %.2f ms\n", kTag,
+  PRINT("%sframes per buffer: %" PRIuS " <=> %.2f ms\n", kTag,
         record_parameters_.frames_per_buffer(),
         record_parameters_.GetBufferSizeInMilliseconds());
 }
@@ -109,11 +120,11 @@ TEST_F(AudioManagerTest, AudioParametersWithDefaultConstruction) {
   EXPECT_FALSE(params.is_valid());
   EXPECT_EQ(0, params.sample_rate());
   EXPECT_EQ(0, params.channels());
-  EXPECT_EQ(0, params.frames_per_buffer());
-  EXPECT_EQ(0, params.frames_per_10ms_buffer());
-  EXPECT_EQ(0, params.GetBytesPerFrame());
-  EXPECT_EQ(0, params.GetBytesPerBuffer());
-  EXPECT_EQ(0, params.GetBytesPer10msBuffer());
+  EXPECT_EQ(0U, params.frames_per_buffer());
+  EXPECT_EQ(0U, params.frames_per_10ms_buffer());
+  EXPECT_EQ(0U, params.GetBytesPerFrame());
+  EXPECT_EQ(0U, params.GetBytesPerBuffer());
+  EXPECT_EQ(0U, params.GetBytesPer10msBuffer());
   EXPECT_EQ(0.0f, params.GetBufferSizeInMilliseconds());
 }
 
@@ -121,16 +132,17 @@ TEST_F(AudioManagerTest, AudioParametersWithDefaultConstruction) {
 TEST_F(AudioManagerTest, AudioParametersWithNonDefaultConstruction) {
   const int kSampleRate = 48000;
   const int kChannels = 1;
-  const int kFramesPerBuffer = 480;
-  const int kFramesPer10msBuffer = 480;
-  const int kBytesPerFrame = 2;
+  const size_t kFramesPerBuffer = 480;
+  const size_t kFramesPer10msBuffer = 480;
+  const size_t kBytesPerFrame = 2;
   const float kBufferSizeInMs = 10.0f;
   AudioParameters params(kSampleRate, kChannels, kFramesPerBuffer);
   EXPECT_TRUE(params.is_valid());
   EXPECT_EQ(kSampleRate, params.sample_rate());
   EXPECT_EQ(kChannels, params.channels());
   EXPECT_EQ(kFramesPerBuffer, params.frames_per_buffer());
-  EXPECT_EQ(kSampleRate / 100, params.frames_per_10ms_buffer());
+  EXPECT_EQ(static_cast<size_t>(kSampleRate / 100),
+            params.frames_per_10ms_buffer());
   EXPECT_EQ(kBytesPerFrame, params.GetBytesPerFrame());
   EXPECT_EQ(kBytesPerFrame * kFramesPerBuffer, params.GetBytesPerBuffer());
   EXPECT_EQ(kBytesPerFrame * kFramesPer10msBuffer,

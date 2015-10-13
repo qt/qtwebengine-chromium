@@ -42,24 +42,29 @@
 #include "core/events/GestureEvent.h"
 #include "core/events/KeyboardEvent.h"
 #include "core/events/MouseEvent.h"
+#include "core/frame/FrameHost.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
-#include "core/html/FormDataList.h"
+#include "core/html/FormData.h"
 #include "core/html/HTMLFormElement.h"
 #include "core/html/HTMLOptGroupElement.h"
 #include "core/html/HTMLOptionElement.h"
 #include "core/html/forms/FormController.h"
 #include "core/input/EventHandler.h"
+#include "core/inspector/ConsoleMessage.h"
 #include "core/layout/HitTestRequest.h"
 #include "core/layout/HitTestResult.h"
 #include "core/layout/LayoutListBox.h"
 #include "core/layout/LayoutMenuList.h"
+#include "core/layout/LayoutText.h"
 #include "core/layout/LayoutTheme.h"
 #include "core/layout/LayoutView.h"
 #include "core/page/AutoscrollController.h"
+#include "core/page/ChromeClient.h"
 #include "core/page/Page.h"
 #include "core/page/SpatialNavigation.h"
 #include "platform/PlatformMouseEvent.h"
+#include "platform/PopupMenu.h"
 #include "platform/text/PlatformLocale.h"
 
 using namespace WTF::Unicode;
@@ -75,7 +80,7 @@ HTMLSelectElement::HTMLSelectElement(Document& document, HTMLFormElement* form)
     : HTMLFormControlElementWithState(selectTag, document, form)
     , m_typeAhead(this)
     , m_size(0)
-    , m_lastOnChangeIndex(-1)
+    , m_lastOnChangeOption(nullptr)
     , m_activeSelectionAnchorIndex(-1)
     , m_activeSelectionEndIndex(-1)
     , m_isProcessingUserDrivenChange(false)
@@ -84,6 +89,8 @@ HTMLSelectElement::HTMLSelectElement(Document& document, HTMLFormElement* form)
     , m_shouldRecalcListItems(false)
     , m_suggestedIndex(-1)
     , m_isAutofilledByPreview(false)
+    , m_indexToSelectOnCancel(-1)
+    , m_popupIsVisible(false)
 {
     setHasCustomStyleCallbacks();
 }
@@ -100,6 +107,10 @@ PassRefPtrWillBeRawPtr<HTMLSelectElement> HTMLSelectElement::create(Document& do
     RefPtrWillBeRawPtr<HTMLSelectElement> select = adoptRefWillBeNoop(new HTMLSelectElement(document, form));
     select->ensureUserAgentShadowRoot();
     return select.release();
+}
+
+HTMLSelectElement::~HTMLSelectElement()
+{
 }
 
 const AtomicString& HTMLSelectElement::formControlType() const
@@ -238,11 +249,8 @@ void HTMLSelectElement::remove(int optionIndex)
 
 String HTMLSelectElement::value() const
 {
-    const WillBeHeapVector<RawPtrWillBeMember<HTMLElement>>& items = listItems();
-    for (unsigned i = 0; i < items.size(); i++) {
-        if (isHTMLOptionElement(items[i]) && toHTMLOptionElement(items[i])->selected())
-            return toHTMLOptionElement(items[i])->value();
-    }
+    if (HTMLOptionElement* option = selectedOption())
+        return option->value();
     return "";
 }
 
@@ -358,12 +366,8 @@ void HTMLSelectElement::parseAttribute(const QualifiedName& name, const AtomicSt
         //
     } else if (name == disabledAttr) {
         HTMLFormControlElementWithState::parseAttribute(name, value);
-        if (layoutObject() && layoutObject()->isMenuList()) {
-            if (LayoutMenuList* menuList = toLayoutMenuList(layoutObject())) {
-                if (menuList->popupIsVisible())
-                    menuList->hidePopup();
-            }
-        }
+        if (popupIsVisible())
+            hidePopup();
 
     } else {
         HTMLFormControlElementWithState::parseAttribute(name, value);
@@ -461,8 +465,11 @@ HTMLOptionElement* HTMLSelectElement::item(unsigned index)
 
 void HTMLSelectElement::setOption(unsigned index, HTMLOptionElement* option, ExceptionState& exceptionState)
 {
-    if (index > maxSelectItems - 1)
-        index = maxSelectItems - 1;
+    if (index >= length() && index >= maxSelectItems) {
+        document().addConsoleMessage(ConsoleMessage::create(JSMessageSource, WarningMessageLevel,
+            String::format("Blocked to expand the option list and set an option at index=%u.  The maximum list length is %u.", index, maxSelectItems)));
+        return;
+    }
     int diff = index - length();
     HTMLOptionElementOrHTMLOptGroupElement element;
     element.setHTMLOptionElement(option);
@@ -485,8 +492,11 @@ void HTMLSelectElement::setOption(unsigned index, HTMLOptionElement* option, Exc
 
 void HTMLSelectElement::setLength(unsigned newLen, ExceptionState& exceptionState)
 {
-    if (newLen > maxSelectItems)
-        newLen = maxSelectItems;
+    if (newLen > length() && newLen > maxSelectItems) {
+        document().addConsoleMessage(ConsoleMessage::create(JSMessageSource, WarningMessageLevel,
+            String::format("Blocked to expand the option list to %u items.  The maximum list length is %u.", newLen, maxSelectItems)));
+        return;
+    }
     int diff = length() - newLen;
 
     if (diff < 0) { // Add dummy elements.
@@ -617,7 +627,7 @@ void HTMLSelectElement::selectAll()
 void HTMLSelectElement::saveLastSelection()
 {
     if (usesMenuList()) {
-        m_lastOnChangeIndex = selectedIndex();
+        m_lastOnChangeOption = selectedOption();
         return;
     }
 
@@ -711,9 +721,9 @@ void HTMLSelectElement::dispatchInputAndChangeEventForMenuList(bool requiresUser
 {
     ASSERT(usesMenuList());
 
-    int selected = selectedIndex();
-    if (m_lastOnChangeIndex != selected && (!requiresUserGesture || m_isProcessingUserDrivenChange)) {
-        m_lastOnChangeIndex = selected;
+    HTMLOptionElement* selectedOption = this->selectedOption();
+    if (m_lastOnChangeOption.get() != selectedOption && (!requiresUserGesture || m_isProcessingUserDrivenChange)) {
+        m_lastOnChangeOption = selectedOption;
         m_isProcessingUserDrivenChange = false;
         RefPtrWillBeRawPtr<HTMLSelectElement> protector(this);
         dispatchInputEvent();
@@ -799,10 +809,14 @@ void HTMLSelectElement::recalcListItems(bool updateSelectedStates) const
         }
         HTMLElement& current = toHTMLElement(*currentElement);
 
-        // optgroup tags may not nest. However, both FireFox and IE will
-        // flatten the tree automatically, so we follow suit.
-        // (http://www.w3.org/TR/html401/interact/forms.html#h-17.6)
+        // We should ignore nested optgroup elements. The HTML parser flatten
+        // them.  However we need to ignore nested optgroups built by DOM APIs.
+        // This behavior matches to IE and Firefox.
         if (isHTMLOptGroupElement(current)) {
+            if (current.parentNode() != this) {
+                currentElement = ElementTraversal::nextSkippingChildren(current, this);
+                continue;
+            }
             m_listItems.append(&current);
             if (Element* nextElement = ElementTraversal::firstWithin(current)) {
                 currentElement = nextElement;
@@ -844,6 +858,15 @@ void HTMLSelectElement::recalcListItems(bool updateSelectedStates) const
         firstOption->setSelectedState(true);
 }
 
+HTMLOptionElement* HTMLSelectElement::selectedOption() const
+{
+    for (const auto& element : listItems()) {
+        if (isHTMLOptionElement(*element) && toHTMLOptionElement(*element).selected())
+            return toHTMLOptionElement(element);
+    }
+    return nullptr;
+}
+
 int HTMLSelectElement::selectedIndex() const
 {
     unsigned index = 0;
@@ -880,6 +903,8 @@ void HTMLSelectElement::setSuggestedIndex(int suggestedIndex)
         layoutObject->updateFromElement();
         scrollToIndex(suggestedIndex);
     }
+    if (popupIsVisible())
+        m_popup->updateFromElement();
 }
 
 void HTMLSelectElement::scrollToIndex(int listIndex)
@@ -919,6 +944,8 @@ void HTMLSelectElement::optionInserted(const HTMLOptionElement& option, bool opt
 
 void HTMLSelectElement::optionRemoved(const HTMLOptionElement& option)
 {
+    if (m_lastOnChangeOption == &option)
+        m_lastOnChangeOption.clear();
     if (m_activeSelectionAnchorIndex < 0 && m_activeSelectionEndIndex < 0)
         return;
     int listIndex = optionToListIndex(option.index());
@@ -930,13 +957,17 @@ void HTMLSelectElement::optionRemoved(const HTMLOptionElement& option)
         setAutofilled(false);
 }
 
+// TODO(tkent): This function is not efficient.  It contains multiple O(N)
+// operations.
 void HTMLSelectElement::selectOption(int optionIndex, SelectOptionFlags flags)
 {
     bool shouldDeselect = !m_multiple || (flags & DeselectOtherOptions);
 
     const WillBeHeapVector<RawPtrWillBeMember<HTMLElement>>& items = listItems();
+    // optionToListIndex is O(N).
     int listIndex = optionToListIndex(optionIndex);
 
+    // selectedIndex() is O(N).
     if (selectedIndex() != optionIndex && isAutofilled())
         setAutofilled(false);
 
@@ -944,6 +975,7 @@ void HTMLSelectElement::selectOption(int optionIndex, SelectOptionFlags flags)
     if (listIndex >= 0) {
         element = items[listIndex];
         if (isHTMLOptionElement(*element)) {
+            // setActiveSelectionAnchorIndex is O(N).
             if (m_activeSelectionAnchorIndex < 0 || shouldDeselect)
                 setActiveSelectionAnchorIndex(listIndex);
             if (m_activeSelectionEndIndex < 0 || shouldDeselect)
@@ -952,12 +984,16 @@ void HTMLSelectElement::selectOption(int optionIndex, SelectOptionFlags flags)
         }
     }
 
+    // deselectItemsWithoutValidation() is O(N).
     if (shouldDeselect)
         deselectItemsWithoutValidation(element);
 
     // For the menu list case, this is what makes the selected element appear.
     if (LayoutObject* layoutObject = this->layoutObject())
         layoutObject->updateFromElement();
+    // PopupMenu::updateFromElement() posts an O(N) task.
+    if (popupIsVisible())
+        m_popup->updateFromElement();
 
     scrollToSelection();
     setNeedsValidityCheck();
@@ -968,6 +1004,8 @@ void HTMLSelectElement::selectOption(int optionIndex, SelectOptionFlags flags)
             dispatchInputAndChangeEventForMenuList();
         if (LayoutObject* layoutObject = this->layoutObject()) {
             if (usesMenuList()) {
+                // didSetSelectedIndex() is O(N) because of listToOptionIndex
+                // and optionToListIndex.
                 toLayoutMenuList(layoutObject)->didSetSelectedIndex(listIndex);
             }
         }
@@ -1011,23 +1049,24 @@ int HTMLSelectElement::listToOptionIndex(int listIndex) const
     return optionIndex;
 }
 
-void HTMLSelectElement::dispatchFocusEvent(Element* oldFocusedElement, WebFocusType type)
+void HTMLSelectElement::dispatchFocusEvent(Element* oldFocusedElement, WebFocusType type, InputDeviceCapabilities* sourceCapabilities)
 {
     // Save the selection so it can be compared to the new selection when
     // dispatching change events during blur event dispatch.
     if (usesMenuList())
         saveLastSelection();
-    HTMLFormControlElementWithState::dispatchFocusEvent(oldFocusedElement, type);
+    HTMLFormControlElementWithState::dispatchFocusEvent(oldFocusedElement, type, sourceCapabilities);
 }
 
-void HTMLSelectElement::dispatchBlurEvent(Element* newFocusedElement, WebFocusType type)
+void HTMLSelectElement::dispatchBlurEvent(Element* newFocusedElement, WebFocusType type, InputDeviceCapabilities* sourceCapabilities)
 {
+    m_typeAhead.resetSession();
     // We only need to fire change events here for menu lists, because we fire
     // change events for list boxes whenever the selection change is actually made.
     // This matches other browsers' behavior.
     if (usesMenuList())
         dispatchInputAndChangeEventForMenuList();
-    HTMLFormControlElementWithState::dispatchBlurEvent(newFocusedElement, type);
+    HTMLFormControlElementWithState::dispatchBlurEvent(newFocusedElement, type, sourceCapabilities);
 }
 
 void HTMLSelectElement::deselectItemsWithoutValidation(HTMLElement* excludeElement)
@@ -1130,27 +1169,18 @@ void HTMLSelectElement::parseMultipleAttribute(const AtomicString& value)
     lazyReattachIfAttached();
 }
 
-bool HTMLSelectElement::appendFormData(FormDataList& list, bool)
+void HTMLSelectElement::appendToFormData(FormData& formData)
 {
     const AtomicString& name = this->name();
     if (name.isEmpty())
-        return false;
+        return;
 
-    bool successful = false;
     const WillBeHeapVector<RawPtrWillBeMember<HTMLElement>>& items = listItems();
-
     for (unsigned i = 0; i < items.size(); ++i) {
         HTMLElement* element = items[i];
-        if (isHTMLOptionElement(*element) && toHTMLOptionElement(*element).selected() && !toHTMLOptionElement(*element).isDisabledFormControl()) {
-            list.appendData(name, toHTMLOptionElement(*element).value());
-            successful = true;
-        }
+        if (isHTMLOptionElement(*element) && toHTMLOptionElement(*element).selected() && !toHTMLOptionElement(*element).isDisabledFormControl())
+            formData.append(name, toHTMLOptionElement(*element).value());
     }
-
-    // It's possible that this is a menulist with multiple options and nothing
-    // will be submitted (!successful). We won't send a unselected non-disabled
-    // option as fallback. This behavior matches to other browsers.
-    return successful;
 }
 
 void HTMLSelectElement::resetImpl()
@@ -1192,13 +1222,12 @@ void HTMLSelectElement::handlePopupOpenKeyboardEvent(Event* event)
     // the event as handled.
     if (!layoutObject() || !layoutObject()->isMenuList() || isDisabledFormControl())
         return;
-    // Save the selection so it can be compared to the new selection
-    // when dispatching change events during selectOption, which
-    // gets called from LayoutMenuList::valueChanged, which gets called
-    // after the user makes a selection from the menu.
+    // Save the selection so it can be compared to the new selection when
+    // dispatching change events during selectOption, which gets called from
+    // valueChanged, which gets called after the user makes a selection from the
+    // menu.
     saveLastSelection();
-    if (LayoutMenuList* menuList = toLayoutMenuList(layoutObject()))
-        menuList->showPopup();
+    showPopup();
     event->setDefaultHandled();
     return;
 }
@@ -1303,30 +1332,28 @@ void HTMLSelectElement::menuListDefaultEventHandler(Event* event)
     }
 
     if (event->type() == EventTypeNames::mousedown && event->isMouseEvent() && toMouseEvent(event)->button() == LeftButton) {
-        focus();
+        InputDeviceCapabilities* sourceCapabilities = toMouseEvent(event)->fromTouch() ? InputDeviceCapabilities::firesTouchEventsSourceCapabilities() : InputDeviceCapabilities::doesntFireTouchEventsSourceCapabilities();
+        focus(true, WebFocusTypeNone, sourceCapabilities);
         if (layoutObject() && layoutObject()->isMenuList() && !isDisabledFormControl()) {
-            if (LayoutMenuList* menuList = toLayoutMenuList(layoutObject())) {
-                if (menuList->popupIsVisible()) {
-                    menuList->hidePopup();
-                } else {
-                    // Save the selection so it can be compared to the new
-                    // selection when we call onChange during selectOption,
-                    // which gets called from LayoutMenuList::valueChanged,
-                    // which gets called after the user makes a selection from
-                    // the menu.
-                    saveLastSelection();
-                    menuList->showPopup();
-                }
+            if (popupIsVisible()) {
+                hidePopup();
+            } else {
+                // Save the selection so it can be compared to the new selection
+                // when we call onChange during selectOption, which gets called
+                // from valueChanged, which gets called after the user makes a
+                // selection from the menu.
+                saveLastSelection();
+                // TODO(lanwei): Will check if we need to add InputDeviceCapabilities here
+                // when select menu list gets focus, see https://crbug.com/476530.
+                showPopup();
             }
         }
         event->setDefaultHandled();
     }
 
     if (event->type() == EventTypeNames::blur) {
-        if (LayoutMenuList* menuList = toLayoutMenuList(layoutObject())) {
-            if (menuList->popupIsVisible())
-                menuList->hidePopup();
-        }
+        if (popupIsVisible())
+            hidePopup();
     }
 }
 
@@ -1749,6 +1776,8 @@ DEFINE_TRACE(HTMLSelectElement)
 #if ENABLE(OILPAN)
     visitor->trace(m_listItems);
 #endif
+    visitor->trace(m_lastOnChangeOption);
+    visitor->trace(m_popup);
     HTMLFormControlElementWithState::trace(visitor);
 }
 
@@ -1782,4 +1811,150 @@ HTMLOptionElement* HTMLSelectElement::spatialNavigationFocusedOption()
     return isHTMLOptionElement(focused) ? toHTMLOptionElement(focused) : nullptr;
 }
 
-} // namespace
+String HTMLSelectElement::itemText(const Element& element) const
+{
+    String itemString;
+    if (isHTMLOptGroupElement(element))
+        itemString = toHTMLOptGroupElement(element).groupLabelText();
+    else if (isHTMLOptionElement(element))
+        itemString = toHTMLOptionElement(element).textIndentedToRespectGroupLabel();
+
+    if (layoutObject())
+        applyTextTransform(layoutObject()->style(), itemString, ' ');
+    return itemString;
+}
+
+bool HTMLSelectElement::itemIsDisplayNone(Element& element) const
+{
+    if (isHTMLOptionElement(element))
+        return toHTMLOptionElement(element).isDisplayNone();
+    if (const ComputedStyle* style = itemComputedStyle(element))
+        return style->display() == NONE;
+    return false;
+}
+
+const ComputedStyle* HTMLSelectElement::itemComputedStyle(Element& element) const
+{
+    return element.computedStyle() ? element.computedStyle() : element.ensureComputedStyle();
+}
+
+IntRect HTMLSelectElement::elementRectRelativeToViewport() const
+{
+    if (!layoutObject())
+        return IntRect();
+    // We don't use absoluteBoundingBoxRect() because it can return an IntRect
+    // larger the actual size by 1px.
+    return document().view()->contentsToViewport(roundedIntRect(layoutObject()->absoluteBoundingBoxFloatRect()));
+}
+
+LayoutUnit HTMLSelectElement::clientPaddingLeft() const
+{
+    if (layoutObject() && layoutObject()->isMenuList())
+        return toLayoutMenuList(layoutObject())->clientPaddingLeft();
+    return 0;
+}
+
+LayoutUnit HTMLSelectElement::clientPaddingRight() const
+{
+    if (layoutObject() && layoutObject()->isMenuList())
+        return toLayoutMenuList(layoutObject())->clientPaddingRight();
+    return 0;
+}
+
+void HTMLSelectElement::popupDidHide()
+{
+    m_popupIsVisible = false;
+    if (AXObjectCache* cache = document().existingAXObjectCache()) {
+        if (layoutObject() && layoutObject()->isMenuList())
+            cache->didHideMenuListPopup(toLayoutMenuList(layoutObject()));
+    }
+}
+
+void HTMLSelectElement::setIndexToSelectOnCancel(int listIndex)
+{
+    m_indexToSelectOnCancel = listIndex;
+    if (layoutObject())
+        layoutObject()->updateFromElement();
+}
+
+int HTMLSelectElement::optionIndexToBeShown() const
+{
+    if (m_indexToSelectOnCancel >= 0)
+        return listToOptionIndex(m_indexToSelectOnCancel);
+    if (suggestedIndex() >= 0)
+        return suggestedIndex();
+    return selectedIndex();
+}
+
+void HTMLSelectElement::valueChanged(unsigned listIndex)
+{
+    // Check to ensure a page navigation has not occurred while the popup was
+    // up.
+    Document& doc = document();
+    if (&doc != doc.frame()->document())
+        return;
+
+    setIndexToSelectOnCancel(-1);
+    optionSelectedByUser(listToOptionIndex(listIndex), true);
+}
+
+void HTMLSelectElement::popupDidCancel()
+{
+    if (m_indexToSelectOnCancel >= 0)
+        valueChanged(m_indexToSelectOnCancel);
+}
+
+void HTMLSelectElement::provisionalSelectionChanged(unsigned listIndex)
+{
+    setIndexToSelectOnCancel(listIndex);
+}
+
+void HTMLSelectElement::showPopup()
+{
+    if (popupIsVisible())
+        return;
+    if (document().frameHost()->chromeClient().hasOpenedPopup())
+        return;
+    if (!layoutObject() || !layoutObject()->isMenuList())
+        return;
+
+    if (!m_popup)
+        m_popup = document().frameHost()->chromeClient().openPopupMenu(*document().frame(), *this);
+    m_popupIsVisible = true;
+
+    LayoutMenuList* menuList = toLayoutMenuList(layoutObject());
+    FloatQuad quad(menuList->localToAbsoluteQuad(FloatQuad(menuList->borderBoundingBox())));
+    IntSize size = pixelSnappedIntRect(menuList->frameRect()).size();
+    m_popup->show(quad, size, optionToListIndex(selectedIndex()));
+    if (AXObjectCache* cache = document().existingAXObjectCache())
+        cache->didShowMenuListPopup(menuList);
+}
+
+void HTMLSelectElement::hidePopup()
+{
+    if (m_popup)
+        m_popup->hide();
+}
+
+void HTMLSelectElement::didRecalcStyle(StyleRecalcChange change)
+{
+    HTMLFormControlElementWithState::didRecalcStyle(change);
+    if (popupIsVisible())
+        m_popup->updateFromElement();
+}
+
+void HTMLSelectElement::detach(const AttachContext& context)
+{
+    HTMLFormControlElementWithState::detach(context);
+    if (m_popup)
+        m_popup->disconnectClient();
+    m_popupIsVisible = false;
+    m_popup = nullptr;
+}
+
+void HTMLSelectElement::resetTypeAheadSessionForTesting()
+{
+    m_typeAhead.resetSession();
+}
+
+} // namespace blink

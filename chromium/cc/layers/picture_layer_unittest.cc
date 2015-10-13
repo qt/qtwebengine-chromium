@@ -7,6 +7,8 @@
 #include "base/thread_task_runner_handle.h"
 #include "cc/layers/content_layer_client.h"
 #include "cc/layers/picture_layer_impl.h"
+#include "cc/playback/display_item_list_settings.h"
+#include "cc/test/fake_display_list_recording_source.h"
 #include "cc/test/fake_layer_tree_host.h"
 #include "cc/test/fake_picture_layer.h"
 #include "cc/test/fake_picture_layer_impl.h"
@@ -27,10 +29,10 @@ class MockContentLayerClient : public ContentLayerClient {
   scoped_refptr<DisplayItemList> PaintContentsToDisplayList(
       const gfx::Rect& clip,
       PaintingControlSetting picture_control) override {
-    NOTIMPLEMENTED();
-    return nullptr;
+    return DisplayItemList::Create(clip, DisplayItemListSettings());
   }
   bool FillsBoundsCompletely() const override { return false; };
+  size_t GetApproximateUnsharedMemoryUsage() const override { return 0; }
 };
 
 TEST(PictureLayerTest, NoTilesIfEmptyBounds) {
@@ -77,44 +79,38 @@ TEST(PictureLayerTest, NoTilesIfEmptyBounds) {
 }
 
 TEST(PictureLayerTest, SuitableForGpuRasterization) {
+  scoped_ptr<FakeDisplayListRecordingSource> recording_source_owned(
+      new FakeDisplayListRecordingSource);
+  FakeDisplayListRecordingSource* recording_source =
+      recording_source_owned.get();
+
   MockContentLayerClient client;
-  scoped_refptr<PictureLayer> layer =
-      PictureLayer::Create(LayerSettings(), &client);
+  scoped_refptr<FakePictureLayer> layer =
+      FakePictureLayer::CreateWithRecordingSource(
+          LayerSettings(), &client, recording_source_owned.Pass());
+
   FakeLayerTreeHostClient host_client(FakeLayerTreeHostClient::DIRECT_3D);
   TestTaskGraphRunner task_graph_runner;
   scoped_ptr<FakeLayerTreeHost> host =
       FakeLayerTreeHost::Create(&host_client, &task_graph_runner);
   host->SetRootLayer(layer);
-  RecordingSource* recording_source = layer->GetRecordingSourceForTesting();
+
+  // Update layers to initialize the recording source.
+  gfx::Size layer_bounds(200, 200);
+  gfx::Rect layer_rect(layer_bounds);
+  Region invalidation(layer_rect);
+  recording_source->UpdateAndExpandInvalidation(
+      &client, &invalidation, layer_bounds, layer_rect, 1,
+      RecordingSource::RECORD_NORMALLY);
 
   // Layer is suitable for gpu rasterization by default.
   EXPECT_TRUE(recording_source->IsSuitableForGpuRasterization());
   EXPECT_TRUE(layer->IsSuitableForGpuRasterization());
 
   // Veto gpu rasterization.
-  recording_source->SetUnsuitableForGpuRasterizationForTesting();
+  recording_source->SetUnsuitableForGpuRasterization();
   EXPECT_FALSE(recording_source->IsSuitableForGpuRasterization());
   EXPECT_FALSE(layer->IsSuitableForGpuRasterization());
-}
-
-TEST(PictureLayerTest, UseTileGridSize) {
-  LayerTreeSettings settings;
-  settings.default_tile_grid_size = gfx::Size(123, 123);
-
-  MockContentLayerClient client;
-  scoped_refptr<PictureLayer> layer =
-      PictureLayer::Create(LayerSettings(), &client);
-  FakeLayerTreeHostClient host_client(FakeLayerTreeHostClient::DIRECT_3D);
-  TestTaskGraphRunner task_graph_runner;
-  scoped_ptr<FakeLayerTreeHost> host =
-      FakeLayerTreeHost::Create(&host_client, &task_graph_runner, settings);
-  host->SetRootLayer(layer);
-
-  // Tile-grid is set according to its setting.
-  gfx::Size size =
-      layer->GetRecordingSourceForTesting()->GetTileGridSizeForTesting();
-  EXPECT_EQ(size.width(), 123);
-  EXPECT_EQ(size.height(), 123);
 }
 
 // PicturePile uses the source frame number as a unit for measuring invalidation
@@ -125,7 +121,6 @@ TEST(PictureLayerTest, NonMonotonicSourceFrameNumber) {
   LayerTreeSettings settings;
   settings.single_thread_proxy_scheduler = false;
   settings.use_zero_copy = true;
-  settings.use_one_copy = false;
 
   FakeLayerTreeHostClient host_client1(FakeLayerTreeHostClient::DIRECT_3D);
   FakeLayerTreeHostClient host_client2(FakeLayerTreeHostClient::DIRECT_3D);

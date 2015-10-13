@@ -33,8 +33,9 @@
 
 #include "core/workers/WorkerReportingProxy.h"
 #include "platform/heap/Handle.h"
+#include "platform/weborigin/KURL.h"
 #include "public/platform/WebString.h"
-#include "public/web/WebServiceWorkerContextProxy.h"
+#include "public/web/modules/serviceworker/WebServiceWorkerContextProxy.h"
 #include "wtf/Forward.h"
 #include "wtf/OwnPtr.h"
 
@@ -46,6 +47,7 @@ class ServiceWorkerGlobalScope;
 class WebEmbeddedWorkerImpl;
 class WebServiceWorkerContextClient;
 class WebServiceWorkerRequest;
+struct WebSyncRegistration;
 
 // This class is created and destructed on the main thread, but live most
 // of its time as a resident of the worker thread.
@@ -63,24 +65,23 @@ class ServiceWorkerGlobalScopeProxy final
     : public WebServiceWorkerContextProxy
     , public WorkerReportingProxy {
     WTF_MAKE_NONCOPYABLE(ServiceWorkerGlobalScopeProxy);
+    WTF_MAKE_FAST_ALLOCATED(ServiceWorkerGlobalScopeProxy);
 public:
     static PassOwnPtr<ServiceWorkerGlobalScopeProxy> create(WebEmbeddedWorkerImpl&, Document&, WebServiceWorkerContextClient&);
     ~ServiceWorkerGlobalScopeProxy() override;
 
     // WebServiceWorkerContextProxy overrides:
-    void setRegistration(WebServiceWorkerRegistration*) override;
+    void setRegistration(WebPassOwnPtr<WebServiceWorkerRegistration::Handle>) override;
     void dispatchActivateEvent(int) override;
-    void dispatchCrossOriginConnectEvent(int, const WebCrossOriginServiceWorkerClient&) override;
     void dispatchCrossOriginMessageEvent(const WebCrossOriginServiceWorkerClient&, const WebString& message, const WebMessagePortChannelArray&) override;
     void dispatchFetchEvent(int, const WebServiceWorkerRequest&) override;
     void dispatchGeofencingEvent(int, WebGeofencingEventType, const WebString& regionID, const WebCircularGeofencingRegion&) override;
     void dispatchInstallEvent(int) override;
     void dispatchMessageEvent(const WebString& message, const WebMessagePortChannelArray&) override;
-    void dispatchNotificationClickEvent(int, int64_t notificationID, const WebNotificationData&) override;
+    void dispatchNotificationClickEvent(int, int64_t notificationID, const WebNotificationData&, int actionIndex) override;
     void dispatchPushEvent(int, const WebString& data) override;
     void dispatchServicePortConnectEvent(WebServicePortConnectEventCallbacks*, const WebURL& targetURL, const WebString& origin, WebServicePortID) override;
-    void dispatchSyncEvent(int) override;
-    void addStashedMessagePorts(const WebMessagePortChannelArray&, const WebVector<WebString>& webChannelNames) override;
+    void dispatchSyncEvent(int, const WebSyncRegistration&) override;
 
     // WorkerReportingProxy overrides:
     void reportException(const String& errorMessage, int lineNumber, int columnNumber, const String& sourceURL, int exceptionId) override;
@@ -88,6 +89,7 @@ public:
     void postMessageToPageInspector(const String&) override;
     void postWorkerConsoleAgentEnabled() override { }
     void didEvaluateWorkerScript(bool success) override;
+    void didInitializeWorkerContext() override;
     void workerGlobalScopeStarted(WorkerGlobalScope*) override;
     void workerGlobalScopeClosed() override;
     void willDestroyWorkerGlobalScope() override;
@@ -98,6 +100,7 @@ private:
 
     WebEmbeddedWorkerImpl& m_embeddedWorker;
     Document& m_document;
+    KURL m_documentURL;
 
     WebServiceWorkerContextClient& m_client;
 

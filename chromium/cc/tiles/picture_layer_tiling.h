@@ -36,8 +36,7 @@ class CC_EXPORT PictureLayerTilingClient {
  public:
   // Create a tile at the given content_rect (in the contents scale of the
   // tiling) This might return null if the client cannot create such a tile.
-  virtual ScopedTilePtr CreateTile(float contents_scale,
-                                   const gfx::Rect& content_rect) = 0;
+  virtual ScopedTilePtr CreateTile(const Tile::CreateInfo& info) = 0;
   virtual gfx::Size CalculateTileSize(
     const gfx::Size& content_bounds) const = 0;
   // This invalidation region defines the area (if any, it can by null) that
@@ -98,7 +97,7 @@ class CC_EXPORT PictureLayerTiling {
       float contents_scale,
       scoped_refptr<RasterSource> raster_source,
       PictureLayerTilingClient* client,
-      size_t max_tiles_for_interest_area,
+      size_t tiling_interest_area_padding,
       float skewport_target_time_in_seconds,
       int skewport_extrapolation_limit_in_content_pixels);
 
@@ -111,8 +110,17 @@ class CC_EXPORT PictureLayerTiling {
   bool IsTileRequiredForActivation(const Tile* tile) const;
   bool IsTileRequiredForDraw(const Tile* tile) const;
 
-  void set_resolution(TileResolution resolution) { resolution_ = resolution; }
+  void set_resolution(TileResolution resolution) {
+    resolution_ = resolution;
+    may_contain_low_resolution_tiles_ |= resolution == LOW_RESOLUTION;
+  }
   TileResolution resolution() const { return resolution_; }
+  bool may_contain_low_resolution_tiles() const {
+    return may_contain_low_resolution_tiles_;
+  }
+  void reset_may_contain_low_resolution_tiles() {
+    may_contain_low_resolution_tiles_ = false;
+  }
   void set_can_require_tiles_for_activation(bool can_require_tiles) {
     can_require_tiles_for_activation_ = can_require_tiles;
   }
@@ -240,22 +248,6 @@ class CC_EXPORT PictureLayerTiling {
   void AsValueInto(base::trace_event::TracedValue* array) const;
   size_t GPUMemoryUsageInBytes() const;
 
-  struct RectExpansionCache {
-    RectExpansionCache();
-
-    gfx::Rect previous_start;
-    gfx::Rect previous_bounds;
-    gfx::Rect previous_result;
-    int64 previous_target;
-  };
-
-  static
-  gfx::Rect ExpandRectEquallyToAreaBoundedBy(
-      const gfx::Rect& starting_rect,
-      int64 target_area,
-      const gfx::Rect& bounding_rect,
-      RectExpansionCache* cache);
-
  protected:
   friend class CoverageIterator;
   friend class PrioritizedTile;
@@ -287,12 +279,12 @@ class CC_EXPORT PictureLayerTiling {
                      float contents_scale,
                      scoped_refptr<RasterSource> raster_source,
                      PictureLayerTilingClient* client,
-                     size_t max_tiles_for_interest_area,
+                     size_t tiling_interest_area_padding,
                      float skewport_target_time_in_seconds,
                      int skewport_extrapolation_limit_in_content_pixels);
   void SetLiveTilesRect(const gfx::Rect& live_tiles_rect);
   void VerifyLiveTilesRect(bool is_on_recycle_tree) const;
-  Tile* CreateTile(int i, int j);
+  Tile* CreateTile(const Tile::CreateInfo& info);
   ScopedTilePtr TakeTileAt(int i, int j);
   // Returns true if the Tile existed and was removed from the tiling.
   bool RemoveTileAt(int i, int j);
@@ -333,7 +325,8 @@ class CC_EXPORT PictureLayerTiling {
       visible_rect_history_[1] = visible_rect_history_[0];
   }
   bool IsTileOccludedOnCurrentTree(const Tile* tile) const;
-  bool ShouldCreateTileAt(int i, int j) const;
+  Tile::CreateInfo CreateInfoForTile(int i, int j) const;
+  bool ShouldCreateTileAt(const Tile::CreateInfo& info) const;
   bool IsTileOccluded(const Tile* tile) const;
   void UpdateRequiredStatesOnTile(Tile* tile) const;
   PrioritizedTile MakePrioritizedTile(
@@ -375,7 +368,7 @@ class CC_EXPORT PictureLayerTiling {
   }
   void RemoveTilesInRegion(const Region& layer_region, bool recreate_tiles);
 
-  const size_t max_tiles_for_interest_area_;
+  const size_t tiling_interest_area_padding_;
   const float skewport_target_time_in_seconds_;
   const int skewport_extrapolation_limit_in_content_pixels_;
 
@@ -385,6 +378,7 @@ class CC_EXPORT PictureLayerTiling {
   const WhichTree tree_;
   scoped_refptr<RasterSource> raster_source_;
   TileResolution resolution_;
+  bool may_contain_low_resolution_tiles_;
 
   // Internal data.
   TilingData tiling_data_;
@@ -414,8 +408,6 @@ class CC_EXPORT PictureLayerTiling {
 
  private:
   DISALLOW_ASSIGN(PictureLayerTiling);
-
-  RectExpansionCache expansion_cache_;
 };
 
 }  // namespace cc

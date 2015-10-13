@@ -102,13 +102,13 @@ class EmbeddedWorkerTestHelper : public IPC::Sender,
   virtual void OnPushEvent(int embedded_worker_id,
                            int request_id,
                            const std::string& data);
-  virtual void OnSyncEvent(int embedded_worker_id, int request_id);
 
   // These functions simulate sending an EmbeddedHostMsg message to the
   // browser.
   void SimulateWorkerReadyForInspection(int embedded_worker_id);
   void SimulateWorkerScriptCached(int embedded_worker_id);
-  void SimulateWorkerScriptLoaded(int thread_id, int embedded_worker_id);
+  void SimulateWorkerScriptLoaded(int embedded_worker_id);
+  void SimulateWorkerThreadStarted(int thread_id, int embedded_worker_id);
   void SimulateWorkerScriptEvaluated(int embedded_worker_id);
   void SimulateWorkerStarted(int embedded_worker_id);
   void SimulateWorkerStopped(int embedded_worker_id);
@@ -127,7 +127,6 @@ class EmbeddedWorkerTestHelper : public IPC::Sender,
   void OnFetchEventStub(int request_id,
                         const ServiceWorkerFetchRequest& request);
   void OnPushEventStub(int request_id, const std::string& data);
-  void OnSyncEventStub(int request_id);
 
   MessagePortMessageFilter* NewMessagePortMessageFilter();
 

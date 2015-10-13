@@ -308,7 +308,7 @@ def _OverloadedFunctionActionDiagnoser(msg):
   clang_regex = (_CLANG_FILE_LINE_RE + r'error: no matching '
                  r'function for call to \'Invoke\'\r?\n'
                  r'(.*\n)*?'
-                 r'.*\bgmock-\w+-actions\.h:\d+:\d+:\s+'
+                 r'.*\bgmock-generated-actions\.h:\d+:\d+:\s+'
                  r'note: candidate template ignored:\s+'
                  r'couldn\'t infer template argument \'FunctionImpl\'')
   diagnosis = """
@@ -334,7 +334,7 @@ def _OverloadedMethodActionDiagnoser(msg):
   clang_regex = (_CLANG_FILE_LINE_RE + r'error: no matching function '
                  r'for call to \'Invoke\'\r?\n'
                  r'(.*\n)*?'
-                 r'.*\bgmock-\w+-actions\.h:\d+:\d+: '
+                 r'.*\bgmock-generated-actions\.h:\d+:\d+: '
                  r'note: candidate function template not viable: '
                  r'requires .*, but 2 (arguments )?were provided')
   diagnosis = """
@@ -362,7 +362,7 @@ def _MockObjectPointerDiagnoser(msg):
                r'which is of non-class type \'(.*::)*(?P<class_name>.+)\*\'')
   clang_regex = (_CLANG_FILE_LINE_RE + r'error: member reference type '
                  r'\'(?P<class_name>.*?) *\' is a pointer; '
-                 r'maybe you meant to use \'->\'\?')
+                 r'(did you mean|maybe you meant) to use \'->\'\?')
   diagnosis = """
 The first argument to ON_CALL() and EXPECT_CALL() must be a mock *object*,
 not a *pointer* to it.  Please write '*(%(mock_object)s)' instead of

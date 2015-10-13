@@ -32,14 +32,15 @@
 #include "public/platform/WebExternalTextureLayer.h"
 #include "public/platform/WebExternalTextureLayerClient.h"
 #include "public/platform/WebExternalTextureMailbox.h"
+#include "public/platform/WebThread.h"
 #include "third_party/khronos/GLES2/gl2.h"
 #include "third_party/skia/include/core/SkImage.h"
-#include "third_party/skia/include/utils/SkDeferredCanvas.h"
 #include "wtf/Deque.h"
-#include "wtf/DoublyLinkedList.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
+
+class SkPictureRecorder;
 
 namespace blink {
 
@@ -47,11 +48,18 @@ class Canvas2DLayerBridgeTest;
 class ImageBuffer;
 class WebGraphicsContext3D;
 class WebGraphicsContext3DProvider;
+class SharedContextRateLimiter;
 
-class PLATFORM_EXPORT Canvas2DLayerBridge : public WebExternalTextureLayerClient, public SkDeferredCanvas::NotificationClient, public DoublyLinkedListNode<Canvas2DLayerBridge>, public RefCounted<Canvas2DLayerBridge> {
+class PLATFORM_EXPORT Canvas2DLayerBridge : public WebExternalTextureLayerClient, public WebThread::TaskObserver, public RefCounted<Canvas2DLayerBridge> {
     WTF_MAKE_NONCOPYABLE(Canvas2DLayerBridge);
 public:
-    static PassRefPtr<Canvas2DLayerBridge> create(const IntSize&, OpacityMode, int msaaSampleCount);
+    enum AccelerationMode {
+        DisableAcceleration,
+        EnableAcceleration,
+        ForceAccelerationForTesting,
+    };
+
+    static PassRefPtr<Canvas2DLayerBridge> create(const IntSize&, int msaaSampleCount, OpacityMode, AccelerationMode);
 
     ~Canvas2DLayerBridge() override;
 
@@ -59,64 +67,64 @@ public:
     bool prepareMailbox(WebExternalTextureMailbox*, WebExternalBitmap*) override;
     void mailboxReleased(const WebExternalTextureMailbox&, bool lostResource) override;
 
-    // SkDeferredCanvas::NotificationClient implementation
-    void prepareForDraw() override;
-    void storageAllocatedForRecordingChanged(size_t) override;
-    void flushedDrawCommands() override;
-    void skippedPendingDrawCommands() override;
-
     // ImageBufferSurface implementation
     void finalizeFrame(const FloatRect &dirtyRect);
-    void willAccessPixels();
-    SkCanvas* canvas() const { return m_canvas.get(); }
+    void willWritePixels();
+    void willOverwriteAllPixels();
+    void willOverwriteCanvas();
+    SkCanvas* canvas();
+    void disableDeferral();
     bool checkSurfaceValid();
     bool restoreSurface();
     WebLayer* layer() const;
-    bool isAccelerated() const { return true; }
+    bool isAccelerated() const;
     void setFilterQuality(SkFilterQuality);
     void setIsHidden(bool);
-    void setImageBuffer(ImageBuffer* imageBuffer) { m_imageBuffer = imageBuffer; }
-    void didDraw();
-
-    // Methods used by Canvas2DLayerManager
-    virtual size_t freeMemoryIfPossible(size_t); // virtual for mocking
-    virtual void flush(); // virtual for mocking
-    virtual size_t storageAllocatedForRecording(); // virtual for faking
-    size_t bytesAllocated() const { return m_bytesAllocated; }
-    void limitPendingFrames();
-    void freeTransientResources();
-    bool hasTransientResources() const;
+    void setImageBuffer(ImageBuffer*);
+    void didDraw(const FloatRect&);
+    bool writePixels(const SkImageInfo&, const void* pixels, size_t rowBytes, int x, int y);
+    void flush();
+    void flushGpu();
+    void prepareSurfaceForPaintingIfNeeded();
     bool isHidden() { return m_isHidden; }
 
     void beginDestruction();
 
-    PassRefPtr<SkImage> newImageSnapshot();
+    PassRefPtr<SkImage> newImageSnapshot(AccelerationHint);
 
-protected:
-    Canvas2DLayerBridge(PassOwnPtr<WebGraphicsContext3DProvider>, PassOwnPtr<SkDeferredCanvas>, PassRefPtr<SkSurface>, int, OpacityMode);
-    void setRateLimitingEnabled(bool);
+private:
+    Canvas2DLayerBridge(PassOwnPtr<WebGraphicsContext3DProvider>, const IntSize&, int msaaSampleCount, OpacityMode, AccelerationMode);
     WebGraphicsContext3D* context();
+    void startRecording();
+    void skipQueuedDrawCommands();
+    void flushRecordingOnly();
+    void unregisterTaskObserver();
 
-    OwnPtr<SkDeferredCanvas> m_canvas;
+    // WebThread::TaskOberver implementation
+    void willProcessTask() override;
+    void didProcessTask() override;
+
+    SkSurface* getOrCreateSurface(AccelerationHint = PreferAcceleration);
+    bool shouldAccelerate(AccelerationHint) const;
+
+    OwnPtr<SkPictureRecorder> m_recorder;
     RefPtr<SkSurface> m_surface;
+    int m_initialSurfaceSaveCount;
     OwnPtr<WebExternalTextureLayer> m_layer;
     OwnPtr<WebGraphicsContext3DProvider> m_contextProvider;
+    OwnPtr<SharedContextRateLimiter> m_rateLimiter;
     ImageBuffer* m_imageBuffer;
     int m_msaaSampleCount;
     size_t m_bytesAllocated;
-    bool m_didRecordDrawCommand;
-    bool m_isSurfaceValid;
-    int m_framesPending;
-    int m_framesSinceMailboxRelease;
+    bool m_haveRecordedDrawCommands;
     bool m_destructionInProgress;
-    bool m_rateLimitingEnabled;
     SkFilterQuality m_filterQuality;
     bool m_isHidden;
+    bool m_isDeferralEnabled;
+    bool m_isRegisteredTaskObserver;
+    bool m_renderingTaskCompletedForCurrentFrame;
 
-    friend class WTF::DoublyLinkedListNode<Canvas2DLayerBridge>;
     friend class Canvas2DLayerBridgeTest;
-    Canvas2DLayerBridge* m_next;
-    Canvas2DLayerBridge* m_prev;
 
     struct MailboxInfo {
         WebExternalTextureMailbox m_mailbox;
@@ -137,7 +145,10 @@ protected:
 
     Deque<MailboxInfo, MaxActiveMailboxes> m_mailboxes;
     GLenum m_lastFilter;
+    AccelerationMode m_accelerationMode;
     OpacityMode m_opacityMode;
+    IntSize m_size;
+    int m_recordingPixelCount;
 };
 
 } // namespace blink

@@ -39,9 +39,9 @@ namespace blink {
 // This shim necessary because ImageBufferSurfaces are not allowed to be RefCounted
 class Canvas2DImageBufferSurface final : public ImageBufferSurface {
 public:
-    Canvas2DImageBufferSurface(const IntSize& size, OpacityMode opacityMode = NonOpaque, int msaaSampleCount = 1)
+    Canvas2DImageBufferSurface(const IntSize& size, int msaaSampleCount, OpacityMode opacityMode, Canvas2DLayerBridge::AccelerationMode accelerationMode)
         : ImageBufferSurface(size, opacityMode)
-        , m_layerBridge(Canvas2DLayerBridge::create(size, opacityMode, msaaSampleCount))
+        , m_layerBridge(Canvas2DLayerBridge::create(size, msaaSampleCount, opacityMode, accelerationMode))
     {
         clear();
         if (isValid())
@@ -56,8 +56,9 @@ public:
 
     // ImageBufferSurface implementation
     void finalizeFrame(const FloatRect &dirtyRect) override { m_layerBridge->finalizeFrame(dirtyRect); }
-    void willAccessPixels() override { m_layerBridge->willAccessPixels(); }
-    SkCanvas* canvas() const override { return m_layerBridge->canvas(); }
+    void willOverwriteCanvas() override { m_layerBridge->willOverwriteCanvas(); }
+    SkCanvas* canvas() override { return m_layerBridge->canvas(); }
+    void disableDeferral() override { m_layerBridge->disableDeferral(); }
     bool isValid() const override { return m_layerBridge && m_layerBridge->checkSurfaceValid(); }
     bool restore() override { return m_layerBridge->restoreSurface(); }
     WebLayer* layer() const override { return m_layerBridge->layer(); }
@@ -65,9 +66,13 @@ public:
     void setFilterQuality(SkFilterQuality filterQuality) override { m_layerBridge->setFilterQuality(filterQuality); }
     void setIsHidden(bool hidden) override { m_layerBridge->setIsHidden(hidden); }
     void setImageBuffer(ImageBuffer* imageBuffer) override { m_layerBridge->setImageBuffer(imageBuffer); }
-    void didDraw(const FloatRect& rect) override { m_layerBridge->didDraw(); }
+    void didDraw(const FloatRect& rect) override { m_layerBridge->didDraw(rect); }
+    void flush() override { m_layerBridge->flush(); }
+    void flushGpu() override { m_layerBridge->flushGpu(); }
+    void prepareSurfaceForPaintingIfNeeded() override { m_layerBridge->prepareSurfaceForPaintingIfNeeded(); }
+    bool writePixels(const SkImageInfo& origInfo, const void* pixels, size_t rowBytes, int x, int y) override { return m_layerBridge->writePixels(origInfo, pixels, rowBytes, x, y); }
 
-    PassRefPtr<SkImage> newImageSnapshot() const override { return m_layerBridge->newImageSnapshot(); }
+    PassRefPtr<SkImage> newImageSnapshot(AccelerationHint hint) override { return m_layerBridge->newImageSnapshot(hint); }
 private:
     RefPtr<Canvas2DLayerBridge> m_layerBridge;
 };

@@ -108,7 +108,7 @@ IAccessible* AccessibilityWinBrowserTest::GetRendererAccessible() {
 }
 
 void AccessibilityWinBrowserTest::ExecuteScript(const std::wstring& script) {
-  shell()->web_contents()->GetMainFrame()->ExecuteJavaScript(script);
+  shell()->web_contents()->GetMainFrame()->ExecuteJavaScriptForTests(script);
 }
 
 // Loads a page with  an input text field and places sample text in it. Also,
@@ -871,7 +871,7 @@ IN_PROC_BROWSER_TEST_F(AccessibilityWinBrowserTest,
 IN_PROC_BROWSER_TEST_F(AccessibilityWinBrowserTest,
                        SupportsISimpleDOM) {
   LoadInitialAccessibilityTreeFromHtml(
-      "<body><input type='checkbox' /></body>");
+      "<body><input type='checkbox'></body>");
 
   // Get the IAccessible object for the document.
   base::win::ScopedComPtr<IAccessible> document_accessible(

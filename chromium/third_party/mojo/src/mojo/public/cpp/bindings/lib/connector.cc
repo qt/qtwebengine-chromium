@@ -4,7 +4,6 @@
 
 #include "mojo/public/cpp/bindings/lib/connector.h"
 
-#include "mojo/public/cpp/bindings/error_handler.h"
 #include "mojo/public/cpp/environment/logging.h"
 
 namespace mojo {
@@ -21,6 +20,7 @@ Connector::Connector(ScopedMessagePipeHandle message_pipe,
       error_(false),
       drop_writes_(false),
       enforce_errors_from_incoming_receiver_(true),
+      paused_(false),
       destroyed_flag_(nullptr) {
   // Even though we don't have an incoming receiver, we still want to monitor
   // the message pipe to know if is closed or encounters an error.
@@ -48,6 +48,8 @@ bool Connector::WaitForIncomingMessage(MojoDeadline deadline) {
   if (error_)
     return false;
 
+  ResumeIncomingMethodCallProcessing();
+
   MojoResult rv =
       Wait(message_pipe_.get(), MOJO_HANDLE_SIGNAL_READABLE, deadline, nullptr);
   if (rv == MOJO_RESULT_SHOULD_WAIT)
@@ -58,6 +60,22 @@ bool Connector::WaitForIncomingMessage(MojoDeadline deadline) {
   }
   mojo_ignore_result(ReadSingleMessage(&rv));
   return (rv == MOJO_RESULT_OK);
+}
+
+void Connector::PauseIncomingMethodCallProcessing() {
+  if (paused_)
+    return;
+
+  paused_ = true;
+  CancelWait();
+}
+
+void Connector::ResumeIncomingMethodCallProcessing() {
+  if (!paused_)
+    return;
+
+  paused_ = false;
+  WaitToReadMore();
 }
 
 bool Connector::Accept(Message* message) {
@@ -132,11 +150,9 @@ void Connector::OnHandleReady(MojoResult result) {
 
 void Connector::WaitToReadMore() {
   MOJO_CHECK(!async_wait_id_);
-  async_wait_id_ = waiter_->AsyncWait(message_pipe_.get().value(),
-                                      MOJO_HANDLE_SIGNAL_READABLE,
-                                      MOJO_DEADLINE_INDEFINITE,
-                                      &Connector::CallOnHandleReady,
-                                      this);
+  async_wait_id_ = waiter_->AsyncWait(
+      4, message_pipe_.get().value(), MOJO_HANDLE_SIGNAL_READABLE,
+      MOJO_DEADLINE_INDEFINITE, &Connector::CallOnHandleReady, this);
 }
 
 bool Connector::ReadSingleMessage(MojoResult* read_result) {

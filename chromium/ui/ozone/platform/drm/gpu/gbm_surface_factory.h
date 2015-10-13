@@ -5,22 +5,30 @@
 #ifndef UI_OZONE_PLATFORM_DRM_GPU_GBM_SURFACE_FACTORY_H_
 #define UI_OZONE_PLATFORM_DRM_GPU_GBM_SURFACE_FACTORY_H_
 
-#include "ui/ozone/platform/drm/gpu/drm_surface_factory.h"
+#include <map>
+
+#include "base/threading/thread_checker.h"
+#include "ui/ozone/public/surface_factory_ozone.h"
 
 namespace ui {
 
 class DrmDeviceManager;
 class DrmWindow;
 class GbmDevice;
+class GbmSurfaceless;
 class ScreenManager;
 
-class GbmSurfaceFactory : public DrmSurfaceFactory {
+class GbmSurfaceFactory : public SurfaceFactoryOzone {
  public:
-  GbmSurfaceFactory(bool allow_surfaceless);
+  GbmSurfaceFactory();
   ~GbmSurfaceFactory() override;
 
   void InitializeGpu(DrmDeviceManager* drm_device_manager,
                      ScreenManager* screen_manager);
+
+  void RegisterSurface(gfx::AcceleratedWidget widget, GbmSurfaceless* surface);
+  void UnregisterSurface(gfx::AcceleratedWidget widget);
+  GbmSurfaceless* GetSurface(gfx::AcceleratedWidget widget) const;
 
   // DrmSurfaceFactory:
   intptr_t GetNativeDisplay() override;
@@ -37,17 +45,18 @@ class GbmSurfaceFactory : public DrmSurfaceFactory {
   scoped_refptr<ui::NativePixmap> CreateNativePixmap(
       gfx::AcceleratedWidget widget,
       gfx::Size size,
-      BufferFormat format,
-      BufferUsage usage) override;
-  bool CanShowPrimaryPlaneAsOverlay() override;
-  bool CanCreateNativePixmap(BufferUsage usage) override;
+      gfx::BufferFormat format,
+      gfx::BufferUsage usage) override;
 
  private:
   scoped_refptr<GbmDevice> GetGbmDevice(gfx::AcceleratedWidget widget);
 
-  bool allow_surfaceless_;
-
   DrmDeviceManager* drm_device_manager_;  // Not owned.
+  ScreenManager* screen_manager_;         // Not owned.
+
+  base::ThreadChecker thread_checker_;
+
+  std::map<gfx::AcceleratedWidget, GbmSurfaceless*> widget_to_surface_map_;
 
   DISALLOW_COPY_AND_ASSIGN(GbmSurfaceFactory);
 };

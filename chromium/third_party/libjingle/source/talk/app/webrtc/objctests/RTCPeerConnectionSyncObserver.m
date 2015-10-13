@@ -139,14 +139,20 @@
   [_expectedMessages addObject:buffer];
 }
 
-- (void)waitForAllExpectationsToBeSatisfied {
+- (BOOL)waitForAllExpectationsToBeSatisfiedWithTimeout:(NSTimeInterval)timeout {
+  NSParameterAssert(timeout >= 0);
   // TODO (fischman):  Revisit.  Keeping in sync with the Java version, but
   // polling is not optimal.
   // https://code.google.com/p/libjingle/source/browse/trunk/talk/app/webrtc/javatests/src/org/webrtc/PeerConnectionTest.java?line=212#212
+  NSDate *startTime = [NSDate date];
   while (![self areAllExpectationsSatisfied]) {
+    if (startTime.timeIntervalSinceNow < -timeout) {
+      return NO;
+    }
     [[NSRunLoop currentRunLoop]
         runUntilDate:[NSDate dateWithTimeIntervalSinceNow:1]];
   }
+  return YES;
 }
 
 #pragma mark - RTCPeerConnectionDelegate methods
@@ -196,8 +202,11 @@
   if (newState == RTCICEGatheringGathering) {
     return;
   }
+  NSAssert([_expectedICEGatheringChanges count] > 0,
+           @"Unexpected ICE gathering state change");
   int expectedState = [self popFirstElementAsInt:_expectedICEGatheringChanges];
-  NSAssert(expectedState == (int)newState, @"Empty expectation array");
+  NSAssert(expectedState == (int)newState,
+           @"ICE gathering state should match expectation");
 }
 
 - (void)peerConnection:(RTCPeerConnection*)peerConnection
@@ -205,8 +214,11 @@
   // See TODO(fischman) in RTCPeerConnectionTest.mm about Completed.
   if (newState == RTCICEConnectionCompleted)
     return;
+  NSAssert([_expectedICEConnectionChanges count] > 0,
+           @"Unexpected ICE connection state change");
   int expectedState = [self popFirstElementAsInt:_expectedICEConnectionChanges];
-  NSAssert(expectedState == (int)newState, @"Empty expectation array");
+  NSAssert(expectedState == (int)newState,
+           @"ICE connection state should match expectation");
 }
 
 - (void)peerConnection:(RTCPeerConnection*)peerConnection

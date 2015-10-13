@@ -221,27 +221,6 @@ void ScrollableArea::userScrollHelper(const DoublePoint& position, ScrollBehavio
     scrollAnimator()->scrollToOffsetWithoutAnimation(toFloatPoint(position));
 }
 
-void ScrollableArea::scrollIntoRect(const LayoutRect& rectInContent, const FloatRect& targetRectInFrame)
-{
-    // Use |pixelSnappedIntRect| for rounding to pixel as opposed to |enclosingIntRect|. It gives a better
-    // combined (location and size) rounding error resulting in a more accurate scroll offset.
-    // FIXME: It would probably be best to do the whole calculation in LayoutUnits but contentsToRootFrame
-    // and friends don't have LayoutRect/Point versions yet.
-    IntRect boundsInContent = pixelSnappedIntRect(rectInContent);
-    IntRect boundsInFrame(boundsInContent.location() - toIntSize(scrollPosition()), boundsInContent.size());
-
-    int centeringOffsetX = (targetRectInFrame.width() - boundsInFrame.width()) / 2;
-    int centeringOffsetY = (targetRectInFrame.height() - boundsInFrame.height()) / 2;
-
-    IntSize scrollDelta(
-        boundsInFrame.x() - centeringOffsetX - targetRectInFrame.x(),
-        boundsInFrame.y() - centeringOffsetY - targetRectInFrame.y());
-
-    DoublePoint targetOffset = DoublePoint(scrollPosition() + scrollDelta);
-
-    setScrollPosition(targetOffset, ProgrammaticScroll);
-}
-
 LayoutRect ScrollableArea::scrollIntoView(const LayoutRect& rectInContent, const ScrollAlignment& alignX, const ScrollAlignment& alignY)
 {
     // TODO(bokan): This should really be implemented here but ScrollAlignment is in Core which is a dependency violation.
@@ -302,16 +281,6 @@ bool ScrollableArea::scrollBehaviorFromString(const String& behaviorString, Scro
         return false;
 
     return true;
-}
-
-ScrollResult ScrollableArea::handleWheel(const PlatformWheelEvent& wheelEvent)
-{
-    // Wheel events which do not scroll are used to trigger zooming.
-    if (!wheelEvent.canScroll())
-        return ScrollResult();
-
-    cancelProgrammaticScrollAnimation();
-    return scrollAnimator()->handleWheelEvent(wheelEvent);
 }
 
 // NOTE: Only called from Internals for testing.
@@ -487,10 +456,10 @@ bool ScrollableArea::hasLayerForScrollCorner() const
     return layerForScrollCorner();
 }
 
-void ScrollableArea::layerForScrollingDidChange()
+void ScrollableArea::layerForScrollingDidChange(WebCompositorAnimationTimeline* timeline)
 {
     if (ProgrammaticScrollAnimator* programmaticScrollAnimator = existingProgrammaticScrollAnimator())
-        programmaticScrollAnimator->layerForCompositedScrollingDidChange();
+        programmaticScrollAnimator->layerForCompositedScrollingDidChange(timeline);
 }
 
 bool ScrollableArea::scheduleAnimation()
@@ -576,7 +545,6 @@ DoublePoint ScrollableArea::clampScrollPosition(const DoublePoint& scrollPositio
     return scrollPosition.shrunkTo(maximumScrollPositionDouble()).expandedTo(minimumScrollPositionDouble());
 }
 
-
 int ScrollableArea::lineStep(ScrollbarOrientation) const
 {
     return pixelsPerLineStep();
@@ -584,7 +552,8 @@ int ScrollableArea::lineStep(ScrollbarOrientation) const
 
 int ScrollableArea::pageStep(ScrollbarOrientation orientation) const
 {
-    int length = (orientation == HorizontalScrollbar) ? visibleWidth() : visibleHeight();
+    IntRect visibleRect = visibleContentRect(IncludeScrollbars);
+    int length = (orientation == HorizontalScrollbar) ? visibleRect.width() : visibleRect.height();
     int minPageStep = static_cast<float>(length) * minFractionToStepWhenPaging();
     int pageStep = std::max(minPageStep, length - maxOverlapBetweenPages());
 

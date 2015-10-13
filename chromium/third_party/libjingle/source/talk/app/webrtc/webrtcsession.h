@@ -29,9 +29,11 @@
 #define TALK_APP_WEBRTC_WEBRTCSESSION_H_
 
 #include <string>
+#include <vector>
 
 #include "talk/app/webrtc/datachannel.h"
 #include "talk/app/webrtc/dtmfsender.h"
+#include "talk/app/webrtc/mediacontroller.h"
 #include "talk/app/webrtc/mediastreamprovider.h"
 #include "talk/app/webrtc/peerconnectioninterface.h"
 #include "talk/app/webrtc/statstypes.h"
@@ -39,6 +41,7 @@
 #include "webrtc/p2p/base/session.h"
 #include "talk/session/media/mediasession.h"
 #include "webrtc/base/sigslot.h"
+#include "webrtc/base/sslidentity.h"
 #include "webrtc/base/thread.h"
 
 namespace cricket {
@@ -47,7 +50,6 @@ class BaseChannel;
 class ChannelManager;
 class DataChannel;
 class StatsReport;
-class Transport;
 class VideoCapturer;
 class VideoChannel;
 class VoiceChannel;
@@ -75,6 +77,8 @@ extern const char kSessionError[];
 extern const char kSessionErrorDesc[];
 extern const char kDtlsSetupFailureRtp[];
 extern const char kDtlsSetupFailureRtcp[];
+extern const char kEnableBundleFailed[];
+
 // Maximum number of received video streams that will be processed by webrtc
 // even if they are not signalled beforehand.
 extern const int kMaxUnsignalledRecvStreams;
@@ -105,7 +109,7 @@ class IceObserver {
   ~IceObserver() {}
 
  private:
-  DISALLOW_COPY_AND_ASSIGN(IceObserver);
+  RTC_DISALLOW_COPY_AND_ASSIGN(IceObserver);
 };
 
 class WebRtcSession : public cricket::BaseSession,
@@ -125,7 +129,7 @@ class WebRtcSession : public cricket::BaseSession,
   bool Initialize(
       const PeerConnectionFactoryInterface::Options& options,
       const MediaConstraintsInterface* constraints,
-      DTLSIdentityServiceInterface* dtls_identity_service,
+      rtc::scoped_ptr<DtlsIdentityStoreInterface> dtls_identity_store,
       const PeerConnectionInterface::RTCConfiguration& rtc_configuration);
   // Deletes the voice, video and data channel and changes the session state
   // to STATE_RECEIVEDTERMINATE.
@@ -174,6 +178,9 @@ class WebRtcSession : public cricket::BaseSession,
 
   bool SetIceTransports(PeerConnectionInterface::IceTransportsType type);
 
+  cricket::IceConfig ParseIceConfig(
+      const PeerConnectionInterface::RTCConfiguration& config) const;
+
   const SessionDescriptionInterface* local_description() const {
     return local_desc_.get();
   }
@@ -193,7 +200,6 @@ class WebRtcSession : public cricket::BaseSession,
   // Get the id used as a media stream track's "id" field from ssrc.
   virtual bool GetLocalTrackIdBySsrc(uint32 ssrc, std::string* track_id);
   virtual bool GetRemoteTrackIdBySsrc(uint32 ssrc, std::string* track_id);
-
 
   // AudioMediaProviderInterface implementation.
   void SetAudioPlayout(uint32 ssrc,
@@ -234,6 +240,19 @@ class WebRtcSession : public cricket::BaseSession,
   // This avoids exposing the internal structures used to track them.
   virtual bool GetTransportStats(cricket::SessionStats* stats);
 
+  // Get stats for a specific channel
+  bool GetChannelTransportStats(cricket::BaseChannel* ch,
+                                cricket::SessionStats* stats);
+
+  // virtual so it can be mocked in unit tests
+  virtual bool GetLocalCertificate(
+      const std::string& transport_name,
+      rtc::scoped_refptr<rtc::RTCCertificate>* certificate);
+
+  // Caller owns returned certificate
+  virtual bool GetRemoteSSLCertificate(const std::string& transport_name,
+                                       rtc::SSLCertificate** cert);
+
   // Implements DataChannelFactory.
   rtc::scoped_refptr<DataChannel> CreateDataChannel(
       const std::string& label,
@@ -245,13 +264,15 @@ class WebRtcSession : public cricket::BaseSession,
 
   void ResetIceRestartLatch();
 
-  // Called when an SSLIdentity is generated or retrieved by
+  // Called when an RTCCertificate is generated or retrieved by
   // WebRTCSessionDescriptionFactory. Should happen before setLocalDescription.
-  void OnIdentityReady(rtc::SSLIdentity* identity);
+  void OnCertificateReady(
+      const rtc::scoped_refptr<rtc::RTCCertificate>& certificate);
   void OnDtlsSetupFailure(cricket::BaseChannel*, bool rtcp);
 
   // For unit test.
-  bool waiting_for_identity() const;
+  bool waiting_for_certificate_for_testing() const;
+  const rtc::scoped_refptr<rtc::RTCCertificate>& certificate_for_testing();
 
   void set_metrics_observer(
       webrtc::MetricsObserverInterface* metrics_observer) {
@@ -267,9 +288,6 @@ class WebRtcSession : public cricket::BaseSession,
     kAnswer,
   };
 
-  // Invokes ConnectChannels() on transport proxies, which initiates ice
-  // candidates allocation.
-  bool StartCandidatesAllocation();
   bool UpdateSessionState(Action action, cricket::ContentSource source,
                           std::string* err_desc);
   static Action GetAction(const std::string& type);
@@ -279,25 +297,13 @@ class WebRtcSession : public cricket::BaseSession,
                                 cricket::ContentSource source,
                                 std::string* error_desc);
 
-
-  // Transport related callbacks, override from cricket::BaseSession.
-  virtual void OnTransportRequestSignaling(cricket::Transport* transport);
-  virtual void OnTransportConnecting(cricket::Transport* transport);
-  virtual void OnTransportWritable(cricket::Transport* transport);
-  virtual void OnTransportCompleted(cricket::Transport* transport);
-  virtual void OnTransportFailed(cricket::Transport* transport);
-  virtual void OnTransportProxyCandidatesReady(
-      cricket::TransportProxy* proxy,
-      const cricket::Candidates& candidates);
-  virtual void OnCandidatesAllocationDone();
-  void OnTransportReceiving(cricket::Transport* transport) override;
+  cricket::BaseChannel* GetChannel(const std::string& content_name);
+  // Cause all the BaseChannels in the bundle group to have the same
+  // transport channel.
+  bool EnableBundle(const cricket::ContentGroup& bundle);
 
   // Enables media channels to allow sending of media.
   void EnableChannels();
-  // Creates a JsepIceCandidate and adds it to the local session description
-  // and notify observers. Called when a new local candidate have been found.
-  void ProcessNewLocalCandidate(const std::string& content_name,
-                                const cricket::Candidates& candidates);
   // Returns the media index for a local ice candidate given the content name.
   // Returns false if the local session description does not have a media
   // content called  |content_name|.
@@ -310,8 +316,7 @@ class WebRtcSession : public cricket::BaseSession,
   bool UseCandidate(const IceCandidateInterface* candidate);
   // Deletes the corresponding channel of contents that don't exist in |desc|.
   // |desc| can be null. This means that all channels are deleted.
-  void RemoveUnusedChannelsAndTransports(
-      const cricket::SessionDescription* desc);
+  void RemoveUnusedChannels(const cricket::SessionDescription* desc);
 
   // Allocates media channels based on the |desc|. If |desc| doesn't have
   // the BUNDLE option, this method will disable BUNDLE in PortAllocator.
@@ -360,14 +365,25 @@ class WebRtcSession : public cricket::BaseSession,
                                  const SessionDescriptionInterface* remote_desc,
                                  bool* valid);
 
+  void OnTransportControllerConnectionState(cricket::IceConnectionState state);
+  void OnTransportControllerReceiving(bool receiving);
+  void OnTransportControllerGatheringState(cricket::IceGatheringState state);
+  void OnTransportControllerCandidatesGathered(
+      const std::string& transport_name,
+      const cricket::Candidates& candidates);
+
   std::string GetSessionErrorMsg();
 
-  // Invoked when OnTransportCompleted is signaled to gather the usage
-  // of IPv4/IPv6 as best connection.
+  // Invoked when TransportController connection completion is signaled.
+  // Reports stats for all transports in use.
+  void ReportTransportStats();
+
+  // Gather the usage of IPv4/IPv6 as best connection.
   void ReportBestConnectionState(const cricket::TransportStats& stats);
 
   void ReportNegotiatedCiphers(const cricket::TransportStats& stats);
 
+  rtc::scoped_ptr<MediaControllerInterface> media_controller_;
   rtc::scoped_ptr<cricket::VoiceChannel> voice_channel_;
   rtc::scoped_ptr<cricket::VideoChannel> video_channel_;
   rtc::scoped_ptr<cricket::DataChannel> data_channel_;
@@ -411,7 +427,7 @@ class WebRtcSession : public cricket::BaseSession,
   // Declares the RTCP mux policy for the WebRTCSession.
   PeerConnectionInterface::RtcpMuxPolicy rtcp_mux_policy_;
 
-  DISALLOW_COPY_AND_ASSIGN(WebRtcSession);
+  RTC_DISALLOW_COPY_AND_ASSIGN(WebRtcSession);
 };
 }  // namespace webrtc
 

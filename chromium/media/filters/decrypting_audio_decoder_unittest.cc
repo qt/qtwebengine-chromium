@@ -9,12 +9,12 @@
 #include "base/callback_helpers.h"
 #include "base/message_loop/message_loop.h"
 #include "media/base/audio_buffer.h"
-#include "media/base/buffers.h"
 #include "media/base/decoder_buffer.h"
 #include "media/base/decrypt_config.h"
 #include "media/base/gmock_callback_support.h"
 #include "media/base/mock_filters.h"
 #include "media/base/test_helpers.h"
+#include "media/base/timestamp_constants.h"
 #include "media/filters/decrypting_audio_decoder.h"
 #include "testing/gmock/include/gmock/gmock.h"
 
@@ -118,7 +118,7 @@ class DecryptingAudioDecoderTest : public testing::Test {
         .WillOnce(SaveArg<1>(&key_added_cb_));
 
     config_.Initialize(kCodecVorbis, kSampleFormatPlanarF32,
-                       CHANNEL_LAYOUT_STEREO, kSampleRate, NULL, 0, true, true,
+                       CHANNEL_LAYOUT_STEREO, kSampleRate, NULL, 0, true,
                        base::TimeDelta(), 0);
     InitializeAndExpectResult(config_, true);
   }

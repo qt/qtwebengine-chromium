@@ -31,6 +31,7 @@
 #ifndef WebLocalFrameImpl_h
 #define WebLocalFrameImpl_h
 
+#include "core/editing/VisiblePosition.h"
 #include "core/frame/LocalFrame.h"
 #include "platform/geometry/FloatRect.h"
 #include "public/platform/WebFileSystemType.h"
@@ -46,7 +47,6 @@ namespace blink {
 
 class ChromePrintContext;
 class GeolocationClientProxy;
-class InspectorOverlay;
 class IntSize;
 class KURL;
 class Range;
@@ -57,7 +57,7 @@ class WebDataSourceImpl;
 class WebDevToolsAgentImpl;
 class WebDevToolsFrontendImpl;
 class WebFrameClient;
-class WebFrameWidgetImpl;
+class WebFrameWidget;
 class WebNode;
 class WebPerformance;
 class WebPlugin;
@@ -89,8 +89,6 @@ public:
     void setSharedWorkerRepositoryClient(WebSharedWorkerRepositoryClient*) override;
     WebSize scrollOffset() const override;
     void setScrollOffset(const WebSize&) override;
-    WebSize minimumScrollOffset() const override;
-    WebSize maximumScrollOffset() const override;
     WebSize contentsSize() const override;
     bool hasVisibleContent() const override;
     WebRect visibleContentRect() const override;
@@ -181,6 +179,7 @@ public:
     bool setCompositionFromExistingText(int compositionStart, int compositionEnd, const WebVector<WebCompositionUnderline>& underlines) override;
     void extendSelectionAndDelete(int before, int after) override;
     void setCaretVisible(bool) override;
+    void clearFocus() override;
     int printBegin(const WebPrintParams&, const WebNode& constrainToNode) override;
     float printPage(int pageToPrint, WebCanvas*) override;
     float getPrintPageShrink(int page) override;
@@ -248,6 +247,7 @@ public:
         WebHistoryLoadType) override;
     bool isLoading() const override;
     bool isResourceLoadInProgress() const override;
+    bool isNavigationScheduled() const override;
     void setCommittedFirstRealLoad() override;
     void sendOrientationChangeEvent() override;
     void willShowInstallBannerPrompt(int requestId, const WebVector<WebString>& platforms, WebAppBannerPromptReply*) override;
@@ -285,7 +285,6 @@ public:
 
     FrameView* frameView() const { return frame() ? frame()->view() : 0; }
 
-    InspectorOverlay* inspectorOverlay();
     WebDevToolsAgentImpl* devToolsAgentImpl() const { return m_devToolsAgent.get(); }
 
     // Getters for the impls corresponding to Get(Provisional)DataSource. They
@@ -335,8 +334,8 @@ public:
     // Returns a hit-tested VisiblePosition for the given point
     VisiblePosition visiblePositionForViewportPoint(const WebPoint&);
 
-    void setFrameWidget(WebFrameWidgetImpl*);
-    WebFrameWidgetImpl* frameWidget() const;
+    void setFrameWidget(WebFrameWidget*);
+    WebFrameWidget* frameWidget() const;
 
     // DevTools front-end bindings.
     void setDevToolsFrontend(WebDevToolsFrontendImpl* frontend) { m_webDevToolsFrontend = frontend; }
@@ -359,18 +358,17 @@ private:
     WebPlugin* focusedPluginIfInputMethodSupported();
     ScrollableArea* layoutViewportScrollableArea() const;
 
-    FrameLoaderClientImpl m_frameLoaderClientImpl;
+    OwnPtrWillBeMember<FrameLoaderClientImpl> m_frameLoaderClientImpl;
 
     // The embedder retains a reference to the WebCore LocalFrame while it is active in the DOM. This
     // reference is released when the frame is removed from the DOM or the entire page is closed.
     // FIXME: These will need to change to WebFrame when we introduce WebFrameProxy.
     RefPtrWillBeMember<LocalFrame> m_frame;
 
-    OwnPtrWillBeMember<InspectorOverlay> m_inspectorOverlay;
     OwnPtrWillBeMember<WebDevToolsAgentImpl> m_devToolsAgent;
 
     // This is set if the frame is the root of a local frame tree, and requires a widget for layout.
-    WebFrameWidgetImpl* m_frameWidget;
+    WebFrameWidget* m_frameWidget;
 
     WebFrameClient* m_client;
     WebAutofillClient* m_autofillClient;
@@ -397,14 +395,10 @@ private:
     HashMap<AtomicString, OwnPtr<WebTestInterfaceFactory>> m_testInterfaces;
 
 #if ENABLE(OILPAN)
-    // Oilpan: to provide the guarantee of having the frame live until
-    // close() is called, an instance keep a self-persistent. It is
-    // cleared upon calling close(). This avoids having to assume that
-    // an embedder's WebFrame references are all discovered via thread
-    // state (stack, registers) should an Oilpan GC strike while we're
-    // in the process of detaching.
-    GC_PLUGIN_IGNORE("340522")
-    Persistent<WebLocalFrameImpl> m_selfKeepAlive;
+    // Oilpan: WebLocalFrameImpl must remain alive until close() is called.
+    // Accomplish that by keeping a self-referential Persistent<>. It is
+    // cleared upon close().
+    SelfKeepAlive<WebLocalFrameImpl> m_selfKeepAlive;
 #endif
 };
 

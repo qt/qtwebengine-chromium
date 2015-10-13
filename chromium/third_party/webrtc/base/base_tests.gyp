@@ -15,7 +15,6 @@
         'unittest_main.cc',
         # Also use this as a convenient dumping ground for misc files that are
         # included by multiple targets below.
-        'fakecpumonitor.h',
         'fakenetwork.h',
         'fakesslidentity.h',
         'faketaskrunner.h',
@@ -45,7 +44,6 @@
       'type': 'none',
       'direct_dependent_settings': {
         'sources': [
-          'asynchttprequest_unittest.cc',
           'atomicops_unittest.cc',
           'autodetectproxy_unittest.cc',
           'bandwidthsmoother_unittest.cc',
@@ -58,12 +56,12 @@
           'bytebuffer_unittest.cc',
           'byteorder_unittest.cc',
           'callback_unittest.cc',
-          'cpumonitor_unittest.cc',
           'crc32_unittest.cc',
           'criticalsection_unittest.cc',
           'event_tracer_unittest.cc',
           'event_unittest.cc',
           'exp_filter_unittest.cc',
+          'filerotatingstream_unittest.cc',
           'fileutils_unittest.cc',
           'helpers_unittest.cc',
           'httpbase_unittest.cc',

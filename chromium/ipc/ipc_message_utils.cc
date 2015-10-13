@@ -20,12 +20,13 @@
 #include "ipc/ipc_platform_file_attachment_posix.h"
 #endif
 
-#if defined(OS_MACOSX) && !defined(OS_IOS)
+#if (defined(OS_MACOSX) && !defined(OS_IOS)) || defined(OS_WIN)
 #include "base/memory/shared_memory_handle.h"
-#endif  // defined(OS_MACOSX) && !defined(OS_IOS)
+#endif  // (defined(OS_MACOSX) && !defined(OS_IOS)) || defined(OS_WIN)
 
 #if defined(OS_WIN)
 #include <tchar.h>
+#include "ipc/handle_win.h"
 #endif
 
 namespace IPC {
@@ -314,15 +315,15 @@ void ParamTraits<unsigned int>::Log(const param_type& p, std::string* l) {
 }
 
 void ParamTraits<long>::Log(const param_type& p, std::string* l) {
-  l->append(base::Int64ToString(static_cast<int64>(p)));
+  l->append(base::Int64ToString(static_cast<int64_t>(p)));
 }
 
 void ParamTraits<unsigned long>::Log(const param_type& p, std::string* l) {
-  l->append(base::Uint64ToString(static_cast<uint64>(p)));
+  l->append(base::Uint64ToString(static_cast<uint64_t>(p)));
 }
 
 void ParamTraits<long long>::Log(const param_type& p, std::string* l) {
-  l->append(base::Int64ToString(static_cast<int64>(p)));
+  l->append(base::Int64ToString(static_cast<int64_t>(p)));
 }
 
 void ParamTraits<unsigned long long>::Log(const param_type& p, std::string* l) {
@@ -547,8 +548,14 @@ void ParamTraits<base::SharedMemoryHandle>::Write(Message* m,
                                                   const param_type& p) {
   m->WriteInt(p.GetType());
 
-  if (p.GetType() == base::SharedMemoryHandle::POSIX)
-    ParamTraits<base::FileDescriptor>::Write(m, p.GetFileDescriptor());
+  switch (p.GetType()) {
+    case base::SharedMemoryHandle::POSIX:
+      ParamTraits<base::FileDescriptor>::Write(m, p.GetFileDescriptor());
+      break;
+    case base::SharedMemoryHandle::MACH:
+      // TODO(erikchen): Implement me. http://crbug.com/535711
+      break;
+  }
 }
 
 bool ParamTraits<base::SharedMemoryHandle>::Read(const Message* m,
@@ -565,32 +572,95 @@ bool ParamTraits<base::SharedMemoryHandle>::Read(const Message* m,
       shm_type = static_cast<base::SharedMemoryHandle::Type>(type);
       break;
     }
-    default:
+    default: {
       return false;
+    }
   }
 
-  if (shm_type == base::SharedMemoryHandle::POSIX) {
-    base::FileDescriptor file_descriptor;
+  switch (shm_type) {
+    case base::SharedMemoryHandle::POSIX: {
+      base::FileDescriptor file_descriptor;
 
-    bool success =
-        ParamTraits<base::FileDescriptor>::Read(m, iter, &file_descriptor);
-    if (!success)
+      bool success =
+          ParamTraits<base::FileDescriptor>::Read(m, iter, &file_descriptor);
+      if (!success)
+        return false;
+
+      *r = base::SharedMemoryHandle(file_descriptor.fd,
+                                    file_descriptor.auto_close);
+      return true;
+    }
+    case base::SharedMemoryHandle::MACH: {
+      // TODO(erikchen): Implement me. http://crbug.com/535711
+      return true;
+    }
+  }
+}
+
+void ParamTraits<base::SharedMemoryHandle>::Log(const param_type& p,
+                                                std::string* l) {
+  switch (p.GetType()) {
+    case base::SharedMemoryHandle::POSIX:
+      l->append("POSIX Fd: ");
+      ParamTraits<base::FileDescriptor>::Log(p.GetFileDescriptor(), l);
+      break;
+    case base::SharedMemoryHandle::MACH:
+      // TODO(erikchen): Implement me. http://crbug.com/535711
+      break;
+  }
+}
+
+#elif defined(OS_WIN)
+void ParamTraits<base::SharedMemoryHandle>::Write(Message* m,
+                                                  const param_type& p) {
+  // Longs on windows are 32 bits.
+  uint32_t pid = p.GetPID();
+  m->WriteUInt32(pid);
+  m->WriteBool(p.NeedsBrokering());
+
+  if (p.NeedsBrokering()) {
+    HandleWin handle_win(p.GetHandle(), HandleWin::DUPLICATE);
+    ParamTraits<HandleWin>::Write(m, handle_win);
+  } else {
+    m->WriteInt(HandleToLong(p.GetHandle()));
+  }
+}
+
+bool ParamTraits<base::SharedMemoryHandle>::Read(const Message* m,
+                                                 base::PickleIterator* iter,
+                                                 param_type* r) {
+  uint32_t pid_int;
+  if (!iter->ReadUInt32(&pid_int))
+    return false;
+  base::ProcessId pid = pid_int;
+
+  bool needs_brokering;
+  if (!iter->ReadBool(&needs_brokering))
+    return false;
+
+  if (needs_brokering) {
+    HandleWin handle_win;
+    if (!ParamTraits<HandleWin>::Read(m, iter, &handle_win))
       return false;
-
-    *r = base::SharedMemoryHandle(file_descriptor.fd,
-                                  file_descriptor.auto_close);
+    *r = base::SharedMemoryHandle(handle_win.get_handle(), pid);
     return true;
   }
 
+  int handle_int;
+  if (!iter->ReadInt(&handle_int))
+    return false;
+  HANDLE handle = LongToHandle(handle_int);
+  *r = base::SharedMemoryHandle(handle, pid);
   return true;
 }
 
 void ParamTraits<base::SharedMemoryHandle>::Log(const param_type& p,
                                                 std::string* l) {
-  if (p.GetType() == base::SharedMemoryHandle::POSIX) {
-    l->append(base::StringPrintf("Mechanism POSIX Fd"));
-    ParamTraits<base::FileDescriptor>::Log(p.GetFileDescriptor(), l);
-  }
+  LogParam(p.GetPID(), l);
+  l->append(" ");
+  LogParam(p.GetHandle(), l);
+  l->append(" needs brokering: ");
+  LogParam(p.NeedsBrokering(), l);
 }
 #endif  // defined(OS_MACOSX) && !defined(OS_IOS)
 
@@ -697,32 +767,32 @@ void ParamTraits<base::File::Info>::Log(const param_type& p,
 }
 
 void ParamTraits<base::Time>::Write(Message* m, const param_type& p) {
-  ParamTraits<int64>::Write(m, p.ToInternalValue());
+  ParamTraits<int64_t>::Write(m, p.ToInternalValue());
 }
 
 bool ParamTraits<base::Time>::Read(const Message* m,
                                    base::PickleIterator* iter,
                                    param_type* r) {
-  int64 value;
-  if (!ParamTraits<int64>::Read(m, iter, &value))
+  int64_t value;
+  if (!ParamTraits<int64_t>::Read(m, iter, &value))
     return false;
   *r = base::Time::FromInternalValue(value);
   return true;
 }
 
 void ParamTraits<base::Time>::Log(const param_type& p, std::string* l) {
-  ParamTraits<int64>::Log(p.ToInternalValue(), l);
+  ParamTraits<int64_t>::Log(p.ToInternalValue(), l);
 }
 
 void ParamTraits<base::TimeDelta>::Write(Message* m, const param_type& p) {
-  ParamTraits<int64>::Write(m, p.ToInternalValue());
+  ParamTraits<int64_t>::Write(m, p.ToInternalValue());
 }
 
 bool ParamTraits<base::TimeDelta>::Read(const Message* m,
                                         base::PickleIterator* iter,
                                         param_type* r) {
-  int64 value;
-  bool ret = ParamTraits<int64>::Read(m, iter, &value);
+  int64_t value;
+  bool ret = ParamTraits<int64_t>::Read(m, iter, &value);
   if (ret)
     *r = base::TimeDelta::FromInternalValue(value);
 
@@ -730,18 +800,18 @@ bool ParamTraits<base::TimeDelta>::Read(const Message* m,
 }
 
 void ParamTraits<base::TimeDelta>::Log(const param_type& p, std::string* l) {
-  ParamTraits<int64>::Log(p.ToInternalValue(), l);
+  ParamTraits<int64_t>::Log(p.ToInternalValue(), l);
 }
 
 void ParamTraits<base::TimeTicks>::Write(Message* m, const param_type& p) {
-  ParamTraits<int64>::Write(m, p.ToInternalValue());
+  ParamTraits<int64_t>::Write(m, p.ToInternalValue());
 }
 
 bool ParamTraits<base::TimeTicks>::Read(const Message* m,
                                         base::PickleIterator* iter,
                                         param_type* r) {
-  int64 value;
-  bool ret = ParamTraits<int64>::Read(m, iter, &value);
+  int64_t value;
+  bool ret = ParamTraits<int64_t>::Read(m, iter, &value);
   if (ret)
     *r = base::TimeTicks::FromInternalValue(value);
 
@@ -749,18 +819,18 @@ bool ParamTraits<base::TimeTicks>::Read(const Message* m,
 }
 
 void ParamTraits<base::TimeTicks>::Log(const param_type& p, std::string* l) {
-  ParamTraits<int64>::Log(p.ToInternalValue(), l);
+  ParamTraits<int64_t>::Log(p.ToInternalValue(), l);
 }
 
 void ParamTraits<base::TraceTicks>::Write(Message* m, const param_type& p) {
-  ParamTraits<int64>::Write(m, p.ToInternalValue());
+  ParamTraits<int64_t>::Write(m, p.ToInternalValue());
 }
 
 bool ParamTraits<base::TraceTicks>::Read(const Message* m,
                                          base::PickleIterator* iter,
                                          param_type* r) {
-  int64 value;
-  bool ret = ParamTraits<int64>::Read(m, iter, &value);
+  int64_t value;
+  bool ret = ParamTraits<int64_t>::Read(m, iter, &value);
   if (ret)
     *r = base::TraceTicks::FromInternalValue(value);
 
@@ -768,7 +838,7 @@ bool ParamTraits<base::TraceTicks>::Read(const Message* m,
 }
 
 void ParamTraits<base::TraceTicks>::Log(const param_type& p, std::string* l) {
-  ParamTraits<int64>::Log(p.ToInternalValue(), l);
+  ParamTraits<int64_t>::Log(p.ToInternalValue(), l);
 }
 
 void ParamTraits<IPC::ChannelHandle>::Write(Message* m, const param_type& p) {
@@ -850,16 +920,16 @@ void ParamTraits<Message>::Write(Message* m, const Message& p) {
   // could be 64-bit and the host browser could be 32-bits. The nested message
   // may or may not be safe to send between 32-bit and 64-bit systems, but we
   // leave that up to the code sending the message to ensure.
-  m->WriteUInt32(static_cast<uint32>(p.routing_id()));
+  m->WriteUInt32(static_cast<uint32_t>(p.routing_id()));
   m->WriteUInt32(p.type());
   m->WriteUInt32(p.flags());
-  m->WriteData(p.payload(), static_cast<uint32>(p.payload_size()));
+  m->WriteData(p.payload(), static_cast<uint32_t>(p.payload_size()));
 }
 
 bool ParamTraits<Message>::Read(const Message* m,
                                 base::PickleIterator* iter,
                                 Message* r) {
-  uint32 routing_id, type, flags;
+  uint32_t routing_id, type, flags;
   if (!iter->ReadUInt32(&routing_id) ||
       !iter->ReadUInt32(&type) ||
       !iter->ReadUInt32(&flags))
@@ -870,7 +940,7 @@ bool ParamTraits<Message>::Read(const Message* m,
   if (!iter->ReadData(&payload, &payload_size))
     return false;
 
-  r->SetHeaderValues(static_cast<int32>(routing_id), type, flags);
+  r->SetHeaderValues(static_cast<int32_t>(routing_id), type, flags);
   return r->WriteBytes(payload, payload_size);
 }
 
@@ -888,7 +958,7 @@ void ParamTraits<HANDLE>::Write(Message* m, const param_type& p) {
 bool ParamTraits<HANDLE>::Read(const Message* m,
                                base::PickleIterator* iter,
                                param_type* r) {
-  int32 temp;
+  int32_t temp;
   if (!iter->ReadInt(&temp))
     return false;
   *r = LongToHandle(temp);

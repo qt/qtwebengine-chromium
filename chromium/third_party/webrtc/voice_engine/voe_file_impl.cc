@@ -124,8 +124,6 @@ int VoEFileImpl::StopPlayingFileLocally(int channel) {
 }
 
 int VoEFileImpl::IsPlayingFileLocally(int channel) {
-  WEBRTC_TRACE(kTraceApiCall, kTraceVoice, VoEId(_shared->instance_id(), -1),
-               "IsPlayingFileLocally(channel=%d)", channel);
   if (!_shared->statistics().Initialized()) {
     _shared->SetLastError(VE_NOT_INITED, kTraceError);
     return -1;
@@ -396,10 +394,7 @@ int VoEFileImpl::StartRecordingMicrophone(const char* fileNameUTF8,
                  "StartRecordingMicrophone() failed to start recording");
     return -1;
   }
-  if (_shared->audio_device()->Recording()) {
-    return 0;
-  }
-  if (!_shared->ext_recording()) {
+  if (!_shared->audio_device()->Recording()) {
     if (_shared->audio_device()->InitRecording() != 0) {
       WEBRTC_TRACE(kTraceError, kTraceVoice, VoEId(_shared->instance_id(), -1),
                    "StartRecordingMicrophone() failed to initialize recording");
@@ -429,10 +424,7 @@ int VoEFileImpl::StartRecordingMicrophone(OutStream* stream,
                  "StartRecordingMicrophone() failed to start recording");
     return -1;
   }
-  if (_shared->audio_device()->Recording()) {
-    return 0;
-  }
-  if (!_shared->ext_recording()) {
+  if (!_shared->audio_device()->Recording()) {
     if (_shared->audio_device()->InitRecording() != 0) {
       WEBRTC_TRACE(kTraceError, kTraceVoice, VoEId(_shared->instance_id(), -1),
                    "StartRecordingMicrophone() failed to initialize recording");

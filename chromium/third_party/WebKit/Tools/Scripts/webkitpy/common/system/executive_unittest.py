@@ -88,11 +88,7 @@ class ExecutiveTest(unittest.TestCase):
     def test_interpreter_for_script(self):
         self.assert_interpreter_for_content(None, '')
         self.assert_interpreter_for_content(None, 'abcd\nefgh\nijklm')
-        self.assert_interpreter_for_content(None, '##/usr/bin/perl')
-        self.assert_interpreter_for_content('perl', '#!/usr/bin/env perl')
-        self.assert_interpreter_for_content('perl', '#!/usr/bin/env perl\nfirst\nsecond')
-        self.assert_interpreter_for_content('perl', '#!/usr/bin/perl')
-        self.assert_interpreter_for_content('perl', '#!/usr/bin/perl -w')
+        self.assert_interpreter_for_content(None, '##/usr/bin/env python')
         self.assert_interpreter_for_content(sys.executable, '#!/usr/bin/env python')
         self.assert_interpreter_for_content(sys.executable, '#!/usr/bin/env python\nfirst\nsecond')
         self.assert_interpreter_for_content(sys.executable, '#!/usr/bin/python')
@@ -185,9 +181,6 @@ class ExecutiveTest(unittest.TestCase):
         self.assertFalse(executive.check_running_pid(100000))
 
     def test_running_pids(self):
-        if sys.platform in ("win32", "cygwin"):
-            return  # This function isn't implemented on Windows yet.
-
         executive = Executive()
         pids = executive.running_pids()
         self.assertIn(os.getpid(), pids)

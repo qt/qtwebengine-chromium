@@ -32,7 +32,7 @@
 #define ReferenceFilterBuilder_h
 
 #include "core/fetch/DocumentResourceReference.h"
-#include "platform/graphics/filters/FilterEffect.h"
+#include "wtf/Allocator.h"
 #include "wtf/HashMap.h"
 #include "wtf/PassRefPtr.h"
 
@@ -45,12 +45,13 @@ class FilterOperation;
 class ReferenceFilterOperation;
 
 class ReferenceFilterBuilder {
+    STATIC_ONLY(ReferenceFilterBuilder);
 public:
     static DocumentResourceReference* documentResourceReference(const FilterOperation*);
     static void setDocumentResourceReference(const FilterOperation*, PassOwnPtr<DocumentResourceReference>);
     static void clearDocumentResourceReference(const FilterOperation*);
 
-    static PassRefPtrWillBeRawPtr<FilterEffect> build(Filter*, Element*, FilterEffect*, const ReferenceFilterOperation&);
+    static PassRefPtrWillBeRawPtr<Filter> build(float zoom, Element*, FilterEffect* previousEffect, const ReferenceFilterOperation&);
 
 private:
     static HashMap<const FilterOperation*, OwnPtr<DocumentResourceReference>>* documentResourceReferences;

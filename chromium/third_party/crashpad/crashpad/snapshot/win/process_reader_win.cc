@@ -18,6 +18,10 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "base/numerics/safe_conversions.h"
+#include "base/strings/stringprintf.h"
+#include "util/win/capture_context.h"
+#include "util/win/nt_internals.h"
+#include "util/win/ntstatus_logging.h"
 #include "util/win/process_structs.h"
 #include "util/win/scoped_handle.h"
 #include "util/win/time.h"
@@ -25,49 +29,6 @@
 namespace crashpad {
 
 namespace {
-
-NTSTATUS NtQuerySystemInformation(
-    SYSTEM_INFORMATION_CLASS system_information_class,
-    PVOID system_information,
-    ULONG system_information_length,
-    PULONG return_length) {
-  static decltype(::NtQuerySystemInformation)* nt_query_system_information =
-      reinterpret_cast<decltype(::NtQuerySystemInformation)*>(GetProcAddress(
-          LoadLibrary(L"ntdll.dll"), "NtQuerySystemInformation"));
-  DCHECK(nt_query_system_information);
-  return nt_query_system_information(system_information_class,
-                                     system_information,
-                                     system_information_length,
-                                     return_length);
-}
-
-// The 4th argument is CLIENT_ID*, but as we can't typedef that, we simply cast
-// to void* here.
-typedef NTSTATUS(WINAPI* NtOpenThreadFunction)(
-    PHANDLE ThreadHandle,
-    ACCESS_MASK DesiredAccess,
-    POBJECT_ATTRIBUTES ObjectAttributes,
-    const void* ClientId);
-
-template <class Traits>
-NTSTATUS NtOpenThread(PHANDLE thread_handle,
-                      ACCESS_MASK desired_access,
-                      POBJECT_ATTRIBUTES object_attributes,
-                      const process_types::CLIENT_ID<Traits>* client_id) {
-  static NtOpenThreadFunction nt_open_thread =
-      reinterpret_cast<NtOpenThreadFunction>(
-          GetProcAddress(LoadLibrary(L"ntdll.dll"), "NtOpenThread"));
-  DCHECK(nt_open_thread);
-  return nt_open_thread(thread_handle,
-                        desired_access,
-                        object_attributes,
-                        static_cast<const void*>(client_id));
-}
-
-// Copied from ntstatus.h because um/winnt.h conflicts with general inclusion of
-// ntstatus.h.
-#define STATUS_BUFFER_TOO_SMALL ((NTSTATUS)0xC0000023L)
-#define STATUS_INFO_LENGTH_MISMATCH ((NTSTATUS)0xC0000004L)
 
 // Gets a pointer to the process information structure after a given one, or
 // null when iteration is complete, assuming they've been retrieved in a block
@@ -99,10 +60,8 @@ process_types::SYSTEM_PROCESS_INFORMATION<Traits>* GetProcessInformation(
   // This must be in retry loop, as we're racing with process creation on the
   // system to find a buffer large enough to hold all process information.
   for (int tries = 0; tries < 20; ++tries) {
-    const int kSystemExtendedProcessInformation = 57;
     status = crashpad::NtQuerySystemInformation(
-        static_cast<SYSTEM_INFORMATION_CLASS>(
-            kSystemExtendedProcessInformation),
+        SystemProcessInformation,
         reinterpret_cast<void*>(buffer->get()),
         buffer_size,
         &buffer_size);
@@ -119,7 +78,7 @@ process_types::SYSTEM_PROCESS_INFORMATION<Traits>* GetProcessInformation(
   }
 
   if (!NT_SUCCESS(status)) {
-    LOG(ERROR) << "NtQuerySystemInformation failed: " << std::hex << status;
+    NTSTATUS_LOG(ERROR, status) << "NtQuerySystemInformation";
     return nullptr;
   }
 
@@ -137,16 +96,17 @@ process_types::SYSTEM_PROCESS_INFORMATION<Traits>* GetProcessInformation(
 }
 
 template <class Traits>
-HANDLE OpenThread(const process_types::SYSTEM_EXTENDED_THREAD_INFORMATION<
-    Traits>& thread_info) {
+HANDLE OpenThread(
+    const process_types::SYSTEM_THREAD_INFORMATION<Traits>& thread_info) {
   HANDLE handle;
-  ACCESS_MASK query_access = THREAD_GET_CONTEXT | THREAD_SUSPEND_RESUME;
+  ACCESS_MASK query_access =
+      THREAD_GET_CONTEXT | THREAD_SUSPEND_RESUME | THREAD_QUERY_INFORMATION;
   OBJECT_ATTRIBUTES object_attributes;
   InitializeObjectAttributes(&object_attributes, nullptr, 0, nullptr, nullptr);
   NTSTATUS status = crashpad::NtOpenThread(
       &handle, query_access, &object_attributes, &thread_info.ClientId);
   if (!NT_SUCCESS(status)) {
-    LOG(ERROR) << "NtOpenThread failed";
+    NTSTATUS_LOG(ERROR, status) << "NtOpenThread";
     return nullptr;
   }
   return handle;
@@ -156,43 +116,61 @@ HANDLE OpenThread(const process_types::SYSTEM_EXTENDED_THREAD_INFORMATION<
 // side-effect of returning the SuspendCount of the thread on success, so we
 // fill out these two pieces of semi-unrelated data in the same function.
 template <class Traits>
-void FillThreadContextAndSuspendCount(
-    const process_types::SYSTEM_EXTENDED_THREAD_INFORMATION<Traits>&
-        thread_info,
-    ProcessReaderWin::Thread* thread) {
-
+bool FillThreadContextAndSuspendCount(HANDLE thread_handle,
+                                      ProcessReaderWin::Thread* thread,
+                                      ProcessSuspensionState suspension_state,
+                                      bool is_64_reading_32) {
   // Don't suspend the thread if it's this thread. This is really only for test
   // binaries, as we won't be walking ourselves, in general.
-  bool is_current_thread = thread_info.ClientId.UniqueThread ==
+  bool is_current_thread = thread->id ==
                            reinterpret_cast<process_types::TEB<Traits>*>(
                                NtCurrentTeb())->ClientId.UniqueThread;
 
-  ScopedKernelHANDLE thread_handle(OpenThread(thread_info));
-
-  // TODO(scottmg): Handle cross-bitness in this function.
-
   if (is_current_thread) {
+    DCHECK(suspension_state == ProcessSuspensionState::kRunning);
     thread->suspend_count = 0;
-    RtlCaptureContext(&thread->context);
+    DCHECK(!is_64_reading_32);
+    CaptureContext(&thread->context.native);
   } else {
-    DWORD previous_suspend_count = SuspendThread(thread_handle.get());
+    DWORD previous_suspend_count = SuspendThread(thread_handle);
     if (previous_suspend_count == -1) {
-      PLOG(ERROR) << "SuspendThread failed";
-      return;
+      PLOG(ERROR) << "SuspendThread";
+      return false;
     }
-    thread->suspend_count = previous_suspend_count;
+    DCHECK(previous_suspend_count > 0 ||
+           suspension_state == ProcessSuspensionState::kRunning);
+    thread->suspend_count =
+        previous_suspend_count -
+        (suspension_state == ProcessSuspensionState::kSuspended ? 1 : 0);
 
     memset(&thread->context, 0, sizeof(thread->context));
-    thread->context.ContextFlags = CONTEXT_ALL;
-    if (!GetThreadContext(thread_handle.get(), &thread->context)) {
-      PLOG(ERROR) << "GetThreadContext failed";
-      return;
+#if defined(ARCH_CPU_32_BITS)
+    const bool is_native = true;
+#elif defined(ARCH_CPU_64_BITS)
+    const bool is_native = !is_64_reading_32;
+    if (is_64_reading_32) {
+      thread->context.wow64.ContextFlags = CONTEXT_ALL;
+      if (!Wow64GetThreadContext(thread_handle, &thread->context.wow64)) {
+        PLOG(ERROR) << "Wow64GetThreadContext";
+        return false;
+      }
+    }
+#endif
+    if (is_native) {
+      thread->context.native.ContextFlags = CONTEXT_ALL;
+      if (!GetThreadContext(thread_handle, &thread->context.native)) {
+        PLOG(ERROR) << "GetThreadContext";
+        return false;
+      }
     }
 
-    if (!ResumeThread(thread_handle.get())) {
-      PLOG(ERROR) << "ResumeThread failed";
+    if (!ResumeThread(thread_handle)) {
+      PLOG(ERROR) << "ResumeThread";
+      return false;
     }
   }
+
+  return true;
 }
 
 }  // namespace
@@ -200,7 +178,8 @@ void FillThreadContextAndSuspendCount(
 ProcessReaderWin::Thread::Thread()
     : context(),
       id(0),
-      teb(0),
+      teb_address(0),
+      teb_size(0),
       stack_region_address(0),
       stack_region_size(0),
       suspend_count(0),
@@ -213,6 +192,7 @@ ProcessReaderWin::ProcessReaderWin()
       process_info_(),
       threads_(),
       modules_(),
+      suspension_state_(),
       initialized_threads_(false),
       initialized_() {
 }
@@ -220,10 +200,12 @@ ProcessReaderWin::ProcessReaderWin()
 ProcessReaderWin::~ProcessReaderWin() {
 }
 
-bool ProcessReaderWin::Initialize(HANDLE process) {
+bool ProcessReaderWin::Initialize(HANDLE process,
+                                  ProcessSuspensionState suspension_state) {
   INITIALIZATION_STATE_SET_INITIALIZING(initialized_);
 
   process_ = process;
+  suspension_state_ = suspension_state;
   process_info_.Initialize(process);
 
   INITIALIZATION_STATE_SET_VALID(initialized_);
@@ -232,7 +214,10 @@ bool ProcessReaderWin::Initialize(HANDLE process) {
 
 bool ProcessReaderWin::ReadMemory(WinVMAddress at,
                                   WinVMSize num_bytes,
-                                  void* into) {
+                                  void* into) const {
+  if (num_bytes == 0)
+    return 0;
+
   SIZE_T bytes_read;
   if (!ReadProcessMemory(process_,
                          reinterpret_cast<void*>(at),
@@ -245,6 +230,41 @@ bool ProcessReaderWin::ReadMemory(WinVMAddress at,
     return false;
   }
   return true;
+}
+
+WinVMSize ProcessReaderWin::ReadAvailableMemory(WinVMAddress at,
+                                                WinVMSize num_bytes,
+                                                void* into) const {
+  if (num_bytes == 0)
+    return 0;
+
+  auto ranges = process_info_.GetReadableRanges(
+      CheckedRange<WinVMAddress, WinVMSize>(at, num_bytes));
+
+  // We only read up until the first unavailable byte, so we only read from the
+  // first range. If we have no ranges, then no bytes were accessible anywhere
+  // in the range.
+  if (ranges.empty()) {
+    LOG(ERROR) << base::StringPrintf(
+        "range at 0x%llx, size 0x%llx completely inaccessible", at, num_bytes);
+    return 0;
+  }
+
+  // If the start address was adjusted, we couldn't read even the first
+  // requested byte.
+  if (ranges.front().base() != at) {
+    LOG(ERROR) << base::StringPrintf(
+        "start of range at 0x%llx, size 0x%llx inaccessible", at, num_bytes);
+    return 0;
+  }
+
+  DCHECK_LE(ranges.front().size(), num_bytes);
+
+  // If we fail on a normal read, then something went very wrong.
+  if (!ReadMemory(ranges.front().base(), ranges.front().size(), into))
+    return 0;
+
+  return ranges.front().size();
 }
 
 bool ProcessReaderWin::StartTime(timeval* start_time) const {
@@ -277,50 +297,11 @@ const std::vector<ProcessReaderWin::Thread>& ProcessReaderWin::Threads() {
 
   initialized_threads_ = true;
 
-  DCHECK(threads_.empty());
-
-#if ARCH_CPU_32_BITS
-  using SizeTraits = process_types::internal::Traits32;
+#if defined(ARCH_CPU_64_BITS)
+  ReadThreadData<process_types::internal::Traits64>(process_info_.IsWow64());
 #else
-  using SizeTraits = process_types::internal::Traits64;
+  ReadThreadData<process_types::internal::Traits32>(false);
 #endif
-  scoped_ptr<uint8_t[]> buffer;
-  process_types::SYSTEM_PROCESS_INFORMATION<SizeTraits>* process_information =
-      GetProcessInformation<SizeTraits>(process_, &buffer);
-  if (!process_information)
-    return threads_;
-
-  for (unsigned long i = 0; i < process_information->NumberOfThreads; ++i) {
-    const process_types::SYSTEM_EXTENDED_THREAD_INFORMATION<SizeTraits>&
-        thread_info = process_information->Threads[i];
-    Thread thread;
-    thread.id = thread_info.ClientId.UniqueThread;
-
-    FillThreadContextAndSuspendCount(thread_info, &thread);
-
-    // TODO(scottmg): I believe we could reverse engineer the PriorityClass from
-    // the Priority, BasePriority, and
-    // https://msdn.microsoft.com/en-us/library/windows/desktop/ms685100 .
-    // MinidumpThreadWriter doesn't handle it yet in any case, so investigate
-    // both of those at the same time if it's useful.
-    thread.priority_class = NORMAL_PRIORITY_CLASS;
-
-    thread.priority = thread_info.Priority;
-    thread.teb = thread_info.TebBase;
-
-    // While there are semi-documented fields in the thread structure called
-    // StackBase and StackLimit, they don't appear to be correct in practice (or
-    // at least, I don't know how to interpret them). Instead, read the TIB
-    // (Thread Information Block) which is the first element of the TEB, and use
-    // its stack fields.
-    process_types::NT_TIB<SizeTraits> tib;
-    if (ReadMemory(thread_info.TebBase, sizeof(tib), &tib)) {
-      // Note, "backwards" because of direction of stack growth.
-      thread.stack_region_address = tib.StackLimit;
-      thread.stack_region_size = tib.StackBase - tib.StackLimit;
-    }
-    threads_.push_back(thread);
-  }
 
   return threads_;
 }
@@ -333,6 +314,97 @@ const std::vector<ProcessInfo::Module>& ProcessReaderWin::Modules() {
   }
 
   return modules_;
+}
+
+const ProcessInfo& ProcessReaderWin::GetProcessInfo() const {
+  INITIALIZATION_STATE_DCHECK_VALID(initialized_);
+  return process_info_;
+}
+
+template <class Traits>
+void ProcessReaderWin::ReadThreadData(bool is_64_reading_32) {
+  DCHECK(threads_.empty());
+
+  scoped_ptr<uint8_t[]> buffer;
+  process_types::SYSTEM_PROCESS_INFORMATION<Traits>* process_information =
+      GetProcessInformation<Traits>(process_, &buffer);
+  if (!process_information)
+    return;
+
+  for (unsigned long i = 0; i < process_information->NumberOfThreads; ++i) {
+    const process_types::SYSTEM_THREAD_INFORMATION<Traits>& thread_info =
+        process_information->Threads[i];
+    ProcessReaderWin::Thread thread;
+    thread.id = thread_info.ClientId.UniqueThread;
+
+    ScopedKernelHANDLE thread_handle(OpenThread(thread_info));
+    if (!thread_handle.is_valid())
+      continue;
+
+    if (!FillThreadContextAndSuspendCount<Traits>(thread_handle.get(),
+                                                  &thread,
+                                                  suspension_state_,
+                                                  is_64_reading_32)) {
+      continue;
+    }
+
+    // TODO(scottmg): I believe we could reverse engineer the PriorityClass from
+    // the Priority, BasePriority, and
+    // https://msdn.microsoft.com/en-us/library/windows/desktop/ms685100 .
+    // MinidumpThreadWriter doesn't handle it yet in any case, so investigate
+    // both of those at the same time if it's useful.
+    thread.priority_class = NORMAL_PRIORITY_CLASS;
+
+    thread.priority = thread_info.Priority;
+
+    process_types::THREAD_BASIC_INFORMATION<Traits> thread_basic_info;
+    NTSTATUS status = crashpad::NtQueryInformationThread(
+        thread_handle.get(),
+        static_cast<THREADINFOCLASS>(ThreadBasicInformation),
+        &thread_basic_info,
+        sizeof(thread_basic_info),
+        nullptr);
+    if (!NT_SUCCESS(status)) {
+      NTSTATUS_LOG(ERROR, status) << "NtQueryInformationThread";
+      continue;
+    }
+
+    // Read the TIB (Thread Information Block) which is the first element of the
+    // TEB, for its stack fields.
+    process_types::NT_TIB<Traits> tib;
+    thread.teb_address = thread_basic_info.TebBaseAddress;
+    thread.teb_size = sizeof(process_types::TEB<Traits>);
+    if (ReadMemory(thread.teb_address, sizeof(tib), &tib)) {
+      WinVMAddress base = 0;
+      WinVMAddress limit = 0;
+      // If we're reading a WOW64 process, then the TIB we just retrieved is the
+      // x64 one. The first word of the x64 TIB points at the x86 TIB. See
+      // https://msdn.microsoft.com/en-us/library/dn424783.aspx
+      if (is_64_reading_32) {
+        process_types::NT_TIB<process_types::internal::Traits32> tib32;
+        thread.teb_address = tib.Wow64Teb;
+        thread.teb_size =
+            sizeof(process_types::TEB<process_types::internal::Traits32>);
+        if (ReadMemory(thread.teb_address, sizeof(tib32), &tib32)) {
+          base = tib32.StackBase;
+          limit = tib32.StackLimit;
+        }
+      } else {
+        base = tib.StackBase;
+        limit = tib.StackLimit;
+      }
+
+      // Note, "backwards" because of direction of stack growth.
+      thread.stack_region_address = limit;
+      if (limit > base) {
+        LOG(ERROR) << "invalid stack range: " << base << " - " << limit;
+        thread.stack_region_size = 0;
+      } else {
+        thread.stack_region_size = base - limit;
+      }
+    }
+    threads_.push_back(thread);
+  }
 }
 
 }  // namespace crashpad

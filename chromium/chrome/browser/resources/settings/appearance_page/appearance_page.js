@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-
-
 /**
  * 'cr-settings-appearance-page' is the settings page containing appearance
  * settings.
@@ -22,17 +20,6 @@
 Polymer({
   is: 'cr-settings-appearance-page',
 
-  /** @override */
-  attached: function() {
-    // Query the initial state.
-    cr.sendWithCallback('getResetThemeEnabled', undefined,
-                        this.setResetThemeEnabled.bind(this));
-
-    // Set up the change event listener.
-    cr.addWebUIListener('reset-theme-enabled-changed',
-                        this.setResetThemeEnabled.bind(this));
-  },
-
   properties: {
     /**
      * Preferences state.
@@ -43,46 +30,29 @@ Polymer({
     },
 
     /**
-     * Route for the page.
+     * Translated strings used in data binding.
      */
-    route: String,
-
-    /**
-     * Whether the page is a subpage.
-     */
-    subpage: {
-      type: Boolean,
-      value: false,
-      readOnly: true,
-    },
-
-    /**
-     * ID of the page.
-     */
-    PAGE_ID: {
-      type: String,
-      value: 'appearance',
-      readOnly: true,
-    },
-
-    /**
-     * Title for the page header and navigation menu.
-     */
-    pageTitle: {
-      type: String,
+    i18n_: {
+      type: Object,
       value: function() {
-        return loadTimeData.getString('appearancePageTitle');
+        return {
+          homePageNtp: loadTimeData.getString('homePageNtp'),
+          openThisPage: loadTimeData.getString('openThisPage'),
+          onStartupEnterUrl: loadTimeData.getString('onStartupEnterUrl'),
+        };
       },
     },
+  },
 
-    /**
-     * Name of the 'iron-icon' to show.
-     */
-    icon: {
-      type: String,
-      value: 'home',
-      readOnly: true,
-    },
+  /** @override */
+  attached: function() {
+    // Query the initial state.
+    cr.sendWithCallback('getResetThemeEnabled', undefined,
+                        this.setResetThemeEnabled.bind(this));
+
+    // Set up the change event listener.
+    cr.addWebUIListener('reset-theme-enabled-changed',
+                        this.setResetThemeEnabled.bind(this));
   },
 
   setResetThemeEnabled: function(enabled) {

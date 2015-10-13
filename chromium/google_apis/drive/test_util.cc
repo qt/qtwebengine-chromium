@@ -26,7 +26,7 @@ namespace test_util {
 bool RemovePrefix(const std::string& input,
                   const std::string& prefix,
                   std::string* output) {
-  if (!base::StartsWithASCII(input, prefix, true /* case sensitive */))
+  if (!base::StartsWith(input, prefix, base::CompareCase::SENSITIVE))
     return false;
 
   *output = input.substr(prefix.size());
@@ -37,7 +37,7 @@ base::FilePath GetTestFilePath(const std::string& relative_path) {
   base::FilePath path;
   if (!PathService::Get(base::DIR_SOURCE_ROOT, &path))
     return base::FilePath();
-  path = path.AppendASCII("chrome")
+  path = path.AppendASCII("google_apis")
              .AppendASCII("test")
              .AppendASCII("data")
              .Append(base::FilePath::FromUTF8Unsafe(relative_path));
@@ -97,7 +97,7 @@ scoped_ptr<net::test_server::BasicHttpResponse> CreateHttpResponseFromFile(
 
   std::string content_type = "text/plain";
   if (base::EndsWith(file_path.AsUTF8Unsafe(), ".json",
-                     true /* case sensitive */))
+                     base::CompareCase::SENSITIVE))
     content_type = "application/json";
 
   scoped_ptr<net::test_server::BasicHttpResponse> http_response(
@@ -133,17 +133,16 @@ bool ParseContentRangeHeader(const std::string& value,
   if (!RemovePrefix(value, "bytes ", &remaining))
     return false;
 
-  std::vector<std::string> parts;
-  base::SplitString(remaining, '/', &parts);
+  std::vector<base::StringPiece> parts = base::SplitStringPiece(
+      remaining, "/", base::TRIM_WHITESPACE, base::SPLIT_WANT_ALL);
   if (parts.size() != 2U)
     return false;
 
-  const std::string range = parts[0];
   if (!base::StringToInt64(parts[1], length))
     return false;
 
-  parts.clear();
-  base::SplitString(range, '-', &parts);
+  parts = base::SplitStringPiece(parts[0], "-", base::TRIM_WHITESPACE,
+                                 base::SPLIT_WANT_ALL);
   if (parts.size() != 2U)
     return false;
 

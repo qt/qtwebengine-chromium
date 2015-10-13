@@ -37,9 +37,9 @@
 #include "core/events/Event.h"
 #include "core/events/EventTarget.h"
 #include "core/inspector/AsyncOperationMap.h"
-#include "core/inspector/InspectorDebuggerAgent.h"
 #include "core/xmlhttprequest/XMLHttpRequest.h"
 #include "core/xmlhttprequest/XMLHttpRequestUpload.h"
+#include "platform/ScriptForbiddenScope.h"
 #include "wtf/text/StringBuilder.h"
 #include "wtf/text/StringHash.h"
 
@@ -72,7 +72,7 @@ public:
     {
     }
 
-    virtual void contextDestroyed() override
+    void contextDestroyed() override
     {
         ASSERT(executionContext());
         OwnPtrWillBeRawPtr<ExecutionContextData> self = m_tracker->m_executionContextDataMap.take(executionContext());
@@ -135,18 +135,14 @@ static XMLHttpRequest* toXmlHttpRequest(EventTarget* eventTarget)
     return nullptr;
 }
 
-AsyncCallTracker::AsyncCallTracker(InspectorDebuggerAgent* debuggerAgent, InstrumentingAgents* instrumentingAgents)
+AsyncCallTracker::AsyncCallTracker(V8DebuggerAgent* debuggerAgent, InstrumentingAgents* instrumentingAgents)
     : m_debuggerAgent(debuggerAgent)
     , m_instrumentingAgents(instrumentingAgents)
 {
-    m_debuggerAgent->addAsyncCallTrackingListener(this);
 }
 
 AsyncCallTracker::~AsyncCallTracker()
 {
-#if !ENABLE(OILPAN)
-    m_debuggerAgent->removeAsyncCallTrackingListener(this);
-#endif
 }
 
 void AsyncCallTracker::asyncCallTrackingStateChanged(bool tracking)
@@ -196,7 +192,7 @@ bool AsyncCallTracker::willFireTimer(ExecutionContext* context, int timerId)
         if (!data->m_intervalTimerIds.contains(timerId))
             data->m_timerCallChains.remove(timerId);
     } else {
-        willFireAsyncCall(InspectorDebuggerAgent::unknownAsyncOperationId);
+        willFireAsyncCall(V8DebuggerAgent::unknownAsyncOperationId);
     }
     return true;
 }
@@ -230,7 +226,7 @@ bool AsyncCallTracker::willFireAnimationFrame(ExecutionContext* context, int cal
         willFireAsyncCall(data->m_animationFrameCallChains.get(callbackId));
         data->m_animationFrameCallChains.remove(callbackId);
     } else {
-        willFireAsyncCall(InspectorDebuggerAgent::unknownAsyncOperationId);
+        willFireAsyncCall(V8DebuggerAgent::unknownAsyncOperationId);
     }
     return true;
 }
@@ -239,6 +235,7 @@ void AsyncCallTracker::didEnqueueEvent(EventTarget* eventTarget, Event* event)
 {
     ASSERT(eventTarget->executionContext());
     ASSERT(m_debuggerAgent->trackingAsyncCalls());
+    ScriptForbiddenScope::AllowUserAgentScript allowScripting;
     int operationId = m_debuggerAgent->traceAsyncOperationStarting(event->type());
     ExecutionContextData* data = createContextDataIfNeeded(eventTarget->executionContext());
     data->m_eventCallChains.set(event, operationId);
@@ -263,11 +260,11 @@ void AsyncCallTracker::willHandleEvent(EventTarget* eventTarget, Event* event, E
         if (ExecutionContextData* data = m_executionContextDataMap.get(context))
             willFireAsyncCall(data->m_eventCallChains.get(event));
         else
-            willFireAsyncCall(InspectorDebuggerAgent::unknownAsyncOperationId);
+            willFireAsyncCall(V8DebuggerAgent::unknownAsyncOperationId);
     }
 }
 
-void AsyncCallTracker::willLoadXHR(XMLHttpRequest* xhr, ThreadableLoaderClient*, const AtomicString&, const KURL&, bool async, PassRefPtr<FormData>, const HTTPHeaderMap&, bool)
+void AsyncCallTracker::willLoadXHR(XMLHttpRequest* xhr, ThreadableLoaderClient*, const AtomicString&, const KURL&, bool async, PassRefPtr<EncodedFormData>, const HTTPHeaderMap&, bool)
 {
     ASSERT(xhr->executionContext());
     ASSERT(m_debuggerAgent->trackingAsyncCalls());
@@ -294,7 +291,7 @@ void AsyncCallTracker::willHandleXHREvent(XMLHttpRequest* xhr, Event* event)
     if (ExecutionContextData* data = m_executionContextDataMap.get(context))
         willFireAsyncCall(data->m_xhrCallChains.get(xhr));
     else
-        willFireAsyncCall(InspectorDebuggerAgent::unknownAsyncOperationId);
+        willFireAsyncCall(V8DebuggerAgent::unknownAsyncOperationId);
 }
 
 void AsyncCallTracker::didEnqueueMutationRecord(ExecutionContext* context, MutationObserver* observer)
@@ -304,6 +301,7 @@ void AsyncCallTracker::didEnqueueMutationRecord(ExecutionContext* context, Mutat
     ExecutionContextData* data = createContextDataIfNeeded(context);
     if (data->m_mutationObserverCallChains.contains(observer))
         return;
+    ScriptForbiddenScope::AllowUserAgentScript allowScripting;
     int operationId = m_debuggerAgent->traceAsyncOperationStarting(enqueueMutationRecordName);
     data->m_mutationObserverCallChains.set(observer, operationId);
 }
@@ -324,7 +322,7 @@ void AsyncCallTracker::willDeliverMutationRecords(ExecutionContext* context, Mut
         willFireAsyncCall(data->m_mutationObserverCallChains.get(observer));
         data->m_mutationObserverCallChains.remove(observer);
     } else {
-        willFireAsyncCall(InspectorDebuggerAgent::unknownAsyncOperationId);
+        willFireAsyncCall(V8DebuggerAgent::unknownAsyncOperationId);
     }
 }
 
@@ -355,7 +353,7 @@ void AsyncCallTracker::willPerformExecutionContextTask(ExecutionContext* context
         willFireAsyncCall(data->m_executionContextTaskCallChains.get(task));
         data->m_executionContextTaskCallChains.remove(task);
     } else {
-        willFireAsyncCall(InspectorDebuggerAgent::unknownAsyncOperationId);
+        willFireAsyncCall(V8DebuggerAgent::unknownAsyncOperationId);
     }
 }
 
@@ -401,7 +399,7 @@ void AsyncCallTracker::traceAsyncCallbackStarting(ExecutionContext* context, int
     ASSERT(context);
     ASSERT(m_debuggerAgent->trackingAsyncCalls());
     ASSERT(operationId <= 0 || isKnownAsyncOperationId(context, operationId));
-    willFireAsyncCall(operationId > 0 ? operationId : InspectorDebuggerAgent::unknownAsyncOperationId);
+    willFireAsyncCall(operationId > 0 ? operationId : V8DebuggerAgent::unknownAsyncOperationId);
 }
 
 void AsyncCallTracker::didFireAsyncCall()
@@ -428,10 +426,8 @@ DEFINE_TRACE(AsyncCallTracker)
 {
 #if ENABLE(OILPAN)
     visitor->trace(m_executionContextDataMap);
-    visitor->trace(m_debuggerAgent);
     visitor->trace(m_instrumentingAgents);
 #endif
-    InspectorDebuggerAgent::AsyncCallTrackingListener::trace(visitor);
 }
 
 } // namespace blink

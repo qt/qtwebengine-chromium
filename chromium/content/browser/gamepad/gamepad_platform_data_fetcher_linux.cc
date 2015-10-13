@@ -42,7 +42,8 @@ bool IsGamepad(udev_device* dev, int* index, std::string* path) {
     return false;
 
   static const char kJoystickRoot[] = "/dev/input/js";
-  bool is_gamepad = base::StartsWithASCII(node_path, kJoystickRoot, true);
+  bool is_gamepad = base::StartsWith(node_path, kJoystickRoot,
+                                     base::CompareCase::SENSITIVE);
   if (!is_gamepad)
     return false;
 
@@ -150,7 +151,7 @@ void GamepadPlatformDataFetcherLinux::RefreshDevice(udev_device* dev) {
     // Driver returns utf-8 strings here, so combine in utf-8 first and
     // convert to WebUChar later once we've picked an id string.
     const char* name = device::udev_device_get_sysattr_value(dev, "name");
-    std::string name_string = base::StringPrintf("%s", name);
+    std::string name_string(name);
 
     // In many cases the information the input subsystem contains isn't
     // as good as the information that the device bus has, walk up further

@@ -73,7 +73,7 @@ void CpuId(uint32 info_eax, uint32 info_ecx, uint32* cpu_info) {
 // GCC version uses inline x86 assembly.
 #else  // (defined(_MSC_VER) && !defined(__clang__)) && !defined(__clang__)
   uint32 info_ebx, info_edx;
-  asm volatile (  // NOLINT
+  asm volatile (
 #if defined( __i386__) && defined(__PIC__)
     // Preserve ebx for fpic 32 bit.
     "mov %%ebx, %%edi                          \n"
@@ -216,8 +216,10 @@ int InitCpuFlags(void) {
               kCpuHasX86;
 
 #ifdef HAS_XGETBV
+  // Avoid call to xgetbv if AVX disabled for drmemory.
+  // TODO(fbarchard): check xsave before calling xgetbv.
   if ((cpu_info1[2] & 0x18000000) == 0x18000000 &&  // AVX and OSSave
-      TestOsSaveYmm()) {  // Saves YMM.
+      !TestEnv("LIBYUV_DISABLE_AVX") && TestOsSaveYmm()) {  // Saves YMM.
     cpu_info_ |= ((cpu_info7[1] & 0x00000020) ? kCpuHasAVX2 : 0) |
                  kCpuHasAVX;
   }
@@ -237,9 +239,6 @@ int InitCpuFlags(void) {
   }
   if (TestEnv("LIBYUV_DISABLE_SSE42")) {
     cpu_info_ &= ~kCpuHasSSE42;
-  }
-  if (TestEnv("LIBYUV_DISABLE_AVX")) {
-    cpu_info_ &= ~kCpuHasAVX;
   }
   if (TestEnv("LIBYUV_DISABLE_AVX2")) {
     cpu_info_ &= ~kCpuHasAVX2;

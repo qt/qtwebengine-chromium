@@ -101,6 +101,7 @@ class ResourceCreationProxy : public InterfaceProxy,
                           PP_Resource config_id,
                           PPB_Audio_Callback audio_callback,
                           void* user_data) override;
+  PP_Resource CreateAudioEncoder(PP_Instance instance) override;
   PP_Resource CreateAudioTrusted(PP_Instance instance) override;
   PP_Resource CreateAudioConfig(PP_Instance instance,
                                 PP_AudioSampleRate sample_rate,
@@ -121,7 +122,8 @@ class ResourceCreationProxy : public InterfaceProxy,
       PP_Resource share_context,
       const int32_t* attrib_list,
       gpu::Capabilities* capabilities,
-      base::SharedMemoryHandle* shared_state) override;
+      base::SharedMemoryHandle* shared_state,
+      uint64_t* command_buffer_id) override;
   PP_Resource CreateHostResolver(PP_Instance instance) override;
   PP_Resource CreateHostResolverPrivate(PP_Instance instance) override;
   PP_Resource CreateImageData(PP_Instance instance,

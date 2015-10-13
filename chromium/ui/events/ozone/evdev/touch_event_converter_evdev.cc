@@ -18,7 +18,6 @@
 #include "base/callback.h"
 #include "base/command_line.h"
 #include "base/logging.h"
-#include "base/memory/scoped_vector.h"
 #include "base/message_loop/message_loop.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
@@ -90,13 +89,12 @@ TouchEventConverterEvdev::TouchEventConverterEvdev(
     int fd,
     base::FilePath path,
     int id,
-    InputDeviceType type,
     const EventDeviceInfo& devinfo,
     DeviceEventDispatcherEvdev* dispatcher)
     : EventConverterEvdev(fd,
                           path,
                           id,
-                          type,
+                          devinfo.device_type(),
                           devinfo.name(),
                           devinfo.vendor_id(),
                           devinfo.product_id()),
@@ -193,7 +191,7 @@ void TouchEventConverterEvdev::Initialize(const EventDeviceInfo& info) {
 
 void TouchEventConverterEvdev::Reinitialize() {
   EventDeviceInfo info;
-  if (!info.Initialize(fd_)) {
+  if (!info.Initialize(fd_, path_)) {
     LOG(ERROR) << "Failed to synchronize state for touch device: "
                << path_.value();
     Stop();

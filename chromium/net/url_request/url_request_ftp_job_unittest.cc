@@ -48,17 +48,19 @@ class MockProxyResolverFactory : public ProxyResolverFactory {
 class FtpTestURLRequestContext : public TestURLRequestContext {
  public:
   FtpTestURLRequestContext(ClientSocketFactory* socket_factory,
-                           ProxyService* proxy_service,
+                           scoped_ptr<ProxyService> proxy_service,
                            NetworkDelegate* network_delegate,
                            FtpTransactionFactory* ftp_transaction_factory)
       : TestURLRequestContext(true),
         ftp_protocol_handler_(new FtpProtocolHandler(ftp_transaction_factory)) {
     set_client_socket_factory(socket_factory);
-    context_storage_.set_proxy_service(proxy_service);
+    context_storage_.set_proxy_service(proxy_service.Pass());
     set_network_delegate(network_delegate);
-    URLRequestJobFactoryImpl* job_factory = new URLRequestJobFactoryImpl;
-    job_factory->SetProtocolHandler("ftp", ftp_protocol_handler_);
-    context_storage_.set_job_factory(job_factory);
+    scoped_ptr<URLRequestJobFactoryImpl> job_factory =
+        make_scoped_ptr(new URLRequestJobFactoryImpl);
+    job_factory->SetProtocolHandler("ftp",
+                                    make_scoped_ptr(ftp_protocol_handler_));
+    context_storage_.set_job_factory(job_factory.Pass());
     Init();
   }
 
@@ -66,8 +68,8 @@ class FtpTestURLRequestContext : public TestURLRequestContext {
     return ftp_protocol_handler_->ftp_auth_cache_.get();
   }
 
-  void set_proxy_service(ProxyService* proxy_service) {
-    context_storage_.set_proxy_service(proxy_service);
+  void set_proxy_service(scoped_ptr<ProxyService> proxy_service) {
+    context_storage_.set_proxy_service(proxy_service.Pass());
   }
 
  private:
@@ -136,7 +138,9 @@ class MockFtpTransactionFactory : public FtpTransactionFactory {
 class URLRequestFtpJobPriorityTest : public testing::Test {
  protected:
   URLRequestFtpJobPriorityTest()
-      : proxy_service_(new SimpleProxyConfigService, NULL, NULL),
+      : proxy_service_(make_scoped_ptr(new SimpleProxyConfigService),
+                       NULL,
+                       NULL),
         req_(context_.CreateRequest(GURL("ftp://ftp.example.com"),
                                     DEFAULT_PRIORITY,
                                     &delegate_)) {
@@ -226,11 +230,12 @@ class URLRequestFtpJobTest : public testing::Test {
  public:
   URLRequestFtpJobTest()
       : request_context_(&socket_factory_,
-                         new ProxyService(
-                             new SimpleProxyConfigService, NULL, NULL),
+                         make_scoped_ptr(new ProxyService(
+                             make_scoped_ptr(new SimpleProxyConfigService),
+                             NULL,
+                             NULL)),
                          &network_delegate_,
-                         &ftp_transaction_factory_) {
-  }
+                         &ftp_transaction_factory_) {}
 
   ~URLRequestFtpJobTest() override {
     // Clean up any remaining tasks that mess up unrelated tests.
@@ -294,10 +299,10 @@ TEST_F(URLRequestFtpJobTest, FtpProxyRequest) {
 // Regression test for http://crbug.com/237526 .
 TEST_F(URLRequestFtpJobTest, FtpProxyRequestOrphanJob) {
   // Use a PAC URL so that URLRequestFtpJob's |pac_request_| field is non-NULL.
-  request_context()->set_proxy_service(new ProxyService(
-      new ProxyConfigServiceFixed(
-          ProxyConfig::CreateFromCustomPacURL(GURL("http://foo"))),
-      make_scoped_ptr(new MockProxyResolverFactory), NULL));
+  request_context()->set_proxy_service(make_scoped_ptr(new ProxyService(
+      make_scoped_ptr(new ProxyConfigServiceFixed(
+          ProxyConfig::CreateFromCustomPacURL(GURL("http://foo")))),
+      make_scoped_ptr(new MockProxyResolverFactory), NULL)));
 
   TestDelegate request_delegate;
   scoped_ptr<URLRequest> url_request(request_context()->CreateRequest(

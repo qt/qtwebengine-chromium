@@ -21,12 +21,13 @@
 #include <CoreServices/CoreServices.h>
 #elif defined(WEBRTC_ANDROID)
 #include <android/log.h>
-static const char kLibjingle[] = "libjingle";
 // Android has a 1024 limit on log inputs. We use 60 chars as an
 // approx for the header/tag portion.
 // See android/system/core/liblog/logd_write.c
 static const int kMaxLogLineSize = 1024 - 60;
 #endif  // WEBRTC_MAC && !defined(WEBRTC_IOS) || WEBRTC_ANDROID
+
+static const char kLibjingle[] = "libjingle";
 
 #include <time.h>
 #include <limits.h>
@@ -37,18 +38,32 @@ static const int kMaxLogLineSize = 1024 - 60;
 #include <vector>
 
 #include "webrtc/base/logging.h"
+#include "webrtc/base/platform_thread.h"
 #include "webrtc/base/scoped_ptr.h"
 #include "webrtc/base/stringencode.h"
 #include "webrtc/base/stringutils.h"
 #include "webrtc/base/timeutils.h"
 
 namespace rtc {
+namespace {
+
+// Return the filename portion of the string (that following the last slash).
+const char* FilenameFromPath(const char* file) {
+  const char* end1 = ::strrchr(file, '/');
+  const char* end2 = ::strrchr(file, '\\');
+  if (!end1 && !end2)
+    return file;
+  else
+    return (end1 > end2) ? end1 + 1 : end2 + 1;
+}
+
+}  // namespace
 
 /////////////////////////////////////////////////////////////////////////////
 // Constant Labels
 /////////////////////////////////////////////////////////////////////////////
 
-const char * FindLabel(int value, const ConstantLabel entries[]) {
+const char* FindLabel(int value, const ConstantLabel entries[]) {
   for (int i = 0; entries[i].label; ++i) {
     if (value == entries[i].value) {
       return entries[i].label;
@@ -57,12 +72,12 @@ const char * FindLabel(int value, const ConstantLabel entries[]) {
   return 0;
 }
 
-std::string ErrorName(int err, const ConstantLabel * err_table) {
+std::string ErrorName(int err, const ConstantLabel* err_table) {
   if (err == 0)
     return "No error";
 
   if (err_table != 0) {
-    if (const char * value = FindLabel(err, err_table))
+    if (const char* value = FindLabel(err, err_table))
       return value;
   }
 
@@ -83,6 +98,7 @@ LoggingSeverity LogMessage::dbg_sev_ = LS_INFO;
 LoggingSeverity LogMessage::min_sev_ = LS_NONE;
 LoggingSeverity LogMessage::dbg_sev_ = LS_NONE;
 #endif  // !_DEBUG
+bool LogMessage::log_to_stderr_ = true;
 
 // Global lock for log subsystem, only needed to serialize access to streams_.
 CriticalSection LogMessage::crit_;
@@ -99,6 +115,7 @@ bool LogMessage::thread_, LogMessage::timestamp_;
 LogMessage::LogMessage(const char* file, int line, LoggingSeverity sev,
                        LogErrorContext err_ctx, int err, const char* module)
     : severity_(sev),
+      tag_(kLibjingle),
       warn_slow_logs_delay_(WARN_SLOW_LOGS_DELAY) {
   if (timestamp_) {
     uint32 time = TimeSince(LogStartTime());
@@ -111,11 +128,12 @@ LogMessage::LogMessage(const char* file, int line, LoggingSeverity sev,
   }
 
   if (thread_) {
-#if defined(WEBRTC_WIN)
-    DWORD id = GetCurrentThreadId();
-    print_stream_ << "[" << std::hex << id << std::dec << "] ";
-#endif  // WEBRTC_WIN
+    PlatformThreadId id = CurrentThreadId();
+    print_stream_ << "[" << std::dec << id << "] ";
   }
+
+  if (file != NULL)
+    print_stream_ << "(" << FilenameFromPath(file)  << ":" << line << "): ";
 
   if (err_ctx != ERRCTX_NONE) {
     std::ostringstream tmp;
@@ -160,6 +178,15 @@ LogMessage::LogMessage(const char* file, int line, LoggingSeverity sev,
   }
 }
 
+LogMessage::LogMessage(const char* file,
+                       int line,
+                       LoggingSeverity sev,
+                       const std::string& tag)
+    : LogMessage(file, line, sev, ERRCTX_NONE, 0 /* err */, NULL /* module */) {
+  tag_ = tag;
+  print_stream_ << tag << ": ";
+}
+
 LogMessage::~LogMessage() {
   if (!extra_.empty())
     print_stream_ << " : " << extra_;
@@ -167,7 +194,7 @@ LogMessage::~LogMessage() {
 
   const std::string& str = print_stream_.str();
   if (severity_ >= dbg_sev_) {
-    OutputToDebug(str, severity_);
+    OutputToDebug(str, severity_, tag_);
   }
 
   uint32 before = Time();
@@ -180,8 +207,7 @@ LogMessage::~LogMessage() {
   }
   uint32 delay = TimeSince(before);
   if (delay >= warn_slow_logs_delay_) {
-    LogMessage slow_log_warning =
-        rtc::LogMessage(__FILE__, __LINE__, LS_WARNING);
+    rtc::LogMessage slow_log_warning(__FILE__, __LINE__, LS_WARNING);
     // If our warning is slow, we don't want to warn about it, because
     // that would lead to inifinite recursion.  So, give a really big
     // number for the delay threshold.
@@ -213,6 +239,10 @@ void LogMessage::LogToDebug(LoggingSeverity min_sev) {
   dbg_sev_ = min_sev;
   CritScope cs(&crit_);
   UpdateMinLogSeverity();
+}
+
+void LogMessage::SetLogToStderr(bool log_to_stderr) {
+  log_to_stderr_ = log_to_stderr;
 }
 
 int LogMessage::GetLogToStream(LogSink* stream) {
@@ -314,9 +344,10 @@ void LogMessage::UpdateMinLogSeverity() EXCLUSIVE_LOCKS_REQUIRED(crit_) {
 }
 
 void LogMessage::OutputToDebug(const std::string& str,
-                               LoggingSeverity severity) {
-  bool log_to_stderr = true;
-#if defined(WEBRTC_MAC) && !defined(WEBRTC_IOS) && (!defined(DEBUG) || defined(NDEBUG))
+                               LoggingSeverity severity,
+                               const std::string& tag) {
+  bool log_to_stderr = log_to_stderr_;
+#if defined(WEBRTC_MAC) && !defined(WEBRTC_IOS) && (!defined(_DEBUG) || defined(NDEBUG))
   // On the Mac, all stderr output goes to the Console log and causes clutter.
   // So in opt builds, don't log to stderr unless the user specifically sets
   // a preference to do so.
@@ -358,7 +389,7 @@ void LogMessage::OutputToDebug(const std::string& str,
   int prio;
   switch (severity) {
     case LS_SENSITIVE:
-      __android_log_write(ANDROID_LOG_INFO, kLibjingle, "SENSITIVE");
+      __android_log_write(ANDROID_LOG_INFO, tag.c_str(), "SENSITIVE");
       if (log_to_stderr) {
         fprintf(stderr, "SENSITIVE");
         fflush(stderr);
@@ -385,13 +416,13 @@ void LogMessage::OutputToDebug(const std::string& str,
   int idx = 0;
   const int max_lines = size / kMaxLogLineSize + 1;
   if (max_lines == 1) {
-    __android_log_print(prio, kLibjingle, "%.*s", size, str.c_str());
+    __android_log_print(prio, tag.c_str(), "%.*s", size, str.c_str());
   } else {
     while (size > 0) {
       const int len = std::min(size, kMaxLogLineSize);
       // Use the size of the string in the format (str may have \0 in the
       // middle).
-      __android_log_print(prio, kLibjingle, "[%d/%d] %.*s",
+      __android_log_print(prio, tag.c_str(), "[%d/%d] %.*s",
                           line + 1, max_lines,
                           len, str.c_str() + idx);
       idx += len;

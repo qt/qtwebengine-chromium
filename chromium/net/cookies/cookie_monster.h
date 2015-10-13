@@ -152,7 +152,6 @@ class NET_EXPORT CookieMonster : public CookieStore {
 
   typedef base::Callback<void(const CookieList& cookies)> GetCookieListCallback;
   typedef base::Callback<void(bool success)> DeleteCookieCallback;
-  typedef base::Callback<void(bool cookies_exist)> HasCookiesForETLDP1Callback;
 
   // Sets a cookie given explicit user-provided cookie attributes. The cookie
   // name, value, domain, etc. are each provided as separate strings. This
@@ -201,13 +200,9 @@ class NET_EXPORT CookieMonster : public CookieStore {
   void DeleteCanonicalCookieAsync(const CanonicalCookie& cookie,
                                   const DeleteCookieCallback& callback);
 
-  // Checks whether for a given ETLD+1, there currently exist any cookies.
-  void HasCookiesForETLDP1Async(const std::string& etldp1,
-                                const HasCookiesForETLDP1Callback& callback);
-
-  // Resets the list of cookieable schemes to the supplied schemes.
-  // If this this method is called, it must be called before first use of
-  // the instance (i.e. as part of the instance initialization process).
+  // Resets the list of cookieable schemes to the supplied schemes. Does
+  // nothing if called after first use of the instance (i.e. after the
+  // instance initialization process).
   void SetCookieableSchemes(const char* const schemes[], size_t num_schemes);
 
   // Instructs the cookie monster to not delete expired cookies. This is used
@@ -338,7 +333,6 @@ class NET_EXPORT CookieMonster : public CookieStore {
   class SetCookieWithDetailsTask;
   class SetCookieWithOptionsTask;
   class DeleteSessionCookiesTask;
-  class HasCookiesForETLDP1Task;
 
   // Testing support.
   // For SetCookieWithCreationTime.
@@ -365,6 +359,9 @@ class NET_EXPORT CookieMonster : public CookieStore {
 
   // For ComputeCookieDiff.
   FRIEND_TEST_ALL_PREFIXES(CookieMonsterTest, ComputeCookieDiff);
+
+  // For CookieSource histogram enum.
+  FRIEND_TEST_ALL_PREFIXES(CookieMonsterTest, CookieSourceHistogram);
 
   // Internal reasons for deletion, used to populate informative histograms
   // and to provide a public cause for onCookieChange notifications.
@@ -414,6 +411,26 @@ class NET_EXPORT CookieMonster : public CookieStore {
     COOKIE_TYPE_HTTPONLY,
     COOKIE_TYPE_SECURE,
     COOKIE_TYPE_LAST_ENTRY
+  };
+
+  // Used to populate a histogram containing information about the
+  // sources of Secure and non-Secure cookies: that is, whether such
+  // cookies are set by origins with cryptographic or non-cryptographic
+  // schemes. Please do not reorder the list when adding new
+  // entries. New items MUST be added at the end of the list, just
+  // before COOKIE_SOURCE_LAST_ENTRY.
+  //
+  // COOKIE_SOURCE_(NON)SECURE_COOKIE_(NON)CRYPTOGRAPHIC_SCHEME means
+  // that a cookie was set or overwritten from a URL with the given type
+  // of scheme. This enum should not be used when cookies are *cleared*,
+  // because its purpose is to understand if Chrome can deprecate the
+  // ability of HTTP urls to set/overwrite Secure cookies.
+  enum CookieSource {
+    COOKIE_SOURCE_SECURE_COOKIE_CRYPTOGRAPHIC_SCHEME = 0,
+    COOKIE_SOURCE_SECURE_COOKIE_NONCRYPTOGRAPHIC_SCHEME,
+    COOKIE_SOURCE_NONSECURE_COOKIE_CRYPTOGRAPHIC_SCHEME,
+    COOKIE_SOURCE_NONSECURE_COOKIE_NONCRYPTOGRAPHIC_SCHEME,
+    COOKIE_SOURCE_LAST_ENTRY
   };
 
   // The strategy for fetching cookies. Controlled by Finch experiment.
@@ -484,8 +501,6 @@ class NET_EXPORT CookieMonster : public CookieStore {
 
   int DeleteSessionCookies();
 
-  bool HasCookiesForETLDP1(const std::string& etldp1);
-
   // The first access to the cookie store initializes it. This method should be
   // called before any access to the cookie store.
   void MarkCookieStoreAsInitialized();
@@ -529,10 +544,9 @@ class NET_EXPORT CookieMonster : public CookieStore {
 
   // Checks for any duplicate cookies for CookieMap key |key| which lie between
   // |begin| and |end|. If any are found, all but the most recent are deleted.
-  // Returns the number of duplicate cookies that were deleted.
-  int TrimDuplicateCookiesForKey(const std::string& key,
-                                 CookieMap::iterator begin,
-                                 CookieMap::iterator end);
+  void TrimDuplicateCookiesForKey(const std::string& key,
+                                  CookieMap::iterator begin,
+                                  CookieMap::iterator end);
 
   void SetDefaultCookieableSchemes();
 
@@ -663,16 +677,11 @@ class NET_EXPORT CookieMonster : public CookieStore {
   // Histogram variables; see CookieMonster::InitializeHistograms() in
   // cookie_monster.cc for details.
   base::HistogramBase* histogram_expiration_duration_minutes_;
-  base::HistogramBase* histogram_between_access_interval_minutes_;
   base::HistogramBase* histogram_evicted_last_access_minutes_;
   base::HistogramBase* histogram_count_;
-  base::HistogramBase* histogram_domain_count_;
-  base::HistogramBase* histogram_etldp1_count_;
-  base::HistogramBase* histogram_domain_per_etldp1_count_;
-  base::HistogramBase* histogram_number_duplicate_db_cookies_;
   base::HistogramBase* histogram_cookie_deletion_cause_;
   base::HistogramBase* histogram_cookie_type_;
-  base::HistogramBase* histogram_time_mac_;
+  base::HistogramBase* histogram_cookie_source_scheme_;
   base::HistogramBase* histogram_time_blocked_on_load_;
 
   CookieMap cookies_;

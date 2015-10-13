@@ -142,7 +142,7 @@ config("skia_config") {
 
   defines += []
 
-  if (component_mode == "shared_library") {
+  if (is_component_build) {
     defines += [
       "SKIA_DLL",
       "GR_GL_IGNORE_ES3_MSAA=0",
@@ -168,6 +168,10 @@ config("skia_config") {
 
   if (is_mac) {
     defines += [ "SK_BUILD_FOR_MAC" ]
+  }
+
+  if (is_win) {
+    defines += [ "GR_GL_FUNCTION_TYPE=__stdcall" ]
   }
 }
 
@@ -196,7 +200,7 @@ config("skia_library_config") {
 
   defines = []
 
-  if (component_mode == "shared_library") {
+  if (is_component_build) {
     defines += [ "SKIA_IMPLEMENTATION=1" ]
   }
 
@@ -213,7 +217,6 @@ config("skia_library_config") {
     defines += [
       "SK_GAMMA_EXPONENT=1.2",
       "SK_GAMMA_CONTRAST=0.2",
-      "SK_HIGH_QUALITY_IS_LANCZOS",
     ]
   } else if (is_android) {
     defines += [
@@ -225,13 +228,11 @@ config("skia_library_config") {
     defines += [
       "SK_GAMMA_SRGB",
       "SK_GAMMA_CONTRAST=0.5",
-      "SK_HIGH_QUALITY_IS_LANCZOS",
     ]
   } else if (is_mac) {
     defines += [
       "SK_GAMMA_SRGB",
       "SK_GAMMA_CONTRAST=0.0",
-      "SK_HIGH_QUALITY_IS_LANCZOS",
     ]
   }
 
@@ -279,6 +280,7 @@ component("skia") {
     # Chrome sources.
     "ext/SkDiscardableMemory_chrome.cc",
     "ext/SkMemory_new_handler.cpp",
+    "ext/SkTraceMemoryDump_chrome.cc",
     "ext/analysis_canvas.cc",
     "ext/benchmarking_canvas.cc",
     "ext/convolver.cc",
@@ -287,20 +289,22 @@ component("skia") {
     "ext/google_logging.cc",
     "ext/image_operations.cc",
     "ext/opacity_filter_canvas.cc",
-    "ext/pixel_ref_utils.cc",
-    "ext/platform_canvas.cc",
     "ext/platform_device.cc",
     "ext/platform_device_linux.cc",
     "ext/platform_device_mac.cc",
     "ext/platform_device_win.cc",
     "ext/recursive_gaussian_convolution.cc",
+    "ext/skia_memory_dump_provider.cc",
     "ext/skia_utils_base.cc",
     "ext/skia_utils_ios.mm",
     "ext/skia_utils_mac.mm",
     "ext/skia_utils_win.cc",
   ]
 
-  if (current_cpu == "x86" || current_cpu == "x64") {
+  if (!is_ios) {
+    sources += [ "ext/platform_canvas.cc" ]
+  }
+  if (!is_ios && (current_cpu == "x86" || current_cpu == "x64")) {
     sources += [ "ext/convolver_SSE2.cc" ]
   } else if (current_cpu == "mipsel" && mips_dsp_rev >= 2) {
     sources += [ "ext/convolver_mips_dspr2.cc" ]
@@ -430,7 +434,7 @@ component("skia") {
     sources += [ "ext/bitmap_platform_device_mac.cc" ]
   } else if (use_cairo) {
     sources += [ "ext/bitmap_platform_device_cairo.cc" ]
-  } else {
+  } else if (!is_ios) {
     sources += [ "ext/bitmap_platform_device_skia.cc" ]
   }
 
@@ -444,6 +448,7 @@ component("skia") {
   configs -= [ "//build/config/compiler:chromium_code" ]
   configs += [
     ":skia_library_config",
+    "//build/config:precompiled_headers",
     "//build/config/compiler:no_chromium_code",
   ]
   public_configs = [ ":skia_config" ]
@@ -456,14 +461,15 @@ component("skia") {
   ]
 
   if (is_linux) {
-    configs += [
-      "//build/config/linux:fontconfig",
-      "//build/config/linux:freetype2",
-    ]
+    configs += [ "//build/config/linux:freetype2" ]
+
     if (use_pango) {
       configs += [ "//build/config/linux:pangocairo" ]
     }
-    deps += [ "//third_party/icu:icuuc" ]
+    deps += [
+      "//build/linux:fontconfig",
+      "//third_party/icu:icuuc",
+    ]
   }
 
   if (is_android) {
@@ -483,8 +489,22 @@ component("skia") {
   }
 
   if (is_android && !is_debug) {
-    configs -= [ "//build/config/compiler:optimize" ]
+    configs -= [ "//build/config/compiler:default_optimization" ]
     configs += [ "//build/config/compiler:optimize_max" ]
+  }
+
+  if (is_ios) {
+    libs = [ "ImageIO.framework" ]
+    set_sources_assignment_filter([])
+    sources += [
+      "//third_party/skia/src/ports/SkFontHost_mac.cpp",
+      "//third_party/skia/src/utils/mac/SkCreateCGImageRef.cpp",
+      "//third_party/skia/src/utils/mac/SkStream_mac.cpp",
+    ]
+    set_sources_assignment_filter(sources_assignment_filter)
+
+    # To disable warning "CGContextSelectFont' is deprecated"
+    cflags = [ "-Wno-deprecated-declarations" ]
   }
 }
 
@@ -570,7 +590,7 @@ source_set("skia_opts") {
   }
 
   if (is_android && !is_debug) {
-    configs -= [ "//build/config/compiler:optimize" ]
+    configs -= [ "//build/config/compiler:default_optimization" ]
     configs += [ "//build/config/compiler:optimize_max" ]
   }
 
@@ -584,16 +604,25 @@ source_set("skia_opts") {
   visibility = [ ":skia" ]
 }
 
+# TODO(GYP): Delete this after we've converted everything to GN.
+# The _run targets exist only for compatibility w/ GYP.
+group("skia_unittests_run") {
+  testonly = true
+  deps = [
+    ":skia_unittests",
+  ]
+}
+
 test("skia_unittests") {
   sources = [
     "ext/analysis_canvas_unittest.cc",
     "ext/bitmap_platform_device_mac_unittest.cc",
     "ext/convolver_unittest.cc",
     "ext/image_operations_unittest.cc",
-    "ext/pixel_ref_utils_unittest.cc",
     "ext/platform_canvas_unittest.cc",
     "ext/recursive_gaussian_convolution_unittest.cc",
     "ext/refptr_unittest.cc",
+    "ext/skia_memory_dump_provider_unittest.cc",
     "ext/skia_utils_ios_unittest.mm",
     "ext/skia_utils_mac_unittest.mm",
   ]
@@ -606,11 +635,14 @@ test("skia_unittests") {
     ":skia",
     "//base",
     "//base/test:run_all_unittests",
-    "//cc:test_support",  # TODO: Fix this test to not depend on cc.
     "//testing/gtest",
     "//ui/gfx",
     "//ui/gfx/geometry",
   ]
+
+  if (!is_ios) {
+    deps += [ "//cc:test_support" ]  # TODO: Fix this test to not depend on cc.
+  }
 }
 
 if (is_linux && !is_chromeos) {
@@ -623,6 +655,7 @@ if (is_linux && !is_chromeos) {
     deps = [
       ":skia",
       "//base",
+      "//build/config/sanitizers:deps",
     ]
   }
 
@@ -636,6 +669,7 @@ if (is_linux && !is_chromeos) {
       ":skia",
       "//base",
       "//base/test:test_support",
+      "//build/config/sanitizers:deps",
     ]
   }
 }

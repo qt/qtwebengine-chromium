@@ -9,6 +9,7 @@
 #include "core/events/Event.h"
 #include "core/page/NetworkStateNotifier.h"
 #include "modules/EventTargetModules.h"
+#include "platform/RuntimeEnabledFeatures.h"
 #include "wtf/text/WTFString.h"
 
 namespace {
@@ -18,19 +19,21 @@ using namespace blink;
 String connectionTypeToString(WebConnectionType type)
 {
     switch (type) {
-    case ConnectionTypeCellular:
+    case WebConnectionTypeCellular:
         return "cellular";
-    case ConnectionTypeBluetooth:
+    case WebConnectionTypeBluetooth:
         return "bluetooth";
-    case ConnectionTypeEthernet:
+    case WebConnectionTypeEthernet:
         return "ethernet";
-    case ConnectionTypeWifi:
+    case WebConnectionTypeWifi:
         return "wifi";
-    case ConnectionTypeOther:
+    case WebConnectionTypeWimax:
+        return "wimax";
+    case WebConnectionTypeOther:
         return "other";
-    case ConnectionTypeNone:
+    case WebConnectionTypeNone:
         return "none";
-    case ConnectionTypeUnknown:
+    case WebConnectionTypeUnknown:
         return "unknown";
     }
     ASSERT_NOT_REACHED();
@@ -64,17 +67,29 @@ String NetworkInformation::type() const
     return connectionTypeToString(m_type);
 }
 
-void NetworkInformation::connectionTypeChange(WebConnectionType type)
+double NetworkInformation::downlinkMax() const
+{
+    if (!m_observing)
+        return networkStateNotifier().maxBandwidth();
+
+    return m_downlinkMaxMbps;
+}
+
+void NetworkInformation::connectionChange(WebConnectionType type, double downlinkMaxMbps)
 {
     ASSERT(executionContext()->isContextThread());
 
     // This can happen if the observer removes and then adds itself again
     // during notification.
-    if (m_type == type)
+    if (m_type == type && m_downlinkMaxMbps == downlinkMaxMbps)
         return;
 
     m_type = type;
+    m_downlinkMaxMbps = downlinkMaxMbps;
     dispatchEvent(Event::create(EventTypeNames::typechange));
+
+    if (RuntimeEnabledFeatures::netInfoDownlinkMaxEnabled())
+        dispatchEvent(Event::create(EventTypeNames::change));
 }
 
 const AtomicString& NetworkInformation::interfaceName() const
@@ -87,7 +102,7 @@ ExecutionContext* NetworkInformation::executionContext() const
     return ActiveDOMObject::executionContext();
 }
 
-bool NetworkInformation::addEventListener(const AtomicString& eventType, PassRefPtr<EventListener> listener, bool useCapture)
+bool NetworkInformation::addEventListener(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener> listener, bool useCapture)
 {
     if (!EventTargetWithInlineData::addEventListener(eventType, listener, useCapture))
         return false;
@@ -95,7 +110,7 @@ bool NetworkInformation::addEventListener(const AtomicString& eventType, PassRef
     return true;
 }
 
-bool NetworkInformation::removeEventListener(const AtomicString& eventType, PassRefPtr<EventListener> listener, bool useCapture)
+bool NetworkInformation::removeEventListener(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener> listener, bool useCapture)
 {
     if (!EventTargetWithInlineData::removeEventListener(eventType, listener, useCapture))
         return false;
@@ -145,6 +160,7 @@ void NetworkInformation::stopObserving()
 NetworkInformation::NetworkInformation(ExecutionContext* context)
     : ActiveDOMObject(context)
     , m_type(networkStateNotifier().connectionType())
+    , m_downlinkMaxMbps(networkStateNotifier().maxBandwidth())
     , m_observing(false)
     , m_contextStopped(false)
 {

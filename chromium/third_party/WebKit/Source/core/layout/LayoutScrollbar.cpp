@@ -32,6 +32,7 @@
 #include "core/layout/LayoutPart.h"
 #include "core/layout/LayoutScrollbarPart.h"
 #include "core/layout/LayoutScrollbarTheme.h"
+#include "core/layout/LayoutView.h"
 #include "platform/graphics/GraphicsContext.h"
 
 namespace blink {
@@ -94,6 +95,13 @@ LayoutBox* LayoutScrollbar::owningLayoutObject() const
     if (m_owningFrame)
         return m_owningFrame->ownerLayoutObject();
     return m_owner && m_owner->layoutObject() ? m_owner->layoutObject()->enclosingBox() : 0;
+}
+
+LayoutBox* LayoutScrollbar::owningLayoutObjectWithinFrame() const
+{
+    if (m_owningFrame)
+        return m_owningFrame->contentLayoutObject();
+    return owningLayoutObject();
 }
 
 void LayoutScrollbar::setParent(Widget* parent)
@@ -188,11 +196,11 @@ void LayoutScrollbar::updateScrollbarParts(bool destroy)
 
     if (newThickness != oldThickness) {
         setFrameRect(IntRect(location(), IntSize(isHorizontal ? width() : newThickness, isHorizontal ? newThickness : height())));
-        if (LayoutBox* box = owningLayoutObject()) {
+        if (LayoutBox* box = owningLayoutObjectWithinFrame()) {
             if (box->isLayoutBlock())
                 toLayoutBlock(box)->notifyScrollbarThicknessChanged();
             box->setChildNeedsLayout();
-            if (RuntimeEnabledFeatures::slimmingPaintEnabled() && m_scrollableArea)
+            if (m_scrollableArea)
                 m_scrollableArea->invalidateScrollCorner(m_scrollableArea->scrollCornerRect());
         }
     }
@@ -237,18 +245,18 @@ void LayoutScrollbar::updateScrollbarPart(ScrollbarPart partType, bool destroy)
         ScrollbarButtonsPlacement buttonsPlacement = theme()->buttonsPlacement();
         switch (partType) {
         case BackButtonStartPart:
-            needLayoutObject = (buttonsPlacement == ScrollbarButtonsSingle || buttonsPlacement == ScrollbarButtonsDoubleStart
-                || buttonsPlacement == ScrollbarButtonsDoubleBoth);
+            needLayoutObject = (buttonsPlacement == ScrollbarButtonsPlacementSingle || buttonsPlacement == ScrollbarButtonsPlacementDoubleStart
+                || buttonsPlacement == ScrollbarButtonsPlacementDoubleBoth);
             break;
         case ForwardButtonStartPart:
-            needLayoutObject = (buttonsPlacement == ScrollbarButtonsDoubleStart || buttonsPlacement == ScrollbarButtonsDoubleBoth);
+            needLayoutObject = (buttonsPlacement == ScrollbarButtonsPlacementDoubleStart || buttonsPlacement == ScrollbarButtonsPlacementDoubleBoth);
             break;
         case BackButtonEndPart:
-            needLayoutObject = (buttonsPlacement == ScrollbarButtonsDoubleEnd || buttonsPlacement == ScrollbarButtonsDoubleBoth);
+            needLayoutObject = (buttonsPlacement == ScrollbarButtonsPlacementDoubleEnd || buttonsPlacement == ScrollbarButtonsPlacementDoubleBoth);
             break;
         case ForwardButtonEndPart:
-            needLayoutObject = (buttonsPlacement == ScrollbarButtonsSingle || buttonsPlacement == ScrollbarButtonsDoubleEnd
-                || buttonsPlacement == ScrollbarButtonsDoubleBoth);
+            needLayoutObject = (buttonsPlacement == ScrollbarButtonsPlacementSingle || buttonsPlacement == ScrollbarButtonsPlacementDoubleEnd
+                || buttonsPlacement == ScrollbarButtonsPlacementDoubleBoth);
             break;
         default:
             break;
@@ -269,7 +277,7 @@ void LayoutScrollbar::updateScrollbarPart(ScrollbarPart partType, bool destroy)
         partLayoutObject->setStyle(partStyle.release());
 }
 
-IntRect LayoutScrollbar::buttonRect(ScrollbarPart partType)
+IntRect LayoutScrollbar::buttonRect(ScrollbarPart partType) const
 {
     LayoutScrollbarPart* partLayoutObject = m_parts.get(partType);
     if (!partLayoutObject)
@@ -302,7 +310,7 @@ IntRect LayoutScrollbar::buttonRect(ScrollbarPart partType)
         isHorizontal ? height() : partLayoutObject->pixelSnappedHeight());
 }
 
-IntRect LayoutScrollbar::trackRect(int startLength, int endLength)
+IntRect LayoutScrollbar::trackRect(int startLength, int endLength) const
 {
     LayoutScrollbarPart* part = m_parts.get(TrackBGPart);
     if (part)
@@ -326,7 +334,7 @@ IntRect LayoutScrollbar::trackRect(int startLength, int endLength)
     return IntRect(x(), y() + startLength, width(), height() - totalLength);
 }
 
-IntRect LayoutScrollbar::trackPieceRectWithMargins(ScrollbarPart partType, const IntRect& oldRect)
+IntRect LayoutScrollbar::trackPieceRectWithMargins(ScrollbarPart partType, const IntRect& oldRect) const
 {
     LayoutScrollbarPart* partLayoutObject = m_parts.get(partType);
     if (!partLayoutObject)
@@ -345,7 +353,7 @@ IntRect LayoutScrollbar::trackPieceRectWithMargins(ScrollbarPart partType, const
     return rect;
 }
 
-int LayoutScrollbar::minimumThumbLength()
+int LayoutScrollbar::minimumThumbLength() const
 {
     LayoutScrollbarPart* partLayoutObject = m_parts.get(ThumbPart);
     if (!partLayoutObject)
@@ -357,9 +365,6 @@ int LayoutScrollbar::minimumThumbLength()
 void LayoutScrollbar::invalidateRect(const IntRect& rect)
 {
     Scrollbar::invalidateRect(rect);
-
-    if (!RuntimeEnabledFeatures::slimmingPaintEnabled())
-        return;
 
     // FIXME: invalidate only the changed part.
     if (LayoutBox* owningLayoutObject = this->owningLayoutObject()) {

@@ -43,6 +43,7 @@ enum CollapsedBorderSide {
 
 // Helper class for paintObject.
 class CellSpan {
+    STACK_ALLOCATED();
 public:
     CellSpan(unsigned start, unsigned end)
         : m_start(start)
@@ -66,10 +67,46 @@ private:
 class LayoutTableCell;
 class LayoutTableRow;
 
+// LayoutTableSection is used to represent table row group (display:
+// table-row-group), header group (display: table-header-group) and footer group
+// (display: table-footer-group).
+//
+// The object holds the internal representation of the rows (m_grid). See
+// recalcCells() below for some extra explanation.
+//
+// A lot of the complexity in this class is related to handling rowspan, colspan
+// or just non-regular tables.
+//
+// Example of rowspan / colspan leading to overlapping cells (rowspan and
+// colspan are overlapping):
+// <table>
+//   <tr>
+//       <td>first row</td>
+//       <td rowspan="2">rowspan</td>
+//     </tr>
+//    <tr>
+//        <td colspan="2">colspan</td>
+//     </tr>
+// </table>
+//
+// Example of non-regular table (missing one cell in the first row):
+// <!DOCTYPE html>
+// <table>
+//   <tr><td>First row only child.</td></tr>
+//   <tr>
+//     <td>Second row first child</td>
+//     <td>Second row second child</td>
+//   </tr>
+// </table>
+//
+// LayoutTableSection is responsible for laying out LayoutTableRows and
+// LayoutTableCells (see layoutRows()). However it is not their containing
+// block, the enclosing LayoutTable (this object's parent()) is. This is why
+// this class inherits from LayoutBox and not LayoutBlock.
 class CORE_EXPORT LayoutTableSection final : public LayoutBox {
 public:
     LayoutTableSection(Element*);
-    virtual ~LayoutTableSection();
+    ~LayoutTableSection() override;
 
     LayoutTableRow* firstRow() const;
     LayoutTableRow* lastRow() const;
@@ -77,9 +114,9 @@ public:
     const LayoutObjectChildList* children() const { return &m_children; }
     LayoutObjectChildList* children() { return &m_children; }
 
-    virtual void addChild(LayoutObject* child, LayoutObject* beforeChild = nullptr) override;
+    void addChild(LayoutObject* child, LayoutObject* beforeChild = nullptr) override;
 
-    virtual int firstLineBoxBaseline() const override;
+    int firstLineBoxBaseline() const override;
 
     void addCell(LayoutTableCell*, LayoutTableRow*);
 
@@ -92,6 +129,7 @@ public:
     typedef Vector<LayoutTableCell*, 2> SpanningLayoutTableCells;
 
     struct CellStruct {
+        ALLOW_ONLY_INLINE_ALLOCATION();
     public:
         Vector<LayoutTableCell*, 1> cells;
         bool inColSpan; // true for columns after the first in a colspan
@@ -117,6 +155,7 @@ public:
     typedef Vector<CellStruct> Row;
 
     struct RowStruct {
+        ALLOW_ONLY_INLINE_ALLOCATION();
     public:
         RowStruct()
             : rowLayoutObject(nullptr)
@@ -131,6 +170,7 @@ public:
     };
 
     struct SpanningRowsHeight {
+        STACK_ALLOCATED();
         WTF_MAKE_NONCOPYABLE(SpanningRowsHeight);
 
     public:
@@ -176,8 +216,10 @@ public:
         CellStruct& c = m_grid[row].row[col];
         return c.primaryCell();
     }
+    const LayoutTableCell* primaryCellAt(unsigned row, unsigned col) const { return const_cast<LayoutTableSection*>(this)->primaryCellAt(row, col); }
 
-    LayoutTableRow* rowLayoutObjectAt(unsigned row) const { return m_grid[row].rowLayoutObject; }
+    LayoutTableRow* rowLayoutObjectAt(unsigned row) { return m_grid[row].rowLayoutObject; }
+    const LayoutTableRow* rowLayoutObjectAt(unsigned row) const { return m_grid[row].rowLayoutObject; }
 
     void appendColumn(unsigned pos);
     void splitColumn(unsigned pos, unsigned first);
@@ -195,6 +237,16 @@ public:
 
     unsigned numRows() const { return m_grid.size(); }
     unsigned numColumns() const;
+
+    // recalcCells() is used when we are not sure about the section's structure
+    // and want to do an expensive (but safe) reconstruction of m_grid from
+    // scratch.
+    // An example of this is inserting a new cell in the middle of an existing
+    // row or removing a row.
+    //
+    // Accessing m_grid when m_needsCellRecalc is set is UNSAFE as pointers can
+    // be left dangling. Thus care should be taken in the code to check
+    // m_needsCellRecalc before accessing m_grid.
     void recalcCells();
     void recalcCellsIfNeeded()
     {
@@ -210,6 +262,7 @@ public:
     void rowLogicalHeightChanged(LayoutTableRow*);
 
     void removeCachedCollapsedBorders(const LayoutTableCell*);
+    // Returns true if any collapsed borders of the cell changed.
     bool setCachedCollapsedBorder(const LayoutTableCell*, CollapsedBorderSide, const CollapsedBorderValue&);
     const CollapsedBorderValue& cachedCollapsedBorder(const LayoutTableCell*, CollapsedBorderSide) const;
 
@@ -218,38 +271,38 @@ public:
     int distributeExtraLogicalHeightToRows(int extraLogicalHeight);
 
     static LayoutTableSection* createAnonymousWithParent(const LayoutObject*);
-    virtual LayoutBox* createAnonymousBoxWithSameTypeAs(const LayoutObject* parent) const override
+    LayoutBox* createAnonymousBoxWithSameTypeAs(const LayoutObject* parent) const override
     {
         return createAnonymousWithParent(parent);
     }
 
-    virtual void paint(const PaintInfo&, const LayoutPoint&) override;
+    void paint(const PaintInfo&, const LayoutPoint&) const override;
 
     // Flip the rect so it aligns with the coordinates used by the rowPos and columnPos vectors.
     LayoutRect logicalRectForWritingModeAndDirection(const LayoutRect&) const;
 
     CellSpan dirtiedRows(const LayoutRect& paintInvalidationRect) const;
     CellSpan dirtiedColumns(const LayoutRect& paintInvalidationRect) const;
-    HashSet<LayoutTableCell*>& overflowingCells() { return m_overflowingCells; }
-    bool hasMultipleCellLevels() { return m_hasMultipleCellLevels; }
+    const HashSet<LayoutTableCell*>& overflowingCells() const { return m_overflowingCells; }
+    bool hasMultipleCellLevels() const { return m_hasMultipleCellLevels; }
 
-    virtual const char* name() const override { return "LayoutTableSection"; }
+    const char* name() const override { return "LayoutTableSection"; }
 
 protected:
-    virtual void styleDidChange(StyleDifference, const ComputedStyle* oldStyle) override;
-    virtual bool nodeAtPoint(HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction) override;
+    void styleDidChange(StyleDifference, const ComputedStyle* oldStyle) override;
+    bool nodeAtPoint(HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction) override;
 
 private:
-    virtual LayoutObjectChildList* virtualChildren() override { return children(); }
-    virtual const LayoutObjectChildList* virtualChildren() const override { return children(); }
+    LayoutObjectChildList* virtualChildren() override { return children(); }
+    const LayoutObjectChildList* virtualChildren() const override { return children(); }
 
-    virtual bool isOfType(LayoutObjectType type) const override { return type == LayoutObjectTableSection || LayoutBox::isOfType(type); }
+    bool isOfType(LayoutObjectType type) const override { return type == LayoutObjectTableSection || LayoutBox::isOfType(type); }
 
-    virtual void willBeRemovedFromTree() override;
+    void willBeRemovedFromTree() override;
 
-    virtual void layout() override;
+    void layout() override;
 
-    virtual void imageChanged(WrappedImagePtr, const IntRect* = nullptr) override;
+    void imageChanged(WrappedImagePtr, const IntRect* = nullptr) override;
 
     int borderSpacingForRow(unsigned row) const { return m_grid[row].rowLayoutObject ? table()->vBorderSpacing() : 0; }
 
@@ -288,10 +341,29 @@ private:
 
     LayoutObjectChildList m_children;
 
+    // The representation of the rows and their cells (CellStruct).
     Vector<RowStruct> m_grid;
+
+    // The logical offset of each row from the top of the section.
+    //
+    // Note that this Vector has one more entry than the number of rows so that
+    // we can keep track of the final size of the section
+    // (m_rowPos[m_grid.size() + 1]).
+    //
+    // To know a row's height at |rowIndex|, use the formula:
+    // m_rowPos[rowIndex + 1] - m_rowPos[rowIndex]
     Vector<int> m_rowPos;
 
-    // the current insertion position
+    // The current insertion position in the grid.
+    // The position is used when inserting a new cell into the section to
+    // know where it should be inserted and expand our internal structure.
+    //
+    // The reason for them is that we process cells as we discover them
+    // during parsing or during recalcCells (ie in DOM order). This means
+    // that we can discover changes in the structure later (e.g. due to
+    // colspans, extra cells, ...).
+    //
+    // Do not use outside of recalcCells and addChild.
     unsigned m_cCol;
     unsigned m_cRow;
 
@@ -312,7 +384,7 @@ private:
 
     // This map holds the collapsed border values for cells with collapsed borders.
     // It is held at LayoutTableSection level to spare memory consumption by table cells.
-    using CellsCollapsedBordersMap = HashMap<pair<const LayoutTableCell*, int>, CollapsedBorderValue>;
+    using CellsCollapsedBordersMap = HashMap<std::pair<const LayoutTableCell*, int>, CollapsedBorderValue>;
     CellsCollapsedBordersMap m_cellsCollapsedBorders;
 };
 

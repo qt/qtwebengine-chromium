@@ -246,7 +246,7 @@ WebInspector.TimelinePresentationModel.prototype = {
                 var record = records[entry.index];
                 ++entry.index;
                 if (record.startTime() < this._windowEndTime && record.endTime() > this._windowStartTime) {
-                    if (this._model.isVisible(record.record())) {
+                    if (this._model.isVisible(record.record().traceEvent())) {
                         record._presentationParent._expandable = true;
                         if (this._textFilter)
                             revealRecordsInStack();
@@ -477,7 +477,7 @@ WebInspector.TimelinePresentationModel.ActualRecord.prototype = {
      */
     selfTime: function()
     {
-        return this._record.selfTime();
+        return this._record.traceEvent().selfTime;
     },
 
     /**
@@ -495,7 +495,7 @@ WebInspector.TimelinePresentationModel.ActualRecord.prototype = {
      */
     hasWarnings: function()
     {
-        return !!this._record.warnings();
+        return !!this._record.traceEvent().warning;
     },
 
     __proto__: WebInspector.TimelinePresentationModel.Record.prototype

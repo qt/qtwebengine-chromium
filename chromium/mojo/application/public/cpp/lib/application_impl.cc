@@ -18,7 +18,8 @@ namespace mojo {
 namespace {
 
 void DefaultTerminationClosure() {
-  if (base::MessageLoop::current()->is_running())
+  if (base::MessageLoop::current() &&
+      base::MessageLoop::current()->is_running())
     base::MessageLoop::current()->Quit();
 }
 
@@ -32,95 +33,60 @@ ApplicationImpl::ApplicationImpl(ApplicationDelegate* delegate,
 
 ApplicationImpl::ApplicationImpl(ApplicationDelegate* delegate,
                                  InterfaceRequest<Application> request,
-                                 const base::Closure& termination_closure)
+                                 const Closure& termination_closure)
     : delegate_(delegate),
       binding_(this, request.Pass()),
       termination_closure_(termination_closure),
       app_lifetime_helper_(this),
       quit_requested_(false),
-      in_destructor_(false),
-      weak_factory_(this) {
-}
-
-void ApplicationImpl::ClearConnections() {
-  // Copy the ServiceRegistryLists because they will be mutated by
-  // ApplicationConnection::CloseConnection.
-  ServiceRegistryList incoming_service_registries(incoming_service_registries_);
-  for (internal::ServiceRegistry* registry : incoming_service_registries)
-    registry->CloseConnection();
-  DCHECK(incoming_service_registries_.empty());
-
-  ServiceRegistryList outgoing_service_registries(outgoing_service_registries_);
-  for (internal::ServiceRegistry* registry : outgoing_service_registries)
-    registry->CloseConnection();
-  DCHECK(outgoing_service_registries_.empty());
-}
+      weak_factory_(this) {}
 
 ApplicationImpl::~ApplicationImpl() {
-  DCHECK(!in_destructor_);
-  in_destructor_ = true;
-  ClearConnections();
-  app_lifetime_helper_.ApplicationTerminated();
+  app_lifetime_helper_.OnQuit();
 }
 
-ApplicationConnection* ApplicationImpl::ConnectToApplication(
-    mojo::URLRequestPtr request) {
+scoped_ptr<ApplicationConnection> ApplicationImpl::ConnectToApplication(
+    URLRequestPtr request) {
+  return ConnectToApplicationWithCapabilityFilter(request.Pass(), nullptr);
+}
+
+scoped_ptr<ApplicationConnection>
+    ApplicationImpl::ConnectToApplicationWithCapabilityFilter(
+        URLRequestPtr request,
+        CapabilityFilterPtr filter) {
   if (!shell_)
     return nullptr;
   ServiceProviderPtr local_services;
   InterfaceRequest<ServiceProvider> local_request = GetProxy(&local_services);
   ServiceProviderPtr remote_services;
   std::string application_url = request->url.To<std::string>();
-  shell_->ConnectToApplication(request.Pass(), GetProxy(&remote_services),
-                               local_services.Pass());
-  internal::ServiceRegistry* registry = new internal::ServiceRegistry(
-      this, application_url, application_url, remote_services.Pass(),
-      local_request.Pass());
-  if (!delegate_->ConfigureOutgoingConnection(registry)) {
-    registry->CloseConnection();
+  // We allow all interfaces on outgoing connections since we are presumably in
+  // a position to know who we're talking to.
+  // TODO(beng): is this a valid assumption or do we need to figure some way to
+  //             filter here too?
+  std::set<std::string> allowed;
+  allowed.insert("*");
+  InterfaceRequest<ServiceProvider> remote_services_proxy =
+      GetProxy(&remote_services);
+  scoped_ptr<internal::ServiceRegistry> registry(new internal::ServiceRegistry(
+      application_url, application_url, remote_services.Pass(),
+      local_request.Pass(), allowed));
+  shell_->ConnectToApplication(request.Pass(), remote_services_proxy.Pass(),
+                               local_services.Pass(), filter.Pass(),
+                               registry->GetConnectToApplicationCallback());
+  if (!delegate_->ConfigureOutgoingConnection(registry.get()))
     return nullptr;
-  }
-  outgoing_service_registries_.push_back(registry);
-  return registry;
-}
-
-void ApplicationImpl::CloseConnection(ApplicationConnection* connection) {
-  if (!in_destructor_)
-    delegate_->OnWillCloseConnection(connection);
-  auto outgoing_it = std::find(outgoing_service_registries_.begin(),
-                               outgoing_service_registries_.end(),
-                               connection);
-  if (outgoing_it != outgoing_service_registries_.end()) {
-    outgoing_service_registries_.erase(outgoing_it);
-    return;
-  }
-  auto incoming_it = std::find(incoming_service_registries_.begin(),
-                               incoming_service_registries_.end(),
-                               connection);
- if (incoming_it != incoming_service_registries_.end())
-    incoming_service_registries_.erase(incoming_it);
+  return registry.Pass();
 }
 
 void ApplicationImpl::Initialize(ShellPtr shell, const mojo::String& url) {
   shell_ = shell.Pass();
-  shell_.set_error_handler(this);
+  shell_.set_connection_error_handler([this]() { OnConnectionError(); });
   url_ = url;
   delegate_->Initialize(this);
 }
 
-void ApplicationImpl::WaitForInitialize() {
-  if (!shell_)
-    binding_.WaitForIncomingMethodCall();
-}
-
-void ApplicationImpl::UnbindConnections(
-    InterfaceRequest<Application>* application_request,
-    ShellPtr* shell) {
-  *application_request = binding_.Unbind();
-  shell->Bind(shell_.PassInterface());
-}
-
-void ApplicationImpl::Terminate() {
+void ApplicationImpl::Quit() {
   // We can't quit immediately, since there could be in-flight requests from the
   // shell. So check with it first.
   if (shell_) {
@@ -131,28 +97,24 @@ void ApplicationImpl::Terminate() {
   }
 }
 
-void ApplicationImpl::QuitNow() {
-  delegate_->Quit();
-  termination_closure_.Run();
-}
-
 void ApplicationImpl::AcceptConnection(
     const String& requestor_url,
     InterfaceRequest<ServiceProvider> services,
     ServiceProviderPtr exposed_services,
+    Array<String> allowed_interfaces,
     const String& url) {
-  internal::ServiceRegistry* registry = new internal::ServiceRegistry(
-      this, url, requestor_url, exposed_services.Pass(), services.Pass());
-  if (!delegate_->ConfigureIncomingConnection(registry)) {
-    registry->CloseConnection();
+  scoped_ptr<ApplicationConnection> registry(new internal::ServiceRegistry(
+      url, requestor_url, exposed_services.Pass(), services.Pass(),
+      allowed_interfaces.To<std::set<std::string>>()));
+  if (!delegate_->ConfigureIncomingConnection(registry.get()))
     return;
-  }
-  incoming_service_registries_.push_back(registry);
 
   // If we were quitting because we thought there were no more services for this
   // app in use, then that has changed so cancel the quit request.
   if (quit_requested_)
     quit_requested_ = false;
+
+  incoming_connections_.push_back(registry.Pass());
 }
 
 void ApplicationImpl::OnQuitRequested(const Callback<void(bool)>& callback) {
@@ -166,10 +128,29 @@ void ApplicationImpl::OnQuitRequested(const Callback<void(bool)>& callback) {
 
 void ApplicationImpl::OnConnectionError() {
   base::WeakPtr<ApplicationImpl> ptr(weak_factory_.GetWeakPtr());
-  QuitNow();
+
+  // We give the delegate notice first, since it might want to do something on
+  // shell connection errors other than immediate termination of the run
+  // loop. The application might want to continue servicing connections other
+  // than the one to the shell.
+  bool quit_now = delegate_->OnShellConnectionError();
+  if (quit_now)
+    QuitNow();
   if (!ptr)
     return;
   shell_ = nullptr;
+}
+
+void ApplicationImpl::QuitNow() {
+  delegate_->Quit();
+  termination_closure_.Run();
+}
+
+void ApplicationImpl::UnbindConnections(
+    InterfaceRequest<Application>* application_request,
+    ShellPtr* shell) {
+  *application_request = binding_.Unbind();
+  shell->Bind(shell_.PassInterface());
 }
 
 }  // namespace mojo

@@ -33,31 +33,31 @@
 #include "core/html/forms/ColorChooser.h"
 #include "core/html/forms/DateTimeChooser.h"
 #include "core/loader/DocumentLoader.h"
-#include "core/plugins/PluginPlaceholder.h"
 #include "platform/FileChooser.h"
 #include "platform/Widget.h"
 #include "public/platform/WebApplicationCacheHost.h"
-#include "public/platform/WebServiceWorkerProvider.h"
-#include "public/platform/WebServiceWorkerProviderClient.h"
+#include "public/platform/WebMediaPlayer.h"
+#include "public/platform/modules/serviceworker/WebServiceWorkerProvider.h"
+#include "public/platform/modules/serviceworker/WebServiceWorkerProviderClient.h"
 
 namespace blink {
 
 void fillWithEmptyClients(Page::PageClients& pageClients)
 {
-    static ChromeClient* dummyChromeClient = adoptPtr(new EmptyChromeClient).leakPtr();
-    pageClients.chromeClient = dummyChromeClient;
+    DEFINE_STATIC_LOCAL(OwnPtrWillBePersistent<ChromeClient>, dummyChromeClient, (EmptyChromeClient::create()));
+    pageClients.chromeClient = dummyChromeClient.get();
 
-    static ContextMenuClient* dummyContextMenuClient = adoptPtr(new EmptyContextMenuClient).leakPtr();
-    pageClients.contextMenuClient = dummyContextMenuClient;
+    DEFINE_STATIC_LOCAL(EmptyContextMenuClient, dummyContextMenuClient, ());
+    pageClients.contextMenuClient = &dummyContextMenuClient;
 
-    static DragClient* dummyDragClient = adoptPtr(new EmptyDragClient).leakPtr();
-    pageClients.dragClient = dummyDragClient;
+    DEFINE_STATIC_LOCAL(EmptyDragClient, dummyDragClient, ());
+    pageClients.dragClient = &dummyDragClient;
 
-    static EditorClient* dummyEditorClient = adoptPtr(new EmptyEditorClient).leakPtr();
-    pageClients.editorClient = dummyEditorClient;
+    DEFINE_STATIC_LOCAL(EmptyEditorClient, dummyEditorClient, ());
+    pageClients.editorClient = &dummyEditorClient;
 
-    static SpellCheckerClient* dummySpellCheckerClient = adoptPtr(new EmptySpellCheckerClient).leakPtr();
-    pageClients.spellCheckerClient = dummySpellCheckerClient;
+    DEFINE_STATIC_LOCAL(EmptySpellCheckerClient, dummySpellCheckerClient, ());
+    pageClients.spellCheckerClient = &dummySpellCheckerClient;
 }
 
 class EmptyPopupMenu : public PopupMenu {
@@ -68,7 +68,7 @@ public:
     void disconnectClient() override { }
 };
 
-PassRefPtrWillBeRawPtr<PopupMenu> EmptyChromeClient::openPopupMenu(LocalFrame&, PopupMenuClient*)
+PassRefPtrWillBeRawPtr<PopupMenu> EmptyChromeClient::openPopupMenu(LocalFrame&, HTMLSelectElement&)
 {
     return adoptRefWillBeNoop(new EmptyPopupMenu());
 }
@@ -101,6 +101,11 @@ NavigationPolicy EmptyFrameLoaderClient::decidePolicyForNavigation(const Resourc
     return NavigationPolicyIgnore;
 }
 
+bool EmptyFrameLoaderClient::hasPendingNavigation()
+{
+    return false;
+}
+
 void EmptyFrameLoaderClient::dispatchWillSendSubmitEvent(HTMLFormElement*)
 {
 }
@@ -119,17 +124,12 @@ PassRefPtrWillBeRawPtr<LocalFrame> EmptyFrameLoaderClient::createFrame(const Fra
     return nullptr;
 }
 
-PassOwnPtrWillBeRawPtr<PluginPlaceholder> EmptyFrameLoaderClient::createPluginPlaceholder(Document&, const KURL&, const Vector<String>& paramNames, const Vector<String>& paramValues, const String& mimeType, bool loadManually)
-{
-    return nullptr;
-}
-
 PassRefPtrWillBeRawPtr<Widget> EmptyFrameLoaderClient::createPlugin(HTMLPlugInElement*, const KURL&, const Vector<String>&, const Vector<String>&, const String&, bool, DetachedPluginPolicy)
 {
     return nullptr;
 }
 
-PassRefPtrWillBeRawPtr<Widget> EmptyFrameLoaderClient::createJavaAppletWidget(HTMLAppletElement*, const KURL&, const Vector<String>&, const Vector<String>&)
+PassOwnPtr<WebMediaPlayer> EmptyFrameLoaderClient::createWebMediaPlayer(HTMLMediaElement&, const WebURL&, WebMediaPlayerClient*)
 {
     return nullptr;
 }

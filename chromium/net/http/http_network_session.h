@@ -48,6 +48,7 @@ class ProxyService;
 class QuicClock;
 class QuicCryptoClientStreamFactory;
 class QuicServerInfoFactory;
+class SocketPerformanceWatcherFactory;
 class SOCKSClientSocketPool;
 class SSLClientSocketPool;
 class SSLConfigService;
@@ -78,6 +79,7 @@ class NET_EXPORT HttpNetworkSession
     base::WeakPtr<HttpServerProperties> http_server_properties;
     NetLog* net_log;
     HostMappingRules* host_mapping_rules;
+    SocketPerformanceWatcherFactory* socket_performance_watcher_factory;
     bool ignore_certificate_errors;
     uint16 testing_fixed_http_port;
     uint16 testing_fixed_https_port;
@@ -99,13 +101,11 @@ class NET_EXPORT HttpNetworkSession
     std::string trusted_spdy_proxy;
     // URLs to exclude from forced SPDY.
     std::set<HostPortPair> forced_spdy_exclusions;
-    // Noe: Using this in the case of NPN for HTTP only results in the browser
-    // trying SSL and then falling back to http.
-    bool use_alternate_protocols;
+    bool use_alternative_services;
     double alternative_service_probability_threshold;
 
     bool enable_quic;
-    bool disable_insecure_quic;
+    bool enable_insecure_quic;
     bool enable_quic_for_proxies;
     bool enable_quic_port_selection;
     bool quic_always_require_handshake_confirmation;
@@ -118,6 +118,7 @@ class NET_EXPORT HttpNetworkSession
     int quic_max_number_of_lossy_connections;
     float quic_packet_loss_threshold;
     int quic_socket_receive_buffer_size;
+    bool quic_delay_tcp_race;
     HostPortPair origin_to_force_quic_on;
     QuicClock* quic_clock;  // Will be owned by QuicStreamFactory.
     QuicRandom* quic_random;

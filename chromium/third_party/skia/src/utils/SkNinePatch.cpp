@@ -136,7 +136,7 @@ void SkNinePatch::DrawMesh(SkCanvas* canvas, const SkRect& bounds,
     const int numYStretch = (numYDivs + 1) >> 1;
 
     if (numXStretch < 1 && numYStretch < 1) {
-        canvas->drawBitmapRect(bitmap, NULL, bounds, paint);
+        canvas->drawBitmapRect(bitmap, bounds, paint);
         return;
     }
 
@@ -196,8 +196,8 @@ void SkNinePatch::DrawMesh(SkCanvas* canvas, const SkRect& bounds,
 
     mesh.fVerts = verts;
     mesh.fTexs = texs;
-    mesh.fColors = NULL;
-    mesh.fIndices = NULL;
+    mesh.fColors = nullptr;
+    mesh.fIndices = nullptr;
 
     // we use <= for YDivs, since the prebuild indices work for 3x2 and 3x1 too
     if (numXDivs == 2 && numYDivs <= 2) {
@@ -245,7 +245,7 @@ void SkNinePatch::DrawMesh(SkCanvas* canvas, const SkRect& bounds,
     }
     p.setShader(shader)->unref();
     canvas->drawVertices(SkCanvas::kTriangles_VertexMode, vCount,
-                         mesh.fVerts, mesh.fTexs, mesh.fColors, NULL,
+                         mesh.fVerts, mesh.fTexs, mesh.fColors, nullptr,
                          mesh.fIndices, indexCount, p);
 }
 
@@ -293,7 +293,7 @@ static void drawNineViaRects(SkCanvas* canvas, const SkRect& dst,
             s.fRight = srcX[x+1];
             d.fLeft = dstX[x];
             d.fRight = dstX[x+1];
-            canvas->drawBitmapRect(bitmap, &s, d, paint);
+            canvas->drawBitmapRect(bitmap, s, d, paint);
         }
     }
 }

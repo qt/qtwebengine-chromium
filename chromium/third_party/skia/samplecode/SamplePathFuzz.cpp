@@ -14,6 +14,7 @@
 #include "SkColor.h"
 #include "SkTDArray.h"
 #include "SkRandom.h"
+#include "SkRRect.h"
 
 enum RandomAddPath {
     kMoveToPath,
@@ -652,7 +653,7 @@ public:
     }
 protected:
     // overrides from SkEventSink
-    virtual bool onQuery(SkEvent* evt) {
+    bool onQuery(SkEvent* evt) override {
         if (SampleCode::TitleQ(*evt)) {
             SampleCode::TitleR(evt, "PathFuzzer");
             return true;
@@ -668,7 +669,7 @@ protected:
         path_fuzz_stroker(&offscreen, fIndex);
     }
 
-    virtual void onDrawContent(SkCanvas* canvas) {
+    void onDrawContent(SkCanvas* canvas) override {
         if (fOneDraw) {
             fuzzPath.randomize();
             const SkPath& path = fuzzPath.getPath();
@@ -684,7 +685,7 @@ protected:
             path_fuzz_stroker(&offscreen, fIndex += 100);
             canvas->drawBitmap(offscreen, 0, 0);
         }
-        this->inval(NULL);
+        this->inval(nullptr);
     }
 
 private:

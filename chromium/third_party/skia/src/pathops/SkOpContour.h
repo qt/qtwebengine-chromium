@@ -81,7 +81,7 @@ public:
 
     SkOpContour* appendContour(SkChunkAlloc* allocator) {
         SkOpContour* contour = SkOpTAllocator<SkOpContour>::New(allocator);
-        contour->setNext(NULL);
+        contour->setNext(nullptr);
         SkOpContour* prev = this;
         SkOpContour* next;
         while ((next = prev->next())) {
@@ -129,23 +129,23 @@ public:
 #endif
 
     const SkOpAngle* debugAngle(int id) const {
-        return SkDEBUGRELEASE(this->globalState()->debugAngle(id), NULL);
+        return SkDEBUGRELEASE(this->globalState()->debugAngle(id), nullptr);
     }
 
     SkOpContour* debugContour(int id) {
-        return SkDEBUGRELEASE(this->globalState()->debugContour(id), NULL);
+        return SkDEBUGRELEASE(this->globalState()->debugContour(id), nullptr);
     }
 
     const SkOpPtT* debugPtT(int id) const {
-        return SkDEBUGRELEASE(this->globalState()->debugPtT(id), NULL);
+        return SkDEBUGRELEASE(this->globalState()->debugPtT(id), nullptr);
     }
 
     const SkOpSegment* debugSegment(int id) const {
-        return SkDEBUGRELEASE(this->globalState()->debugSegment(id), NULL);
+        return SkDEBUGRELEASE(this->globalState()->debugSegment(id), nullptr);
     }
 
     const SkOpSpanBase* debugSpan(int id) const {
-        return SkDEBUGRELEASE(this->globalState()->debugSpan(id), NULL);
+        return SkDEBUGRELEASE(this->globalState()->debugSpan(id), nullptr);
     }
 
     SkOpGlobalState* globalState() const {
@@ -155,7 +155,7 @@ public:
     void debugValidate() const {
 #if DEBUG_VALIDATE
         const SkOpSegment* segment = &fHead;
-        const SkOpSegment* prior = NULL;
+        const SkOpSegment* prior = nullptr;
         do {
             segment->debugValidate();
             SkASSERT(segment->prev() == prior);
@@ -190,6 +190,15 @@ public:
 
     const SkPoint& end() const {
         return fTail->pts()[SkPathOpsVerbToPoints(fTail->verb())];
+    }
+
+    bool findCollapsed() {
+        SkASSERT(fCount > 0);
+        SkOpSegment* segment = &fHead;
+        do {
+            segment->findCollapsed();
+        } while ((segment = segment->next()));
+        return true;
     }
 
     SkOpSpan* findSortableTop(SkOpContour* );
@@ -293,7 +302,7 @@ public:
             SkASSERT(fCount == 0);
             return;
         }
-        SkASSERT(contour->fNext == NULL);
+        SkASSERT(contour->fNext == nullptr);
         SkOpContour* prev = this;
         SkOpContour* next;
         while ((next = prev->next()) != contour) {
@@ -301,15 +310,14 @@ public:
             prev = next;
         }
         SkASSERT(prev);
-        prev->setNext(NULL);
+        prev->setNext(nullptr);
     }
 
     void reset() {
-        fTail = NULL;
-        fNext = NULL;
+        fTail = nullptr;
+        fNext = nullptr;
         fCount = 0;
         fDone = false;
-        fTopsFound = false;
         SkDEBUGCODE(fBounds.set(SK_ScalarMax, SK_ScalarMax, SK_ScalarMin, SK_ScalarMin));
         SkDEBUGCODE(fFirstSorted = -1);
         SkDEBUGCODE(fDebugIndent = 0);
@@ -407,7 +415,6 @@ private:
     int fCount;
     int fFirstSorted;
     bool fDone;  // set by find top segment
-    bool fTopsFound;
     bool fOperand;  // true for the second argument to a binary operator
     bool fReverse;  // true if contour should be reverse written to path (used only by fix winding)
     bool fXor;  // set if original path had even-odd fill

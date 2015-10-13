@@ -11,12 +11,15 @@ cr.define('media_router.ui', function() {
   var container = null;
 
   /**
-   * Adds a new route.
+   * Handles response of previous create route attempt.
    *
-   * @param {!media_router.Route} route
+   * @param {string} sinkId The ID of the sink to which the Media Route was
+   *     creating a route.
+   * @param {?media_router.Route} route The newly create route to the sink
+   *     if route creation succeeded; null otherwise
    */
-  function addRoute(route) {
-    container.addRoute(route);
+  function onCreateRouteResponseReceived(sinkId, route) {
+    container.onCreateRouteResponseReceived(sinkId, route);
   }
 
   /**
@@ -41,17 +44,23 @@ cr.define('media_router.ui', function() {
    * Populates the WebUI with data obtained from Media Router.
    *
    * @param {headerText: string,
+   *         headerTextTooltip: string,
+   *         deviceMissingUrl: string,
    *         sinks: !Array<!media_router.Sink>,
    *         routes: !Array<!media_router.Route>,
    *         castModes: !Array<!media_router.CastMode>} data
    * Parameters in data:
    *   headerText - text to be displayed in the header of the WebUI.
+   *   headerTextTooltip - tooltip to be displayed for the header of the WebUI.
+   *   deviceMissingUrl - url to be opened on "Device missing?" clicked.
    *   sinks - list of sinks to be displayed.
    *   routes - list of routes that are associated with the sinks.
    *   castModes - list of available cast modes.
    */
   function setInitialData(data) {
     container.headerText = data['headerText'];
+    container.headerTextTooltip = data['headerTextTooltip'];
+    container.deviceMissingUrl = data['deviceMissingUrl'];
     container.sinkList = data['sinks'];
     container.routeList = data['routes'];
     container.castModeList = data['castModes'];
@@ -86,7 +95,7 @@ cr.define('media_router.ui', function() {
   }
 
   return {
-    addRoute: addRoute,
+    onCreateRouteResponseReceived: onCreateRouteResponseReceived,
     setCastModeList: setCastModeList,
     setContainer: setContainer,
     setInitialData: setInitialData,

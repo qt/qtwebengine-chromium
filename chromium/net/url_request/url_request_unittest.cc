@@ -20,11 +20,14 @@
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/format_macros.h"
+#include "base/json/json_reader.h"
 #include "base/location.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/path_service.h"
+#include "base/power_monitor/power_monitor.h"
+#include "base/power_monitor/power_monitor_source.h"
 #include "base/run_loop.h"
 #include "base/single_thread_task_runner.h"
 #include "base/strings/string_number_conversions.h"
@@ -35,15 +38,16 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/histogram_tester.h"
 #include "base/thread_task_runner_handle.h"
+#include "base/values.h"
 #include "net/base/chunked_upload_data_stream.h"
 #include "net/base/elements_upload_data_stream.h"
+#include "net/base/external_estimate_provider.h"
 #include "net/base/load_flags.h"
 #include "net/base/load_timing_info.h"
 #include "net/base/load_timing_info_test_util.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_module.h"
 #include "net/base/net_util.h"
-#include "net/base/network_quality.h"
 #include "net/base/network_quality_estimator.h"
 #include "net/base/request_priority.h"
 #include "net/base/test_data_directory.h"
@@ -75,9 +79,11 @@
 #include "net/ssl/ssl_connection_status_flags.h"
 #include "net/test/cert_test_util.h"
 #include "net/test/spawned_test_server/spawned_test_server.h"
+#include "net/test/url_request/url_request_failed_job.h"
 #include "net/url_request/data_protocol_handler.h"
 #include "net/url_request/static_http_user_agent_settings.h"
 #include "net/url_request/url_request.h"
+#include "net/url_request/url_request_filter.h"
 #include "net/url_request/url_request_http_job.h"
 #include "net/url_request/url_request_intercepting_job_factory.h"
 #include "net/url_request/url_request_interceptor.h"
@@ -256,14 +262,28 @@ void TestLoadTimingNoHttpResponse(
 }
 #endif
 
+// Test power monitor source that can simulate entering suspend mode. Can't use
+// the one in base/ because it insists on bringing its own MessageLoop.
+class TestPowerMonitorSource : public base::PowerMonitorSource {
+ public:
+  TestPowerMonitorSource() {}
+  ~TestPowerMonitorSource() override {}
+
+  void Suspend() { ProcessPowerEvent(SUSPEND_EVENT); }
+
+  void Resume() { ProcessPowerEvent(RESUME_EVENT); }
+
+  bool IsOnBatteryPowerImpl() override { return false; }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(TestPowerMonitorSource);
+};
+
 // Do a case-insensitive search through |haystack| for |needle|.
 bool ContainsString(const std::string& haystack, const char* needle) {
-  std::string::const_iterator it =
-      std::search(haystack.begin(),
-                  haystack.end(),
-                  needle,
-                  needle + strlen(needle),
-                  base::CaseInsensitiveCompare<char>());
+  std::string::const_iterator it = std::search(
+      haystack.begin(), haystack.end(), needle, needle + strlen(needle),
+      base::CaseInsensitiveCompareASCII<char>());
   return it != haystack.end();
 }
 
@@ -621,6 +641,27 @@ class TestURLRequestContextWithProxy : public TestURLRequestContext {
   ~TestURLRequestContextWithProxy() override {}
 };
 
+// A mock ReportSender that just remembers the latest report
+// URI and report to be sent.
+class MockCertificateReportSender
+    : public TransportSecurityState::ReportSender {
+ public:
+  MockCertificateReportSender() {}
+  ~MockCertificateReportSender() override {}
+
+  void Send(const GURL& report_uri, const std::string& report) override {
+    latest_report_uri_ = report_uri;
+    latest_report_ = report;
+  }
+
+  const GURL& latest_report_uri() { return latest_report_uri_; }
+  const std::string& latest_report() { return latest_report_; }
+
+ private:
+  GURL latest_report_uri_;
+  std::string latest_report_;
+};
+
 }  // namespace
 
 // Inherit PlatformTest since we require the autorelease pool on Mac OS X.
@@ -646,10 +687,12 @@ class URLRequestTest : public PlatformTest {
   }
 
   virtual void SetUpFactory() {
-    job_factory_impl_->SetProtocolHandler("data", new DataProtocolHandler);
+    job_factory_impl_->SetProtocolHandler(
+        "data", make_scoped_ptr(new DataProtocolHandler));
 #if !defined(DISABLE_FILE_SUPPORT)
     job_factory_impl_->SetProtocolHandler(
-        "file", new FileProtocolHandler(base::ThreadTaskRunnerHandle::Get()));
+        "file", make_scoped_ptr(new FileProtocolHandler(
+                    base::ThreadTaskRunnerHandle::Get())));
 #endif
   }
 
@@ -665,8 +708,9 @@ class URLRequestTest : public PlatformTest {
   // Adds the TestJobInterceptor to the default context.
   TestJobInterceptor* AddTestInterceptor() {
     TestJobInterceptor* protocol_handler_ = new TestJobInterceptor();
-    job_factory_impl_->SetProtocolHandler("http", NULL);
-    job_factory_impl_->SetProtocolHandler("http", protocol_handler_);
+    job_factory_impl_->SetProtocolHandler("http", nullptr);
+    job_factory_impl_->SetProtocolHandler("http",
+                                          make_scoped_ptr(protocol_handler_));
     return protocol_handler_;
   }
 
@@ -2678,6 +2722,35 @@ TEST_F(URLRequestTest, FirstPartyOnlyCookiesDisabled) {
   }
 }
 
+// Tests that a request is cancelled while entering suspend mode. Uses mocks
+// rather than a spawned test server because the connection used to talk to
+// the test server is affected by entering suspend mode on Android.
+TEST_F(URLRequestTest, CancelOnSuspend) {
+  TestPowerMonitorSource* power_monitor_source = new TestPowerMonitorSource();
+  base::PowerMonitor power_monitor(make_scoped_ptr(power_monitor_source));
+
+  URLRequestFailedJob::AddUrlHandler();
+
+  TestDelegate d;
+  // Request that just hangs.
+  GURL url(URLRequestFailedJob::GetMockHttpUrl(ERR_IO_PENDING));
+  scoped_ptr<URLRequest> r(
+      default_context_.CreateRequest(url, DEFAULT_PRIORITY, &d));
+  r->Start();
+
+  power_monitor_source->Suspend();
+  // Wait for the suspend notification to cause the request to fail.
+  base::RunLoop().Run();
+  EXPECT_EQ(URLRequestStatus::CANCELED, r->status().status());
+  EXPECT_TRUE(d.request_failed());
+  EXPECT_EQ(1, default_network_delegate_.completed_requests());
+
+  URLRequestFilter::GetInstance()->ClearHandlers();
+
+  // Shouldn't be needed, but just in case.
+  power_monitor_source->Resume();
+}
+
 // FixedDateNetworkDelegate swaps out the server's HTTP Date response header
 // value for the |fixed_date| argument given to the constructor.
 class FixedDateNetworkDelegate : public TestNetworkDelegate {
@@ -4078,7 +4151,8 @@ TEST_F(URLRequestTestHTTP, NetworkQualityEstimator) {
   ASSERT_TRUE(test_server_.Start());
   // Enable requests to local host to be used for network quality estimation.
   std::map<std::string, std::string> variation_params;
-  NetworkQualityEstimator estimator(variation_params, true, true);
+  NetworkQualityEstimator estimator(scoped_ptr<net::ExternalEstimateProvider>(),
+                                    variation_params, true, true);
 
   TestDelegate d;
   TestNetworkDelegate network_delegate;  // Must outlive URLRequest.
@@ -4095,11 +4169,13 @@ TEST_F(URLRequestTestHTTP, NetworkQualityEstimator) {
 
   base::RunLoop().Run();
 
-  NetworkQuality network_quality =
-      context.network_quality_estimator()->GetPeakEstimate();
-  EXPECT_GE(network_quality.rtt(), base::TimeDelta());
-  EXPECT_LT(network_quality.rtt(), base::TimeDelta::Max());
-  EXPECT_GT(network_quality.downstream_throughput_kbps(), 0);
+  base::TimeDelta rtt;
+  int32_t kbps;
+  EXPECT_TRUE(estimator.GetRTTEstimate(&rtt));
+  EXPECT_TRUE(estimator.GetDownlinkThroughputKbpsEstimate(&kbps));
+  EXPECT_GE(rtt, base::TimeDelta());
+  EXPECT_LT(rtt, base::TimeDelta::Max());
+  EXPECT_GT(kbps, 0);
 
   // Verify that histograms are not populated. They should populate only when
   // there is a change in ConnectionType.
@@ -5364,13 +5440,26 @@ TEST_F(URLRequestTestHTTP, STSNotProcessedOnIP) {
 // PKPState present because header rejected).
 #if defined(OS_ANDROID)
 #define MAYBE_ProcessPKP DISABLED_ProcessPKP
+#define MAYBE_ProcessPKPAndSendReport DISABLED_ProcessPKPAndSendReport
+#define MAYBE_ProcessPKPReportOnly DISABLED_ProcessPKPReportOnly
+#define MAYBE_ProcessPKPReportOnlyWithNoViolation \
+  DISABLED_ProcessPKPReportOnlyWithNoViolation
 #else
 #define MAYBE_ProcessPKP ProcessPKP
+#define MAYBE_ProcessPKPAndSendReport ProcessPKPAndSendReport
+#define MAYBE_ProcessPKPReportOnly ProcessPKPReportOnly
+#define MAYBE_ProcessPKPReportOnlyWithNoViolation \
+  ProcessPKPReportOnlyWithNoViolation
 #endif
+
+namespace {
+const char kHPKPReportUri[] = "https://hpkp-report.test";
+}  // namespace
 
 // Tests that enabling HPKP on a domain does not affect the HSTS
 // validity/expiration.
 TEST_F(URLRequestTestHTTP, MAYBE_ProcessPKP) {
+  GURL report_uri(kHPKPReportUri);
   SpawnedTestServer::SSLOptions ssl_options(
       SpawnedTestServer::SSLOptions::CERT_COMMON_NAME_IS_DOMAIN);
   SpawnedTestServer https_test_server(SpawnedTestServer::TYPE_HTTPS,
@@ -5400,7 +5489,190 @@ TEST_F(URLRequestTestHTTP, MAYBE_ProcessPKP) {
   EXPECT_FALSE(sts_state.include_subdomains);
   EXPECT_FALSE(pkp_state.include_subdomains);
   EXPECT_TRUE(pkp_state.HasPublicKeyPins());
+  EXPECT_EQ(report_uri, pkp_state.report_uri);
   EXPECT_NE(sts_state.expiry, pkp_state.expiry);
+}
+
+// Tests that reports get sent on HPKP violations when a report-uri is set.
+TEST_F(URLRequestTestHTTP, MAYBE_ProcessPKPAndSendReport) {
+  GURL report_uri(kHPKPReportUri);
+  SpawnedTestServer::SSLOptions ssl_options(
+      SpawnedTestServer::SSLOptions::CERT_COMMON_NAME_IS_DOMAIN);
+  SpawnedTestServer https_test_server(SpawnedTestServer::TYPE_HTTPS,
+                                      ssl_options,
+                                      base::FilePath(kTestFilePath));
+
+  ASSERT_TRUE(https_test_server.Start());
+
+  std::string test_server_hostname = https_test_server.GetURL("").host();
+
+  // Set up a pin for |test_server_hostname|.
+  TransportSecurityState security_state;
+  const base::Time current_time(base::Time::Now());
+  const base::Time expiry = current_time + base::TimeDelta::FromSeconds(1000);
+  HashValueVector hashes;
+  HashValue hash1;
+  HashValue hash2;
+  // The values here don't matter, as long as they are different from
+  // the mocked CertVerifyResult below.
+  ASSERT_TRUE(
+      hash1.FromString("sha256/1111111111111111111111111111111111111111111="));
+  ASSERT_TRUE(
+      hash2.FromString("sha256/2222222222222222222222222222222222222222222="));
+  hashes.push_back(hash1);
+  hashes.push_back(hash2);
+  security_state.AddHPKP(test_server_hostname, expiry,
+                         false, /* include subdomains */
+                         hashes, report_uri);
+
+  MockCertificateReportSender mock_report_sender;
+  security_state.SetReportSender(&mock_report_sender);
+
+  // Set up a MockCertVerifier to trigger a violation of the previously
+  // set pin.
+  scoped_refptr<X509Certificate> cert = https_test_server.GetCertificate();
+  ASSERT_TRUE(cert);
+
+  MockCertVerifier cert_verifier;
+  CertVerifyResult verify_result;
+  verify_result.verified_cert = cert;
+  verify_result.is_issued_by_known_root = true;
+  HashValue hash3;
+  ASSERT_TRUE(
+      hash3.FromString("sha256/3333333333333333333333333333333333333333333="));
+  verify_result.public_key_hashes.push_back(hash3);
+  cert_verifier.AddResultForCert(cert.get(), verify_result, OK);
+
+  TestNetworkDelegate network_delegate;
+  TestURLRequestContext context(true);
+  context.set_transport_security_state(&security_state);
+  context.set_network_delegate(&network_delegate);
+  context.set_cert_verifier(&cert_verifier);
+  context.Init();
+
+  // Now send a request to trigger the violation.
+  TestDelegate d;
+  scoped_ptr<URLRequest> violating_request(context.CreateRequest(
+      https_test_server.GetURL("files/simple.html"), DEFAULT_PRIORITY, &d));
+  violating_request->Start();
+  base::RunLoop().Run();
+
+  // Check that a report was sent.
+  EXPECT_EQ(report_uri, mock_report_sender.latest_report_uri());
+  ASSERT_FALSE(mock_report_sender.latest_report().empty());
+  scoped_ptr<base::Value> value(
+      base::JSONReader::Read(mock_report_sender.latest_report()));
+  ASSERT_TRUE(value);
+  ASSERT_TRUE(value->IsType(base::Value::TYPE_DICTIONARY));
+  base::DictionaryValue* report_dict;
+  ASSERT_TRUE(value->GetAsDictionary(&report_dict));
+  std::string report_hostname;
+  EXPECT_TRUE(report_dict->GetString("hostname", &report_hostname));
+  EXPECT_EQ(test_server_hostname, report_hostname);
+}
+
+// Tests that reports get sent on requests with
+// Public-Key-Pins-Report-Only headers.
+TEST_F(URLRequestTestHTTP, MAYBE_ProcessPKPReportOnly) {
+  GURL report_uri(kHPKPReportUri);
+  SpawnedTestServer::SSLOptions ssl_options(
+      SpawnedTestServer::SSLOptions::CERT_COMMON_NAME_IS_DOMAIN);
+  SpawnedTestServer https_test_server(SpawnedTestServer::TYPE_HTTPS,
+                                      ssl_options,
+                                      base::FilePath(kTestFilePath));
+
+  ASSERT_TRUE(https_test_server.Start());
+
+  std::string test_server_hostname = https_test_server.GetURL("").host();
+
+  TransportSecurityState security_state;
+  MockCertificateReportSender mock_report_sender;
+  security_state.SetReportSender(&mock_report_sender);
+
+  // Set up a MockCertVerifier to violate the pin in the Report-Only
+  // header.
+  scoped_refptr<X509Certificate> cert = https_test_server.GetCertificate();
+  ASSERT_TRUE(cert);
+
+  MockCertVerifier cert_verifier;
+  CertVerifyResult verify_result;
+  verify_result.verified_cert = cert;
+  verify_result.is_issued_by_known_root = true;
+  HashValue hash;
+  // This value doesn't matter, as long as it is different from the pins
+  // for the request to hpkp-headers-report-only.html.
+  ASSERT_TRUE(
+      hash.FromString("sha256/1111111111111111111111111111111111111111111="));
+  verify_result.public_key_hashes.push_back(hash);
+  cert_verifier.AddResultForCert(cert.get(), verify_result, OK);
+
+  TestNetworkDelegate network_delegate;
+  TestURLRequestContext context(true);
+  context.set_transport_security_state(&security_state);
+  context.set_network_delegate(&network_delegate);
+  context.set_cert_verifier(&cert_verifier);
+  context.Init();
+
+  // Now send a request to trigger the violation.
+  TestDelegate d;
+  scoped_ptr<URLRequest> violating_request(context.CreateRequest(
+      https_test_server.GetURL("files/hpkp-headers-report-only.html"),
+      DEFAULT_PRIORITY, &d));
+  violating_request->Start();
+  base::RunLoop().Run();
+
+  // Check that a report was sent.
+  EXPECT_EQ(report_uri, mock_report_sender.latest_report_uri());
+  ASSERT_FALSE(mock_report_sender.latest_report().empty());
+  scoped_ptr<base::Value> value(
+      base::JSONReader::Read(mock_report_sender.latest_report()));
+  ASSERT_TRUE(value);
+  ASSERT_TRUE(value->IsType(base::Value::TYPE_DICTIONARY));
+  base::DictionaryValue* report_dict;
+  ASSERT_TRUE(value->GetAsDictionary(&report_dict));
+  std::string report_hostname;
+  EXPECT_TRUE(report_dict->GetString("hostname", &report_hostname));
+  EXPECT_EQ(test_server_hostname, report_hostname);
+}
+
+// Tests that reports do not get sent on requests with
+// Public-Key-Pins-Report-Only headers that don't have pin violations.
+TEST_F(URLRequestTestHTTP, MAYBE_ProcessPKPReportOnlyWithNoViolation) {
+  GURL report_uri(kHPKPReportUri);
+  SpawnedTestServer::SSLOptions ssl_options(
+      SpawnedTestServer::SSLOptions::CERT_COMMON_NAME_IS_DOMAIN);
+  SpawnedTestServer https_test_server(SpawnedTestServer::TYPE_HTTPS,
+                                      ssl_options,
+                                      base::FilePath(kTestFilePath));
+
+  ASSERT_TRUE(https_test_server.Start());
+
+  std::string test_server_hostname = https_test_server.GetURL("").host();
+
+  TransportSecurityState security_state;
+  MockCertificateReportSender mock_report_sender;
+  security_state.SetReportSender(&mock_report_sender);
+
+  TestNetworkDelegate network_delegate;
+  MockCertVerifier mock_cert_verifier;
+  TestURLRequestContext context(true);
+  context.set_transport_security_state(&security_state);
+  context.set_network_delegate(&network_delegate);
+  context.set_cert_verifier(&mock_cert_verifier);
+  mock_cert_verifier.set_default_result(OK);
+  context.Init();
+
+  // Now send a request that does not trigger the violation.
+  TestDelegate d;
+  scoped_ptr<URLRequest> request(context.CreateRequest(
+      https_test_server.GetURL("files/hpkp-headers-report-only.html"),
+      DEFAULT_PRIORITY, &d));
+  request->Start();
+  base::RunLoop().Run();
+
+  // Check that a report was not sent.
+  EXPECT_EQ(GURL(), mock_report_sender.latest_report_uri());
+  EXPECT_EQ(std::string(), mock_report_sender.latest_report());
 }
 
 TEST_F(URLRequestTestHTTP, PKPNotProcessedOnIP) {
@@ -7126,7 +7398,13 @@ TEST_F(URLRequestTestReferrerPolicy, HTTPToSameOriginHTTP) {
                               origin_server()->GetURL("path/to/file.html"));
 }
 
-TEST_F(URLRequestTestReferrerPolicy, HTTPToCrossOriginHTTP) {
+// Can't spin up more than one SpawnedTestServer on Android.
+#if defined(OS_ANDROID)
+#define MAYBE_HTTPToCrossOriginHTTP DISABLED_HTTPToCrosOriginHTTP
+#else
+#define MAYBE_HTTPToCrossOriginHTTP HTTPToCrossOriginHTTP
+#endif
+TEST_F(URLRequestTestReferrerPolicy, MAYBE_HTTPToCrossOriginHTTP) {
   InstantiateCrossOriginServers(SpawnedTestServer::TYPE_HTTP,
                                 SpawnedTestServer::TYPE_HTTP);
 
@@ -7173,7 +7451,13 @@ TEST_F(URLRequestTestReferrerPolicy, HTTPSToSameOriginHTTPS) {
                               origin_server()->GetURL("path/to/file.html"));
 }
 
-TEST_F(URLRequestTestReferrerPolicy, HTTPSToCrossOriginHTTPS) {
+// Can't spin up more than one SpawnedTestServer on Android.
+#if defined(OS_ANDROID)
+#define MAYBE_HTTPSToCrossOriginHTTPS DISABLED_HTTPSToCrosOriginHTTPS
+#else
+#define MAYBE_HTTPSToCrossOriginHTTPS HTTPSToCrossOriginHTTPS
+#endif
+TEST_F(URLRequestTestReferrerPolicy, MAYBE_HTTPSToCrossOriginHTTPS) {
   InstantiateCrossOriginServers(SpawnedTestServer::TYPE_HTTPS,
                                 SpawnedTestServer::TYPE_HTTPS);
 
@@ -7197,7 +7481,13 @@ TEST_F(URLRequestTestReferrerPolicy, HTTPSToCrossOriginHTTPS) {
                               origin_server()->GetURL("path/to/file.html"));
 }
 
-TEST_F(URLRequestTestReferrerPolicy, HTTPToHTTPS) {
+// Can't spin up more than one SpawnedTestServer on Android.
+#if defined(OS_ANDROID)
+#define MAYBE_HTTPToHTTPS DISABLED_HTTPToHTTPS
+#else
+#define MAYBE_HTTPToHTTPS HTTPToHTTPS
+#endif
+TEST_F(URLRequestTestReferrerPolicy, MAYBE_HTTPToHTTPS) {
   InstantiateCrossOriginServers(SpawnedTestServer::TYPE_HTTP,
                                 SpawnedTestServer::TYPE_HTTPS);
 
@@ -7221,7 +7511,13 @@ TEST_F(URLRequestTestReferrerPolicy, HTTPToHTTPS) {
                               origin_server()->GetURL("path/to/file.html"));
 }
 
-TEST_F(URLRequestTestReferrerPolicy, HTTPSToHTTP) {
+// Can't spin up more than one SpawnedTestServer on Android.
+#if defined(OS_ANDROID)
+#define MAYBE_HTTPSToHTTP DISABLED_HTTPSToHTTP
+#else
+#define MAYBE_HTTPSToHTTP HTTPSToHTTP
+#endif
+TEST_F(URLRequestTestReferrerPolicy, MAYBE_HTTPSToHTTP) {
   InstantiateCrossOriginServers(SpawnedTestServer::TYPE_HTTPS,
                                 SpawnedTestServer::TYPE_HTTP);
 
@@ -7385,12 +7681,7 @@ TEST_F(HTTPSRequestTest, CipherFallbackTest) {
   // No version downgrade should have been necessary.
   EXPECT_FALSE(r->ssl_info().connection_status &
                SSL_CONNECTION_VERSION_FALLBACK);
-  int expected_version = SSL_CONNECTION_VERSION_TLS1_2;
-  if (SSLClientSocket::GetMaxSupportedSSLVersion() <
-      SSL_PROTOCOL_VERSION_TLS1_2) {
-    expected_version = SSL_CONNECTION_VERSION_TLS1_1;
-  }
-  EXPECT_EQ(expected_version,
+  EXPECT_EQ(SSL_CONNECTION_VERSION_TLS1_2,
             SSLConnectionStatusToVersion(r->ssl_info().connection_status));
 
   TestNetLogEntry::List entries;
@@ -8062,11 +8353,6 @@ TEST_F(HTTPSFallbackTest, TLSv1NoFallback) {
 
 // Tests the TLS 1.1 fallback.
 TEST_F(HTTPSFallbackTest, TLSv1_1Fallback) {
-  if (SSLClientSocket::GetMaxSupportedSSLVersion() <
-      SSL_PROTOCOL_VERSION_TLS1_2) {
-    return;
-  }
-
   SpawnedTestServer::SSLOptions ssl_options(
       SpawnedTestServer::SSLOptions::CERT_OK);
   ssl_options.tls_intolerant =
@@ -8078,11 +8364,6 @@ TEST_F(HTTPSFallbackTest, TLSv1_1Fallback) {
 
 // Tests that the TLS 1.1 fallback triggers on closed connections.
 TEST_F(HTTPSFallbackTest, TLSv1_1FallbackClosed) {
-  if (SSLClientSocket::GetMaxSupportedSSLVersion() <
-      SSL_PROTOCOL_VERSION_TLS1_2) {
-    return;
-  }
-
   SpawnedTestServer::SSLOptions ssl_options(
       SpawnedTestServer::SSLOptions::CERT_OK);
   ssl_options.tls_intolerant =
@@ -8099,11 +8380,6 @@ TEST_F(HTTPSFallbackTest, TLSv1_1FallbackClosed) {
 #if !defined(OS_ANDROID)
 // Tests fallback to TLS 1.1 on connection reset.
 TEST_F(HTTPSFallbackTest, TLSv1_1FallbackReset) {
-  if (SSLClientSocket::GetMaxSupportedSSLVersion() <
-      SSL_PROTOCOL_VERSION_TLS1_2) {
-    return;
-  }
-
   SpawnedTestServer::SSLOptions ssl_options(
       SpawnedTestServer::SSLOptions::CERT_OK);
   ssl_options.tls_intolerant =
@@ -8452,7 +8728,7 @@ static bool SystemSupportsOCSP() {
 }
 
 static bool SystemSupportsOCSPStapling() {
-#if defined(USE_NSS_CERTS)
+#if defined(USE_NSS_CERTS) || defined(OS_IOS)
   return true;
 #elif defined(OS_WIN)
   return base::win::GetVersion() >= base::win::VERSION_VISTA;
@@ -8871,7 +9147,8 @@ class URLRequestTestFTP : public URLRequestTest {
   void SetUpFactory() override {
     // Add FTP support to the default URLRequestContext.
     job_factory_impl_->SetProtocolHandler(
-        "ftp", new FtpProtocolHandler(&ftp_transaction_factory_));
+        "ftp",
+        make_scoped_ptr(new FtpProtocolHandler(&ftp_transaction_factory_)));
   }
 
   std::string GetTestFileContents() {
@@ -9208,6 +9485,28 @@ TEST_F(URLRequestTest, NetworkAccessedSetOnHostResolutionFailure) {
   req->Start();
   base::RunLoop().Run();
   EXPECT_TRUE(req->response_info().network_accessed);
+}
+
+// Test that URLRequest is canceled correctly and with detached request
+// URLRequestRedirectJob does not crash in StartAsync.
+// See http://crbug.com/508900
+TEST_F(URLRequestTest, URLRequestRedirectJobDetachRequestNoCrash) {
+  TestDelegate d;
+  scoped_ptr<URLRequest> req(default_context_.CreateRequest(
+      GURL("http://not-a-real-domain/"), DEFAULT_PRIORITY, &d));
+
+  URLRequestRedirectJob* job = new URLRequestRedirectJob(
+      req.get(), &default_network_delegate_,
+      GURL("http://this-should-never-be-navigated-to/"),
+      URLRequestRedirectJob::REDIRECT_307_TEMPORARY_REDIRECT, "Jumbo shrimp");
+  AddTestInterceptor()->set_main_intercept_job(job);
+
+  req->Start();
+  req->Cancel();
+  job->DetachRequest();
+  base::RunLoop().RunUntilIdle();
+  EXPECT_EQ(URLRequestStatus::CANCELED, req->status().status());
+  EXPECT_EQ(0, d.received_redirect_count());
 }
 
 }  // namespace net

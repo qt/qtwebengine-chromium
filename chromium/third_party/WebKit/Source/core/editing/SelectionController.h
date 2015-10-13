@@ -29,6 +29,7 @@
 
 #include "core/CoreExport.h"
 #include "core/editing/TextGranularity.h"
+#include "core/editing/VisibleSelection.h"
 #include "core/page/EventWithHitTestResults.h"
 #include "platform/heap/Handle.h"
 
@@ -37,15 +38,14 @@ namespace blink {
 class FrameSelection;
 class HitTestResult;
 class LocalFrame;
-class VisibleSelection;
 
 class SelectionController final : public NoBaseWillBeGarbageCollected<SelectionController> {
     WTF_MAKE_NONCOPYABLE(SelectionController);
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(SelectionController);
 public:
     static PassOwnPtrWillBeRawPtr<SelectionController> create(LocalFrame&);
     DECLARE_TRACE();
 
-    bool updateSelectionForMouseDownDispatchingSelectStart(Node*, const VisibleSelection&, TextGranularity);
     void handleMousePressEvent(const MouseEventWithHitTestResults&);
     bool handleMousePressEventSingleClick(const MouseEventWithHitTestResults&);
     bool handleMousePressEventDoubleClick(const MouseEventWithHitTestResults&);
@@ -64,6 +64,7 @@ public:
     void setMouseDownMayStartSelect(bool);
     bool mouseDownMayStartSelect() const;
     bool mouseDownWasSingleClickInSelection() const;
+    void notifySelectionChanged();
 
 private:
     explicit SelectionController(LocalFrame&);
@@ -75,11 +76,33 @@ private:
     void updateSelectionForMouseDragAlgorithm(const HitTestResult&, Node*, const LayoutPoint&, const IntPoint&);
 
     enum class AppendTrailingWhitespace { ShouldAppend, DontAppend };
+
+    template <typename Strategy>
     void selectClosestWordFromHitTestResult(const HitTestResult&, AppendTrailingWhitespace);
+    template <typename Strategy>
     void selectClosestMisspellingFromHitTestResult(const HitTestResult&, AppendTrailingWhitespace);
     void selectClosestWordFromMouseEvent(const MouseEventWithHitTestResults&);
+
+    template <typename Strategy>
     void selectClosestMisspellingFromMouseEvent(const MouseEventWithHitTestResults&);
+
+    template <typename Strategy>
     void selectClosestWordOrLinkFromMouseEvent(const MouseEventWithHitTestResults&);
+
+    template <typename Strategy>
+    bool handleGestureLongPressAlgorithm(const PlatformGestureEvent&, const HitTestResult&);
+
+    template <typename Strategy>
+    bool handleMousePressEventTripleClickAlgorithm(const MouseEventWithHitTestResults&);
+
+    template <typename Strategy>
+    bool handleMouseReleaseEventAlgorithm(const MouseEventWithHitTestResults&, const LayoutPoint&);
+
+    template <typename Strategy>
+    void passMousePressEventToSubframeAlgorithm(const MouseEventWithHitTestResults&);
+
+    template <typename Strategy>
+    bool updateSelectionForMouseDownDispatchingSelectStart(Node*, const VisibleSelectionTemplate<Strategy>&, TextGranularity);
 
     FrameSelection& selection() const;
 
@@ -91,4 +114,5 @@ private:
 };
 
 } // namespace blink
+
 #endif // SelectionController_h

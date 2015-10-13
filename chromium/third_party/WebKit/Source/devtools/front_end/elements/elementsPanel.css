@@ -57,12 +57,6 @@
     width: 100%;
 }
 
-.material #elements-crumbs {
-    flex: 1 0 28px;
-    border: none;
-    height: 100%;
-}
-
 .metrics {
     padding: 8px;
     font-size: 10px;
@@ -177,10 +171,6 @@
     border-top: 0 none;
 }
 
-.styles-sidebar-placeholder {
-    height: 16px;
-}
-
 .styles-section.read-only {
     background-color: #eee;
 }
@@ -196,6 +186,14 @@
 
 .styles-section .style-properties li.overloaded.filter-match {
     background-color: rgba(255, 255, 0, 0.25);
+}
+
+.styles-section .style-properties li .css-update-highlight {
+    border-radius: 2px;
+}
+
+.styles-section .style-properties li .css-update-highlight.first-part {
+    color: white !important;
 }
 
 .styles-section .style-properties li.not-parsed-ok .exclamation-mark {
@@ -339,7 +337,7 @@
 .styles-section.matched-styles .style-properties li.parent .expand-element {
     -webkit-user-select: none;
     background-image: url(Images/toolbarButtonGlyphs.png);
-    background-size: 352px 144px;
+    background-size: 352px 168px;
     margin-right: 2px;
     margin-left: -6px;
     opacity: 0.55;
@@ -386,6 +384,7 @@
     width: 18px;
     left: -40px; /* original -2px + (-38px) to compensate for the first line outdent */
     top: 1px;
+    height: 13px;
 }
 
 .styles-section.matched-styles .style-properties ol.expanded {

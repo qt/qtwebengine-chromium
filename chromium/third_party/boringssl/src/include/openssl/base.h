@@ -98,7 +98,7 @@ extern "C" {
 #define OPENSSL_APPLE
 #endif
 
-#if defined(WIN32) || defined(_WIN32)
+#if defined(_WIN32)
 #define OPENSSL_WINDOWS
 #endif
 
@@ -109,6 +109,7 @@ extern "C" {
 
 #define OPENSSL_IS_BORINGSSL
 #define OPENSSL_VERSION_NUMBER 0x10002000
+#define SSLEAY_VERSION_NUMBER OPENSSL_VERSION_NUMBER
 
 #if defined(BORINGSSL_SHARED_LIBRARY)
 
@@ -165,13 +166,29 @@ typedef struct AUTHORITY_KEYID_st AUTHORITY_KEYID;
 typedef struct DIST_POINT_st DIST_POINT;
 typedef struct ISSUING_DIST_POINT_st ISSUING_DIST_POINT;
 typedef struct NAME_CONSTRAINTS_st NAME_CONSTRAINTS;
+typedef struct Netscape_certificate_sequence NETSCAPE_CERT_SEQUENCE;
+typedef struct Netscape_spkac_st NETSCAPE_SPKAC;
+typedef struct Netscape_spki_st NETSCAPE_SPKI;
+typedef struct PBE2PARAM_st PBE2PARAM;
+typedef struct PBEPARAM_st PBEPARAM;
+typedef struct PBKDF2PARAM_st PBKDF2PARAM;
 typedef struct X509_POLICY_CACHE_st X509_POLICY_CACHE;
 typedef struct X509_POLICY_LEVEL_st X509_POLICY_LEVEL;
 typedef struct X509_POLICY_NODE_st X509_POLICY_NODE;
 typedef struct X509_POLICY_TREE_st X509_POLICY_TREE;
 typedef struct X509_algor_st X509_ALGOR;
+typedef struct X509_crl_info_st X509_CRL_INFO;
 typedef struct X509_crl_st X509_CRL;
+typedef struct X509_extension_st X509_EXTENSION;
+typedef struct X509_info_st X509_INFO;
+typedef struct X509_name_entry_st X509_NAME_ENTRY;
+typedef struct X509_name_st X509_NAME;
+typedef struct X509_objects_st X509_OBJECTS;
 typedef struct X509_pubkey_st X509_PUBKEY;
+typedef struct X509_req_info_st X509_REQ_INFO;
+typedef struct X509_req_st X509_REQ;
+typedef struct X509_sig_st X509_SIG;
+typedef struct X509_val_st X509_VAL;
 typedef struct bignum_ctx BN_CTX;
 typedef struct bignum_st BIGNUM;
 typedef struct bio_method_st BIO_METHOD;
@@ -197,6 +214,7 @@ typedef struct env_md_st EVP_MD;
 typedef struct evp_aead_st EVP_AEAD;
 typedef struct evp_cipher_ctx_st EVP_CIPHER_CTX;
 typedef struct evp_cipher_st EVP_CIPHER;
+typedef struct evp_encode_ctx_st EVP_ENCODE_CTX;
 typedef struct evp_pkey_asn1_method_st EVP_PKEY_ASN1_METHOD;
 typedef struct evp_pkey_ctx_st EVP_PKEY_CTX;
 typedef struct evp_pkey_method_st EVP_PKEY_METHOD;
@@ -204,8 +222,9 @@ typedef struct evp_pkey_st EVP_PKEY;
 typedef struct hmac_ctx_st HMAC_CTX;
 typedef struct md4_state_st MD4_CTX;
 typedef struct md5_state_st MD5_CTX;
-typedef struct pkcs8_priv_key_info_st PKCS8_PRIV_KEY_INFO;
 typedef struct pkcs12_st PKCS12;
+typedef struct pkcs8_priv_key_info_st PKCS8_PRIV_KEY_INFO;
+typedef struct private_key_st X509_PKEY;
 typedef struct rand_meth_st RAND_METHOD;
 typedef struct rc4_key_st RC4_KEY;
 typedef struct rsa_meth_st RSA_METHOD;
@@ -213,15 +232,26 @@ typedef struct rsa_st RSA;
 typedef struct sha256_state_st SHA256_CTX;
 typedef struct sha512_state_st SHA512_CTX;
 typedef struct sha_state_st SHA_CTX;
+typedef struct srtp_protection_profile_st SRTP_PROTECTION_PROFILE;
+typedef struct ssl_cipher_st SSL_CIPHER;
 typedef struct ssl_ctx_st SSL_CTX;
+typedef struct ssl_custom_extension SSL_CUSTOM_EXTENSION;
+typedef struct ssl_method_st SSL_METHOD;
+typedef struct ssl_session_st SSL_SESSION;
 typedef struct ssl_st SSL;
 typedef struct st_ERR_FNS ERR_FNS;
 typedef struct v3_ext_ctx X509V3_CTX;
+typedef struct x509_attributes_st X509_ATTRIBUTE;
+typedef struct x509_cert_aux_st X509_CERT_AUX;
+typedef struct x509_cert_pair_st X509_CERT_PAIR;
+typedef struct x509_cinf_st X509_CINF;
 typedef struct x509_crl_method_st X509_CRL_METHOD;
 typedef struct x509_revoked_st X509_REVOKED;
 typedef struct x509_st X509;
 typedef struct x509_store_ctx_st X509_STORE_CTX;
 typedef struct x509_store_st X509_STORE;
+typedef struct x509_trust_st X509_TRUST;
+
 typedef void *OPENSSL_BLOCK;
 
 

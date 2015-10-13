@@ -24,9 +24,8 @@ struct CONTENT_EXPORT FrameReplicationState {
                         blink::WebSandboxFlags sandbox_flags);
   ~FrameReplicationState();
 
-  // Current serialized security origin of the frame.  Unique origins are
-  // represented as the string "null" per RFC 6454.  This field is updated
-  // whenever a frame navigation commits.
+  // Current origin of the frame. This field is updated whenever a frame
+  // navigation commits.
   //
   // TODO(alexmos): For now, |origin| updates are immediately sent to all frame
   // proxies when in --site-per-process mode. This isn't ideal, since Blink

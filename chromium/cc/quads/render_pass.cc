@@ -12,7 +12,6 @@
 #include "cc/base/math_util.h"
 #include "cc/debug/traced_value.h"
 #include "cc/output/copy_output_request.h"
-#include "cc/quads/checkerboard_draw_quad.h"
 #include "cc/quads/debug_border_draw_quad.h"
 #include "cc/quads/draw_quad.h"
 #include "cc/quads/io_surface_draw_quad.h"
@@ -145,7 +144,7 @@ void RenderPass::SetNew(RenderPassId id,
                         const gfx::Rect& output_rect,
                         const gfx::Rect& damage_rect,
                         const gfx::Transform& transform_to_root_target) {
-  DCHECK_GT(id.layer_id, 0);
+  DCHECK(id.IsValid());
   DCHECK(damage_rect.IsEmpty() || output_rect.Contains(damage_rect))
       << "damage_rect: " << damage_rect.ToString()
       << " output_rect: " << output_rect.ToString();
@@ -164,7 +163,7 @@ void RenderPass::SetAll(RenderPassId id,
                         const gfx::Rect& damage_rect,
                         const gfx::Transform& transform_to_root_target,
                         bool has_transparent_background) {
-  DCHECK_GT(id.layer_id, 0);
+  DCHECK(id.IsValid());
 
   this->id = id;
   this->output_rect = output_rect;
@@ -226,9 +225,6 @@ DrawQuad* RenderPass::CopyFromAndAppendDrawQuad(
     const DrawQuad* quad,
     const SharedQuadState* shared_quad_state) {
   switch (quad->material) {
-    case DrawQuad::CHECKERBOARD:
-      CopyFromAndAppendTypedDrawQuad<CheckerboardDrawQuad>(quad);
-      break;
     case DrawQuad::DEBUG_BORDER:
       CopyFromAndAppendTypedDrawQuad<DebugBorderDrawQuad>(quad);
       break;

@@ -325,7 +325,7 @@ int32_t AudioDeviceModuleImpl::CreatePlatformSpecificObjects()
     if (audioLayer == kPlatformDefaultAudio)
     {
         // Create iOS Audio Device implementation.
-        ptrAudioDevice = new AudioDeviceIOS(Id());
+      ptrAudioDevice = new AudioDeviceIOS();
         WEBRTC_TRACE(kTraceInfo, kTraceAudioDevice, _id, "iPhone Audio APIs will be utilized");
     }
     // END #if defined(WEBRTC_IOS)
@@ -1869,34 +1869,57 @@ int32_t AudioDeviceModuleImpl::SetLoudspeakerStatus(bool enable)
 //  GetLoudspeakerStatus
 // ----------------------------------------------------------------------------
 
-int32_t AudioDeviceModuleImpl::GetLoudspeakerStatus(bool* enabled) const
-{
-    CHECK_INITIALIZED();
-
-    if (_ptrAudioDevice->GetLoudspeakerStatus(*enabled) != 0)
-    {
-        return -1;
-    }
-
-    return 0;
-}
-
-int32_t AudioDeviceModuleImpl::EnableBuiltInAEC(bool enable)
-{
+int32_t AudioDeviceModuleImpl::GetLoudspeakerStatus(bool* enabled) const {
   CHECK_INITIALIZED();
-  return _ptrAudioDevice->EnableBuiltInAEC(enable);
+  if (_ptrAudioDevice->GetLoudspeakerStatus(*enabled) != 0) {
+    return -1;
+  }
+  return 0;
 }
 
-bool AudioDeviceModuleImpl::BuiltInAECIsEnabled() const
-{
-    CHECK_INITIALIZED_BOOL();
-
-    return _ptrAudioDevice->BuiltInAECIsEnabled();
+bool AudioDeviceModuleImpl::BuiltInAECIsEnabled() const {
+  CHECK_INITIALIZED_BOOL();
+  return _ptrAudioDevice->BuiltInAECIsEnabled();
 }
 
 bool AudioDeviceModuleImpl::BuiltInAECIsAvailable() const {
   CHECK_INITIALIZED_BOOL();
   return _ptrAudioDevice->BuiltInAECIsAvailable();
+}
+
+int32_t AudioDeviceModuleImpl::EnableBuiltInAEC(bool enable) {
+  CHECK_INITIALIZED();
+  return _ptrAudioDevice->EnableBuiltInAEC(enable);
+}
+
+bool AudioDeviceModuleImpl::BuiltInAGCIsAvailable() const {
+  CHECK_INITIALIZED_BOOL();
+  return _ptrAudioDevice->BuiltInAGCIsAvailable();
+}
+
+int32_t AudioDeviceModuleImpl::EnableBuiltInAGC(bool enable) {
+  CHECK_INITIALIZED();
+  return _ptrAudioDevice->EnableBuiltInAGC(enable);
+}
+
+bool AudioDeviceModuleImpl::BuiltInNSIsAvailable() const {
+  CHECK_INITIALIZED_BOOL();
+  return _ptrAudioDevice->BuiltInNSIsAvailable();
+}
+
+int32_t AudioDeviceModuleImpl::EnableBuiltInNS(bool enable) {
+  CHECK_INITIALIZED();
+  return _ptrAudioDevice->EnableBuiltInNS(enable);
+}
+
+int AudioDeviceModuleImpl::GetPlayoutAudioParameters(
+    AudioParameters* params) const {
+  return _ptrAudioDevice->GetPlayoutAudioParameters(params);
+}
+
+int AudioDeviceModuleImpl::GetRecordAudioParameters(
+    AudioParameters* params) const {
+  return _ptrAudioDevice->GetRecordAudioParameters(params);
 }
 
 // ============================================================================

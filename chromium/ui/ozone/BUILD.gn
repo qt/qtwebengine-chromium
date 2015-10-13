@@ -29,18 +29,15 @@ if (ozone_platform_caca) {
   ozone_platform_deps += [ "platform/caca" ]
 }
 
-if (ozone_platform_dri || ozone_platform_drm) {
-  ozone_platforms += [
-    "dri",
-    "drm",
-  ]
-  ozone_platform_deps += [ "platform/drm" ]
-  ozone_platform_test_deps += [ "platform/drm:drm_unittests" ]
-}
-
 if (ozone_platform_gbm) {
   ozone_platforms += [ "gbm" ]
   ozone_platform_deps += [ "platform/drm:gbm" ]
+  ozone_platform_test_deps += [ "platform/drm:gbm_unittests" ]
+}
+
+if (ozone_platform_cast) {
+  ozone_platforms += [ "cast" ]
+  ozone_platform_deps += [ "platform/cast" ]
 }
 
 platform_list_cc_file = "$target_gen_dir/platform_list.cc"
@@ -94,10 +91,14 @@ component("ozone") {
     "common/gpu/ozone_gpu_messages.h",
     "common/native_display_delegate_ozone.cc",
     "common/native_display_delegate_ozone.h",
+    "common/stub_client_native_pixmap_factory.cc",
+    "common/stub_client_native_pixmap_factory.h",
     "common/stub_overlay_manager.cc",
     "common/stub_overlay_manager.h",
     "platform_selection.cc",
     "platform_selection.h",
+    "public/client_native_pixmap_factory.cc",
+    "public/client_native_pixmap_factory.h",
     "public/input_controller.cc",
     "public/input_controller.h",
     "public/ozone_gpu_test_helper.cc",
@@ -168,7 +169,9 @@ action("generate_constructor_list") {
     "--output_cc=" + rebase_path(constructor_list_cc_file, root_build_dir),
     "--namespace=ui",
     "--typename=OzonePlatform",
+    "--typename=ClientNativePixmapFactory",
     "--include=\"ui/ozone/public/ozone_platform.h\"",
+    "--include=\"ui/ozone/public/client_native_pixmap_factory.h\"",
   ]
 
   deps = [

@@ -35,19 +35,17 @@
 namespace blink {
 
 CachingWordShaper::CachingWordShaper()
+    : m_shapeCache(adoptPtr(new ShapeCache))
 {
-    m_shapeCache = new ShapeCache();
 }
 
 CachingWordShaper::~CachingWordShaper()
 {
-    delete m_shapeCache;
 }
 
 void CachingWordShaper::clear()
 {
-    if (m_shapeCache)
-        m_shapeCache->clear();
+    m_shapeCache->clear();
 }
 
 float CachingWordShaper::width(const Font* font, const TextRun& run,
@@ -56,12 +54,14 @@ float CachingWordShaper::width(const Font* font, const TextRun& run,
 {
     float width = 0;
     RefPtr<ShapeResult> wordResult;
-    CachingWordShapeIterator iterator(m_shapeCache, run, font, fallbackFonts);
+    CachingWordShapeIterator iterator(m_shapeCache.get(), run, font);
     while (iterator.next(&wordResult)) {
         if (wordResult) {
             width += wordResult->width();
             if (glyphBounds)
                 glyphBounds->unite(wordResult->bounds());
+            if (fallbackFonts)
+                wordResult->fallbackFonts(fallbackFonts);
         }
     }
 
@@ -72,16 +72,26 @@ static inline float shapeResultsForRun(ShapeCache* shapeCache, const Font* font,
     const TextRun& run, HashSet<const SimpleFontData*>* fallbackFonts,
     Vector<RefPtr<ShapeResult>>* results)
 {
-    CachingWordShapeIterator iterator(shapeCache, run, font, fallbackFonts);
+    CachingWordShapeIterator iterator(shapeCache, run, font);
     RefPtr<ShapeResult> wordResult;
     float totalWidth = 0;
     while (iterator.next(&wordResult)) {
         if (wordResult) {
             results->append(wordResult);
             totalWidth += wordResult->width();
+            if (fallbackFonts)
+                wordResult->fallbackFonts(fallbackFonts);
         }
     }
     return totalWidth;
+}
+
+int CachingWordShaper::offsetForPosition(const Font* font, const TextRun& run, float targetX)
+{
+    Vector<RefPtr<ShapeResult>> results;
+    shapeResultsForRun(m_shapeCache.get(), font, run, nullptr, &results);
+
+    return ShapeResult::offsetForPosition(results, run, targetX);
 }
 
 float CachingWordShaper::fillGlyphBuffer(const Font* font, const TextRun& run,
@@ -89,7 +99,7 @@ float CachingWordShaper::fillGlyphBuffer(const Font* font, const TextRun& run,
     GlyphBuffer* glyphBuffer, unsigned from, unsigned to)
 {
     Vector<RefPtr<ShapeResult>> results;
-    shapeResultsForRun(m_shapeCache, font, run, fallbackFonts, &results);
+    shapeResultsForRun(m_shapeCache.get(), font, run, fallbackFonts, &results);
 
     return ShapeResult::fillGlyphBuffer(results, glyphBuffer, run, from, to);
 }
@@ -99,7 +109,7 @@ float CachingWordShaper::fillGlyphBufferForTextEmphasis(const Font* font,
     unsigned from, unsigned to)
 {
     Vector<RefPtr<ShapeResult>> results;
-    shapeResultsForRun(m_shapeCache, font, run, nullptr, &results);
+    shapeResultsForRun(m_shapeCache.get(), font, run, nullptr, &results);
 
     return ShapeResult::fillGlyphBufferForTextEmphasis(results, glyphBuffer,
         run, emphasisData, from, to);
@@ -109,7 +119,7 @@ FloatRect CachingWordShaper::selectionRect(const Font* font, const TextRun& run,
     const FloatPoint& point, int height, unsigned from, unsigned to)
 {
     Vector<RefPtr<ShapeResult>> results;
-    float totalWidth = shapeResultsForRun(m_shapeCache, font, run, nullptr,
+    float totalWidth = shapeResultsForRun(m_shapeCache.get(), font, run, nullptr,
         &results);
 
     return ShapeResult::selectionRect(results, run.direction(), totalWidth,

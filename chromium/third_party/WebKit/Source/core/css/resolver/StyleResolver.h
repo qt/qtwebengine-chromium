@@ -36,7 +36,7 @@
 #include "core/css/resolver/StyleBuilder.h"
 #include "core/css/resolver/StyleResolverStats.h"
 #include "core/css/resolver/StyleResourceLoader.h"
-#include "core/style/AuthorStyleInfo.h"
+#include "core/dom/DocumentOrderedList.h"
 #include "core/style/CachedUAStyle.h"
 #include "platform/heap/Handle.h"
 #include "wtf/Deque.h"
@@ -75,7 +75,8 @@ enum RuleMatchingBehavior {
 
 const unsigned styleSharingListSize = 15;
 const unsigned styleSharingMaxDepth = 32;
-typedef WillBeHeapDeque<RawPtrWillBeMember<Element>, styleSharingListSize> StyleSharingList;
+using StyleSharingList = WillBeHeapDeque<RawPtrWillBeMember<Element>, styleSharingListSize>;
+using ActiveInterpolationsMap = HashMap<PropertyHandle, Vector<RefPtr<Interpolation>, 1>>;
 
 // This class selects a ComputedStyle for a given element based on a collection of stylesheets.
 class CORE_EXPORT StyleResolver final : public NoBaseWillBeGarbageCollectedFinalized<StyleResolver> {
@@ -94,8 +95,8 @@ public:
     PassRefPtr<ComputedStyle> styleForElement(Element*, const ComputedStyle* parentStyle = 0, StyleSharingBehavior = AllowStyleSharing,
         RuleMatchingBehavior = MatchAllRules);
 
-    static PassRefPtrWillBeRawPtr<AnimatableValue> createAnimatableValueSnapshot(Element&, const ComputedStyle* baseStyle, CSSPropertyID, CSSValue*);
-    static PassRefPtrWillBeRawPtr<AnimatableValue> createAnimatableValueSnapshot(StyleResolverState&, CSSPropertyID, CSSValue*);
+    static PassRefPtr<AnimatableValue> createAnimatableValueSnapshot(Element&, const ComputedStyle* baseStyle, CSSPropertyID, CSSValue*);
+    static PassRefPtr<AnimatableValue> createAnimatableValueSnapshot(StyleResolverState&, CSSPropertyID, CSSValue*);
 
     PassRefPtr<ComputedStyle> pseudoStyleForElement(Element*, const PseudoStyleRequest&, const ComputedStyle* parentStyle);
 
@@ -191,8 +192,6 @@ private:
     // FIXME: This should probably go away, folded into FontBuilder.
     void updateFont(StyleResolverState&);
 
-    static AuthorStyleInfo authorStyleInfo(StyleResolverState&);
-
     void loadPendingResources(StyleResolverState&);
     void adjustComputedStyle(StyleResolverState&, Element*);
 
@@ -211,15 +210,17 @@ private:
     void applyCallbackSelectors(StyleResolverState&);
 
     template <CSSPropertyPriority priority>
-    void applyMatchedProperties(StyleResolverState&, const MatchResult&, bool important, unsigned startIndex, unsigned endIndex, bool inheritedOnly);
+    void applyMatchedProperties(StyleResolverState&, const MatchedPropertiesRange&, bool important, bool inheritedOnly);
     template <CSSPropertyPriority priority>
     void applyProperties(StyleResolverState&, const StylePropertySet* properties, bool isImportant, bool inheritedOnly, PropertyWhitelistType = PropertyWhitelistNone);
     template <CSSPropertyPriority priority>
-    void applyAnimatedProperties(StyleResolverState&, const WillBeHeapHashMap<PropertyHandle, RefPtrWillBeMember<Interpolation>>&);
+    void applyAnimatedProperties(StyleResolverState&, const ActiveInterpolationsMap&);
     template <CSSPropertyPriority priority>
-    void applyAllProperty(StyleResolverState&, CSSValue*, bool inheritedOnly);
+    void applyAllProperty(StyleResolverState&, CSSValue*, bool inheritedOnly, PropertyWhitelistType);
 
     bool pseudoStyleForElementInternal(Element&, const PseudoStyleRequest&, const ComputedStyle* parentStyle, StyleResolverState&);
+    bool hasAuthorBackground(const StyleResolverState&);
+    bool hasAuthorBorder(const StyleResolverState&);
 
     PassRefPtrWillBeRawPtr<PseudoElement> createPseudoElement(Element* parent, PseudoId);
 

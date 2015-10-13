@@ -15,7 +15,7 @@ WebInspector.StylesPopoverHelper = function()
 
     this._hideProxy = this.hide.bind(this, true);
     this._boundOnKeyDown = this._onKeyDown.bind(this);
-    this._repositionBound = this._reposition.bind(this);
+    this._repositionBound = this.reposition.bind(this);
     this._boundFocusOut = this._onFocusOut.bind(this);
 }
 
@@ -57,7 +57,7 @@ WebInspector.StylesPopoverHelper.prototype = {
         this._anchorElement = anchorElement;
         this._view = view;
         this._hiddenCallback = hiddenCallback;
-        this._reposition();
+        this.reposition();
 
         var document = this._popover.element.ownerDocument;
         document.addEventListener("mousedown", this._hideProxy, false);
@@ -72,7 +72,7 @@ WebInspector.StylesPopoverHelper.prototype = {
     /**
      * @param {!Event=} event
      */
-    _reposition: function(event)
+    reposition: function(event)
     {
         if (!this._previousFocusElement)
             this._previousFocusElement = WebInspector.currentFocusElement();
@@ -163,7 +163,7 @@ WebInspector.BezierPopoverIcon.prototype = {
     _createDOM: function(text)
     {
         this._element = createElement("nobr");
-        this._element.title = WebInspector.UIString("Click to open a cubic bezier editor.");
+        this._element.title = WebInspector.UIString("Open cubic bezier editor");
 
         this._iconElement = this._element.createSVGChild("svg", "popover-icon bezier-icon");
         this._iconElement.setAttribute("height", 10);
@@ -236,9 +236,10 @@ WebInspector.ColorSwatchPopoverIcon = function(treeElement, stylesPopoverHelper,
     this._swatch = WebInspector.ColorSwatch.create();
     this._swatch.setColorText(colorText);
     this._swatch.setFormat(WebInspector.ColorSwatchPopoverIcon._colorFormat(this._swatch.color()));
-    var shiftClickMessage = WebInspector.UIString("Shift-click to change color format.");
-    this._swatch.iconElement().title = String.sprintf("%s\n%s", WebInspector.UIString("Click to open a colorpicker."), shiftClickMessage);
+    var shiftClickMessage = WebInspector.UIString("Shift + Click to change color format.");
+    this._swatch.iconElement().title = WebInspector.UIString("Open color picker. %s", shiftClickMessage);
     this._swatch.iconElement().addEventListener("click", this._iconClick.bind(this));
+    this._contrastColor = null;
 
     this._boundSpectrumChanged = this._spectrumChanged.bind(this);
 }
@@ -276,6 +277,16 @@ WebInspector.ColorSwatchPopoverIcon.prototype = {
     },
 
     /**
+     * @param {!WebInspector.Color} color
+     */
+    setContrastColor: function(color)
+    {
+        this._contrastColor = color;
+        if (this._spectrum)
+            this._spectrum.setContrastColor(this._contrastColor);
+    },
+
+    /**
      * @param {!Event} event
      */
     _iconClick: function(event)
@@ -292,11 +303,23 @@ WebInspector.ColorSwatchPopoverIcon.prototype = {
             format = color.format();
         this._spectrum = new WebInspector.Spectrum();
         this._spectrum.setColor(color, format);
+        if (this._contrastColor)
+            this._spectrum.setContrastColor(this._contrastColor);
+
+        this._spectrum.addEventListener(WebInspector.Spectrum.Events.SizeChanged, this._spectrumResized, this);
         this._spectrum.addEventListener(WebInspector.Spectrum.Events.ColorChanged, this._boundSpectrumChanged);
         this._stylesPopoverHelper.show(this._spectrum, this._swatch.iconElement(), this._onPopoverHidden.bind(this));
 
         this._originalPropertyText = this._treeElement.property.propertyText;
         this._treeElement.parentPane().setEditingStyle(true);
+    },
+
+    /**
+     * @param {!WebInspector.Event} event
+     */
+    _spectrumResized: function(event)
+    {
+        this._stylesPopoverHelper.reposition();
     },
 
     /**

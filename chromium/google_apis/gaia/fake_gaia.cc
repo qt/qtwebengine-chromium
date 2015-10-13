@@ -71,17 +71,13 @@ typedef std::map<std::string, std::string> CookieMap;
 // Parses cookie name-value map our of |request|.
 CookieMap GetRequestCookies(const HttpRequest& request) {
   CookieMap result;
-  std::map<std::string, std::string>::const_iterator iter =
-           request.headers.find("Cookie");
+  auto iter = request.headers.find("Cookie");
   if (iter != request.headers.end()) {
-    std::vector<std::string> cookie_nv_pairs;
-    base::SplitString(iter->second, ' ', &cookie_nv_pairs);
-    for(std::vector<std::string>::const_iterator cookie_line =
-            cookie_nv_pairs.begin();
-        cookie_line != cookie_nv_pairs.end();
-        ++cookie_line) {
-      std::vector<std::string> name_value;
-      base::SplitString(*cookie_line, '=', &name_value);
+    for (const std::string& cookie_line :
+         base::SplitString(iter->second, " ", base::TRIM_WHITESPACE,
+                           base::SPLIT_WANT_ALL)) {
+      std::vector<std::string> name_value = base::SplitString(
+          cookie_line, "=", base::TRIM_WHITESPACE, base::SPLIT_WANT_ALL);
       if (name_value.size() != 2)
         continue;
 
@@ -102,8 +98,8 @@ bool GetAccessToken(const HttpRequest& request,
   std::map<std::string, std::string>::const_iterator auth_header_entry =
       request.headers.find("Authorization");
   if (auth_header_entry != request.headers.end()) {
-    if (base::StartsWithASCII(auth_header_entry->second, auth_token_prefix,
-                              true)) {
+    if (base::StartsWith(auth_header_entry->second, auth_token_prefix,
+                         base::CompareCase::SENSITIVE)) {
       *access_token = auth_header_entry->second.substr(
           strlen(auth_token_prefix));
       return true;
@@ -441,8 +437,8 @@ const FakeGaia::AccessTokenInfo* FakeGaia::FindAccessTokenInfo(
   if (auth_token.empty() || client_id.empty())
     return NULL;
 
-  std::vector<std::string> scope_list;
-  base::SplitString(scope_string, ' ', &scope_list);
+  std::vector<std::string> scope_list = base::SplitString(
+      scope_string, " ", base::TRIM_WHITESPACE, base::SPLIT_WANT_ALL);
   ScopeSet scopes(scope_list.begin(), scope_list.end());
 
   for (AccessTokenInfoMap::const_iterator entry(
@@ -480,6 +476,15 @@ void FakeGaia::HandleServiceLogin(const HttpRequest& request,
 
 void FakeGaia::HandleEmbeddedSetupChromeos(const HttpRequest& request,
                                            BasicHttpResponse* http_response) {
+  GURL request_url = GURL("http://localhost").Resolve(request.relative_url);
+  std::string client_id;
+  if (!GetQueryParameter(request_url.query(), "client_id", &client_id) ||
+      GaiaUrls::GetInstance()->oauth2_chrome_client_id() != client_id) {
+    LOG(ERROR) << "Missing or invalid param 'client_id' in "
+                  "/embedded/setup/chromeos call";
+    return;
+  }
+
   http_response->set_code(net::HTTP_OK);
   http_response->set_content(embedded_setup_chromeos_response_);
   http_response->set_content_type("text/html");
@@ -577,7 +582,7 @@ void FakeGaia::HandleEmbeddedLookupAccountLookup(
   url = net::AppendQueryParameter(url, "SAMLRequest", "fake_request");
   url = net::AppendQueryParameter(
       url, "RelayState",
-      "chrome-extension://mfffpogegjflfpflabcdkioaeobkgjik/success.html");
+      GaiaUrls::GetInstance()->signin_completed_continue_url().spec());
   std::string redirect_url = url.spec();
   http_response->AddCustomHeader("Google-Accounts-SAML", "Start");
 
@@ -708,7 +713,7 @@ void FakeGaia::HandleTokenInfo(const HttpRequest& request,
     response_dict.SetString("user_id", token_info->user_id);
     std::vector<std::string> scope_vector(token_info->scopes.begin(),
                                           token_info->scopes.end());
-    response_dict.SetString("scope", JoinString(scope_vector, " "));
+    response_dict.SetString("scope", base::JoinString(scope_vector, " "));
     response_dict.SetInteger("expires_in", token_info->expires_in);
     response_dict.SetString("email", token_info->email);
     FormatJSONResponse(response_dict, http_response);

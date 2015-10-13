@@ -51,7 +51,7 @@ class SynchronousCompositorOutputSurface::SoftwareDevice
         << "Mutliple calls to BeginPaint per frame";
     return surface_->current_sw_canvas_;
   }
-  void EndPaint(cc::SoftwareFrameData* frame_data) override {}
+  void EndPaint() override {}
 
  private:
   SynchronousCompositorOutputSurface* surface_;
@@ -83,11 +83,6 @@ SynchronousCompositorOutputSurface::SynchronousCompositorOutputSurface(
 }
 
 SynchronousCompositorOutputSurface::~SynchronousCompositorOutputSurface() {
-  DCHECK(CalledOnValidThread());
-  if (registered_) {
-    SynchronousCompositorRegistry::GetInstance()->UnregisterOutputSurface(
-        routing_id_, this);
-  }
 }
 
 bool SynchronousCompositorOutputSurface::BindToClient(
@@ -103,6 +98,15 @@ bool SynchronousCompositorOutputSurface::BindToClient(
   registered_ = true;
 
   return true;
+}
+
+void SynchronousCompositorOutputSurface::DetachFromClient() {
+  DCHECK(CalledOnValidThread());
+  if (registered_) {
+    SynchronousCompositorRegistry::GetInstance()->UnregisterOutputSurface(
+        routing_id_, this);
+  }
+  cc::OutputSurface::DetachFromClient();
 }
 
 void SynchronousCompositorOutputSurface::SetCompositor(

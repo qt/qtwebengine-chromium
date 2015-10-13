@@ -35,29 +35,6 @@ OutputMixer::NewMixedAudio(int32_t id,
     _audioFrame.id_ = id;
 }
 
-void OutputMixer::MixedParticipants(
-    int32_t id,
-    const ParticipantStatistics* participantStatistics,
-    uint32_t size)
-{
-    WEBRTC_TRACE(kTraceStream, kTraceVoice, VoEId(_instanceId,-1),
-                 "OutputMixer::MixedParticipants(id=%d, size=%u)", id, size);
-}
-
-void OutputMixer::VADPositiveParticipants(int32_t id,
-    const ParticipantStatistics* participantStatistics, uint32_t size)
-{
-    WEBRTC_TRACE(kTraceStream, kTraceVoice, VoEId(_instanceId,-1),
-                 "OutputMixer::VADPositiveParticipants(id=%d, size=%u)",
-                 id, size);
-}
-
-void OutputMixer::MixedAudioLevel(int32_t id, uint32_t level)
-{
-    WEBRTC_TRACE(kTraceStream, kTraceVoice, VoEId(_instanceId,-1),
-                 "OutputMixer::MixedAudioLevel(id=%d, level=%u)", id, level);
-}
-
 void OutputMixer::PlayNotification(int32_t id, uint32_t durationMs)
 {
     WEBRTC_TRACE(kTraceStream, kTraceVoice, VoEId(_instanceId,-1),
@@ -131,8 +108,7 @@ OutputMixer::OutputMixer(uint32_t instanceId) :
     WEBRTC_TRACE(kTraceMemory, kTraceVoice, VoEId(_instanceId,-1),
                  "OutputMixer::OutputMixer() - ctor");
 
-    if ((_mixerModule.RegisterMixedStreamCallback(*this) == -1) ||
-        (_mixerModule.RegisterMixerStatusCallback(*this, 100) == -1))
+    if (_mixerModule.RegisterMixedStreamCallback(this) == -1)
     {
         WEBRTC_TRACE(kTraceError, kTraceVoice, VoEId(_instanceId,-1),
                      "OutputMixer::OutputMixer() failed to register mixer"
@@ -170,7 +146,6 @@ OutputMixer::~OutputMixer()
             _outputFileRecorderPtr = NULL;
         }
     }
-    _mixerModule.UnRegisterMixerStatusCallback();
     _mixerModule.UnRegisterMixedStreamCallback();
     delete &_mixerModule;
     delete &_callbackCritSect;
@@ -240,14 +215,14 @@ int32_t
 OutputMixer::SetMixabilityStatus(MixerParticipant& participant,
                                  bool mixable)
 {
-    return _mixerModule.SetMixabilityStatus(participant, mixable);
+    return _mixerModule.SetMixabilityStatus(&participant, mixable);
 }
 
 int32_t
 OutputMixer::SetAnonymousMixabilityStatus(MixerParticipant& participant,
                                           bool mixable)
 {
-    return _mixerModule.SetAnonymousMixabilityStatus(participant,mixable);
+    return _mixerModule.SetAnonymousMixabilityStatus(&participant, mixable);
 }
 
 int32_t
@@ -543,7 +518,7 @@ OutputMixer::DoOperationsOnCombinedSignal(bool feed_data_to_apm)
 
     // --- Far-end Voice Quality Enhancement (AudioProcessing Module)
     if (feed_data_to_apm)
-      APMAnalyzeReverseStream();
+      APMProcessReverseStream();
 
     // --- External media processing
     {
@@ -574,17 +549,10 @@ OutputMixer::DoOperationsOnCombinedSignal(bool feed_data_to_apm)
 //                             Private methods
 // ----------------------------------------------------------------------------
 
-void OutputMixer::APMAnalyzeReverseStream() {
-  // Convert from mixing to AudioProcessing sample rate, determined by the send
-  // side. Downmix to mono.
-  AudioFrame frame;
-  frame.num_channels_ = 1;
-  frame.sample_rate_hz_ = _audioProcessingModulePtr->input_sample_rate_hz();
-  RemixAndResample(_audioFrame, &audioproc_resampler_, &frame);
-
-  if (_audioProcessingModulePtr->AnalyzeReverseStream(&frame) == -1) {
-    WEBRTC_TRACE(kTraceWarning, kTraceVoice, VoEId(_instanceId,-1),
-                 "AudioProcessingModule::AnalyzeReverseStream() => error");
+void OutputMixer::APMProcessReverseStream() {
+  if (_audioProcessingModulePtr->ProcessReverseStream(&_audioFrame) == -1) {
+    WEBRTC_TRACE(kTraceError, kTraceVoice, VoEId(_instanceId, -1),
+                 "AudioProcessingModule::ProcessReverseStream() => error");
   }
 }
 
@@ -621,7 +589,7 @@ OutputMixer::InsertInbandDtmfTone()
     } else
     {
         // stereo
-        for (int i = 0; i < _audioFrame.samples_per_channel_; i++)
+        for (size_t i = 0; i < _audioFrame.samples_per_channel_; i++)
         {
             _audioFrame.data_[2 * i] = toneBuffer[i];
             _audioFrame.data_[2 * i + 1] = 0;

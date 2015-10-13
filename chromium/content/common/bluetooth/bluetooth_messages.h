@@ -80,8 +80,8 @@
 
 #include "ipc/ipc_message_macros.h"
 #include "content/common/bluetooth/bluetooth_device.h"
-#include "content/common/bluetooth/bluetooth_error.h"
 #include "content/common/bluetooth/bluetooth_scan_filter.h"
+#include "third_party/WebKit/public/platform/modules/bluetooth/WebBluetoothError.h"
 
 #define IPC_MESSAGE_START BluetoothMsgStart
 
@@ -101,8 +101,8 @@ IPC_STRUCT_TRAITS_MEMBER(paired)
 IPC_STRUCT_TRAITS_MEMBER(uuids)
 IPC_STRUCT_TRAITS_END()
 
-IPC_ENUM_TRAITS_MAX_VALUE(content::BluetoothError,
-                          content::BluetoothError::ENUM_MAX_VALUE)
+IPC_ENUM_TRAITS_MAX_VALUE(blink::WebBluetoothError,
+                          blink::WebBluetoothError::ENUM_MAX_VALUE)
 
 IPC_STRUCT_TRAITS_BEGIN(content::BluetoothScanFilter)
 IPC_STRUCT_TRAITS_MEMBER(services)
@@ -117,11 +117,10 @@ IPC_MESSAGE_CONTROL3(BluetoothMsg_RequestDeviceSuccess,
                      content::BluetoothDevice /* device */)
 
 // Informs the renderer that the device request |request_id| failed.
-IPC_MESSAGE_CONTROL4(BluetoothMsg_RequestDeviceError,
+IPC_MESSAGE_CONTROL3(BluetoothMsg_RequestDeviceError,
                      int /* thread_id */,
                      int /* request_id */,
-                     content::BluetoothError /* result */,
-                     std::string /* error_message */)
+                     blink::WebBluetoothError /* result */)
 
 // Informs the renderer that the connection request |request_id| succeeded.
 IPC_MESSAGE_CONTROL3(BluetoothMsg_ConnectGATTSuccess,
@@ -130,11 +129,10 @@ IPC_MESSAGE_CONTROL3(BluetoothMsg_ConnectGATTSuccess,
                      std::string /* device_instance_id */)
 
 // Informs the renderer that the connection request |request_id| failed.
-IPC_MESSAGE_CONTROL4(BluetoothMsg_ConnectGATTError,
+IPC_MESSAGE_CONTROL3(BluetoothMsg_ConnectGATTError,
                      int /* thread_id */,
                      int /* request_id */,
-                     content::BluetoothError /* result */,
-                     std::string /* error_message */)
+                     blink::WebBluetoothError /* result */)
 
 // Informs the renderer that primary service request |request_id| succeeded.
 IPC_MESSAGE_CONTROL3(BluetoothMsg_GetPrimaryServiceSuccess,
@@ -143,11 +141,10 @@ IPC_MESSAGE_CONTROL3(BluetoothMsg_GetPrimaryServiceSuccess,
                      std::string /* service_instance_id */)
 
 // Informs the renderer that the primary service request |request_id| failed.
-IPC_MESSAGE_CONTROL4(BluetoothMsg_GetPrimaryServiceError,
+IPC_MESSAGE_CONTROL3(BluetoothMsg_GetPrimaryServiceError,
                      int /* thread_id */,
                      int /* request_id */,
-                     content::BluetoothError /* result */,
-                     std::string /* error_message */)
+                     blink::WebBluetoothError /* result */)
 
 // Informs the renderer that characteristic request |request_id| succeeded.
 IPC_MESSAGE_CONTROL3(BluetoothMsg_GetCharacteristicSuccess,
@@ -156,11 +153,10 @@ IPC_MESSAGE_CONTROL3(BluetoothMsg_GetCharacteristicSuccess,
                      std::string /* characteristic_instance_id */)
 
 // Informs the renderer that the characteristic request |request_id| failed.
-IPC_MESSAGE_CONTROL4(BluetoothMsg_GetCharacteristicError,
+IPC_MESSAGE_CONTROL3(BluetoothMsg_GetCharacteristicError,
                      int /* thread_id */,
                      int /* request_id */,
-                     content::BluetoothError /* result */,
-                     std::string /* error_message */)
+                     blink::WebBluetoothError /* result */)
 
 // Informs the renderer that the value has been read.
 IPC_MESSAGE_CONTROL3(BluetoothMsg_ReadCharacteristicValueSuccess,
@@ -169,11 +165,10 @@ IPC_MESSAGE_CONTROL3(BluetoothMsg_ReadCharacteristicValueSuccess,
                      std::vector<uint8_t> /* value */)
 
 // Informs the renderer that an error occurred while reading the value.
-IPC_MESSAGE_CONTROL4(BluetoothMsg_ReadCharacteristicValueError,
+IPC_MESSAGE_CONTROL3(BluetoothMsg_ReadCharacteristicValueError,
                      int /* thread_id */,
                      int /* request_id */,
-                     content::BluetoothError /* result */,
-                     std::string /* error_message */)
+                     blink::WebBluetoothError /* result */)
 
 // Informs the renderer that the value has been successfully written to
 // the characteristic.
@@ -183,24 +178,18 @@ IPC_MESSAGE_CONTROL2(BluetoothMsg_WriteCharacteristicValueSuccess,
 
 // Informs the renderer that an error occurred while writing a value to a
 // characteristic.
-IPC_MESSAGE_CONTROL4(BluetoothMsg_WriteCharacteristicValueError,
+IPC_MESSAGE_CONTROL3(BluetoothMsg_WriteCharacteristicValueError,
                      int /* thread_id */,
                      int /* request_id */,
-                     content::BluetoothError /* result */,
-                     std::string /* error_message */)
+                     blink::WebBluetoothError /* result */)
 
 // Messages sent from the renderer to the browser.
 
 // Requests a bluetooth device from the browser.
-// TODO(scheib): UI to select and permit access to a device crbug.com/436280.
-//   This will include refactoring messages to be associated with an origin
-//   and making this initial requestDevice call with an associated frame.
-//   This work is deferred to simplify initial prototype patches.
-//   The Bluetooth feature, and the BluetoothDispatcherHost are behind
-//   the --enable-experimental-web-platform-features flag.
-IPC_MESSAGE_CONTROL4(BluetoothHostMsg_RequestDevice,
+IPC_MESSAGE_CONTROL5(BluetoothHostMsg_RequestDevice,
                      int /* thread_id */,
                      int /* request_id */,
+                     int /* frame_routing_id */,
                      std::vector<content::BluetoothScanFilter>,
                      std::vector<device::BluetoothUUID> /* optional_services */)
 

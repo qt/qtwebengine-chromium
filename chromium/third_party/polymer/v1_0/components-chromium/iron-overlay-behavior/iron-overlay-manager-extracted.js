@@ -33,7 +33,11 @@
     }
 
     function currentOverlay() {
-      return overlays[overlays.length-1];
+      var i = overlays.length - 1;
+      while (overlays[i] && !overlays[i].opened) {
+        --i;
+      }
+      return overlays[i];
     }
 
     function currentOverlayZ() {

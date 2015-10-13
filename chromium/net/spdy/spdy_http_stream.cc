@@ -36,6 +36,7 @@ SpdyHttpStream::SpdyHttpStream(const base::WeakPtr<SpdySession>& spdy_session,
       closed_stream_status_(ERR_FAILED),
       closed_stream_id_(0),
       closed_stream_received_bytes_(0),
+      closed_stream_sent_bytes_(0),
       request_info_(NULL),
       response_info_(NULL),
       response_headers_status_(RESPONSE_HEADERS_ARE_INCOMPLETE),
@@ -160,10 +161,6 @@ bool SpdyHttpStream::IsResponseBodyComplete() const {
   return stream_closed_;
 }
 
-bool SpdyHttpStream::CanFindEndOfResponse() const {
-  return true;
-}
-
 bool SpdyHttpStream::IsConnectionReused() const {
   return is_reused_;
 }
@@ -172,12 +169,12 @@ void SpdyHttpStream::SetConnectionReused() {
   // SPDY doesn't need an indicator here.
 }
 
-bool SpdyHttpStream::IsConnectionReusable() const {
+bool SpdyHttpStream::CanReuseConnection() const {
   // SPDY streams aren't considered reusable.
   return false;
 }
 
-int64 SpdyHttpStream::GetTotalReceivedBytes() const {
+int64_t SpdyHttpStream::GetTotalReceivedBytes() const {
   if (stream_closed_)
     return closed_stream_received_bytes_;
 
@@ -185,6 +182,16 @@ int64 SpdyHttpStream::GetTotalReceivedBytes() const {
     return 0;
 
   return stream_->raw_received_bytes();
+}
+
+int64_t SpdyHttpStream::GetTotalSentBytes() const {
+  if (stream_closed_)
+    return closed_stream_sent_bytes_;
+
+  if (!stream_)
+    return 0;
+
+  return stream_->raw_sent_bytes();
 }
 
 bool SpdyHttpStream::GetLoadTimingInfo(LoadTimingInfo* load_timing_info) const {
@@ -365,6 +372,9 @@ void SpdyHttpStream::OnDataSent() {
   ReadAndSendRequestBodyData();
 }
 
+// TODO(xunjieli): Maybe do something with the trailers. crbug.com/422958.
+void SpdyHttpStream::OnTrailers(const SpdyHeaderBlock& trailers) {}
+
 void SpdyHttpStream::OnClose(int status) {
   // Cancel any pending reads from the upload data stream.
   if (request_info_->upload_data_stream)
@@ -377,6 +387,7 @@ void SpdyHttpStream::OnClose(int status) {
     closed_stream_has_load_timing_info_ =
         stream_->GetLoadTimingInfo(&closed_stream_load_timing_info_);
     closed_stream_received_bytes_ = stream_->raw_received_bytes();
+    closed_stream_sent_bytes_ = stream_->raw_sent_bytes();
   }
   stream_.reset();
 
@@ -530,11 +541,15 @@ void SpdyHttpStream::GetSSLCertRequestInfo(
   NOTREACHED();
 }
 
-bool SpdyHttpStream::IsSpdyHttpStream() const {
-  return true;
+bool SpdyHttpStream::GetRemoteEndpoint(IPEndPoint* endpoint) {
+  if (!spdy_session_)
+    return false;
+
+  return spdy_session_->GetPeerAddress(endpoint) == OK;
 }
 
 void SpdyHttpStream::Drain(HttpNetworkSession* session) {
+  NOTREACHED();
   Close(false);
   delete this;
 }

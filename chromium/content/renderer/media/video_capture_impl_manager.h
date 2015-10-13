@@ -105,8 +105,7 @@ class CONTENT_EXPORT VideoCaptureImplManager {
   // destroyed on the IO thread. These are raw pointers because we destroy
   // them manually.
   typedef std::map<media::VideoCaptureSessionId,
-                   std::pair<int, VideoCaptureImpl*> >
-      VideoCaptureDeviceMap;
+                   std::pair<int, VideoCaptureImpl*>> VideoCaptureDeviceMap;
   VideoCaptureDeviceMap devices_;
 
   // This is an internal ID for identifying clients of VideoCaptureImpl.

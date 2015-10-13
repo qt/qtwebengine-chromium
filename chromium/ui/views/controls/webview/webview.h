@@ -91,11 +91,16 @@ class WEBVIEW_EXPORT WebView : public View,
   // Overridden from View:
   const char* GetClassName() const override;
 
+  NativeViewHost* holder() { return holder_; }
+
  protected:
   // Swaps the owned WebContents |wc_owner_| with |new_web_contents|. Returns
   // the previously owned WebContents.
   scoped_ptr<content::WebContents> SwapWebContents(
       scoped_ptr<content::WebContents> new_web_contents);
+
+  // Called when the web contents is successfully attached.
+  virtual void OnWebContentsAttached() {}
 
   // Overridden from View:
   void OnBoundsChanged(const gfx::Rect& previous_bounds) override;
@@ -142,7 +147,7 @@ class WEBVIEW_EXPORT WebView : public View,
   void AttachWebContents();
   void DetachWebContents();
   void ReattachForFullscreenChange(bool enter_fullscreen);
-  void NotifyMaybeTextInputClientAndAccessibilityChanged();
+  void NotifyAccessibilityWebContentsChanged();
 
   // Create a regular or test web contents (based on whether we're running
   // in a unit test or not).

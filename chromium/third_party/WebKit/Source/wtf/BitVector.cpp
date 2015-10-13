@@ -24,7 +24,7 @@
  */
 
 #include "config.h"
-#include "BitVector.h"
+#include "wtf/BitVector.h"
 
 #include "wtf/LeakAnnotations.h"
 #include "wtf/PartitionAlloc.h"
@@ -38,9 +38,9 @@ namespace WTF {
 void BitVector::setSlow(const BitVector& other)
 {
     uintptr_t newBitsOrPointer;
-    if (other.isInline())
+    if (other.isInline()) {
         newBitsOrPointer = other.m_bitsOrPointer;
-    else {
+    } else {
         OutOfLineBits* newOutOfLineBits = OutOfLineBits::create(other.size());
         memcpy(newOutOfLineBits->bits(), other.bits(), byteCount(other.size()));
         newBitsOrPointer = bitwise_cast<uintptr_t>(newOutOfLineBits) >> 1;
@@ -80,14 +80,14 @@ BitVector::OutOfLineBits* BitVector::OutOfLineBits::create(size_t numBits)
     WTF_ANNOTATE_SCOPED_MEMORY_LEAK;
     numBits = (numBits + bitsInPointer() - 1) & ~(bitsInPointer() - 1);
     size_t size = sizeof(OutOfLineBits) + sizeof(uintptr_t) * (numBits / bitsInPointer());
-    void* allocation = partitionAllocGeneric(Partitions::bufferPartition(), size);
+    void* allocation = Partitions::bufferMalloc(size);
     OutOfLineBits* result = new (NotNull, allocation) OutOfLineBits(numBits);
     return result;
 }
 
 void BitVector::OutOfLineBits::destroy(OutOfLineBits* outOfLineBits)
 {
-    partitionFreeGeneric(Partitions::bufferPartition(), outOfLineBits);
+    Partitions::bufferFree(outOfLineBits);
 }
 
 void BitVector::resizeOutOfLine(size_t numBits)
@@ -104,8 +104,9 @@ void BitVector::resizeOutOfLine(size_t numBits)
             size_t oldNumWords = outOfLineBits()->numWords();
             memcpy(newOutOfLineBits->bits(), outOfLineBits()->bits(), oldNumWords * sizeof(void*));
             memset(newOutOfLineBits->bits() + oldNumWords, 0, (newNumWords - oldNumWords) * sizeof(void*));
-        } else
+        } else {
             memcpy(newOutOfLineBits->bits(), outOfLineBits()->bits(), newOutOfLineBits->numWords() * sizeof(void*));
+        }
         OutOfLineBits::destroy(outOfLineBits());
     }
     m_bitsOrPointer = bitwise_cast<uintptr_t>(newOutOfLineBits) >> 1;

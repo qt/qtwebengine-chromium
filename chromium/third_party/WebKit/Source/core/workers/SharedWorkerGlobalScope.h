@@ -47,12 +47,12 @@ class SharedWorkerGlobalScope final : public WorkerGlobalScope {
 public:
     typedef WorkerGlobalScope Base;
     static PassRefPtrWillBeRawPtr<SharedWorkerGlobalScope> create(const String& name, SharedWorkerThread*, PassOwnPtr<WorkerThreadStartupData>);
-    virtual ~SharedWorkerGlobalScope();
+    ~SharedWorkerGlobalScope() override;
 
-    virtual bool isSharedWorkerGlobalScope() const override { return true; }
+    bool isSharedWorkerGlobalScope() const override { return true; }
 
     // EventTarget
-    virtual const AtomicString& interfaceName() const override;
+    const AtomicString& interfaceName() const override;
 
     // Setters/Getters for attributes in SharedWorkerGlobalScope.idl
     DEFINE_ATTRIBUTE_EVENT_LISTENER(connect);
@@ -63,8 +63,8 @@ public:
     DECLARE_VIRTUAL_TRACE();
 
 private:
-    SharedWorkerGlobalScope(const String& name, const KURL&, const String& userAgent, SharedWorkerThread*, const SecurityOrigin*, PassOwnPtrWillBeRawPtr<WorkerClients>);
-    virtual void logExceptionToConsole(const String& errorMessage, int scriptId, const String& sourceURL, int lineNumber, int columnNumber, PassRefPtrWillBeRawPtr<ScriptCallStack>) override;
+    SharedWorkerGlobalScope(const String& name, const KURL&, const String& userAgent, SharedWorkerThread*, PassOwnPtr<SecurityOrigin::PrivilegeData>, PassOwnPtrWillBeRawPtr<WorkerClients>);
+    void logExceptionToConsole(const String& errorMessage, int scriptId, const String& sourceURL, int lineNumber, int columnNumber, PassRefPtrWillBeRawPtr<ScriptCallStack>) override;
 
     String m_name;
 };

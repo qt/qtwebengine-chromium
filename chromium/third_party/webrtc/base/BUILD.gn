@@ -39,16 +39,10 @@ config("openssl_config") {
   ]
 }
 
-config("nss_config") {
-  defines = [
-    "SSL_USE_NSS",
-    "HAVE_NSS_SSL_H",
-    "SSL_USE_NSS_RNG",
-  ]
-}
-
 config("ios_config") {
   libs = [
+    "CFNetwork.framework",
+
     #"Foundation.framework",  # Already included in //build/config:default_libs.
     "Security.framework",
     "SystemConfiguration.framework",
@@ -81,15 +75,6 @@ if (is_linux && !build_with_chromium) {
     if (use_openssl) {
       deps = [
         "//third_party/boringssl",
-      ]
-    } else {
-      deps = [
-        "//net/third_party/nss/ssl:libssl",
-      ]
-
-      public_configs = [
-        "//net/third_party/nss/ssl:ssl_config",
-        "//third_party/nss:system_nss_no_ssl_config",
       ]
     }
   }
@@ -139,10 +124,13 @@ static_library("rtc_base_approved") {
     "platform_thread.h",
     "safe_conversions.h",
     "safe_conversions_impl.h",
+    "scoped_ptr.h",
     "stringencode.cc",
     "stringencode.h",
     "stringutils.cc",
     "stringutils.h",
+    "systeminfo.cc",
+    "systeminfo.h",
     "template_util.h",
     "thread_annotations.h",
     "thread_checker.h",
@@ -153,12 +141,7 @@ static_library("rtc_base_approved") {
     "trace_event.h",
   ]
 
-  if (build_with_chromium) {
-    sources += [
-      "../overrides/webrtc/base/basictypes.h",
-      "../overrides/webrtc/base/constructormagic.h",
-    ]
-  } else {
+  if (!build_with_chromium) {
     sources += [
       "basictypes.h",
       "constructormagic.h",
@@ -192,8 +175,6 @@ static_library("rtc_base") {
     "arraysize.h",
     "asyncfile.cc",
     "asyncfile.h",
-    "asynchttprequest.cc",
-    "asynchttprequest.h",
     "asyncinvoker-inl.h",
     "asyncinvoker.cc",
     "asyncinvoker.h",
@@ -214,14 +195,14 @@ static_library("rtc_base") {
     "basicdefs.h",
     "common.cc",
     "common.h",
-    "cpumonitor.cc",
-    "cpumonitor.h",
     "crc32.cc",
     "crc32.h",
     "cryptstring.cc",
     "cryptstring.h",
     "diskcache.cc",
     "diskcache.h",
+    "filerotatingstream.cc",
+    "filerotatingstream.h",
     "fileutils.cc",
     "fileutils.h",
     "firewallsocketserver.cc",
@@ -269,9 +250,10 @@ static_library("rtc_base") {
     "ratelimiter.h",
     "ratetracker.cc",
     "ratetracker.h",
+    "rtccertificate.cc",
+    "rtccertificate.h",
     "scoped_autorelease_pool.h",
     "scoped_autorelease_pool.mm",
-    "scoped_ptr.h",
     "sha1.cc",
     "sha1.h",
     "sha1digest.cc",
@@ -308,8 +290,6 @@ static_library("rtc_base") {
     "sslstreamadapterhelper.h",
     "stream.cc",
     "stream.h",
-    "systeminfo.cc",
-    "systeminfo.h",
     "task.cc",
     "task.h",
     "taskparent.cc",
@@ -335,18 +315,18 @@ static_library("rtc_base") {
 
   if (build_with_chromium) {
     sources += [
-      "../overrides/webrtc/base/logging.cc",
-      "../overrides/webrtc/base/logging.h",
+      "../../webrtc_overrides/webrtc/base/logging.cc",
+      "../../webrtc_overrides/webrtc/base/logging.h",
     ]
 
     deps += [ "..:webrtc_common" ]
 
     if (is_win) {
-      sources += [ "../overrides/webrtc/base/win32socketinit.cc" ]
+      sources += [ "../../webrtc_overrides/webrtc/base/win32socketinit.cc" ]
     }
 
     include_dirs = [
-      "../overrides",
+      "../../webrtc_overrides",
       "../../boringssl/src/include",
     ]
 
@@ -366,6 +346,8 @@ static_library("rtc_base") {
       "httpserver.h",
       "json.cc",
       "json.h",
+      "logsinks.cc",
+      "logsinks.h",
       "mathutils.h",
       "multipart.cc",
       "multipart.h",
@@ -491,31 +473,6 @@ static_library("rtc_base") {
       "opensslstreamadapter.cc",
       "opensslstreamadapter.h",
     ]
-  } else {
-    public_configs += [ ":nss_config" ]
-    if (rtc_build_ssl) {
-      if (build_with_chromium) {
-        deps += [ "//crypto:platform" ]
-      } else {
-        deps += [ "//net/third_party/nss/ssl:libssl" ]
-        if (is_linux) {
-          deps += [ ":linux_system_ssl" ]
-        } else {
-          deps += [
-            "//third_party/nss:nspr",
-            "//third_party/nss:nss",
-          ]
-        }
-      }
-    } else {
-      configs += [ "external_ssl_library" ]
-    }
-    sources += [
-      "nssidentity.cc",
-      "nssidentity.h",
-      "nssstreamadapter.cc",
-      "nssstreamadapter.h",
-    ]
   }
 
   if (is_android) {
@@ -531,7 +488,7 @@ static_library("rtc_base") {
   }
 
   if (is_ios) {
-    all_dependent_configs += [ ":ios_config" ]
+    all_dependent_configs = [ ":ios_config" ]
 
     sources += [
       "macconversion.cc",
@@ -628,5 +585,10 @@ static_library("rtc_base") {
       "linux.cc",
       "linux.h",
     ]
+  }
+
+  if (is_nacl) {
+    deps += [ "//native_client_sdk/src/libraries/nacl_io" ]
+    defines += [ "timezone=_timezone" ]
   }
 }

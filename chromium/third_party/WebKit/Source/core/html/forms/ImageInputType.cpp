@@ -28,7 +28,7 @@
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/events/MouseEvent.h"
 #include "core/fetch/ImageResource.h"
-#include "core/html/FormDataList.h"
+#include "core/html/FormData.h"
 #include "core/html/HTMLFormElement.h"
 #include "core/html/HTMLImageFallbackHelper.h"
 #include "core/html/HTMLImageLoader.h"
@@ -64,25 +64,24 @@ bool ImageInputType::isFormDataAppendable() const
     return true;
 }
 
-bool ImageInputType::appendFormData(FormDataList& encoding, bool) const
+void ImageInputType::appendToFormData(FormData& formData) const
 {
     if (!element().isActivatedSubmit())
-        return false;
+        return;
     const AtomicString& name = element().name();
     if (name.isEmpty()) {
-        encoding.appendData("x", m_clickLocation.x());
-        encoding.appendData("y", m_clickLocation.y());
-        return true;
+        formData.append("x", m_clickLocation.x());
+        formData.append("y", m_clickLocation.y());
+        return;
     }
 
     DEFINE_STATIC_LOCAL(String, dotXString, (".x"));
     DEFINE_STATIC_LOCAL(String, dotYString, (".y"));
-    encoding.appendData(name + dotXString, m_clickLocation.x());
-    encoding.appendData(name + dotYString, m_clickLocation.y());
+    formData.append(name + dotXString, m_clickLocation.x());
+    formData.append(name + dotYString, m_clickLocation.y());
 
     if (!element().value().isEmpty())
-        encoding.appendData(name, element().value());
-    return true;
+        formData.append(name, element().value());
 }
 
 String ImageInputType::resultForDialogSubmit() const
@@ -104,7 +103,7 @@ static IntPoint extractClickLocation(Event* event)
     if (!event->underlyingEvent() || !event->underlyingEvent()->isMouseEvent())
         return IntPoint();
     MouseEvent* mouseEvent = toMouseEvent(event->underlyingEvent());
-    if (mouseEvent->isSimulated())
+    if (!mouseEvent->hasPosition())
         return IntPoint();
     return IntPoint(mouseEvent->offsetX(), mouseEvent->offsetY());
 }

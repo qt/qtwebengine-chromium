@@ -21,8 +21,10 @@
 
 #include "base/basictypes.h"
 #include "util/misc/initialization_state_dcheck.h"
+#include "util/misc/uuid.h"
 #include "util/win/address_types.h"
 #include "util/win/checked_win_address_range.h"
+#include "util/win/process_structs.h"
 
 namespace crashpad {
 
@@ -30,7 +32,7 @@ class ProcessReaderWin;
 
 namespace process_types {
 
-// TODO(scottmg): Genericize and/or? move process_types out of mac/.
+template <class Traits>
 struct CrashpadInfo {
   uint32_t signature;
   uint32_t size;
@@ -38,10 +40,7 @@ struct CrashpadInfo {
   uint8_t crashpad_handler_behavior;  // TriState.
   uint8_t system_crash_reporter_forwarding;  // TriState.
   uint16_t padding_0;
-  uint64_t simple_annotations;  // TODO(scottmg): x86/64.
-};
-
-struct Section {
+  typename Traits::Pointer simple_annotations;
 };
 
 }  // namespace process_types
@@ -91,10 +90,37 @@ class PEImageReader {
   //! \return `true` on success, `false` on failure. If the module does not have
   //!     a `CPADinfo` section, this will return `false` without logging any
   //!     messages. Other failures will result in messages being logged.
-  bool GetCrashpadInfo(process_types::CrashpadInfo* crashpad_info) const;
+  template <class Traits>
+  bool GetCrashpadInfo(
+      process_types::CrashpadInfo<Traits>* crashpad_info) const;
+
+  //! \brief Obtains information from the module's debug directory, if any.
+  //!
+  //! \param[out] uuid The unique identifier of the executable/PDB.
+  //! \param[out] age The age field for the pdb (the number of times it's been
+  //!     relinked).
+  //! \param[out] pdbname Name of the pdb file.
+  //! \return `true` on success, or `false` if the module has no debug directory
+  //!     entry.
+  bool DebugDirectoryInformation(UUID* uuid,
+                                 DWORD* age,
+                                 std::string* pdbname) const;
 
  private:
+  //! \brief Implementation helper for DebugDirectoryInformation() templated by
+  //!     `IMAGE_NT_HEADERS` type for different bitnesses.
+  template <class NtHeadersType>
+  bool ReadDebugDirectoryInformation(UUID* uuid,
+                                     DWORD* age,
+                                     std::string* pdbname) const;
+
+  //! \brief Reads the `IMAGE_NT_HEADERS` from the beginning of the image.
+  template <class NtHeadersType>
+  bool ReadNtHeaders(WinVMAddress* nt_header_address,
+                     NtHeadersType* nt_headers) const;
+
   //! \brief Finds a given section by name in the image.
+  template <class NtHeadersType>
   bool GetSectionByName(const std::string& name,
                         IMAGE_SECTION_HEADER* section) const;
 

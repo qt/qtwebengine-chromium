@@ -9,7 +9,7 @@ namespace blink {
 
 struct SameSizeAsDisplayItem {
     virtual ~SameSizeAsDisplayItem() { } // Allocate vtable pointer.
-    void* pointers[2];
+    void* pointer;
     int ints[2]; // Make sure other fields are packed into two ints.
 #ifndef NDEBUG
     WTF::String m_debugString;
@@ -32,9 +32,8 @@ static WTF::String paintPhaseAsDebugString(int paintPhase)
     case 6: return "PaintPhaseChildOutlines";
     case 7: return "PaintPhaseSelfOutline";
     case 8: return "PaintPhaseSelection";
-    case 9: return "PaintPhaseCollapsedTableBorders";
-    case 10: return "PaintPhaseTextClip";
-    case 11: return "PaintPhaseMask";
+    case 9: return "PaintPhaseTextClip";
+    case 10: return "PaintPhaseMask";
     case DisplayItem::PaintPhaseMax: return "PaintPhaseClippingMask";
     default:
         ASSERT_NOT_REACHED();
@@ -53,6 +52,23 @@ static WTF::String paintPhaseAsDebugString(int paintPhase)
 
 static WTF::String specialDrawingTypeAsDebugString(DisplayItem::Type type)
 {
+    if (type >= DisplayItem::TableCollapsedBorderUnalignedBase) {
+        if (type <= DisplayItem::TableCollapsedBorderBase)
+            return "TableCollapsedBorderAlignment";
+        if (type <= DisplayItem::TableCollapsedBorderLast) {
+            StringBuilder sb;
+            sb.append("TableCollapsedBorder");
+            if (type & DisplayItem::TableCollapsedBorderTop)
+                sb.append("Top");
+            if (type & DisplayItem::TableCollapsedBorderRight)
+                sb.append("Right");
+            if (type & DisplayItem::TableCollapsedBorderBottom)
+                sb.append("Bottom");
+            if (type & DisplayItem::TableCollapsedBorderLeft)
+                sb.append("Left");
+            return sb.toString();
+        }
+    }
     switch (type) {
         DEBUG_STRING_CASE(BoxDecorationBackground);
         DEBUG_STRING_CASE(Caret);
@@ -88,6 +104,7 @@ static WTF::String specialDrawingTypeAsDebugString(DisplayItem::Type type)
         DEBUG_STRING_CASE(ScrollbarVertical);
         DEBUG_STRING_CASE(SelectionGap);
         DEBUG_STRING_CASE(SelectionTint);
+        DEBUG_STRING_CASE(TableCellBackgroundFromContainers);
         DEBUG_STRING_CASE(TableCellBackgroundFromSelfPaintingRow);
         DEBUG_STRING_CASE(VideoBitmap);
         DEBUG_STRING_CASE(WebPlugin);
@@ -123,7 +140,6 @@ static WTF::String clipTypeAsDebugString(DisplayItem::Type type)
         DEBUG_STRING_CASE(ClipPopupListBoxFrame);
         DEBUG_STRING_CASE(ClipSelectionImage);
         DEBUG_STRING_CASE(PageWidgetDelegateClip);
-        DEBUG_STRING_CASE(TransparencyClip);
         DEBUG_STRING_CASE(ClipPrintedPage);
         DEFAULT_CASE;
     }
@@ -137,12 +153,21 @@ static String transform3DTypeAsDebugString(DisplayItem::Type type)
     }
 }
 
+static String subsequenceTypeAsDebugString(DisplayItem::Type type)
+{
+    switch (type) {
+        DEBUG_STRING_CASE(SubsequenceNegativeZOrder);
+        DEBUG_STRING_CASE(SubsequenceNormalFlowAndPositiveZOrder);
+        DEFAULT_CASE;
+    }
+}
+
 WTF::String DisplayItem::typeAsDebugString(Type type)
 {
     if (isDrawingType(type))
         return drawingTypeAsDebugString(type);
-    if (isCachedType(type))
-        return "Cached" + drawingTypeAsDebugString(cachedTypeToDrawingType(type));
+    if (isCachedDrawingType(type))
+        return "Cached" + drawingTypeAsDebugString(cachedDrawingTypeToDrawingType(type));
     if (isClipType(type))
         return clipTypeAsDebugString(type);
     if (isEndClipType(type))
@@ -164,12 +189,12 @@ WTF::String DisplayItem::typeAsDebugString(Type type)
     if (isEndTransform3DType(type))
         return "End" + transform3DTypeAsDebugString(endTransform3DTypeToTransform3DType(type));
 
-    PAINT_PHASE_BASED_DEBUG_STRINGS(SubtreeCached);
-    PAINT_PHASE_BASED_DEBUG_STRINGS(BeginSubtree);
-    PAINT_PHASE_BASED_DEBUG_STRINGS(EndSubtree);
-
-    if (type == UninitializedType)
-        return "UninitializedType";
+    if (isSubsequenceType(type))
+        return subsequenceTypeAsDebugString(type);
+    if (isEndSubsequenceType(type))
+        return "End" + subsequenceTypeAsDebugString(endSubsequenceTypeToSubsequenceType(type));
+    if (isCachedSubsequenceType(type))
+        return "Cached" + subsequenceTypeAsDebugString(cachedSubsequenceTypeToSubsequenceType(type));
 
     switch (type) {
         DEBUG_STRING_CASE(BeginFilter);
@@ -184,6 +209,7 @@ WTF::String DisplayItem::typeAsDebugString(Type type)
         DEBUG_STRING_CASE(EndFixedPosition);
         DEBUG_STRING_CASE(BeginFixedPositionContainer);
         DEBUG_STRING_CASE(EndFixedPositionContainer);
+        DEBUG_STRING_CASE(UninitializedType);
         DEFAULT_CASE;
     }
 }
@@ -199,6 +225,13 @@ WTF::String DisplayItem::asDebugString() const
 
 void DisplayItem::dumpPropertiesAsDebugString(WTF::StringBuilder& stringBuilder) const
 {
+    if (!isValid()) {
+        stringBuilder.append("valid: false, originalDebugString: ");
+        // This is the original debug string which is in json format.
+        stringBuilder.append(clientDebugString());
+        return;
+    }
+
     stringBuilder.append(String::format("client: \"%p", client()));
     if (!clientDebugString().isEmpty()) {
         stringBuilder.append(' ');
@@ -209,8 +242,8 @@ void DisplayItem::dumpPropertiesAsDebugString(WTF::StringBuilder& stringBuilder)
     stringBuilder.append('"');
     if (m_skippedCache)
         stringBuilder.append(", skippedCache: true");
-    if (m_scopeContainer)
-        stringBuilder.append(String::format(", scope: \"%p,%d\"", m_scopeContainer, m_scopeId));
+    if (m_scope)
+        stringBuilder.append(String::format(", scope: %d", m_scope));
 }
 
 #endif

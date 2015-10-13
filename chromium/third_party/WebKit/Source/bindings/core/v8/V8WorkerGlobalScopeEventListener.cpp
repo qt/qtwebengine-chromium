@@ -54,7 +54,7 @@ void V8WorkerGlobalScopeEventListener::handleEvent(ScriptState* scriptState, Eve
 {
     // The callback function on XMLHttpRequest can clear the event listener and destroys 'this' object. Keep a local reference to it.
     // See issue 889829.
-    RefPtr<V8AbstractEventListener> protect(this);
+    RefPtrWillBeRawPtr<V8AbstractEventListener> protect(this);
 
     WorkerScriptController* script = toWorkerGlobalScope(scriptState->executionContext())->script();
     if (!script)
@@ -78,12 +78,9 @@ v8::Local<v8::Value> V8WorkerGlobalScopeEventListener::callListenerFunction(Scri
     if (handlerFunction.IsEmpty() || receiver.IsEmpty())
         return v8::Local<v8::Value>();
 
-    InspectorInstrumentationCookie cookie = InspectorInstrumentation::willCallFunction(scriptState->executionContext(), DevToolsFunctionInfo(handlerFunction));
-
     v8::Local<v8::Value> parameters[1] = { jsEvent };
     v8::MaybeLocal<v8::Value> maybeResult = V8ScriptRunner::callFunction(handlerFunction, scriptState->executionContext(), receiver, WTF_ARRAY_LENGTH(parameters), parameters, isolate());
 
-    InspectorInstrumentation::didCallFunction(cookie);
     TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "UpdateCounters", TRACE_EVENT_SCOPE_THREAD, "data", InspectorUpdateCountersEvent::data());
 
     v8::Local<v8::Value> result;

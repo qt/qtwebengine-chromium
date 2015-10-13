@@ -271,7 +271,7 @@ bool PluginHost::SetPostData(const char* buf,
           break;
         case GETVALUE:
           // Got a header.
-          name = base::StringToLowerASCII(std::string(start, ptr - start));
+          name = base::ToLowerASCII(base::StringPiece(start, ptr - start));
           base::TrimWhitespace(name, base::TRIM_ALL, &name);
           start = ptr + 1;
           break;
@@ -464,7 +464,8 @@ static NPError PostURLNotify(NPP id,
     std::string file_path_ascii(buf);
     base::FilePath file_path;
     static const char kFileUrlPrefix[] = "file:";
-    if (base::StartsWithASCII(file_path_ascii, kFileUrlPrefix, false)) {
+    if (base::StartsWith(file_path_ascii, kFileUrlPrefix,
+                         base::CompareCase::INSENSITIVE_ASCII)) {
       GURL file_url(file_path_ascii);
       DCHECK(file_url.SchemeIsFile());
       net::FileURLToFilePath(file_url, &file_path);

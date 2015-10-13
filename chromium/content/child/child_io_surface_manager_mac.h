@@ -21,23 +21,31 @@ class CONTENT_EXPORT ChildIOSurfaceManager : public IOSurfaceManager {
   static ChildIOSurfaceManager* GetInstance();
 
   // Overridden from IOSurfaceManager:
-  bool RegisterIOSurface(int io_surface_id,
+  bool RegisterIOSurface(IOSurfaceId io_surface_id,
                          int client_id,
                          IOSurfaceRef io_surface) override;
-  void UnregisterIOSurface(int io_surface_id, int client_id) override;
-  IOSurfaceRef AcquireIOSurface(int io_surface_id) override;
+  void UnregisterIOSurface(IOSurfaceId io_surface_id, int client_id) override;
+  IOSurfaceRef AcquireIOSurface(IOSurfaceId io_surface_id) override;
 
   // Set the service Mach port. Ownership of |service_port| is passed to the
   // manager.
+  // Note: This can be called on any thread but must happen before the
+  // thread-safe IOSurfaceManager interface is used. It is the responsibility
+  // of users of this class to ensure there are no races.
   void set_service_port(mach_port_t service_port) {
     service_port_.reset(service_port);
   }
 
   // Set the token used when communicating with the Mach service.
-  void set_token(const IOSurfaceManagerToken& token) { token_ = token; }
+  // Note: This can be called on any thread but must happen before the
+  // thread-safe IOSurfaceManager interface is used. It is the responsibility
+  // of users of this class to ensure there are no races.
+  void set_token(const IOSurfaceManagerToken& token) {
+    token_ = token;
+  }
 
  private:
-  friend struct DefaultSingletonTraits<ChildIOSurfaceManager>;
+  friend struct base::DefaultSingletonTraits<ChildIOSurfaceManager>;
 
   ChildIOSurfaceManager();
   ~ChildIOSurfaceManager() override;

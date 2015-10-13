@@ -44,14 +44,14 @@ void EmbeddedObjectPainter::paintReplaced(const PaintInfo& paintInfo, const Layo
         return;
 
     GraphicsContext* context = paintInfo.context;
-    if (LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(*context, m_layoutEmbeddedObject, paintInfo.phase))
+    if (LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(*context, m_layoutEmbeddedObject, paintInfo.phase, paintOffset))
         return;
 
-    FloatRect contentRect = m_layoutEmbeddedObject.contentBoxRect();
-    contentRect.moveBy(roundedIntPoint(paintOffset));
-    LayoutObjectDrawingRecorder drawingRecorder(*context, m_layoutEmbeddedObject, paintInfo.phase, contentRect);
+    LayoutRect contentRect(m_layoutEmbeddedObject.contentBoxRect());
+    contentRect.moveBy(paintOffset);
+    LayoutObjectDrawingRecorder drawingRecorder(*context, m_layoutEmbeddedObject, paintInfo.phase, contentRect, paintOffset);
     GraphicsContextStateSaver stateSaver(*context);
-    context->clip(contentRect);
+    context->clip(pixelSnappedIntRect(contentRect));
 
     Font font = replacementTextFont();
     // TODO(trchen): Speculative fix for crbug.com/481880
@@ -62,17 +62,19 @@ void EmbeddedObjectPainter::paintReplaced(const PaintInfo& paintInfo, const Layo
     TextRun textRun(m_layoutEmbeddedObject.unavailablePluginReplacementText());
     FloatSize textGeometry(font.width(textRun), font.fontMetrics().height());
 
-    FloatRect backgroundRect(0, 0, textGeometry.width() + 2 * replacementTextRoundedRectLeftRightTextMargin, replacementTextRoundedRectHeight);
+    LayoutRect backgroundRect(0, 0, textGeometry.width() + 2 * replacementTextRoundedRectLeftRightTextMargin, replacementTextRoundedRectHeight);
     backgroundRect.move(contentRect.center() - backgroundRect.center());
+    backgroundRect = LayoutRect(pixelSnappedIntRect(backgroundRect));
     Path roundedBackgroundRect;
-    roundedBackgroundRect.addRoundedRect(backgroundRect, FloatSize(replacementTextRoundedRectRadius, replacementTextRoundedRectRadius));
+    FloatRect floatBackgroundRect(backgroundRect);
+    roundedBackgroundRect.addRoundedRect(floatBackgroundRect, FloatSize(replacementTextRoundedRectRadius, replacementTextRoundedRectRadius));
     context->setFillColor(scaleAlpha(Color::white, replacementTextRoundedRectOpacity));
     context->fillPath(roundedBackgroundRect);
 
     FloatRect textRect(FloatPoint(), textGeometry);
-    textRect.move(contentRect.center() - textRect.center());
+    textRect.move(FloatPoint(contentRect.center()) - textRect.center());
     TextRunPaintInfo runInfo(textRun);
-    runInfo.bounds = backgroundRect;
+    runInfo.bounds = floatBackgroundRect;
     context->setFillColor(scaleAlpha(Color::black, replacementTextTextOpacity));
     context->drawBidiText(font, runInfo, textRect.location() + FloatSize(0, font.fontMetrics().ascent()));
 }

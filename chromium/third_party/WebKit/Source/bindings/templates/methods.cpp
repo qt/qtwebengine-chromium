@@ -95,7 +95,7 @@ static void {{method.name}}{{method.overload_index}}Method{{world_suffix}}(const
 {% macro generate_argument_var_declaration(argument) %}
 {# FIXME: remove EventListener special case #}
 {% if argument.idl_type == 'EventListener' %}
-RefPtr<{{argument.idl_type}}> {{argument.name}}
+RefPtrWillBeRawPtr<{{argument.idl_type}}> {{argument.name}}
 {%- else %}
 {{argument.cpp_type}} {{argument.name}}
 {%- endif %}{# argument.idl_type == 'EventListener' #}
@@ -525,20 +525,18 @@ static void {{method.name}}OriginSafeMethodGetter{{world_suffix}}(const v8::Prop
     static int domTemplateKey; // This address is used for a key to look up the dom template.
     V8PerIsolateData* data = V8PerIsolateData::from(info.GetIsolate());
     {# FIXME: 1 case of [DoNotCheckSignature] in Window.idl may differ #}
-    v8::Local<v8::FunctionTemplate> privateTemplate = data->domTemplate(&domTemplateKey, {{cpp_class}}V8Internal::{{method.name}}MethodCallback{{world_suffix}}, v8Undefined(), {{signature}}, {{method.length}});
+    v8::Local<v8::FunctionTemplate> domTemplate = data->domTemplate(&domTemplateKey, {{cpp_class}}V8Internal::{{method.name}}MethodCallback{{world_suffix}}, v8Undefined(), {{signature}}, {{method.length}});
 
+    // It is unsafe to use info.Holder() because OriginSafeMethodGetter is called
+    // back without checking the type of info.Holder().
     v8::Local<v8::Object> holder = {{v8_class}}::findInstanceInPrototypeChain(info.This(), info.GetIsolate());
     if (holder.IsEmpty()) {
-        // This is only reachable via |object.__proto__.func|, in which case it
-        // has already passed the same origin security check
-        v8SetReturnValue(info, privateTemplate->GetFunction(info.GetIsolate()->GetCurrentContext()).ToLocalChecked());
+        v8SetReturnValue(info, domTemplate->GetFunction(info.GetIsolate()->GetCurrentContext()).ToLocalChecked());
         return;
     }
     {{cpp_class}}* impl = {{v8_class}}::toImpl(holder);
     if (!BindingSecurity::shouldAllowAccessToFrame(info.GetIsolate(), impl->frame(), DoNotReportSecurityError)) {
-        static int sharedTemplateKey; // This address is used for a key to look up the dom template.
-        v8::Local<v8::FunctionTemplate> sharedTemplate = data->domTemplate(&sharedTemplateKey, {{cpp_class}}V8Internal::{{method.name}}MethodCallback{{world_suffix}}, v8Undefined(), {{signature}}, {{method.length}});
-        v8SetReturnValue(info, sharedTemplate->GetFunction(info.GetIsolate()->GetCurrentContext()).ToLocalChecked());
+        v8SetReturnValue(info, domTemplate->GetFunction(info.GetIsolate()->GetCurrentContext()).ToLocalChecked());
         return;
     }
 
@@ -549,7 +547,7 @@ static void {{method.name}}OriginSafeMethodGetter{{world_suffix}}(const v8::Prop
         return;
     }
 
-    v8SetReturnValue(info, privateTemplate->GetFunction(info.GetIsolate()->GetCurrentContext()).ToLocalChecked());
+    v8SetReturnValue(info, domTemplate->GetFunction(info.GetIsolate()->GetCurrentContext()).ToLocalChecked());
 }
 
 static void {{method.name}}OriginSafeMethodGetterCallback{{world_suffix}}(v8::Local<v8::Name>, const v8::PropertyCallbackInfo<v8::Value>& info)
@@ -652,30 +650,24 @@ v8SetReturnValue(info, wrapper);
 
 {##############################################################################}
 {% macro method_configuration(method) %}
+{% from 'conversions.cpp' import property_location %}
 {% set method_callback =
-   '%sV8Internal::%sMethodCallback' % (cpp_class_or_partial, method.name) %}
+       '%sV8Internal::%sMethodCallback' % (cpp_class_or_partial, method.name) %}
 {% set method_callback_for_main_world =
-   '%sV8Internal::%sMethodCallbackForMainWorld' % (cpp_class_or_partial, method.name)
-   if method.is_per_world_bindings else '0' %}
+       '%sV8Internal::%sMethodCallbackForMainWorld' % (cpp_class_or_partial, method.name)
+       if method.is_per_world_bindings else '0' %}
+{% set property_attribute =
+       'static_cast<v8::PropertyAttribute>(%s)' % ' | '.join(method.property_attributes)
+       if method.property_attributes else 'v8::None' %}
 {% set only_exposed_to_private_script = 'V8DOMConfiguration::OnlyExposedToPrivateScript' if method.only_exposed_to_private_script else 'V8DOMConfiguration::ExposedToAllScripts' %}
-{"{{method.name}}", {{method_callback}}, {{method_callback_for_main_world}}, {{method.length}}, {{only_exposed_to_private_script}}}
+{"{{method.name}}", {{method_callback}}, {{method_callback_for_main_world}}, {{method.length}}, {{property_attribute}}, {{only_exposed_to_private_script}}, {{property_location(method)}}}
 {%- endmacro %}
 
 
 {######################################}
-{% macro install_custom_signature(method) %}
-{% set method_callback = '%sV8Internal::%sMethodCallback' % (cpp_class_or_partial, method.name) %}
-{% set method_callback_for_main_world = '%sForMainWorld' % method_callback
-  if method.is_per_world_bindings else '0' %}
-{% set method_length = method.overloads.length if method.overloads else method.length %}
-{% set property_attribute =
-  'static_cast<v8::PropertyAttribute>(%s)' % ' | '.join(method.property_attributes)
-  if method.property_attributes else 'v8::None' %}
-{% set only_exposed_to_private_script = 'V8DOMConfiguration::OnlyExposedToPrivateScript' if method.only_exposed_to_private_script else 'V8DOMConfiguration::ExposedToAllScripts' %}
-const V8DOMConfiguration::MethodConfiguration {{method.name}}MethodConfiguration = {
-    "{{method.name}}", {{method_callback}}, {{method_callback_for_main_world}}, {{method_length}}, {{only_exposed_to_private_script}},
-};
-V8DOMConfiguration::installMethod(isolate, {{method.function_template}}, {{method.signature}}, {{property_attribute}}, {{method.name}}MethodConfiguration);
+{% macro install_custom_signature(method, instance_template, prototype_template, interface_template, signature) %}
+const V8DOMConfiguration::MethodConfiguration {{method.name}}MethodConfiguration = {{method_configuration(method)}};
+V8DOMConfiguration::installMethod(isolate, {{instance_template}}, {{prototype_template}}, {{interface_template}}, {{signature}}, {{method.name}}MethodConfiguration);
 {%- endmacro %}
 
 {######################################}
@@ -692,9 +684,8 @@ ASSERT(context);
 {% filter runtime_enabled(method.overloads.runtime_enabled_function_all
                           if method.overloads else
                           method.runtime_enabled_function) %}
-v8::Local<v8::FunctionTemplate> functionTemplate = v8::FunctionTemplate::New(isolate, {{cpp_class_or_partial}}V8Internal::{{method.name}}MethodCallback, v8Undefined(), defaultSignature, {{method.number_of_required_arguments}});
-v8::Local<v8::Function> function = ->GetFunction(isolate->GetCurrentContext())).ToLocalChecked();
-v8CallOrCrash(prototypeObject->Set(isolate->GetCurrentContext(), v8AtomicString(isolate, "{{method.name}}"), function));
+const V8DOMConfiguration::MethodConfiguration {{method.name}}MethodConfiguration = {{method_configuration(method)}};
+V8DOMConfiguration::installMethod(isolate, v8::Local<v8::Object>(), prototypeObject, interfaceObject, defaultSignature, {{method.name}}MethodConfiguration);
 {% endfilter %}{# runtime_enabled() #}
 {% endfilter %}{# exposed() #}
 {% endfor %}

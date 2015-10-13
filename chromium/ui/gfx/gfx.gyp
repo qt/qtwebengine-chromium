@@ -124,9 +124,12 @@
         'animation/throb_animation.h',
         'animation/tween.cc',
         'animation/tween.h',
+        'break_list.h',
         'blit.cc',
         'blit.h',
         'break_list.h',
+        'buffer_format_util.cc',
+        'buffer_format_util.h',
         'canvas.cc',
         'canvas.h',
         'canvas_notimplemented.cc',
@@ -140,6 +143,7 @@
         'codec/png_codec.h',
         'color_analysis.cc',
         'color_analysis.h',
+        'color_palette.h',
         'color_profile.cc',
         'color_profile.h',
         'color_profile_mac.mm',
@@ -171,11 +175,12 @@
         'font_render_params_linux.cc',
         'font_render_params_mac.cc',
         'font_render_params_win.cc',
+        'generic_shared_memory_id.cc',
+        'generic_shared_memory_id.h',
         'gfx_export.h',
         'gfx_paths.cc',
         'gfx_paths.h',
-        'gpu_memory_buffer.cc',
-        'gpu_memory_buffer.h',
+        
         'harfbuzz_font_skia.cc',
         'harfbuzz_font_skia.h',
         'hud_font.cc',
@@ -216,7 +221,8 @@
         'mac/coordinate_conversion.mm',
         'mac/nswindow_frame_controls.h',
         'mac/nswindow_frame_controls.mm',
-        'mac/scoped_ns_disable_screen_updates.h',
+        'mac/scoped_cocoa_disable_screen_updates.h',
+        'native_pixmap_handle_ozone.h',
         'native_widget_types.h',
         'nine_image_painter.cc',
         'nine_image_painter.h',
@@ -304,6 +310,8 @@
         'win/dpi.h',
         'win/hwnd_util.cc',
         'win/hwnd_util.h',
+        'win/metro_mode.cc',
+        'win/metro_mode.h',
         'win/scoped_set_map_mode.h',
         'win/singleton_hwnd.cc',
         'win/singleton_hwnd.h',
@@ -323,9 +331,22 @@
             'xcode_settings': {'OTHER_LDFLAGS': ['-ObjC']},
           },
           'sources!': [
+            'blit.cc',
+            'blit.h',
+            'canvas.cc',
+            'canvas.h',
+            'canvas_notimplemented.cc',
+            'canvas_paint_mac.h',
+            'canvas_paint_mac.mm',
+            'canvas_skia.cc',
+            'canvas_skia_paint.h',
             'codec/jpeg_codec.cc',
           ],
         }, {
+          'sources':[
+            'gpu_memory_buffer.cc',
+            'gpu_memory_buffer.h',
+          ],
           'dependencies': [
             '<(libjpeg_gyp_path):libjpeg',
           ],
@@ -408,41 +429,6 @@
             'text_utils_skia.cc',
           ],
         }, {  # desktop platforms
-          'variables': {
-            'vector_icons_cc_file': '<(INTERMEDIATE_DIR)/ui/gfx/vector_icons.cc',
-            'vector_icons_public_h_file': '<(SHARED_INTERMEDIATE_DIR)/ui/gfx/vector_icons_public.h',
-          },
-          'include_dirs': [
-            '<(SHARED_INTERMEDIATE_DIR)',
-          ],
-          'sources': [
-            '<(vector_icons_cc_file)',
-            '<(vector_icons_public_h_file)',
-
-            'paint_vector_icon.cc',
-            'paint_vector_icon.h',
-            'vector_icons.h',
-          ],
-          'actions': [
-            {
-              # GN version: //ui/gfx:aggregate_vector_icons
-              'action_name': 'aggregate_vector_icons',
-              'inputs': [
-                'vector_icons/',
-              ],
-              'outputs': [
-                '<(vector_icons_cc_file)',
-                '<(vector_icons_public_h_file)',
-              ],
-              'action': [ 'python',
-                          'vector_icons/aggregate_vector_icons.py',
-                          '--working_directory=vector_icons/',
-                          '--output_cc=<(vector_icons_cc_file)',
-                          '--output_h=<(vector_icons_public_h_file)',
-              ],
-              'message': 'Aggregating vector resources.',
-            },
-          ],
         }],
         ['use_x11==1', {
           'dependencies': [
@@ -472,6 +458,55 @@
         }],
       ],
     },
+    # Separate from gfx to limit the impact of the hard_dependency.
+    {
+      'target_name': 'gfx_vector_icons',
+      'type': '<(component)',
+      'dependencies': [
+        '<(DEPTH)/base/base.gyp:base',
+        '<(DEPTH)/skia/skia.gyp:skia',
+        'gfx',
+        'gfx_geometry',
+      ],
+      'defines': [
+        'GFX_IMPLEMENTATION',
+      ],
+      'sources': [
+        'paint_vector_icon.cc',
+        'paint_vector_icon.h',
+        'vector_icons_public.h',
+      ],
+      'variables': {
+        'vector_icons_cc_file': '<(INTERMEDIATE_DIR)/ui/gfx/vector_icons.cc',
+        'vector_icons_h_file': '<(SHARED_INTERMEDIATE_DIR)/ui/gfx/vector_icons.h',
+      },
+      'include_dirs': [
+        '<(SHARED_INTERMEDIATE_DIR)',
+      ],
+      'actions': [
+        {
+          # GN version: //ui/gfx:aggregate_vector_icons
+          'action_name': 'aggregate_vector_icons',
+          'inputs': [
+            'vector_icons/',
+          ],
+          'outputs': [
+            '<(vector_icons_cc_file)',
+            '<(vector_icons_h_file)',
+          ],
+          'action': [ 'python',
+                      'vector_icons/aggregate_vector_icons.py',
+                      '--working_directory=vector_icons/',
+                      '--output_cc=<(vector_icons_cc_file)',
+                      '--output_h=<(vector_icons_h_file)',
+          ],
+          'message': 'Aggregating vector resources.',
+          'process_outputs_as_sources': 1,
+        },
+      ],
+      # Export a hard dependency because of generated header files.
+      'hard_dependency': 1,
+    },
     {
       'target_name': 'gfx_test_support',
       'type': 'static_library',
@@ -484,6 +519,8 @@
         'test/fontconfig_util_linux.h',
         'test/gfx_util.cc',
         'test/gfx_util.h',
+        'test/test_screen.h',
+        'test/test_screen.cc',
         'test/ui_cocoa_test_helper.h',
         'test/ui_cocoa_test_helper.mm',
       ],
@@ -491,6 +528,8 @@
         '../../base/base.gyp:base',
         '../../skia/skia.gyp:skia',
         '../../testing/gtest.gyp:gtest',
+        'gfx',
+        'gfx_geometry',
       ],
       'conditions': [
         ['OS == "mac"', {

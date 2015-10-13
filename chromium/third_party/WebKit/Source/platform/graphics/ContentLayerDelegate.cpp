@@ -71,15 +71,8 @@ void ContentLayerDelegate::paintContents(
 {
     TRACE_EVENT1("blink,benchmark", "ContentLayerDelegate::paintContents", "clip_rect", toTracedValue(clip));
 
-    ASSERT(!RuntimeEnabledFeatures::slimmingPaintEnabled());
-
-    GraphicsContext::DisabledMode disabledMode = GraphicsContext::NothingDisabled;
-    if (paintingControl == WebContentLayerClient::DisplayListPaintingDisabled
-        || paintingControl == WebContentLayerClient::DisplayListConstructionDisabled)
-        disabledMode = GraphicsContext::FullyDisabled;
-    OwnPtr<GraphicsContext> context = GraphicsContext::deprecatedCreateWithCanvas(canvas, disabledMode);
-
-    m_painter->paint(*context, clip);
+    // TODO(pdr): Remove this function.
+    ASSERT_NOT_REACHED();
 }
 
 void ContentLayerDelegate::paintContents(
@@ -88,7 +81,13 @@ void ContentLayerDelegate::paintContents(
 {
     TRACE_EVENT1("blink,benchmark", "ContentLayerDelegate::paintContents", "clip_rect", toTracedValue(clip));
 
-    ASSERT(RuntimeEnabledFeatures::slimmingPaintEnabled());
+    // TODO(pdr): Remove when slimming paint v2 is further along. This is only
+    // here so the browser is usable during development and does not crash due
+    // to committing the new display items twice.
+    if (RuntimeEnabledFeatures::slimmingPaintSynchronizedPaintingEnabled()) {
+        m_painter->displayItemList()->appendToWebDisplayItemList(webDisplayItemList);
+        return;
+    }
 
     DisplayItemList* displayItemList = m_painter->displayItemList();
     ASSERT(displayItemList);
@@ -109,6 +108,11 @@ void ContentLayerDelegate::paintContents(
     m_painter->paint(context, clip);
 
     displayItemList->commitNewDisplayItemsAndAppendToWebDisplayItemList(webDisplayItemList);
+}
+
+size_t ContentLayerDelegate::approximateUnsharedMemoryUsage() const
+{
+    return m_painter->displayItemList()->approximateUnsharedMemoryUsage();
 }
 
 } // namespace blink

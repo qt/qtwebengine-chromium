@@ -41,7 +41,7 @@ class LayoutObject;
 
 typedef void* WrappedImagePtr;
 
-class CORE_EXPORT StyleImage : public RefCounted<StyleImage> {
+class CORE_EXPORT StyleImage : public RefCountedWillBeGarbageCollectedFinalized<StyleImage> {
 public:
     virtual ~StyleImage() { }
 
@@ -51,6 +51,7 @@ public:
     }
 
     virtual PassRefPtrWillBeRawPtr<CSSValue> cssValue() const = 0;
+    virtual PassRefPtrWillBeRawPtr<CSSValue> computedCSSValue() const = 0;
 
     virtual bool canRender(const LayoutObject&, float /*multiplier*/) const { return true; }
     virtual bool isLoaded() const { return true; }
@@ -63,7 +64,7 @@ public:
     virtual void setContainerSizeForLayoutObject(const LayoutObject*, const IntSize&, float) = 0;
     virtual void addClient(LayoutObject*) = 0;
     virtual void removeClient(LayoutObject*) = 0;
-    virtual PassRefPtr<Image> image(LayoutObject*, const IntSize&) const = 0;
+    virtual PassRefPtr<Image> image(const LayoutObject*, const IntSize&) const = 0;
     virtual WrappedImagePtr data() const = 0;
     virtual float imageScaleFactor() const { return 1; }
     virtual bool knownToBeOpaque(const LayoutObject*) const = 0;
@@ -73,6 +74,8 @@ public:
     ALWAYS_INLINE bool isPendingImage() const { return m_isPendingImage; }
     ALWAYS_INLINE bool isGeneratedImage() const { return m_isGeneratedImage; }
     ALWAYS_INLINE bool isImageResourceSet() const { return m_isImageResourceSet; }
+
+    DEFINE_INLINE_VIRTUAL_TRACE() { }
 
 protected:
     StyleImage()
@@ -90,7 +93,7 @@ protected:
 
 #define DEFINE_STYLE_IMAGE_TYPE_CASTS(thisType, function) \
     DEFINE_TYPE_CASTS(thisType, StyleImage, styleImage, styleImage->function, styleImage.function); \
-    inline thisType* to##thisType(const RefPtr<StyleImage>& styleImage) { return to##thisType(styleImage.get()); } \
+    inline thisType* to##thisType(const RefPtrWillBeMember<StyleImage>& styleImage) { return to##thisType(styleImage.get()); } \
     typedef int NeedsSemiColonAfterDefineStyleImageTypeCasts
 
 }

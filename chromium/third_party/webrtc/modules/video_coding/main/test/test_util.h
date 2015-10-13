@@ -61,14 +61,13 @@ class FileOutputFrameReceiver : public webrtc::VCMReceiveCallback {
 
  private:
   std::string out_filename_;
-  uint32_t ssrc_;
   FILE* out_file_;
   FILE* timing_file_;
   int width_;
   int height_;
   int count_;
 
-  DISALLOW_IMPLICIT_CONSTRUCTORS(FileOutputFrameReceiver);
+  RTC_DISALLOW_IMPLICIT_CONSTRUCTORS(FileOutputFrameReceiver);
 };
 
 class CmdArgs {

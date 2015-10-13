@@ -35,13 +35,14 @@
 #include "core/InspectorTypeBuilder.h"
 #include "core/inspector/InjectedScriptManager.h"
 #include "core/inspector/InjectedScriptNative.h"
+#include "wtf/Allocator.h"
 #include "wtf/Forward.h"
-#include "wtf/Vector.h"
+#include <v8.h>
 
 namespace blink {
 
 class JSONValue;
-class Node;
+class RemoteObjectId;
 class ScriptFunctionCall;
 
 typedef String ErrorString;
@@ -49,6 +50,7 @@ PassRefPtr<JSONValue> toJSONValue(const ScriptValue&);
 
 
 class InjectedScript final {
+    DISALLOW_ALLOCATION();
 public:
     InjectedScript();
     ~InjectedScript();
@@ -81,8 +83,8 @@ public:
         TypeBuilder::OptOutput<bool>* wasThrown);
     void evaluateOnCallFrame(
         ErrorString*,
-        const ScriptValue& callFrames,
-        const Vector<ScriptValue>& asyncCallStacks,
+        v8::Local<v8::Object> callFrames,
+        bool isAsyncCallStack,
         const String& callFrameId,
         const String& expression,
         const String& objectGroup,
@@ -92,24 +94,21 @@ public:
         RefPtr<TypeBuilder::Runtime::RemoteObject>* result,
         TypeBuilder::OptOutput<bool>* wasThrown,
         RefPtr<TypeBuilder::Debugger::ExceptionDetails>*);
-    void restartFrame(ErrorString*, const ScriptValue& callFrames, const String& callFrameId, RefPtr<JSONObject>* result);
-    void getStepInPositions(ErrorString*, const ScriptValue& callFrames, const String& callFrameId, RefPtr<TypeBuilder::Array<TypeBuilder::Debugger::Location> >& positions);
-    void setVariableValue(ErrorString*, const ScriptValue& callFrames, const String* callFrameIdOpt, const String* functionObjectIdOpt, int scopeNumber, const String& variableName, const String& newValueStr);
+    void restartFrame(ErrorString*, v8::Local<v8::Object> callFrames, const String& callFrameId);
+    void getStepInPositions(ErrorString*, v8::Local<v8::Object> callFrames, const String& callFrameId, RefPtr<TypeBuilder::Array<TypeBuilder::Debugger::Location>>& positions);
+    void setVariableValue(ErrorString*, v8::Local<v8::Object> callFrames, const String* callFrameIdOpt, const String* functionObjectIdOpt, int scopeNumber, const String& variableName, const String& newValueStr);
     void getFunctionDetails(ErrorString*, const String& functionId, RefPtr<TypeBuilder::Debugger::FunctionDetails>* result);
     void getGeneratorObjectDetails(ErrorString*, const String& functionId, RefPtr<TypeBuilder::Debugger::GeneratorObjectDetails>* result);
     void getCollectionEntries(ErrorString*, const String& objectId, RefPtr<TypeBuilder::Array<TypeBuilder::Debugger::CollectionEntry> >* result);
     void getProperties(ErrorString*, const String& objectId, bool ownProperties, bool accessorPropertiesOnly, bool generatePreview, RefPtr<TypeBuilder::Array<TypeBuilder::Runtime::PropertyDescriptor>>* result, RefPtr<TypeBuilder::Debugger::ExceptionDetails>*);
     void getInternalProperties(ErrorString*, const String& objectId, RefPtr<TypeBuilder::Array<TypeBuilder::Runtime::InternalPropertyDescriptor>>* result, RefPtr<TypeBuilder::Debugger::ExceptionDetails>*);
-    Node* nodeForObjectId(const String& objectId);
-    EventTarget* eventTargetForObjectId(const String& objectId);
     void releaseObject(const String& objectId);
 
-    PassRefPtr<TypeBuilder::Array<TypeBuilder::Debugger::CallFrame> > wrapCallFrames(const ScriptValue&, int asyncOrdinal);
+    PassRefPtr<TypeBuilder::Array<TypeBuilder::Debugger::CallFrame>> wrapCallFrames(v8::Local<v8::Object>, int asyncOrdinal);
 
     PassRefPtr<TypeBuilder::Runtime::RemoteObject> wrapObject(const ScriptValue&, const String& groupName, bool generatePreview = false) const;
     PassRefPtr<TypeBuilder::Runtime::RemoteObject> wrapTable(const ScriptValue& table, const ScriptValue& columns) const;
-    PassRefPtr<TypeBuilder::Runtime::RemoteObject> wrapNode(Node*, const String& groupName);
-    ScriptValue findObjectById(const String& objectId) const;
+    v8::Local<v8::Value> findObject(const RemoteObjectId&) const;
 
     String objectIdToObjectGroupName(const String& objectId) const;
     void releaseObjectGroup(const String&);
@@ -121,7 +120,6 @@ private:
     using InspectedStateAccessCheck = bool (*)(ScriptState*);
     InjectedScript(ScriptValue, InspectedStateAccessCheck, PassRefPtr<InjectedScriptNative>);
 
-    ScriptValue nodeAsScriptValue(Node*);
     void initialize(ScriptValue, InspectedStateAccessCheck);
     bool canAccessInspectedWindow() const;
     const ScriptValue& injectedScriptObject() const;

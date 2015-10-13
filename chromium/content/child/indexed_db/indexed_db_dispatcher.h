@@ -13,8 +13,9 @@
 #include "base/id_map.h"
 #include "base/memory/ref_counted.h"
 #include "base/strings/nullable_string16.h"
-#include "content/child/worker_task_runner.h"
 #include "content/common/content_export.h"
+#include "content/common/indexed_db/indexed_db_constants.h"
+#include "content/public/child/worker_thread.h"
 #include "ipc/ipc_sync_message_filter.h"
 #include "third_party/WebKit/public/platform/WebBlobInfo.h"
 #include "third_party/WebKit/public/platform/modules/indexeddb/WebIDBCallbacks.h"
@@ -41,11 +42,9 @@ class WebIDBCursorImpl;
 class WebIDBDatabaseImpl;
 class ThreadSafeSender;
 
-CONTENT_EXPORT extern const size_t kMaxIDBValueSizeInBytes;
-
 // Handle the indexed db related communication for this context thread - the
 // main thread and each worker thread have their own copies.
-class CONTENT_EXPORT IndexedDBDispatcher : public WorkerTaskRunner::Observer {
+class CONTENT_EXPORT IndexedDBDispatcher : public WorkerThread::Observer {
  public:
   // Constructor made public to allow RenderThreadImpl to own a copy without
   // failing a NOTREACHED in ThreadSpecificInstance in tests that instantiate
@@ -59,8 +58,8 @@ class CONTENT_EXPORT IndexedDBDispatcher : public WorkerTaskRunner::Observer {
   static IndexedDBDispatcher* ThreadSpecificInstance(
       ThreadSafeSender* thread_safe_sender);
 
-  // WorkerTaskRunner::Observer implementation.
-  void OnWorkerRunLoopStopped() override;
+  // WorkerThread::Observer implementation.
+  void WillStopCurrentWorkerThread() override;
 
   static blink::WebIDBMetadata ConvertMetadata(
       const IndexedDBDatabaseMetadata& idb_metadata);
@@ -185,12 +184,11 @@ class CONTENT_EXPORT IndexedDBDispatcher : public WorkerTaskRunner::Observer {
   FRIEND_TEST_ALL_PREFIXES(IndexedDBDispatcherTest, CursorReset);
   FRIEND_TEST_ALL_PREFIXES(IndexedDBDispatcherTest, CursorTransactionId);
   FRIEND_TEST_ALL_PREFIXES(IndexedDBDispatcherTest, ValueSizeTest);
+  FRIEND_TEST_ALL_PREFIXES(IndexedDBDispatcherTest, KeyAndValueSizeTest);
 
   enum { kAllCursors = -1 };
 
-  static int32 CurrentWorkerId() {
-    return WorkerTaskRunner::Instance()->CurrentWorkerId();
-  }
+  static int32 CurrentWorkerId() { return WorkerThread::GetCurrentId(); }
 
   template <typename T>
   void init_params(T* params, blink::WebIDBCallbacks* callbacks_ptr) {
@@ -251,6 +249,12 @@ class CONTENT_EXPORT IndexedDBDispatcher : public WorkerTaskRunner::Observer {
                                  int32 ipc_exception_cursor_id);
 
   scoped_refptr<ThreadSafeSender> thread_safe_sender_;
+
+  // Maximum size (in bytes) of value/key pair allowed for put requests. Any
+  // requests larger than this size will be rejected.
+  // Used by unit tests to exercise behavior without allocating huge chunks
+  // of memory.
+  size_t max_put_value_size_ = kMaxIDBMessageSizeInBytes;
 
   // Careful! WebIDBCallbacks wraps non-threadsafe data types. It must be
   // destroyed and used on the same thread it was created on.

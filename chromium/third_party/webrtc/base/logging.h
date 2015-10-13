@@ -80,7 +80,7 @@ struct ConstantLabel { int value; const char * label; };
 #define TLABEL(x, y) { x, y }
 #define LASTLABEL { 0, 0 }
 
-const char * FindLabel(int value, const ConstantLabel entries[]);
+const char* FindLabel(int value, const ConstantLabel entries[]);
 std::string ErrorName(int err, const ConstantLabel* err_table);
 
 //////////////////////////////////////////////////////////////////////
@@ -136,6 +136,12 @@ class LogMessage {
   LogMessage(const char* file, int line, LoggingSeverity sev,
              LogErrorContext err_ctx = ERRCTX_NONE, int err = 0,
              const char* module = NULL);
+
+  LogMessage(const char* file,
+             int line,
+             LoggingSeverity sev,
+             const std::string& tag);
+
   ~LogMessage();
 
   static inline bool Loggable(LoggingSeverity sev) { return (sev >= min_sev_); }
@@ -162,6 +168,9 @@ class LogMessage {
   //  Debug: Debug console on Windows, otherwise stderr
   static void LogToDebug(LoggingSeverity min_sev);
   static LoggingSeverity GetLogToDebug() { return dbg_sev_; }
+
+  // Sets whether logs will be directed to stderr in debug mode.
+  static void SetLogToStderr(bool log_to_stderr);
 
   //  Stream: Any non-blocking stream interface.  LogMessage takes ownership of
   //   the stream. Multiple streams may be specified by using AddLogToStream.
@@ -190,13 +199,18 @@ class LogMessage {
   static void UpdateMinLogSeverity() EXCLUSIVE_LOCKS_REQUIRED(crit_);
 
   // These write out the actual log messages.
-  static void OutputToDebug(const std::string& msg, LoggingSeverity severity_);
+  static void OutputToDebug(const std::string& msg,
+                            LoggingSeverity severity,
+                            const std::string& tag);
 
   // The ostream that buffers the formatted message before output
   std::ostringstream print_stream_;
 
   // The severity level of this message
   LoggingSeverity severity_;
+
+  // The Android debug output tag.
+  std::string tag_;
 
   // String data generated in the constructor, that should be appended to
   // the message before output.
@@ -222,7 +236,10 @@ class LogMessage {
   // Flags for formatting options
   static bool thread_, timestamp_;
 
-  DISALLOW_COPY_AND_ASSIGN(LogMessage);
+  // Determines if logs will be directed to stderr in debug mode.
+  static bool log_to_stderr_;
+
+  RTC_DISALLOW_COPY_AND_ASSIGN(LogMessage);
 };
 
 //////////////////////////////////////////////////////////////////////
@@ -334,6 +351,10 @@ inline bool LogCheckLevel(LoggingSeverity sev) {
 #define LAST_SYSTEM_ERROR \
   (errno)
 #endif  // WEBRTC_WIN
+
+#define LOG_TAG(sev, tag) \
+  LOG_SEVERITY_PRECONDITION(sev) \
+    rtc::LogMessage(NULL, 0, sev, tag).stream()
 
 #define PLOG(sev, err) \
   LOG_ERR_EX(sev, err)

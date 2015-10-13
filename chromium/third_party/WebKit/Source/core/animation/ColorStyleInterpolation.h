@@ -14,28 +14,26 @@ namespace blink {
 
 class CORE_EXPORT ColorStyleInterpolation : public StyleInterpolation {
 public:
-    static PassRefPtrWillBeRawPtr<ColorStyleInterpolation> create(const CSSValue& start, const CSSValue& end, CSSPropertyID id)
+    static PassRefPtr<ColorStyleInterpolation> create(const CSSValue& start, const CSSValue& end, CSSPropertyID id)
     {
-        return adoptRefWillBeNoop(new ColorStyleInterpolation(colorToInterpolableValue(start), colorToInterpolableValue(end), id));
+        return adoptRef(new ColorStyleInterpolation(colorToInterpolableValue(start), colorToInterpolableValue(end), id));
     }
 
-    static PassRefPtrWillBeRawPtr<ColorStyleInterpolation> maybeCreateFromColor(const CSSValue& start, const CSSValue& end, CSSPropertyID);
+    static PassRefPtr<ColorStyleInterpolation> maybeCreateFromColor(const CSSValue& start, const CSSValue& end, CSSPropertyID);
 
     static bool shouldUseLegacyStyleInterpolation(const CSSValue& start, const CSSValue& end);
 
     static bool canCreateFrom(const CSSValue&);
 
-    virtual void apply(StyleResolverState&) const override;
-
-    DECLARE_VIRTUAL_TRACE();
+    void apply(StyleResolverState&) const override;
 
 private:
-    ColorStyleInterpolation(PassOwnPtrWillBeRawPtr<InterpolableValue> start, PassOwnPtrWillBeRawPtr<InterpolableValue> end, CSSPropertyID id)
+    ColorStyleInterpolation(PassOwnPtr<InterpolableValue> start, PassOwnPtr<InterpolableValue> end, CSSPropertyID id)
         : StyleInterpolation(start, end, id)
     {
     }
 
-    static PassOwnPtrWillBeRawPtr<InterpolableValue> colorToInterpolableValue(const CSSValue&);
+    static PassOwnPtr<InterpolableValue> colorToInterpolableValue(const CSSValue&);
     static PassRefPtrWillBeRawPtr<CSSPrimitiveValue> interpolableValueToColor(const InterpolableValue&);
 
     friend class AnimationColorStyleInterpolationTest;

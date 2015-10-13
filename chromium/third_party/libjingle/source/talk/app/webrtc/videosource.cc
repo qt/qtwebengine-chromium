@@ -157,12 +157,9 @@ bool NewFormatWithConstraints(
         value = 1;
       }
     }
-    if (value <= cricket::VideoFormat::IntervalToFps(format_in.interval)) {
+    if (value <= cricket::VideoFormat::IntervalToFps(format_in.interval))
       format_out->interval = cricket::VideoFormat::FpsToInterval(value);
-      return true;
-    } else {
-      return false;
-    }
+    return true;
   } else if (constraint.key == MediaConstraintsInterface::kMinAspectRatio) {
     double value = rtc::FromString<double>(constraint.value);
     // The aspect ratio in |constraint.value| has been converted to a string and
@@ -321,10 +318,8 @@ class FrameInputWrapper : public cricket::VideoRenderer {
 
  private:
   cricket::VideoCapturer* capturer_;
-  int width_;
-  int height_;
 
-  DISALLOW_COPY_AND_ASSIGN(FrameInputWrapper);
+  RTC_DISALLOW_COPY_AND_ASSIGN(FrameInputWrapper);
 };
 
 }  // anonymous namespace

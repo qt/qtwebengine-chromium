@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "mojo/edk/js/waiting_callback.h"
+#include "third_party/mojo/src/mojo/edk/js/waiting_callback.h"
 
 #include "base/bind.h"
 #include "base/message_loop/message_loop.h"
@@ -31,11 +31,8 @@ gin::Handle<WaitingCallback> WaitingCallback::Create(
   gin::Handle<WaitingCallback> waiting_callback = gin::CreateHandle(
       isolate, new WaitingCallback(isolate, callback, handle_wrapper));
   waiting_callback->wait_id_ = Environment::GetDefaultAsyncWaiter()->AsyncWait(
-      handle_wrapper->get().value(),
-      signals,
-      MOJO_DEADLINE_INDEFINITE,
-      &WaitingCallback::CallOnHandleReady,
-      waiting_callback.get());
+      3, handle_wrapper->get().value(), signals, MOJO_DEADLINE_INDEFINITE,
+      &WaitingCallback::CallOnHandleReady, waiting_callback.get());
   return waiting_callback;
 }
 

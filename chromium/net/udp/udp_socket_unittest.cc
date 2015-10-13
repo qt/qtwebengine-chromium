@@ -53,7 +53,7 @@ class UDPSocketTest : public PlatformTest {
   // If |address| is specified, then it is used for the destination
   // to send to. Otherwise, will send to the last socket this server
   // received from.
-  int SendToSocket(UDPServerSocket* socket, std::string msg) {
+  int SendToSocket(UDPServerSocket* socket, const std::string& msg) {
     return SendToSocket(socket, msg, recv_from_address_);
   }
 
@@ -94,7 +94,7 @@ class UDPSocketTest : public PlatformTest {
 
   // Loop until |msg| has been written to the socket or until an
   // error occurs.
-  int WriteSocket(UDPClientSocket* socket, std::string msg) {
+  int WriteSocket(UDPClientSocket* socket, const std::string& msg) {
     TestCompletionCallback callback;
 
     int length = msg.length();
@@ -116,12 +116,15 @@ class UDPSocketTest : public PlatformTest {
     return bytes_sent;
   }
 
-  void WriteSocketIgnoreResult(UDPClientSocket* socket, std::string msg) {
+  void WriteSocketIgnoreResult(UDPClientSocket* socket,
+                               const std::string& msg) {
     WriteSocket(socket, msg);
   }
 
   // Creates an address from ip address and port and writes it to |*address|.
-  void CreateUDPAddress(std::string ip_str, uint16 port, IPEndPoint* address) {
+  void CreateUDPAddress(const std::string& ip_str,
+                        uint16 port,
+                        IPEndPoint* address) {
     IPAddressNumber ip_number;
     bool rv = ParseIPLiteralToNumber(ip_str, &ip_number);
     if (!rv)
@@ -488,8 +491,9 @@ TEST_F(UDPSocketTest, ClientGetLocalPeerAddresses) {
   } tests[] = {
     { "127.0.00.1", "127.0.0.1", false },
     { "::1", "::1", true },
-#if !defined(OS_ANDROID)
+#if !defined(OS_ANDROID) && !defined(OS_IOS)
     // Addresses below are disabled on Android. See crbug.com/161248
+    // They are also disabled on iOS. See https://crbug.com/523225
     { "192.168.1.1", "127.0.0.1", false },
     { "2001:db8:0::42", "::1", true },
 #endif

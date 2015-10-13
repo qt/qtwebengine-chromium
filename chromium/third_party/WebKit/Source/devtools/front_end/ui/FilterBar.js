@@ -54,6 +54,10 @@ WebInspector.FilterBar.FilterBarState = {
     Shown : "shown"
 };
 
+WebInspector.FilterBar.Events = {
+    Toggled: "Toggled"
+};
+
 WebInspector.FilterBar.prototype = {
     /**
      * @return {!WebInspector.ToolbarButton}
@@ -148,6 +152,7 @@ WebInspector.FilterBar.prototype = {
                 }
             }
         }
+        this.dispatchEventToListeners(WebInspector.FilterBar.Events.Toggled);
     },
 
     clear: function()
@@ -455,7 +460,7 @@ WebInspector.TextFilterUI.SuggestionBuilder.prototype = {
 WebInspector.NamedBitSetFilterUI = function(items, setting)
 {
     this._filtersElement = createElementWithClass("div", "filter-bitset-filter");
-    this._filtersElement.title = WebInspector.UIString("Use %s Click to select multiple types.", WebInspector.KeyboardShortcut.shortcutToString("", WebInspector.KeyboardShortcut.Modifiers.CtrlOrMeta));
+    this._filtersElement.title = WebInspector.UIString("%sClick to select multiple types", WebInspector.KeyboardShortcut.shortcutToString("", WebInspector.KeyboardShortcut.Modifiers.CtrlOrMeta));
 
     this._allowedTypes = {};
     this._typeFilterElements = {};
@@ -710,6 +715,14 @@ WebInspector.CheckboxFilterUI.prototype = {
     element: function()
     {
         return this._filterElement;
+    },
+
+    /**
+     * @return {!Element}
+     */
+    labelElement: function()
+    {
+        return this._label;
     },
 
     _fireUpdated: function()

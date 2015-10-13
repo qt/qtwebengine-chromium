@@ -11,7 +11,6 @@
 #include "base/basictypes.h"
 #include "base/callback.h"
 #include "base/files/file_path.h"
-#include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
@@ -174,7 +173,7 @@ class STORAGE_EXPORT_PRIVATE QuotaDatabase {
   bool is_recreating_;
   bool is_disabled_;
 
-  base::OneShotTimer<QuotaDatabase> timer_;
+  base::OneShotTimer timer_;
 
   friend class content::QuotaDatabaseTest;
   friend class QuotaManager;

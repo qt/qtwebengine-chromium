@@ -31,6 +31,8 @@
 #include "config.h"
 #include "platform/graphics/UnacceleratedImageBufferSurface.h"
 
+#include "third_party/skia/include/core/SkCanvas.h"
+#include "third_party/skia/include/core/SkDevice.h"
 #include "third_party/skia/include/core/SkSurface.h"
 #include "wtf/PassRefPtr.h"
 
@@ -50,9 +52,15 @@ UnacceleratedImageBufferSurface::UnacceleratedImageBufferSurface(const IntSize& 
 
 UnacceleratedImageBufferSurface::~UnacceleratedImageBufferSurface() { }
 
-SkCanvas* UnacceleratedImageBufferSurface::canvas() const
+SkCanvas* UnacceleratedImageBufferSurface::canvas()
 {
     return m_surface->getCanvas();
+}
+
+const SkBitmap& UnacceleratedImageBufferSurface::deprecatedBitmapForOverwrite()
+{
+    m_surface->notifyContentWillChange(SkSurface::kDiscard_ContentChangeMode);
+    return m_surface->getCanvas()->getDevice()->accessBitmap(false);
 }
 
 bool UnacceleratedImageBufferSurface::isValid() const
@@ -60,7 +68,7 @@ bool UnacceleratedImageBufferSurface::isValid() const
     return m_surface;
 }
 
-PassRefPtr<SkImage> UnacceleratedImageBufferSurface::newImageSnapshot() const
+PassRefPtr<SkImage> UnacceleratedImageBufferSurface::newImageSnapshot(AccelerationHint)
 {
     return adoptRef(m_surface->newImageSnapshot());
 }

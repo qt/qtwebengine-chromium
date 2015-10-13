@@ -25,7 +25,7 @@ class QuicHeadersStream::SpdyFramerVisitor
     : public SpdyFramerVisitorInterface,
       public SpdyFramerDebugVisitorInterface {
  public:
-  SpdyFramerVisitor(QuicHeadersStream* stream) : stream_(stream) {}
+  explicit SpdyFramerVisitor(QuicHeadersStream* stream) : stream_(stream) {}
 
   // SpdyFramerVisitorInterface implementation
   void OnSynStream(SpdyStreamId stream_id,
@@ -191,7 +191,7 @@ size_t QuicHeadersStream::WriteHeaders(
     QuicPriority priority,
     QuicAckNotifier::DelegateInterface* ack_notifier_delegate) {
   SpdyHeadersIR headers_frame(stream_id);
-  headers_frame.set_name_value_block(headers);
+  headers_frame.set_header_block(headers);
   headers_frame.set_fin(fin);
   if (session()->perspective() == Perspective::IS_CLIENT) {
     headers_frame.set_has_priority(true);
@@ -204,9 +204,23 @@ size_t QuicHeadersStream::WriteHeaders(
   return frame->size();
 }
 
-uint32 QuicHeadersStream::ProcessRawData(const char* data,
-                                         uint32 data_len) {
-  return spdy_framer_.ProcessInput(data, data_len);
+void QuicHeadersStream::OnDataAvailable() {
+  char buffer[1024];
+  struct iovec iov;
+  while (true) {
+    iov.iov_base = buffer;
+    iov.iov_len = arraysize(buffer);
+    if (sequencer()->GetReadableRegions(&iov, 1) != 1) {
+      // No more data to read.
+      break;
+    }
+    if (spdy_framer_.ProcessInput(static_cast<char*>(iov.iov_base),
+                                  iov.iov_len) != iov.iov_len) {
+      // Error processing data.
+      return;
+    }
+    sequencer()->MarkConsumed(iov.iov_len);
+  }
 }
 
 QuicPriority QuicHeadersStream::EffectivePriority() const { return 0; }

@@ -32,8 +32,27 @@ source_set("qcms") {
 
   if (is_win) {
     cflags = [
+      "/wd4018",  # Signed/unsigned mismatch in comparison.
       "/wd4056",  # Overflow in floating-point constant arithmetic (INFINITY).
       "/wd4756",  # Overflow in constant arithmetic (INFINITY).
     ]
+  }
+}
+
+if (current_cpu == "x86" || current_cpu == "x64") {
+  executable("qcms_test") {
+    defines = [ "SSE2_ENABLE" ]
+    sources = [
+      "src/tests/qcms_test_tetra_clut_rgba.c",
+    ]
+
+    deps = [
+      "//build/config/sanitizers:deps",
+      "//third_party/qcms",
+    ]
+
+    configs -= [ "//build/config/compiler:chromium_code" ]
+    configs += [ "//build/config/compiler:no_chromium_code" ]
+    public_configs = [ ":qcms_config" ]
   }
 }

@@ -27,10 +27,11 @@
 #include "config.h"
 #include "core/css/CSSValue.h"
 
+#include "core/css/CSSBasicShapeValues.h"
 #include "core/css/CSSBorderImageSliceValue.h"
-#include "core/css/CSSCalculationValue.h"
 #include "core/css/CSSCanvasValue.h"
 #include "core/css/CSSContentDistributionValue.h"
+#include "core/css/CSSCounterValue.h"
 #include "core/css/CSSCrossfadeValue.h"
 #include "core/css/CSSCursorImageValue.h"
 #include "core/css/CSSFontFaceSrcValue.h"
@@ -43,9 +44,9 @@
 #include "core/css/CSSImageValue.h"
 #include "core/css/CSSInheritedValue.h"
 #include "core/css/CSSInitialValue.h"
-#include "core/css/CSSLineBoxContainValue.h"
 #include "core/css/CSSPathValue.h"
 #include "core/css/CSSPrimitiveValue.h"
+#include "core/css/CSSQuadValue.h"
 #include "core/css/CSSReflectValue.h"
 #include "core/css/CSSSVGDocumentValue.h"
 #include "core/css/CSSShadowValue.h"
@@ -53,11 +54,11 @@
 #include "core/css/CSSUnicodeRangeValue.h"
 #include "core/css/CSSUnsetValue.h"
 #include "core/css/CSSValueList.h"
+#include "core/css/CSSValuePair.h"
 
 namespace blink {
 
-struct SameSizeAsCSSValue : public RefCountedWillBeGarbageCollectedFinalized<SameSizeAsCSSValue>
-{
+struct SameSizeAsCSSValue : public RefCountedWillBeGarbageCollectedFinalized<SameSizeAsCSSValue> {
     uint32_t bitfields;
 };
 
@@ -93,11 +94,21 @@ inline static bool compareCSSValues(const CSSValue& first, const CSSValue& secon
 bool CSSValue::equals(const CSSValue& other) const
 {
     if (m_classType == other.m_classType) {
-        switch (m_classType) {
+        switch (classType()) {
+        case BasicShapeCircleClass:
+            return compareCSSValues<CSSBasicShapeCircleValue>(*this, other);
+        case BasicShapeEllipseClass:
+            return compareCSSValues<CSSBasicShapeEllipseValue>(*this, other);
+        case BasicShapePolygonClass:
+            return compareCSSValues<CSSBasicShapePolygonValue>(*this, other);
+        case BasicShapeInsetClass:
+            return compareCSSValues<CSSBasicShapeInsetValue>(*this, other);
         case BorderImageSliceClass:
             return compareCSSValues<CSSBorderImageSliceValue>(*this, other);
         case CanvasClass:
             return compareCSSValues<CSSCanvasValue>(*this, other);
+        case CounterClass:
+            return compareCSSValues<CSSCounterValue>(*this, other);
         case CursorImageClass:
             return compareCSSValues<CSSCursorImageValue>(*this, other);
         case FontFaceSrcClass:
@@ -128,6 +139,8 @@ bool CSSValue::equals(const CSSValue& other) const
             return compareCSSValues<CSSPathValue>(*this, other);
         case PrimitiveClass:
             return compareCSSValues<CSSPrimitiveValue>(*this, other);
+        case QuadClass:
+            return compareCSSValues<CSSQuadValue>(*this, other);
         case ReflectClass:
             return compareCSSValues<CSSReflectValue>(*this, other);
         case ShadowClass:
@@ -140,20 +153,17 @@ bool CSSValue::equals(const CSSValue& other) const
             return compareCSSValues<CSSUnicodeRangeValue>(*this, other);
         case ValueListClass:
             return compareCSSValues<CSSValueList>(*this, other);
-        case LineBoxContainClass:
-            return compareCSSValues<CSSLineBoxContainValue>(*this, other);
-        case CalculationClass:
-            return compareCSSValues<CSSCalcValue>(*this, other);
+        case ValuePairClass:
+            return compareCSSValues<CSSValuePair>(*this, other);
         case ImageSetClass:
             return compareCSSValues<CSSImageSetValue>(*this, other);
         case CSSSVGDocumentClass:
             return compareCSSValues<CSSSVGDocumentValue>(*this, other);
         case CSSContentDistributionClass:
             return compareCSSValues<CSSContentDistributionValue>(*this, other);
-        default:
-            ASSERT_NOT_REACHED();
-            return false;
         }
+        ASSERT_NOT_REACHED();
+        return false;
     }
     return false;
 }
@@ -161,10 +171,20 @@ bool CSSValue::equals(const CSSValue& other) const
 String CSSValue::cssText() const
 {
     switch (classType()) {
+    case BasicShapeCircleClass:
+        return toCSSBasicShapeCircleValue(this)->customCSSText();
+    case BasicShapeEllipseClass:
+        return toCSSBasicShapeEllipseValue(this)->customCSSText();
+    case BasicShapePolygonClass:
+        return toCSSBasicShapePolygonValue(this)->customCSSText();
+    case BasicShapeInsetClass:
+        return toCSSBasicShapeInsetValue(this)->customCSSText();
     case BorderImageSliceClass:
         return toCSSBorderImageSliceValue(this)->customCSSText();
     case CanvasClass:
         return toCSSCanvasValue(this)->customCSSText();
+    case CounterClass:
+        return toCSSCounterValue(this)->customCSSText();
     case CursorImageClass:
         return toCSSCursorImageValue(this)->customCSSText();
     case FontFaceSrcClass:
@@ -195,6 +215,8 @@ String CSSValue::cssText() const
         return toCSSPathValue(this)->customCSSText();
     case PrimitiveClass:
         return toCSSPrimitiveValue(this)->customCSSText();
+    case QuadClass:
+        return toCSSQuadValue(this)->customCSSText();
     case ReflectClass:
         return toCSSReflectValue(this)->customCSSText();
     case ShadowClass:
@@ -205,12 +227,10 @@ String CSSValue::cssText() const
         return toCSSStepsTimingFunctionValue(this)->customCSSText();
     case UnicodeRangeClass:
         return toCSSUnicodeRangeValue(this)->customCSSText();
+    case ValuePairClass:
+        return toCSSValuePair(this)->customCSSText();
     case ValueListClass:
         return toCSSValueList(this)->customCSSText();
-    case LineBoxContainClass:
-        return toCSSLineBoxContainValue(this)->customCSSText();
-    case CalculationClass:
-        return toCSSCalcValue(this)->customCSSText();
     case ImageSetClass:
         return toCSSImageSetValue(this)->customCSSText();
     case CSSSVGDocumentClass:
@@ -225,11 +245,26 @@ String CSSValue::cssText() const
 void CSSValue::destroy()
 {
     switch (classType()) {
+    case BasicShapeCircleClass:
+        delete toCSSBasicShapeCircleValue(this);
+        return;
+    case BasicShapeEllipseClass:
+        delete toCSSBasicShapeEllipseValue(this);
+        return;
+    case BasicShapePolygonClass:
+        delete toCSSBasicShapePolygonValue(this);
+        return;
+    case BasicShapeInsetClass:
+        delete toCSSBasicShapeInsetValue(this);
+        return;
     case BorderImageSliceClass:
         delete toCSSBorderImageSliceValue(this);
         return;
     case CanvasClass:
         delete toCSSCanvasValue(this);
+        return;
+    case CounterClass:
+        delete toCSSCounterValue(this);
         return;
     case CursorImageClass:
         delete toCSSCursorImageValue(this);
@@ -276,6 +311,9 @@ void CSSValue::destroy()
     case PrimitiveClass:
         delete toCSSPrimitiveValue(this);
         return;
+    case QuadClass:
+        delete toCSSQuadValue(this);
+        return;
     case ReflectClass:
         delete toCSSReflectValue(this);
         return;
@@ -291,14 +329,11 @@ void CSSValue::destroy()
     case UnicodeRangeClass:
         delete toCSSUnicodeRangeValue(this);
         return;
+    case ValuePairClass:
+        delete toCSSValuePair(this);
+        return;
     case ValueListClass:
         delete toCSSValueList(this);
-        return;
-    case LineBoxContainClass:
-        delete toCSSLineBoxContainValue(this);
-        return;
-    case CalculationClass:
-        delete toCSSCalcValue(this);
         return;
     case ImageSetClass:
         delete toCSSImageSetValue(this);
@@ -316,11 +351,26 @@ void CSSValue::destroy()
 void CSSValue::finalizeGarbageCollectedObject()
 {
     switch (classType()) {
+    case BasicShapeCircleClass:
+        toCSSBasicShapeCircleValue(this)->~CSSBasicShapeCircleValue();
+        return;
+    case BasicShapeEllipseClass:
+        toCSSBasicShapeEllipseValue(this)->~CSSBasicShapeEllipseValue();
+        return;
+    case BasicShapePolygonClass:
+        toCSSBasicShapePolygonValue(this)->~CSSBasicShapePolygonValue();
+        return;
+    case BasicShapeInsetClass:
+        toCSSBasicShapeInsetValue(this)->~CSSBasicShapeInsetValue();
+        return;
     case BorderImageSliceClass:
         toCSSBorderImageSliceValue(this)->~CSSBorderImageSliceValue();
         return;
     case CanvasClass:
         toCSSCanvasValue(this)->~CSSCanvasValue();
+        return;
+    case CounterClass:
+        toCSSCounterValue(this)->~CSSCounterValue();
         return;
     case CursorImageClass:
         toCSSCursorImageValue(this)->~CSSCursorImageValue();
@@ -367,6 +417,9 @@ void CSSValue::finalizeGarbageCollectedObject()
     case PrimitiveClass:
         toCSSPrimitiveValue(this)->~CSSPrimitiveValue();
         return;
+    case QuadClass:
+        toCSSQuadValue(this)->~CSSQuadValue();
+        return;
     case ReflectClass:
         toCSSReflectValue(this)->~CSSReflectValue();
         return;
@@ -385,11 +438,8 @@ void CSSValue::finalizeGarbageCollectedObject()
     case ValueListClass:
         toCSSValueList(this)->~CSSValueList();
         return;
-    case LineBoxContainClass:
-        toCSSLineBoxContainValue(this)->~CSSLineBoxContainValue();
-        return;
-    case CalculationClass:
-        toCSSCalcValue(this)->~CSSCalcValue();
+    case ValuePairClass:
+        toCSSValuePair(this)->~CSSValuePair();
         return;
     case ImageSetClass:
         toCSSImageSetValue(this)->~CSSImageSetValue();
@@ -407,11 +457,26 @@ void CSSValue::finalizeGarbageCollectedObject()
 DEFINE_TRACE(CSSValue)
 {
     switch (classType()) {
+    case BasicShapeCircleClass:
+        toCSSBasicShapeCircleValue(this)->traceAfterDispatch(visitor);
+        return;
+    case BasicShapeEllipseClass:
+        toCSSBasicShapeEllipseValue(this)->traceAfterDispatch(visitor);
+        return;
+    case BasicShapePolygonClass:
+        toCSSBasicShapePolygonValue(this)->traceAfterDispatch(visitor);
+        return;
+    case BasicShapeInsetClass:
+        toCSSBasicShapeInsetValue(this)->traceAfterDispatch(visitor);
+        return;
     case BorderImageSliceClass:
         toCSSBorderImageSliceValue(this)->traceAfterDispatch(visitor);
         return;
     case CanvasClass:
         toCSSCanvasValue(this)->traceAfterDispatch(visitor);
+        return;
+    case CounterClass:
+        toCSSCounterValue(this)->traceAfterDispatch(visitor);
         return;
     case CursorImageClass:
         toCSSCursorImageValue(this)->traceAfterDispatch(visitor);
@@ -458,6 +523,9 @@ DEFINE_TRACE(CSSValue)
     case PrimitiveClass:
         toCSSPrimitiveValue(this)->traceAfterDispatch(visitor);
         return;
+    case QuadClass:
+        toCSSQuadValue(this)->traceAfterDispatch(visitor);
+        return;
     case ReflectClass:
         toCSSReflectValue(this)->traceAfterDispatch(visitor);
         return;
@@ -476,11 +544,8 @@ DEFINE_TRACE(CSSValue)
     case ValueListClass:
         toCSSValueList(this)->traceAfterDispatch(visitor);
         return;
-    case LineBoxContainClass:
-        toCSSLineBoxContainValue(this)->traceAfterDispatch(visitor);
-        return;
-    case CalculationClass:
-        toCSSCalcValue(this)->traceAfterDispatch(visitor);
+    case ValuePairClass:
+        toCSSValuePair(this)->traceAfterDispatch(visitor);
         return;
     case ImageSetClass:
         toCSSImageSetValue(this)->traceAfterDispatch(visitor);

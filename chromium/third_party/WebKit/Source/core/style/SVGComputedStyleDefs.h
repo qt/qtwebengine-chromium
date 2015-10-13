@@ -31,6 +31,7 @@
 #include "core/CoreExport.h"
 #include "platform/Length.h"
 #include "platform/graphics/Color.h"
+#include "wtf/Allocator.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/RefCounted.h"
@@ -114,9 +115,15 @@ enum EPaintOrderType {
     PT_MARKERS = 3
 };
 
-const int kPaintOrderBitwidth = 2;
-typedef unsigned EPaintOrder;
-const unsigned PO_NORMAL = PT_FILL | PT_STROKE << 2 | PT_MARKERS << 4;
+enum EPaintOrder {
+    PaintOrderNormal = 0,
+    PaintOrderFillStrokeMarkers = 1,
+    PaintOrderFillMarkersStroke = 2,
+    PaintOrderStrokeFillMarkers = 3,
+    PaintOrderStrokeMarkersFill = 4,
+    PaintOrderMarkersFillStroke = 5,
+    PaintOrderMarkersStrokeFill = 6
+};
 
 // Inherited/Non-Inherited Style Datastructures
 class StyleFillData : public RefCounted<StyleFillData> {
@@ -144,6 +151,7 @@ private:
 };
 
 class UnzoomedLength {
+    DISALLOW_ALLOCATION();
 public:
     explicit UnzoomedLength(const Length& length) : m_length(length) { }
 

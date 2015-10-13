@@ -32,7 +32,7 @@
       'includes': [
         # Disable LTO due to ELF section name out of range
         # crbug.com/422251
-        '../build/android/disable_lto.gypi',
+        '../build/android/disable_gcc_lto.gypi',
       ],
       # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
       'msvs_disabled_warnings': [4267, ],
@@ -124,8 +124,7 @@
       ],
     },
     {
-      # GN version: //gpu:angle_unittests
-      # TODO(kbr): port this refactoring to the GN build.
+      # GN version: //third_party/angle/src/tests:angle_unittests
       'target_name': 'angle_unittests',
       'type': '<(gtest_target_type)',
       'includes': [
@@ -155,10 +154,11 @@
         '../testing/gmock.gyp:gmock',
         '../testing/gtest.gyp:gtest',
         '<(angle_path)/src/angle.gyp:translator',
-        '../ui/gl/gl.gyp:gl',
         '../ui/gfx/gfx.gyp:gfx',
         '../ui/gfx/gfx.gyp:gfx_geometry',
         '../ui/gfx/gfx.gyp:gfx_test_support',
+        '../ui/gl/gl.gyp:gl',
+        '../ui/gl/gl.gyp:gl_test_support',
         'command_buffer/command_buffer.gyp:gles2_utils',
         'command_buffer_client',
         'command_buffer_common',
@@ -194,10 +194,6 @@
         'command_buffer/common/id_allocator_test.cc',
         'command_buffer/common/trace_event.h',
         'command_buffer/common/unittest_main.cc',
-        'command_buffer/service/async_pixel_transfer_delegate_mock.cc',
-        'command_buffer/service/async_pixel_transfer_delegate_mock.h',
-        'command_buffer/service/async_pixel_transfer_manager_mock.cc',
-        'command_buffer/service/async_pixel_transfer_manager_mock.h',
         'command_buffer/service/buffer_manager_unittest.cc',
         'command_buffer/service/cmd_parser_test.cc',
         'command_buffer/service/command_buffer_service_unittest.cc',
@@ -219,7 +215,6 @@
         'command_buffer/service/gles2_cmd_decoder_unittest_2_autogen.h',
         'command_buffer/service/gles2_cmd_decoder_unittest_3.cc',
         'command_buffer/service/gles2_cmd_decoder_unittest_3_autogen.h',
-        'command_buffer/service/gles2_cmd_decoder_unittest_async_pixel.cc',
         'command_buffer/service/gles2_cmd_decoder_unittest_attribs.cc',
         'command_buffer/service/gles2_cmd_decoder_unittest_base.cc',
         'command_buffer/service/gles2_cmd_decoder_unittest_base.h',
@@ -251,6 +246,7 @@
         'command_buffer/service/shader_translator_unittest.cc',
         'command_buffer/service/test_helper.cc',
         'command_buffer/service/test_helper.h',
+        'command_buffer/service/path_manager_unittest.cc',
         'command_buffer/service/texture_manager_unittest.cc',
         'command_buffer/service/transfer_buffer_manager_unittest.cc',
         'command_buffer/service/valuebuffer_manager_unittest.cc',
@@ -354,12 +350,14 @@
       'sources': [
         # Note: sources list duplicated in GN build.
         'command_buffer/tests/compressed_texture_test.cc',
+        'command_buffer/tests/es3_misc_functions_unittest.cc',
         'command_buffer/tests/gl_bind_uniform_location_unittest.cc',
         'command_buffer/tests/gl_chromium_framebuffer_multisample_unittest.cc',
         'command_buffer/tests/gl_chromium_path_rendering_unittest.cc',
         'command_buffer/tests/gl_clear_framebuffer_unittest.cc',
         'command_buffer/tests/gl_compressed_copy_texture_CHROMIUM_unittest.cc',
         'command_buffer/tests/gl_copy_texture_CHROMIUM_unittest.cc',
+        'command_buffer/tests/gl_cube_map_texture_unittest.cc',
         'command_buffer/tests/gl_depth_texture_unittest.cc',
         'command_buffer/tests/gl_gpu_memory_buffer_unittest.cc',
         'command_buffer/tests/gl_lose_context_chromium_unittest.cc',
@@ -418,6 +416,45 @@
         'command_buffer/service/gles2_cmd_decoder_mock.cc',
       ],
     },
+    {
+      # GN version: //gpu:command_buffer_gles2
+      'target_name': 'command_buffer_gles2',
+      'type': 'shared_library',
+      'dependencies': [
+        '../base/base.gyp:base',
+        '../gpu/gpu.gyp:command_buffer_service',
+        '../ui/gfx/gfx.gyp:gfx_geometry',
+        '../ui/gl/gl.gyp:gl',
+        'gles2_c_lib',
+        'gles2_implementation',
+      ],
+      'sources': [
+        # Note: sources list duplicated in GN build.
+        # TODO(hendrikw): Move egl out of gles2_conform_support.
+        'gles2_conform_support/egl/config.cc',
+        'gles2_conform_support/egl/config.h',
+        'gles2_conform_support/egl/display.cc',
+        'gles2_conform_support/egl/display.h',
+        'gles2_conform_support/egl/egl.cc',
+        'gles2_conform_support/egl/surface.cc',
+        'gles2_conform_support/egl/surface.h',
+      ],
+      'conditions': [
+        ['OS=="win"', {
+          'defines': [
+            'COMMAND_BUFFER_GLES_LIB_SUPPORT_ONLY',
+            'EGLAPIENTRY=',
+            'EGLAPI=__declspec(dllexport)',
+          ],
+        }, { # OS!="win"
+          'defines': [
+            'COMMAND_BUFFER_GLES_LIB_SUPPORT_ONLY',
+            'EGLAPIENTRY=',
+            'EGLAPI=__attribute__((visibility(\"default\")))'
+          ],
+        }, ],
+      ],
+    }
   ],
   'conditions': [
     ['component=="static_library"', {
@@ -502,7 +539,7 @@
             '../build/android/increase_size_for_speed.gypi',
             # Disable LTO due to ELF section name out of range
             # crbug.com/422251
-            '../build/android/disable_lto.gypi',
+            '../build/android/disable_gcc_lto.gypi',
           ],
           'dependencies': [
             'command_buffer_common',
@@ -706,10 +743,9 @@
         },
       ],
     }],
-    ['OS == "win" or (OS == "linux" and use_x11==1)', {
+    ['OS == "win" or (OS == "linux" and use_x11==1) or OS == "mac"', {
       'targets': [
         {
-          # TODO(kbr): port this target to the GN build.
           'target_name': 'angle_end2end_tests',
           'type': '<(gtest_target_type)',
           'dependencies': [
@@ -772,19 +808,36 @@
         },
       ],
     }],
-    ['OS == "win" and archive_gpu_tests==1', {
+    ['(OS == "win" or OS == "linux") and archive_gpu_tests==1', {
       'targets': [
         {
           # Only build dEQP on test configs. Note that dEQP is test-only code,
           # and is only a part of the Chromium build to allow easy integration
           # with the GPU bot waterfall. (Note that dEQP uses exceptions, and
           # currently can't build with Clang on Windows)
-          'target_name': 'angle_deqp_tests',
+          'target_name': 'angle_deqp_gles2_tests',
           'type': '<(gtest_target_type)',
           'dependencies': [
             '../base/base.gyp:base',
             '../base/base.gyp:test_support_base',
             '../third_party/angle/src/tests/tests.gyp:angle_deqp_gtest_support',
+            '../third_party/angle/src/tests/tests.gyp:angle_deqp_libgles2',
+          ],
+          'includes': [
+            '../third_party/angle/build/common_defines.gypi',
+          ],
+          'sources': [
+            'angle_deqp_tests_main.cc',
+          ],
+        },
+        {
+          'target_name': 'angle_deqp_gles3_tests',
+          'type': '<(gtest_target_type)',
+          'dependencies': [
+            '../base/base.gyp:base',
+            '../base/base.gyp:test_support_base',
+            '../third_party/angle/src/tests/tests.gyp:angle_deqp_gtest_support',
+            '../third_party/angle/src/tests/tests.gyp:angle_deqp_libgles3',
           ],
           'includes': [
             '../third_party/angle/build/common_defines.gypi',
@@ -794,6 +847,38 @@
           ],
         },
       ],
-    }]
+    }],
+    ['OS == "android" and test_isolation_mode != "noop"',
+      {
+        'targets': [
+          {
+            'target_name': 'gl_tests_apk_run',
+            'type': 'none',
+            'dependencies': [
+              'gl_tests_apk',
+            ],
+            'includes': [
+              '../build/isolate.gypi',
+            ],
+            'sources': [
+              'gl_tests_apk.isolate',
+            ],
+          },
+          {
+            'target_name': 'gpu_unittests_apk_run',
+            'type': 'none',
+            'dependencies': [
+              'gpu_unittests_apk',
+            ],
+            'includes': [
+              '../build/isolate.gypi',
+            ],
+            'sources': [
+              'gpu_unittests_apk.isolate',
+            ],
+          },
+        ],
+      },
+    ],
   ],
 }

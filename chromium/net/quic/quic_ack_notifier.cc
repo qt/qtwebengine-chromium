@@ -41,7 +41,7 @@ bool QuicAckNotifier::OnAck(QuicTime::Delta delta_largest_observed) {
   }
   --unacked_packets_;
   if (!HasUnackedPackets()) {
-    // We have seen all the sequence numbers we were waiting for, trigger
+    // We have seen all the packet numbers we were waiting for, trigger
     // callback notification.
     delegate_->OnAckNotification(retransmitted_packet_count_,
                                  retransmitted_byte_count_,
@@ -66,4 +66,4 @@ void QuicAckNotifier::OnPacketRetransmitted(int packet_payload_size) {
   retransmitted_byte_count_ += packet_payload_size;
 }
 
-};  // namespace net
+}  // namespace net

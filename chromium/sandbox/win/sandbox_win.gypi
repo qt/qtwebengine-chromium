@@ -104,6 +104,8 @@
             'src/sandbox_policy_base.cc',
             'src/sandbox_policy_base.h',
             'src/sandbox_policy.h',
+            'src/sandbox_rand.cc',
+            'src/sandbox_rand.h',
             'src/sandbox_types.h',
             'src/sandbox_utils.cc',
             'src/sandbox_utils.h',
@@ -276,6 +278,7 @@
         'src/policy_low_level_unittest.cc',
         'src/policy_opcodes_unittest.cc',
         'src/ipc_unittest.cc',
+        'src/sandbox_nt_util_unittest.cc',
         'src/threadpool_unittest.cc',
         'src/win_utils_unittest.cc',
         'tests/common/test_utils.cc',
@@ -380,6 +383,32 @@
           ],
           'sources': [
             '../sbox_integration_tests.isolate',
+          ],
+        },
+        {
+          'target_name': 'sbox_unittests_run',
+          'type': 'none',
+          'dependencies': [
+            'sbox_unittests',
+          ],
+          'includes': [
+            '../../build/isolate.gypi',
+          ],
+          'sources': [
+            '../sbox_unittests.isolate',
+          ],
+        },
+        {
+          'target_name': 'sbox_validation_tests_run',
+          'type': 'none',
+          'dependencies': [
+            'sbox_validation_tests',
+          ],
+          'includes': [
+            '../../build/isolate.gypi',
+          ],
+          'sources': [
+            '../sbox_validation_tests.isolate',
           ],
         },
       ],

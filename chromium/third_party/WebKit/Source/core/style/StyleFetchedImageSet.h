@@ -39,38 +39,43 @@ class CSSImageSetValue;
 // This class keeps one cached image and has access to a set of alternatives.
 
 class StyleFetchedImageSet final : public StyleImage, private ImageResourceClient {
-    WTF_MAKE_FAST_ALLOCATED(StyleFetchedImageSet);
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(StyleFetchedImageSet);
 public:
-    static PassRefPtr<StyleFetchedImageSet> create(ImageResource* image, float imageScaleFactor, CSSImageSetValue* value)
+    static PassRefPtrWillBeRawPtr<StyleFetchedImageSet> create(ImageResource* image, float imageScaleFactor, CSSImageSetValue* value)
     {
-        return adoptRef(new StyleFetchedImageSet(image, imageScaleFactor, value));
+        return adoptRefWillBeNoop(new StyleFetchedImageSet(image, imageScaleFactor, value));
     }
-    virtual ~StyleFetchedImageSet();
+    ~StyleFetchedImageSet() override;
 
-    virtual PassRefPtrWillBeRawPtr<CSSValue> cssValue() const override;
+    PassRefPtrWillBeRawPtr<CSSValue> cssValue() const override;
+    PassRefPtrWillBeRawPtr<CSSValue> computedCSSValue() const override;
 
     // FIXME: This is used by StyleImage for equals comparison, but this implementation
     // only looks at the image from the set that we have loaded. I'm not sure if that is
     // meaningful enough or not.
-    virtual WrappedImagePtr data() const override { return m_bestFitImage.get(); }
+    WrappedImagePtr data() const override;
 
-    void clearImageSetValue() { m_imageSetValue = 0; }
+#if !ENABLE(OILPAN)
+    void clearImageSetValue() { m_imageSetValue = nullptr; }
+#endif
 
-    virtual bool canRender(const LayoutObject&, float multiplier) const override;
-    virtual bool isLoaded() const override;
-    virtual bool errorOccurred() const override;
-    virtual LayoutSize imageSize(const LayoutObject*, float multiplier) const override;
-    virtual bool imageHasRelativeWidth() const override;
-    virtual bool imageHasRelativeHeight() const override;
-    virtual void computeIntrinsicDimensions(const LayoutObject*, Length& intrinsicWidth, Length& intrinsicHeight, FloatSize& intrinsicRatio) override;
-    virtual bool usesImageContainerSize() const override;
-    virtual void setContainerSizeForLayoutObject(const LayoutObject*, const IntSize&, float) override;
-    virtual void addClient(LayoutObject*) override;
-    virtual void removeClient(LayoutObject*) override;
-    virtual PassRefPtr<Image> image(LayoutObject*, const IntSize&) const override;
-    virtual float imageScaleFactor() const override { return m_imageScaleFactor; }
-    virtual bool knownToBeOpaque(const LayoutObject*) const override;
-    virtual ImageResource* cachedImage() const override { return m_bestFitImage.get(); }
+    bool canRender(const LayoutObject&, float multiplier) const override;
+    bool isLoaded() const override;
+    bool errorOccurred() const override;
+    LayoutSize imageSize(const LayoutObject*, float multiplier) const override;
+    bool imageHasRelativeWidth() const override;
+    bool imageHasRelativeHeight() const override;
+    void computeIntrinsicDimensions(const LayoutObject*, Length& intrinsicWidth, Length& intrinsicHeight, FloatSize& intrinsicRatio) override;
+    bool usesImageContainerSize() const override;
+    void setContainerSizeForLayoutObject(const LayoutObject*, const IntSize&, float) override;
+    void addClient(LayoutObject*) override;
+    void removeClient(LayoutObject*) override;
+    PassRefPtr<Image> image(const LayoutObject*, const IntSize&) const override;
+    float imageScaleFactor() const override { return m_imageScaleFactor; }
+    bool knownToBeOpaque(const LayoutObject*) const override;
+    ImageResource* cachedImage() const override;
+
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     StyleFetchedImageSet(ImageResource*, float imageScaleFactor, CSSImageSetValue*);
@@ -78,11 +83,7 @@ private:
     ResourcePtr<ImageResource> m_bestFitImage;
     float m_imageScaleFactor;
 
-    // FIXME: oilpan: Change to RawPtrWillBeMember when moving this class onto oilpan heap.
-    // Also add "if !ENABLE(OILPAN)" around clearImageSetValue above as well as around its
-    // caller since it should not be needed once both of the objects are on the heap and
-    // oilpan is enabled.
-    CSSImageSetValue* m_imageSetValue; // Not retained; it owns us.
+    RawPtrWillBeMember<CSSImageSetValue> m_imageSetValue; // Not retained; it owns us.
 };
 
 DEFINE_STYLE_IMAGE_TYPE_CASTS(StyleFetchedImageSet, isImageResourceSet());

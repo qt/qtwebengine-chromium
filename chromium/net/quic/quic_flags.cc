@@ -27,17 +27,18 @@ bool FLAGS_quic_allow_bbr = false;
 
 // Time period for which a given connection_id should live in the time-wait
 // state.
-int64 FLAGS_quic_time_wait_list_seconds = 5;
+int64 FLAGS_quic_time_wait_list_seconds = 200;
 
 // Currently, this number is quite conservative.  The max QPS limit for an
 // individual server silo is currently set to 1000 qps, though the actual max
-// that we see in the wild is closer to 450 qps. Regardless, this means that the
-// longest time-wait list we should see is 5 seconds * 1000 qps = 5000.  If we
-// allow for an order of magnitude leeway, we have 50000.
+// that we see in the wild is closer to 450 qps.  Regardless, this means that
+// the longest time-wait list we should see is 200 seconds * 1000 qps = 200000.
+// Of course, there are usually many queries per QUIC connection, so we allow a
+// factor of 3 leeway.
 //
 // Maximum number of connections on the time-wait list. A negative value implies
 // no configured limit.
-int64 FLAGS_quic_time_wait_list_max_connections = 50000;
+int64 FLAGS_quic_time_wait_list_max_connections = 600000;
 
 // Enables server-side support for QUIC stateless rejects.
 bool FLAGS_enable_quic_stateless_reject_support = true;
@@ -45,19 +46,30 @@ bool FLAGS_enable_quic_stateless_reject_support = true;
 // If true, flow controller may grow the receive window size if necessary.
 bool FLAGS_quic_auto_tune_receive_window = true;
 
-// Don't ack acks in QUIC, even when there is a recent missing packet.
-bool FLAGS_quic_dont_ack_acks = true;
+// Limits QUIC's max CWND to 200 packets.
+bool FLAGS_quic_limit_max_cwnd = true;
 
-// Enables sending of FEC packet only when FEC alarm goes off.
-bool FLAGS_quic_send_fec_packet_only_on_fec_alarm = true;
+// If true, require handshake confirmation for QUIC connections, functionally
+// disabling 0-rtt handshakes.
+// TODO(rtenneti): Enable this flag after fixing tests.
+bool FLAGS_quic_require_handshake_confirmation = false;
 
-// Change from using IsPacketRemovable to IsPacketUseless in
-// QuicUnackedPacketMap.
-bool FLAGS_quic_use_is_useless_packet = true;
+// Disables special treatment of truncated acks, since older retransmissions are
+// proactively discarded in QUIC.
+bool FLAGS_quic_disable_truncated_ack_handling = true;
 
-// Delay setting QUIC's retransmission alarm until an ack is fully
-// processed or a write is complete.
-bool FLAGS_quic_delay_retransmission_alarm = true;
+// If true, after a server silo receives a packet from a migrated QUIC
+// client, a GO_AWAY frame is sent to the client.
+bool FLAGS_send_goaway_after_client_migration = true;
 
-// Enables server-side path MTU discovery in QUIC.
-bool FLAGS_quic_do_path_mtu_discovery = true;
+// Close the connection instead of attempting to write a packet out of sequence
+// number order.
+bool FLAGS_quic_close_connection_out_of_order_sending = true;
+
+// QUIC-specific flag. If true, Cubic's epoch is reset when the sender is
+// application-limited.
+bool FLAGS_reset_cubic_epoch_when_app_limited = true;
+
+// If true, use an interval set as the internal representation of a packet queue
+// instead of a set.
+bool FLAGS_quic_packet_queue_use_interval_set = true;

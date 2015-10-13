@@ -294,9 +294,13 @@ LoadStatus GCMStoreImpl::Backend::OpenStoreAndLoadData(StoreOpenMode open_mode,
   leveldb::Options options;
   options.create_if_missing = open_mode == CREATE_IF_MISSING;
   options.reuse_logs = leveldb_env::kDefaultLogReuseOptionValue;
+  options.paranoid_checks = true;
   leveldb::DB* db;
   leveldb::Status status =
       leveldb::DB::Open(options, path_.AsUTF8Unsafe(), &db);
+  UMA_HISTOGRAM_ENUMERATION("GCM.Database.Open",
+                            leveldb_env::GetLevelDBStatusUMAValue(status),
+                            leveldb_env::LEVELDB_STATUS_MAX);
   if (!status.ok()) {
     LOG(ERROR) << "Failed to open database " << path_.value() << ": "
                << status.ToString();
@@ -353,7 +357,8 @@ void GCMStoreImpl::Backend::Load(StoreOpenMode open_mode,
   int gcm_registration_count = 0;
   int instance_id_token_count = 0;
   for (const auto& registration : result->registrations) {
-    if (base::StartsWithASCII(registration.first, "iid-", true))
+    if (base::StartsWith(registration.first, "iid-",
+                         base::CompareCase::SENSITIVE))
       instance_id_token_count++;
     else
       gcm_registration_count++;
@@ -997,7 +1002,7 @@ bool GCMStoreImpl::Backend::LoadOutgoingMessages(
       return false;
     }
     DVLOG(1) << "Found outgoing message with id " << id << " of type "
-             << base::IntToString(tag);
+             << base::UintToString(tag);
     (*outgoing_messages)[id] = make_linked_ptr(message.release());
   }
 

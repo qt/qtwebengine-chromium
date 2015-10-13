@@ -40,12 +40,14 @@ class ExceptionState;
 class HTMLOptionElement;
 class HTMLOptionElementOrHTMLOptGroupElement;
 class HTMLElementOrLong;
+class PopupMenu;
 
 class CORE_EXPORT HTMLSelectElement final : public HTMLFormControlElementWithState, public TypeAheadDataSource {
     DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<HTMLSelectElement> create(Document&);
     static PassRefPtrWillBeRawPtr<HTMLSelectElement> create(Document&, HTMLFormElement*);
+    ~HTMLSelectElement() override;
 
     int selectedIndex() const;
     void setSelectedIndex(int);
@@ -128,6 +130,31 @@ public:
 
     int listIndexForOption(const HTMLOptionElement&);
 
+    // Helper functions for popup menu implementations.
+    String itemText(const Element&) const;
+    bool itemIsDisplayNone(Element&) const;
+    // itemComputedStyle() returns nullptr only if the owner Document is not
+    // active.  So, It returns a valid object when we open a popup.
+    const ComputedStyle* itemComputedStyle(Element&) const;
+    IntRect elementRectRelativeToViewport() const;
+    // Text starting offset in LTR.
+    LayoutUnit clientPaddingLeft() const;
+    // Text starting offset in RTL.
+    LayoutUnit clientPaddingRight() const;
+    void valueChanged(unsigned listIndex);
+    // A popup is canceled when the popup was hidden without selecting an item.
+    void popupDidCancel();
+    // Provisional selection is a selection made using arrow keys or type ahead.
+    void provisionalSelectionChanged(unsigned);
+    void popupDidHide();
+    bool popupIsVisible() const { return m_popupIsVisible; }
+    int optionIndexToBeShown() const;
+    void showPopup();
+    void hidePopup();
+    PopupMenu* popup() const { return m_popup.get(); }
+
+    void resetTypeAheadSessionForTesting();
+
     DECLARE_VIRTUAL_TRACE();
 
 protected:
@@ -140,8 +167,8 @@ private:
 
     bool shouldShowFocusRingOnMouseFocus() const override;
 
-    void dispatchFocusEvent(Element* oldFocusedElement, WebFocusType) override;
-    void dispatchBlurEvent(Element* newFocusedElement, WebFocusType) override;
+    void dispatchFocusEvent(Element* oldFocusedElement, WebFocusType, InputDeviceCapabilities* sourceCapabilities) override;
+    void dispatchBlurEvent(Element* newFocusedElement, WebFocusType, InputDeviceCapabilities* sourceCapabilities) override;
 
     bool canStartSelection() const override { return false; }
 
@@ -157,7 +184,9 @@ private:
     bool isPresentationAttribute(const QualifiedName&) const override;
 
     LayoutObject* createLayoutObject(const ComputedStyle&) override;
-    bool appendFormData(FormDataList&, bool) override;
+    void didRecalcStyle(StyleRecalcChange) override;
+    void detach(const AttachContext& = AttachContext()) override;
+    void appendToFormData(FormData&) override;
     void didAddUserAgentShadowRoot(ShadowRoot&) override;
 
     void defaultEventHandler(Event*) override;
@@ -168,6 +197,8 @@ private:
 
     void typeAheadFind(KeyboardEvent*);
     void saveLastSelection();
+    // Returns the first selected OPTION, or nullptr.
+    HTMLOptionElement* selectedOption() const;
 
     InsertionNotificationRequest insertedInto(ContainerNode*) override;
 
@@ -195,6 +226,7 @@ private:
     void setOptionsChangedOnLayoutObject();
     size_t searchOptionsForValue(const String&, size_t listIndexStart, size_t listIndexEnd) const;
     void updateListBoxSelection(bool deselectOtherOptions, bool scroll = true);
+    void setIndexToSelectOnCancel(int listIndex);
 
     enum SkipDirection {
         SkipBackwards = -1,
@@ -224,7 +256,7 @@ private:
     Vector<bool> m_cachedStateForActiveSelection;
     TypeAhead m_typeAhead;
     unsigned m_size;
-    int m_lastOnChangeIndex;
+    RefPtrWillBeMember<HTMLOptionElement> m_lastOnChangeOption;
     int m_activeSelectionAnchorIndex;
     int m_activeSelectionEndIndex;
     bool m_isProcessingUserDrivenChange;
@@ -233,6 +265,10 @@ private:
     mutable bool m_shouldRecalcListItems;
     int m_suggestedIndex;
     bool m_isAutofilledByPreview;
+
+    RefPtrWillBeMember<PopupMenu> m_popup;
+    int m_indexToSelectOnCancel;
+    bool m_popupIsVisible;
 };
 
 } // namespace blink

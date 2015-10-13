@@ -160,6 +160,5 @@ scoped_refptr<base::SequencedTaskRunner> IPCTestBase::task_runner() {
 scoped_ptr<IPC::ChannelFactory> IPCTestBase::CreateChannelFactory(
     const IPC::ChannelHandle& handle,
     base::SequencedTaskRunner* runner) {
-  return IPC::ChannelFactory::Create(handle, IPC::Channel::MODE_SERVER,
-                                     nullptr);
+  return IPC::ChannelFactory::Create(handle, IPC::Channel::MODE_SERVER);
 }

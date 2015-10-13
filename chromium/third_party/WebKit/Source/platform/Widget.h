@@ -68,7 +68,7 @@ public:
     void move(int x, int y) { setFrameRect(IntRect(x, y, width(), height())); }
     void move(const IntPoint& p) { setFrameRect(IntRect(p, size())); }
 
-    virtual void paint(GraphicsContext*, const IntRect&) { }
+    virtual void paint(GraphicsContext*, const IntRect&) const { }
     void invalidate() { invalidateRect(boundsRect()); }
     virtual void invalidateRect(const IntRect&) = 0;
 
@@ -86,7 +86,6 @@ public:
     virtual bool isRemoteFrameView() const { return false; }
     virtual bool isPluginView() const { return false; }
     virtual bool isPluginContainer() const { return false; }
-    virtual bool pluginShouldPersist() const { return false; }
     virtual bool isScrollbar() const { return false; }
 
     virtual HostWindow* hostWindow() const { ASSERT_NOT_REACHED(); return 0; }

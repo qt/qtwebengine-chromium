@@ -43,17 +43,14 @@ class RuntimeFeatureWriter(in_generator.Writer):
 
     # FIXME: valid_values and defaults should probably roll into one object.
     valid_values = {
-        'status': ['stable', 'experimental', 'test', 'deprecated'],
+        'status': ['stable', 'experimental', 'test'],
     }
     defaults = {
-        'condition' : None,
-        'depends_on' : [],
+        'condition': None,
+        'implied_by': [],
+        'depends_on': [],
         'custom': False,
         'status': None,
-    }
-
-    _status_aliases = {
-        'deprecated': 'test',
     }
 
     def __init__(self, in_file_path):
@@ -66,33 +63,36 @@ class RuntimeFeatureWriter(in_generator.Writer):
         # Make sure the resulting dictionaries have all the keys we expect.
         for feature in self._features:
             feature['first_lowered_name'] = lower_first(feature['name'])
-            feature['status'] = self._status_aliases.get(feature['status'], feature['status'])
             # Most features just check their isFooEnabled bool
-            # but some depend on more than one bool.
+            # but some depend on or are implied by other bools.
             enabled_condition = 'is%sEnabled' % feature['name']
+            assert not feature['implied_by'] or not feature['depends_on'], 'Only one of implied_by and depends_on is allowed'
+            for implied_by_name in feature['implied_by']:
+                enabled_condition += ' || is%sEnabled' % implied_by_name
             for dependant_name in feature['depends_on']:
                 enabled_condition += ' && is%sEnabled' % dependant_name
             feature['enabled_condition'] = enabled_condition
-        self._non_custom_features = filter(lambda feature: not feature['custom'], self._features)
+        self._standard_features = [feature for feature in self._features if not feature['custom']]
 
     def _feature_sets(self):
         # Another way to think of the status levels is as "sets of features"
         # which is how we're referring to them in this generator.
-        return [status for status in self.valid_values['status'] if status not in self._status_aliases]
+        return list(self.valid_values['status'])
+
+    def _template_inputs(self):
+        return {
+            'features': self._features,
+            'feature_sets': self._feature_sets(),
+            'standard_features': self._standard_features,
+        }
 
     @template_expander.use_jinja(class_name + '.h.tmpl', filters=filters)
     def generate_header(self):
-        return {
-            'features': self._features,
-            'feature_sets': self._feature_sets(),
-        }
+        return self._template_inputs()
 
     @template_expander.use_jinja(class_name + '.cpp.tmpl', filters=filters)
     def generate_implementation(self):
-        return {
-            'features': self._features,
-            'feature_sets': self._feature_sets(),
-        }
+        return self._template_inputs()
 
 
 if __name__ == '__main__':

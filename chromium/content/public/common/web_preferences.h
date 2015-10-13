@@ -61,7 +61,8 @@ CONTENT_EXPORT extern const char kCommonScript[];
 //
 // Adding new values to this class probably involves updating
 // blink::WebSettings, content/common/view_messages.h, browser/tab_contents/
-// render_view_host_delegate_helper.cc, and browser/profiles/profile.cc.
+// render_view_host_delegate_helper.cc, browser/profiles/profile.cc,
+// and content/public/common/common_param_traits_macros.h
 struct CONTENT_EXPORT WebPreferences {
   ScriptFontFamilyMap standard_font_family_map;
   ScriptFontFamilyMap fixed_font_family_map;
@@ -86,7 +87,6 @@ struct CONTENT_EXPORT WebPreferences {
   bool shrinks_standalone_images_to_fit;
   bool uses_universal_detector;
   bool text_areas_are_resizable;
-  bool java_enabled;
   bool allow_scripts_to_close_windows;
   bool remote_fonts_enabled;
   bool javascript_can_access_clipboard;
@@ -103,7 +103,8 @@ struct CONTENT_EXPORT WebPreferences {
   bool caret_browsing_enabled;
   bool hyperlink_auditing_enabled;
   bool is_online;
-  net::NetworkChangeNotifier::ConnectionType connection_type;
+  net::NetworkChangeNotifier::ConnectionType net_info_connection_type;
+  double net_info_max_bandwidth_mbps;
   bool allow_universal_access_from_file_urls;
   bool allow_file_access_from_file_urls;
   bool webaudio_enabled;
@@ -126,7 +127,6 @@ struct CONTENT_EXPORT WebPreferences {
   bool accelerated_filters_enabled;
   bool deferred_filters_enabled;
   bool container_culling_enabled;
-  bool text_blobs_enabled;
   bool allow_displaying_insecure_content;
   bool allow_running_insecure_content;
   // If true, taints all <canvas> elements, regardless of origin.
@@ -139,6 +139,9 @@ struct CONTENT_EXPORT WebPreferences {
   // features (like geolocation) that we haven't yet disabled for the web at
   // large.
   bool strict_powerful_feature_restrictions;
+  // Disallow user opt-in for blockable mixed content.
+  bool strictly_block_blockable_mixed_content;
+  bool block_mixed_plugin_content;
   bool password_echo_enabled;
   bool should_print_backgrounds;
   bool should_clear_document_background;
@@ -167,12 +170,12 @@ struct CONTENT_EXPORT WebPreferences {
   bool initialize_at_minimum_page_scale;
   bool smart_insert_delete_enabled;
   bool spatial_navigation_enabled;
-  bool invert_viewport_scroll_order;
   int pinch_overlay_scrollbar_thickness;
   bool use_solid_color_scrollbars;
   bool navigate_on_drag_drop;
   V8CacheOptions v8_cache_options;
-  bool slimming_paint_enabled;
+  bool slimming_paint_v2_enabled;
+  bool inert_visual_viewport;
 
   // This flags corresponds to a Page's Settings' setCookieEnabled state. It
   // only controls whether or not the "document.cookie" field is properly
@@ -208,6 +211,8 @@ struct CONTENT_EXPORT WebPreferences {
   bool clobber_user_agent_initial_scale_quirk;
   bool ignore_main_frame_overflow_hidden_quirk;
   bool report_screen_size_in_physical_pixels_quirk;
+  bool record_whole_document;
+  std::string autoplay_experiment_mode;
 #endif
 
   // Default (used if the page or UA doesn't override these) values for page

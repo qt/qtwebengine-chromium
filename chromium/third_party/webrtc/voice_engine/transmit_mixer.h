@@ -51,7 +51,7 @@ public:
         AudioProcessing* audioProcessingModule);
 
     int32_t PrepareDemux(const void* audioSamples,
-                         uint32_t nSamples,
+                         size_t nSamples,
                          uint8_t  nChannels,
                          uint32_t samplesPerSec,
                          uint16_t totalDelayMS,
@@ -173,7 +173,7 @@ private:
     void GetSendCodecInfo(int* max_sample_rate, int* max_channels);
 
     void GenerateAudioFrame(const int16_t audioSamples[],
-                            int nSamples,
+                            size_t nSamples,
                             int nChannels,
                             int samplesPerSec);
     int32_t RecordAudioToFile(uint32_t mixingFrequency);
@@ -229,7 +229,6 @@ private:
     int32_t _remainingMuteMicTimeMs;
     bool stereo_codec_;
     bool swap_stereo_channels_;
-    rtc::scoped_ptr<int16_t[]> mono_buffer_;
 };
 
 }  // namespace voe

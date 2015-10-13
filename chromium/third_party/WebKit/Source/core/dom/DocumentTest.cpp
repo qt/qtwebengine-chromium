@@ -38,6 +38,7 @@
 #include "core/testing/DummyPageHolder.h"
 #include "platform/heap/Handle.h"
 #include "platform/weborigin/ReferrerPolicy.h"
+#include "platform/weborigin/SecurityOrigin.h"
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
@@ -256,78 +257,6 @@ TEST_F(DocumentTest, LinkManifest)
     EXPECT_EQ(link, document().linkManifest());
 }
 
-// This test checks that Documunt::linkDefaultPresentation() returns a value conform to the specification.
-TEST_F(DocumentTest, linkDefaultPresentation)
-{
-    // Test the default result.
-    EXPECT_EQ(0, document().linkDefaultPresentation());
-
-    // Check that we use the first element with <link rel='default-presentation'>
-    RefPtrWillBeRawPtr<HTMLLinkElement> link = HTMLLinkElement::create(document(), false);
-    link->setAttribute(blink::HTMLNames::relAttr, "default-presentation");
-    link->setAttribute(blink::HTMLNames::hrefAttr, "presentation.html");
-    document().head()->appendChild(link);
-    EXPECT_EQ(link, document().linkDefaultPresentation());
-
-    RefPtrWillBeRawPtr<HTMLLinkElement> link2 = HTMLLinkElement::create(document(), false);
-    link2->setAttribute(blink::HTMLNames::relAttr, "default-presentation");
-    link2->setAttribute(blink::HTMLNames::hrefAttr, "presentation.html");
-    document().head()->insertBefore(link2, link.get());
-    EXPECT_EQ(link2, document().linkDefaultPresentation());
-    document().head()->appendChild(link2);
-    EXPECT_EQ(link, document().linkDefaultPresentation());
-
-    // Check that crazy URLs are accepted.
-    link->setAttribute(blink::HTMLNames::hrefAttr, "far:foo.bar");
-    EXPECT_EQ(link, document().linkDefaultPresentation());
-
-    // Check that empty URLs are accepted.
-    link->setAttribute(blink::HTMLNames::hrefAttr, "");
-    EXPECT_EQ(link, document().linkDefaultPresentation());
-
-    // Check that URLs from different origins are accepted.
-    link->setAttribute(blink::HTMLNames::hrefAttr, "http://example.org/presentation.html");
-    EXPECT_EQ(link, document().linkDefaultPresentation());
-    link->setAttribute(blink::HTMLNames::hrefAttr, "http://foo.example.org/presentation.html");
-    EXPECT_EQ(link, document().linkDefaultPresentation());
-    link->setAttribute(blink::HTMLNames::hrefAttr, "http://foo.bar/presentation.html");
-    EXPECT_EQ(link, document().linkDefaultPresentation());
-
-    // More than one token in @rel is accepted.
-    link->setAttribute(blink::HTMLNames::relAttr, "foo bar default-presentation");
-    EXPECT_EQ(link, document().linkDefaultPresentation());
-
-    // Such as spaces around the token.
-    link->setAttribute(blink::HTMLNames::relAttr, " default-presentation ");
-    EXPECT_EQ(link, document().linkDefaultPresentation());
-
-    // Check that rel=default-presentation actually matters.
-    link->setAttribute(blink::HTMLNames::relAttr, "");
-    EXPECT_EQ(link2, document().linkDefaultPresentation());
-    link->setAttribute(blink::HTMLNames::relAttr, "default-presentation");
-
-    // Check that links outside of the <head> are ignored.
-    document().head()->removeChild(link.get(), ASSERT_NO_EXCEPTION);
-    document().head()->removeChild(link2.get(), ASSERT_NO_EXCEPTION);
-    EXPECT_EQ(0, document().linkDefaultPresentation());
-    document().body()->appendChild(link);
-    EXPECT_EQ(0, document().linkDefaultPresentation());
-    document().head()->appendChild(link);
-    document().head()->appendChild(link2);
-
-    // Check that some attribute values do not have an effect.
-    link->setAttribute(blink::HTMLNames::crossoriginAttr, "use-credentials");
-    EXPECT_EQ(link, document().linkDefaultPresentation());
-    link->setAttribute(blink::HTMLNames::hreflangAttr, "klingon");
-    EXPECT_EQ(link, document().linkDefaultPresentation());
-    link->setAttribute(blink::HTMLNames::typeAttr, "image/gif");
-    EXPECT_EQ(link, document().linkDefaultPresentation());
-    link->setAttribute(blink::HTMLNames::sizesAttr, "16x16");
-    EXPECT_EQ(link, document().linkDefaultPresentation());
-    link->setAttribute(blink::HTMLNames::mediaAttr, "print");
-    EXPECT_EQ(link, document().linkDefaultPresentation());
-}
-
 TEST_F(DocumentTest, referrerPolicyParsing)
 {
     EXPECT_EQ(ReferrerPolicyDefault, document().referrerPolicy());
@@ -354,6 +283,74 @@ TEST_F(DocumentTest, referrerPolicyParsing)
         document().processReferrerPolicy(test.policy);
         EXPECT_EQ(test.expected, document().referrerPolicy()) << test.policy;
     }
+}
+
+// This tests that we mark Frame Timing requests as dirty correctly when we
+// update style.
+TEST_F(DocumentTest, FrameTimingRelayout)
+{
+    setHtmlInnerHTML(
+        "<style>"
+        "    #div1 {"
+        "        width: 100px;"
+        "        height: 100px;"
+        "    }"
+        "</style>"
+        "<p><div id='div1'><span>test</span></div></p>");
+
+    EXPECT_FALSE(document().view()->frameTimingRequestsDirty());
+
+    // Just calling update should have no effect.
+    document().updateLayoutTreeIfNeeded();
+    EXPECT_FALSE(document().view()->frameTimingRequestsDirty());
+
+    // Calling update with a style change should flag Frame Timing as dirty.
+    document().setChildNeedsStyleRecalc();
+    document().updateLayoutTreeIfNeeded();
+    EXPECT_TRUE(document().view()->frameTimingRequestsDirty());
+}
+
+TEST_F(DocumentTest, OutgoingReferrer)
+{
+    document().setURL(KURL(KURL(), "https://www.example.com/hoge#fuga?piyo"));
+    document().setSecurityOrigin(SecurityOrigin::create(KURL(KURL(), "https://www.example.com/")));
+    EXPECT_EQ("https://www.example.com/hoge", document().outgoingReferrer());
+}
+
+TEST_F(DocumentTest, OutgoingReferrerWithUniqueOrigin)
+{
+    document().setURL(KURL(KURL(), "https://www.example.com/hoge#fuga?piyo"));
+    document().setSecurityOrigin(SecurityOrigin::createUnique());
+    EXPECT_EQ(String(), document().outgoingReferrer());
+}
+
+TEST_F(DocumentTest, StyleVersion)
+{
+    setHtmlInnerHTML(
+        "<style>"
+        "    .a * { color: green }"
+        "    .b .c { color: green }"
+        "</style>"
+        "<div id='x'><span class='c'></span></div>");
+
+    Element* element = document().getElementById("x");
+    EXPECT_TRUE(element);
+
+    uint64_t previousStyleVersion = document().styleVersion();
+    element->setAttribute(blink::HTMLNames::classAttr, "notfound");
+    EXPECT_EQ(previousStyleVersion, document().styleVersion());
+
+    document().view()->updateAllLifecyclePhases();
+
+    previousStyleVersion = document().styleVersion();
+    element->setAttribute(blink::HTMLNames::classAttr, "a");
+    EXPECT_NE(previousStyleVersion, document().styleVersion());
+
+    document().view()->updateAllLifecyclePhases();
+
+    previousStyleVersion = document().styleVersion();
+    element->setAttribute(blink::HTMLNames::classAttr, "a b");
+    EXPECT_NE(previousStyleVersion, document().styleVersion());
 }
 
 } // namespace blink

@@ -43,6 +43,7 @@
 #include "webrtc/base/linked_ptr.h"
 #include "webrtc/base/scoped_ref_ptr.h"
 #include "webrtc/base/stringencode.h"
+#include "webrtc/base/thread_checker.h"
 
 namespace webrtc {
 
@@ -124,7 +125,7 @@ class StatsReport {
     kStatsValueNamePacketsReceived,
     kStatsValueNamePacketsSent,
     kStatsValueNameProtocol,
-    kStatsValueNameReadable,
+    kStatsValueNameReceiving,
     kStatsValueNameSelectedCandidatePairId,
     kStatsValueNameSsrc,
     kStatsValueNameState,
@@ -320,7 +321,7 @@ class StatsReport {
     } value_;
 
    private:
-    DISALLOW_COPY_AND_ASSIGN(Value);
+    RTC_DISALLOW_COPY_AND_ASSIGN(Value);
   };
 
   // TODO(tommi): Consider using a similar approach to how we store Ids using
@@ -370,7 +371,7 @@ class StatsReport {
   double timestamp_;  // Time since 1970-01-01T00:00:00Z in milliseconds.
   Values values_;
 
-  DISALLOW_COPY_AND_ASSIGN(StatsReport);
+  RTC_DISALLOW_COPY_AND_ASSIGN(StatsReport);
 };
 
 // Typedef for an array of const StatsReport pointers.
@@ -383,7 +384,6 @@ typedef std::vector<const StatsReport*> StatsReports;
 // A map from the report id to the report.
 // This class wraps an STL container and provides a limited set of
 // functionality in order to keep things simple.
-// TODO(tommi): Use a thread checker here (currently not in libjingle).
 class StatsCollection {
  public:
   StatsCollection();
@@ -409,6 +409,7 @@ class StatsCollection {
 
  private:
   Container list_;
+  rtc::ThreadChecker thread_checker_;
 };
 
 }  // namespace webrtc

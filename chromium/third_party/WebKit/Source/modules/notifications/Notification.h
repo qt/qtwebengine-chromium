@@ -31,6 +31,8 @@
 #ifndef Notification_h
 #define Notification_h
 
+#include "bindings/core/v8/ScriptPromise.h"
+#include "bindings/core/v8/ScriptValue.h"
 #include "bindings/core/v8/SerializedScriptValue.h"
 #include "core/dom/ActiveDOMObject.h"
 #include "modules/EventTargetModules.h"
@@ -38,24 +40,21 @@
 #include "modules/vibration/NavigatorVibration.h"
 #include "platform/AsyncMethodRunner.h"
 #include "platform/heap/Handle.h"
-#include "platform/text/TextDirection.h"
 #include "platform/weborigin/KURL.h"
+#include "public/platform/WebVector.h"
+#include "public/platform/modules/notifications/WebNotificationData.h"
 #include "public/platform/modules/notifications/WebNotificationDelegate.h"
 #include "public/platform/modules/notifications/WebNotificationPermission.h"
-#include "wtf/PassOwnPtr.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
-#include "wtf/RefPtr.h"
 
 namespace blink {
 
 class ExecutionContext;
+class NotificationAction;
 class NotificationOptions;
 class NotificationPermissionCallback;
 class ScriptState;
-class ScriptValue;
-class UnsignedLongOrUnsignedLongSequence;
-struct WebNotificationData;
 
 class MODULES_EXPORT Notification final : public RefCountedGarbageCollectedEventTargetWithInlineData<Notification>, public ActiveDOMObject, public WebNotificationDelegate {
     REFCOUNTED_GARBAGE_COLLECTED_EVENT_TARGET(Notification);
@@ -63,7 +62,7 @@ class MODULES_EXPORT Notification final : public RefCountedGarbageCollectedEvent
     DEFINE_WRAPPERTYPEINFO();
 public:
     // Used for JavaScript instantiations of the Notification object. Will automatically schedule for
-    // the notification to be displayed to the user.
+    // the notification to be displayed to the user when the developer-provided data is valid.
     static Notification* create(ExecutionContext*, const String& title, const NotificationOptions&, ExceptionState&);
 
     // Used for embedder-created Notification objects. Will initialize the Notification's state as showing.
@@ -84,28 +83,27 @@ public:
     void dispatchErrorEvent() override;
     void dispatchCloseEvent() override;
 
-    String title() const { return m_title; }
-    String dir() const { return m_dir; }
-    String lang() const { return m_lang; }
-    String body() const { return m_body; }
-    String tag() const { return m_tag; }
-    String icon() const { return m_iconUrl; }
+    String title() const;
+    String dir() const;
+    String lang() const;
+    String body() const;
+    String tag() const;
+    String icon() const;
     NavigatorVibration::VibrationPattern vibrate(bool& isNull) const;
-    bool silent() const { return m_silent; }
-    ScriptValue data(ScriptState*) const;
-
-    TextDirection direction() const;
-    KURL iconURL() const { return m_iconUrl; }
-    SerializedScriptValue* serializedData() const { return m_serializedData.get(); }
+    bool silent() const;
+    bool requireInteraction() const;
+    ScriptValue data(ScriptState*);
+    HeapVector<NotificationAction> actions() const;
 
     static String permissionString(WebNotificationPermission);
     static String permission(ExecutionContext*);
     static WebNotificationPermission checkPermission(ExecutionContext*);
-    static void requestPermission(ExecutionContext*, NotificationPermissionCallback* = nullptr);
+    static ScriptPromise requestPermission(ScriptState*, NotificationPermissionCallback*);
+
+    static size_t maxActions();
 
     // EventTarget interface.
     ExecutionContext* executionContext() const final { return ActiveDOMObject::executionContext(); }
-    bool dispatchEvent(PassRefPtrWillBeRawPtr<Event>) final;
     const AtomicString& interfaceName() const override;
 
     // ActiveDOMObject interface.
@@ -114,8 +112,12 @@ public:
 
     DECLARE_VIRTUAL_TRACE();
 
+protected:
+    // EventTarget interface.
+    bool dispatchEventInternal(PassRefPtrWillBeRawPtr<Event>) final;
+
 private:
-    Notification(const String& title, ExecutionContext*);
+    Notification(ExecutionContext*, const WebNotificationData&);
 
     void scheduleShow();
 
@@ -126,28 +128,12 @@ private:
     // instance until the operation completes.
     void show();
 
-    void setDir(const String& dir) { m_dir = dir; }
-    void setLang(const String& lang) { m_lang = lang; }
-    void setBody(const String& body) { m_body = body; }
-    void setIconUrl(KURL iconUrl) { m_iconUrl = iconUrl; }
-    void setTag(const String& tag) { m_tag = tag; }
-    void setVibrate(const NavigatorVibration::VibrationPattern& vibrate) { m_vibrate = vibrate; }
-    void setSilent(bool silent) { m_silent = silent; }
-    void setSerializedData(PassRefPtr<SerializedScriptValue> data) { m_serializedData = data; }
-
     void setPersistentId(int64_t persistentId) { m_persistentId = persistentId; }
 
-private:
-    String m_title;
-    String m_dir;
-    String m_lang;
-    String m_body;
-    String m_tag;
-    NavigatorVibration::VibrationPattern m_vibrate;
-    bool m_silent;
-    RefPtr<SerializedScriptValue> m_serializedData;
+    WebNotificationData m_data;
 
-    KURL m_iconUrl;
+    // ScriptValue representations of the developer-associated data. Initialized lazily on first access.
+    ScriptValue m_developerData;
 
     // Notifications can either be bound to the page, which means they're identified by
     // their delegate, or persistent, which means they're identified by a persistent Id

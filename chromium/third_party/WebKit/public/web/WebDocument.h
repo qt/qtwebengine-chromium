@@ -76,7 +76,7 @@ public:
     BLINK_EXPORT WebURL url() const;
     // Note: Security checks should use the securityOrigin(), not url().
     BLINK_EXPORT WebSecurityOrigin securityOrigin() const;
-    BLINK_EXPORT bool isPrivilegedContext(WebString& errorMessage) const;
+    BLINK_EXPORT bool isSecureContext(WebString& errorMessage) const;
 
     BLINK_EXPORT WebString encoding() const;
     BLINK_EXPORT WebString contentLanguage() const;
@@ -110,9 +110,8 @@ public:
     BLINK_EXPORT WebDocumentType doctype() const;
     BLINK_EXPORT void cancelFullScreen();
     BLINK_EXPORT WebElement fullScreenElement() const;
-    BLINK_EXPORT WebDOMEvent createEvent(const WebString& eventType);
     BLINK_EXPORT WebReferrerPolicy referrerPolicy() const;
-    BLINK_EXPORT WebElement createElement(const WebString& tagName);
+    BLINK_EXPORT WebString outgoingReferrer();
 
     // Accessibility support. These methods should only be called on the
     // top-level document, because one accessibility cache spans all of
@@ -138,14 +137,14 @@ public:
     BLINK_EXPORT WebURL manifestURL() const;
     BLINK_EXPORT bool manifestUseCredentials() const;
 
-    BLINK_EXPORT WebURL defaultPresentationURL() const;
-
 #if BLINK_IMPLEMENTATION
     WebDocument(const PassRefPtrWillBeRawPtr<Document>&);
     WebDocument& operator=(const PassRefPtrWillBeRawPtr<Document>&);
     operator PassRefPtrWillBeRawPtr<Document>() const;
 #endif
 };
+
+DECLARE_WEB_NODE_TYPE_CASTS(WebDocument);
 
 } // namespace blink
 

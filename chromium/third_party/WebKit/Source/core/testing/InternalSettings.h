@@ -34,6 +34,7 @@
 #include "platform/graphics/ImageAnimationPolicy.h"
 #include "platform/heap/Handle.h"
 #include "public/platform/WebDisplayMode.h"
+#include "wtf/Allocator.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/text/WTFString.h"
@@ -55,12 +56,14 @@ class InternalSettings final : public InternalSettingsGenerated {
     DEFINE_WRAPPERTYPEINFO();
 public:
     class Backup {
+        DISALLOW_ALLOCATION();
     public:
         explicit Backup(Settings*);
         void restoreTo(Settings*);
 
         bool m_originalAuthorShadowDOMForAnyElementEnabled;
         bool m_originalCSP;
+        bool m_originalCSSStickyPositionEnabled;
         bool m_originalOverlayScrollbarsEnabled;
         EditingBehaviorType m_originalEditingBehavior;
         bool m_originalTextAutosizingEnabled;
@@ -89,7 +92,7 @@ public:
     void hostDestroyed() { m_page = nullptr; }
 #endif
 
-    virtual ~InternalSettings();
+    ~InternalSettings() override;
     void resetToConsistentState();
 
     void setStandardFontFamily(const AtomicString& family, const String& script, ExceptionState&);
@@ -118,6 +121,7 @@ public:
     // cannot be changed after process start. These setters should
     // be removed or moved onto internals.runtimeFlags:
     void setAuthorShadowDOMForAnyElementEnabled(bool);
+    void setCSSStickyPositionEnabled(bool);
     void setLangAttributeAwareFormControlUIEnabled(bool);
     void setOverlayScrollbarsEnabled(bool);
     void setExperimentalContentSecurityPolicyFeaturesEnabled(bool);

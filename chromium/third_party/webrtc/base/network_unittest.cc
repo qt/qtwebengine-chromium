@@ -177,11 +177,14 @@ TEST_F(NetworkTest, DISABLED_TestCreateNetworks) {
   }
 }
 
-// Test that UpdateNetworks succeeds.
+// Test StartUpdating() and StopUpdating(). network_permission_state starts with
+// ALLOWED.
 TEST_F(NetworkTest, TestUpdateNetworks) {
   BasicNetworkManager manager;
   manager.SignalNetworksChanged.connect(
       static_cast<NetworkTest*>(this), &NetworkTest::OnNetworksChanged);
+  EXPECT_EQ(NetworkManager::ENUMERATION_ALLOWED,
+            manager.enumeration_permission());
   manager.StartUpdating();
   Thread::Current()->ProcessMessages(0);
   EXPECT_TRUE(callback_called_);
@@ -195,6 +198,8 @@ TEST_F(NetworkTest, TestUpdateNetworks) {
   manager.StopUpdating();
   EXPECT_TRUE(manager.started());
   manager.StopUpdating();
+  EXPECT_EQ(NetworkManager::ENUMERATION_ALLOWED,
+            manager.enumeration_permission());
   EXPECT_FALSE(manager.started());
   manager.StopUpdating();
   EXPECT_FALSE(manager.started());
@@ -558,7 +563,13 @@ TEST_F(NetworkTest, TestDumpNetworks) {
 }
 
 // Test that we can toggle IPv6 on and off.
-TEST_F(NetworkTest, TestIPv6Toggle) {
+// Crashes on Linux. See webrtc:4923.
+#if defined(WEBRTC_LINUX)
+#define MAYBE_TestIPv6Toggle DISABLED_TestIPv6Toggle
+#else
+#define MAYBE_TestIPv6Toggle TestIPv6Toggle
+#endif
+TEST_F(NetworkTest, MAYBE_TestIPv6Toggle) {
   BasicNetworkManager manager;
   bool ipv6_found = false;
   NetworkManager::NetworkList list;

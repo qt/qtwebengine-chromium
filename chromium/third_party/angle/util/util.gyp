@@ -3,12 +3,16 @@
 # found in the LICENSE file.
 
 {
+    # Everything below  this is duplicated in the GN build, except Mac support.
+    # If you change anything also change angle/BUILD.gn
     'variables':
     {
         'util_sources':
         [
             'com_utils.h',
             'keyboard.h',
+            'geometry_utils.cpp',
+            'geometry_utils.h',
             'mouse.h',
             'random_utils.cpp',
             'random_utils.h',
@@ -18,20 +22,35 @@
             'Event.h',
             'EGLWindow.cpp',
             'EGLWindow.h',
+            'Matrix.cpp',
+            'Matrix.h',
             'OSPixmap.h',
             'OSWindow.cpp',
             'OSWindow.h',
             'Timer.h',
+            'Vector.cpp',
+            'Vector.h',
         ],
         'util_win32_sources':
         [
-            'win32/Win32_system_utils.cpp',
-            'win32/Win32Pixmap.cpp',
-            'win32/Win32Pixmap.h',
-            'win32/Win32Timer.cpp',
-            'win32/Win32Timer.h',
-            'win32/Win32Window.cpp',
-            'win32/Win32Window.h',
+            'windows/win32/Win32_system_utils.cpp',
+            'windows/win32/Win32Pixmap.cpp',
+            'windows/win32/Win32Pixmap.h',
+            'windows/win32/Win32Window.cpp',
+            'windows/win32/Win32Window.h',
+            'windows/Windows_system_utils.cpp',
+            'windows/WindowsTimer.cpp',
+            'windows/WindowsTimer.h',
+        ],
+        'util_winrt_sources':
+        [
+            'windows/winrt/WinRT_system_utils.cpp',
+            'windows/winrt/WinRTPixmap.cpp',
+            'windows/winrt/WinRTWindow.cpp',
+            'windows/winrt/WinRTWindow.h',
+            'windows/Windows_system_utils.cpp',
+            'windows/WindowsTimer.cpp',
+            'windows/WindowsTimer.h',
         ],
         'util_linux_sources':
         [
@@ -52,7 +71,9 @@
             'osx/OSX_system_utils.cpp',
             'osx/OSXTimer.cpp',
             'osx/OSXTimer.h',
-            'osx/OSXWindow.cpp',
+            'osx/OSXPixmap.mm',
+            'osx/OSXPixmap.h',
+            'osx/OSXWindow.mm',
             'osx/OSXWindow.h',
             'posix/Posix_system_utils.cpp',
         ],
@@ -82,6 +103,11 @@
             [
                 '<@(util_sources)',
             ],
+            'defines':
+            [
+                'GL_GLEXT_PROTOTYPES',
+                'EGL_EGLEXT_PROTOTYPES',
+            ],
             'direct_dependent_settings':
             {
                 'include_dirs':
@@ -89,15 +115,26 @@
                     '<(angle_path)/include',
                     '<(angle_path)/util',
                 ],
+                'defines':
+                [
+                    'GL_GLEXT_PROTOTYPES',
+                    'EGL_EGLEXT_PROTOTYPES',
+                ],
             },
             'conditions':
             [
-                ['OS=="win"',
+                ['OS=="win" and angle_build_winrt==0',
                 {
-                    'msvs_disabled_warnings': [ 4201 ],
                     'sources':
                     [
                         '<@(util_win32_sources)',
+                    ],
+                }],
+                ['OS=="win" and angle_build_winrt==1',
+                {
+                    'sources':
+                    [
+                        '<@(util_winrt_sources)',
                     ],
                 }],
                 ['OS=="linux"',
@@ -131,6 +168,14 @@
                     [
                         '<@(util_osx_sources)',
                     ],
+                    'link_settings':
+                    {
+                        'libraries':
+                        [
+                            '$(SDKROOT)/System/Library/Frameworks/AppKit.framework',
+                            '$(SDKROOT)/System/Library/Frameworks/QuartzCore.framework',
+                        ],
+                    },
                 }],
             ],
         },

@@ -63,7 +63,7 @@ void DetachableResourceHandler::Detach() {
   next_handler_.reset();
 
   // Time the request out if it takes too long.
-  detached_timer_.reset(new base::OneShotTimer<DetachableResourceHandler>());
+  detached_timer_.reset(new base::OneShotTimer());
   detached_timer_->Start(
       FROM_HERE, cancel_delay_, this, &DetachableResourceHandler::Cancel);
 
@@ -85,13 +85,6 @@ void DetachableResourceHandler::SetController(ResourceController* controller) {
   // whether the request is deferred.
   if (next_handler_)
     next_handler_->SetController(this);
-}
-
-bool DetachableResourceHandler::OnUploadProgress(uint64 position, uint64 size) {
-  if (!next_handler_)
-    return true;
-
-  return next_handler_->OnUploadProgress(position, size);
 }
 
 bool DetachableResourceHandler::OnRequestRedirected(

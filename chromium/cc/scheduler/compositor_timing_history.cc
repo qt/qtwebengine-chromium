@@ -8,21 +8,194 @@
 #include "base/trace_event/trace_event.h"
 #include "cc/debug/rendering_stats_instrumentation.h"
 
-// The estimates that affect the compositors deadline use the 100th percentile
-// to avoid missing the Browser's deadline.
-// The estimates related to main-thread responsiveness affect whether
-// we attempt to recovery latency or not and use the 50th percentile.
-// TODO(brianderson): Fine tune the percentiles below.
-const size_t kDurationHistorySize = 60;
-const double kBeginMainFrameToCommitEstimationPercentile = 50.0;
-const double kCommitToReadyToActivateEstimationPercentile = 50.0;
-const double kPrepareTilesEstimationPercentile = 100.0;
-const double kActivateEstimationPercentile = 100.0;
-const double kDrawEstimationPercentile = 100.0;
-
 namespace cc {
 
+class CompositorTimingHistory::UMAReporter {
+ public:
+  virtual ~UMAReporter() {}
+
+  virtual void AddBeginMainFrameToCommitDuration(base::TimeDelta duration,
+                                                 base::TimeDelta estimate,
+                                                 bool affects_estimate) = 0;
+  virtual void AddCommitToReadyToActivateDuration(base::TimeDelta duration,
+                                                  base::TimeDelta estimate,
+                                                  bool affects_estimate) = 0;
+  virtual void AddPrepareTilesDuration(base::TimeDelta duration,
+                                       base::TimeDelta estimate,
+                                       bool affects_estimate) = 0;
+  virtual void AddActivateDuration(base::TimeDelta duration,
+                                   base::TimeDelta estimate,
+                                   bool affects_estimate) = 0;
+  virtual void AddDrawDuration(base::TimeDelta duration,
+                               base::TimeDelta estimate,
+                               bool affects_estimate) = 0;
+};
+
+namespace {
+
+// Using the 90th percentile will disable latency recovery
+// if we are missing the deadline approximately ~6 times per
+// second.
+// TODO(brianderson): Fine tune the percentiles below.
+const size_t kDurationHistorySize = 60;
+const double kBeginMainFrameToCommitEstimationPercentile = 90.0;
+const double kCommitToReadyToActivateEstimationPercentile = 90.0;
+const double kPrepareTilesEstimationPercentile = 90.0;
+const double kActivateEstimationPercentile = 90.0;
+const double kDrawEstimationPercentile = 90.0;
+
+const int kUmaDurationMinMicros = 1;
+const int64 kUmaDurationMaxMicros = 1 * base::Time::kMicrosecondsPerSecond;
+const size_t kUmaDurationBucketCount = 100;
+
+// Deprecated because they combine Browser and Renderer stats and have low
+// precision.
+// TODO(brianderson): Remove.
+void DeprecatedDrawDurationUMA(base::TimeDelta duration,
+                               base::TimeDelta estimate) {
+  base::TimeDelta duration_overestimate;
+  base::TimeDelta duration_underestimate;
+  if (duration > estimate)
+    duration_underestimate = duration - estimate;
+  else
+    duration_overestimate = estimate - duration;
+  UMA_HISTOGRAM_CUSTOM_TIMES("Renderer.DrawDuration", duration,
+                             base::TimeDelta::FromMilliseconds(1),
+                             base::TimeDelta::FromMilliseconds(100), 50);
+  UMA_HISTOGRAM_CUSTOM_TIMES("Renderer.DrawDurationUnderestimate",
+                             duration_underestimate,
+                             base::TimeDelta::FromMilliseconds(1),
+                             base::TimeDelta::FromMilliseconds(100), 50);
+  UMA_HISTOGRAM_CUSTOM_TIMES("Renderer.DrawDurationOverestimate",
+                             duration_overestimate,
+                             base::TimeDelta::FromMilliseconds(1),
+                             base::TimeDelta::FromMilliseconds(100), 50);
+}
+
+#define UMA_HISTOGRAM_CUSTOM_TIMES_MICROS(name, sample)                     \
+  UMA_HISTOGRAM_CUSTOM_COUNTS(name, sample.InMicroseconds(),                \
+                              kUmaDurationMinMicros, kUmaDurationMaxMicros, \
+                              kUmaDurationBucketCount);
+
+#define REPORT_COMPOSITOR_TIMING_HISTORY_UMA(category, subcategory)            \
+  do {                                                                         \
+    base::TimeDelta duration_overestimate;                                     \
+    base::TimeDelta duration_underestimate;                                    \
+    if (duration > estimate)                                                   \
+      duration_underestimate = duration - estimate;                            \
+    else                                                                       \
+      duration_overestimate = estimate - duration;                             \
+    UMA_HISTOGRAM_CUSTOM_TIMES_MICROS(                                         \
+        "Scheduling." category "." subcategory "Duration", duration);          \
+    UMA_HISTOGRAM_CUSTOM_TIMES_MICROS("Scheduling." category "." subcategory   \
+                                      "Duration.Underestimate",                \
+                                      duration_underestimate);                 \
+    UMA_HISTOGRAM_CUSTOM_TIMES_MICROS("Scheduling." category "." subcategory   \
+                                      "Duration.Overestimate",                 \
+                                      duration_overestimate);                  \
+    if (!affects_estimate) {                                                   \
+      UMA_HISTOGRAM_CUSTOM_TIMES_MICROS("Scheduling." category "." subcategory \
+                                        "Duration.NotUsedForEstimate",         \
+                                        duration);                             \
+    }                                                                          \
+  } while (false)
+
+class RendererUMAReporter : public CompositorTimingHistory::UMAReporter {
+ public:
+  ~RendererUMAReporter() override {}
+
+  void AddBeginMainFrameToCommitDuration(base::TimeDelta duration,
+                                         base::TimeDelta estimate,
+                                         bool affects_estimate) override {
+    REPORT_COMPOSITOR_TIMING_HISTORY_UMA("Renderer", "BeginMainFrameToCommit");
+  }
+
+  void AddCommitToReadyToActivateDuration(base::TimeDelta duration,
+                                          base::TimeDelta estimate,
+                                          bool affects_estimate) override {
+    REPORT_COMPOSITOR_TIMING_HISTORY_UMA("Renderer", "CommitToReadyToActivate");
+  }
+
+  void AddPrepareTilesDuration(base::TimeDelta duration,
+                               base::TimeDelta estimate,
+                               bool affects_estimate) override {
+    REPORT_COMPOSITOR_TIMING_HISTORY_UMA("Renderer", "PrepareTiles");
+  }
+
+  void AddActivateDuration(base::TimeDelta duration,
+                           base::TimeDelta estimate,
+                           bool affects_estimate) override {
+    REPORT_COMPOSITOR_TIMING_HISTORY_UMA("Renderer", "Activate");
+  }
+
+  void AddDrawDuration(base::TimeDelta duration,
+                       base::TimeDelta estimate,
+                       bool affects_estimate) override {
+    REPORT_COMPOSITOR_TIMING_HISTORY_UMA("Renderer", "Draw");
+    DeprecatedDrawDurationUMA(duration, estimate);
+  }
+};
+
+class BrowserUMAReporter : public CompositorTimingHistory::UMAReporter {
+ public:
+  ~BrowserUMAReporter() override {}
+
+  void AddBeginMainFrameToCommitDuration(base::TimeDelta duration,
+                                         base::TimeDelta estimate,
+                                         bool affects_estimate) override {
+    REPORT_COMPOSITOR_TIMING_HISTORY_UMA("Browser", "BeginMainFrameToCommit");
+  }
+
+  void AddCommitToReadyToActivateDuration(base::TimeDelta duration,
+                                          base::TimeDelta estimate,
+                                          bool affects_estimate) override {
+    REPORT_COMPOSITOR_TIMING_HISTORY_UMA("Browser", "CommitToReadyToActivate");
+  }
+
+  void AddPrepareTilesDuration(base::TimeDelta duration,
+                               base::TimeDelta estimate,
+                               bool affects_estimate) override {
+    REPORT_COMPOSITOR_TIMING_HISTORY_UMA("Browser", "PrepareTiles");
+  }
+
+  void AddActivateDuration(base::TimeDelta duration,
+                           base::TimeDelta estimate,
+                           bool affects_estimate) override {
+    REPORT_COMPOSITOR_TIMING_HISTORY_UMA("Browser", "Activate");
+  }
+
+  void AddDrawDuration(base::TimeDelta duration,
+                       base::TimeDelta estimate,
+                       bool affects_estimate) override {
+    REPORT_COMPOSITOR_TIMING_HISTORY_UMA("Browser", "Draw");
+    DeprecatedDrawDurationUMA(duration, estimate);
+  }
+};
+
+class NullUMAReporter : public CompositorTimingHistory::UMAReporter {
+ public:
+  ~NullUMAReporter() override {}
+  void AddPrepareTilesDuration(base::TimeDelta duration,
+                               base::TimeDelta estimate,
+                               bool affects_estimate) override {}
+  void AddBeginMainFrameToCommitDuration(base::TimeDelta duration,
+                                         base::TimeDelta estimate,
+                                         bool affects_estimate) override {}
+  void AddCommitToReadyToActivateDuration(base::TimeDelta duration,
+                                          base::TimeDelta estimate,
+                                          bool affects_estimate) override {}
+  void AddActivateDuration(base::TimeDelta duration,
+                           base::TimeDelta estimate,
+                           bool affects_estimate) override {}
+  void AddDrawDuration(base::TimeDelta duration,
+                       base::TimeDelta estimate,
+                       bool affects_estimate) override {}
+};
+
+}  // namespace
+
 CompositorTimingHistory::CompositorTimingHistory(
+    UMACategory uma_category,
     RenderingStatsInstrumentation* rendering_stats_instrumentation)
     : enabled_(false),
       begin_main_frame_to_commit_duration_history_(kDurationHistorySize),
@@ -30,23 +203,40 @@ CompositorTimingHistory::CompositorTimingHistory(
       prepare_tiles_duration_history_(kDurationHistorySize),
       activate_duration_history_(kDurationHistorySize),
       draw_duration_history_(kDurationHistorySize),
-      rendering_stats_instrumentation_(rendering_stats_instrumentation) {
-}
+      uma_reporter_(CreateUMAReporter(uma_category)),
+      rendering_stats_instrumentation_(rendering_stats_instrumentation) {}
 
 CompositorTimingHistory::~CompositorTimingHistory() {
 }
 
+scoped_ptr<CompositorTimingHistory::UMAReporter>
+CompositorTimingHistory::CreateUMAReporter(UMACategory category) {
+  switch (category) {
+    case RENDERER_UMA:
+      return make_scoped_ptr(new RendererUMAReporter);
+      break;
+    case BROWSER_UMA:
+      return make_scoped_ptr(new BrowserUMAReporter);
+      break;
+    case NULL_UMA:
+      return make_scoped_ptr(new NullUMAReporter);
+      break;
+  }
+  NOTREACHED();
+  return make_scoped_ptr<CompositorTimingHistory::UMAReporter>(nullptr);
+}
+
 void CompositorTimingHistory::AsValueInto(
     base::trace_event::TracedValue* state) const {
-  state->SetDouble("begin_main_frame_to_commit_duration_estimate_ms",
+  state->SetDouble("begin_main_frame_to_commit_estimate_ms",
                    BeginMainFrameToCommitDurationEstimate().InMillisecondsF());
-  state->SetDouble("commit_to_ready_to_activate_duration_estimate_ms",
+  state->SetDouble("commit_to_ready_to_activate_estimate_ms",
                    CommitToReadyToActivateDurationEstimate().InMillisecondsF());
-  state->SetDouble("prepare_tiles_duration_estimate_ms",
+  state->SetDouble("prepare_tiles_estimate_ms",
                    PrepareTilesDurationEstimate().InMillisecondsF());
-  state->SetDouble("activate_duration_estimate_ms",
+  state->SetDouble("activate_estimate_ms",
                    ActivateDurationEstimate().InMillisecondsF());
-  state->SetDouble("draw_duration_estimate_ms",
+  state->SetDouble("draw_estimate_ms",
                    DrawDurationEstimate().InMillisecondsF());
 }
 
@@ -103,9 +293,13 @@ void CompositorTimingHistory::DidCommit() {
   // Before adding the new data point to the timing history, see what we would
   // have predicted for this frame. This allows us to keep track of the accuracy
   // of our predictions.
+  base::TimeDelta begin_main_frame_to_commit_estimate =
+      BeginMainFrameToCommitDurationEstimate();
+  uma_reporter_->AddBeginMainFrameToCommitDuration(
+      begin_main_frame_to_commit_duration, begin_main_frame_to_commit_estimate,
+      enabled_);
   rendering_stats_instrumentation_->AddBeginMainFrameToCommitDuration(
-      begin_main_frame_to_commit_duration,
-      BeginMainFrameToCommitDurationEstimate());
+      begin_main_frame_to_commit_duration, begin_main_frame_to_commit_estimate);
 
   if (enabled_) {
     begin_main_frame_to_commit_duration_history_.InsertSample(
@@ -123,10 +317,11 @@ void CompositorTimingHistory::WillPrepareTiles() {
 void CompositorTimingHistory::DidPrepareTiles() {
   DCHECK_NE(base::TimeTicks(), start_prepare_tiles_time_);
 
-  if (enabled_) {
-    base::TimeDelta prepare_tiles_duration = Now() - start_prepare_tiles_time_;
+  base::TimeDelta prepare_tiles_duration = Now() - start_prepare_tiles_time_;
+  uma_reporter_->AddPrepareTilesDuration(
+      prepare_tiles_duration, PrepareTilesDurationEstimate(), enabled_);
+  if (enabled_)
     prepare_tiles_duration_history_.InsertSample(prepare_tiles_duration);
-  }
 
   start_prepare_tiles_time_ = base::TimeTicks();
 }
@@ -142,8 +337,13 @@ void CompositorTimingHistory::ReadyToActivate() {
   // Before adding the new data point to the timing history, see what we would
   // have predicted for this frame. This allows us to keep track of the accuracy
   // of our predictions.
+
+  base::TimeDelta commit_to_ready_to_activate_estimate =
+      CommitToReadyToActivateDurationEstimate();
+  uma_reporter_->AddCommitToReadyToActivateDuration(
+      time_since_commit, commit_to_ready_to_activate_estimate, enabled_);
   rendering_stats_instrumentation_->AddCommitToActivateDuration(
-      time_since_commit, CommitToReadyToActivateDurationEstimate());
+      time_since_commit, commit_to_ready_to_activate_estimate);
 
   if (enabled_) {
     commit_to_ready_to_activate_duration_history_.InsertSample(
@@ -160,10 +360,13 @@ void CompositorTimingHistory::WillActivate() {
 
 void CompositorTimingHistory::DidActivate() {
   DCHECK_NE(base::TimeTicks(), start_activate_time_);
-  if (enabled_) {
-    base::TimeDelta activate_duration = Now() - start_activate_time_;
+  base::TimeDelta activate_duration = Now() - start_activate_time_;
+
+  uma_reporter_->AddActivateDuration(activate_duration,
+                                     ActivateDurationEstimate(), enabled_);
+  if (enabled_)
     activate_duration_history_.InsertSample(activate_duration);
-  }
+
   start_activate_time_ = base::TimeTicks();
 }
 
@@ -179,39 +382,17 @@ void CompositorTimingHistory::DidDraw() {
   // Before adding the new data point to the timing history, see what we would
   // have predicted for this frame. This allows us to keep track of the accuracy
   // of our predictions.
-  base::TimeDelta draw_duration_estimate = DrawDurationEstimate();
+  base::TimeDelta draw_estimate = DrawDurationEstimate();
   rendering_stats_instrumentation_->AddDrawDuration(draw_duration,
-                                                    draw_duration_estimate);
+                                                    draw_estimate);
 
-  AddDrawDurationUMA(draw_duration, draw_duration_estimate);
+  uma_reporter_->AddDrawDuration(draw_duration, draw_estimate, enabled_);
 
   if (enabled_) {
     draw_duration_history_.InsertSample(draw_duration);
   }
 
   start_draw_time_ = base::TimeTicks();
-}
-
-void CompositorTimingHistory::AddDrawDurationUMA(
-    base::TimeDelta draw_duration,
-    base::TimeDelta draw_duration_estimate) {
-  base::TimeDelta draw_duration_overestimate;
-  base::TimeDelta draw_duration_underestimate;
-  if (draw_duration > draw_duration_estimate)
-    draw_duration_underestimate = draw_duration - draw_duration_estimate;
-  else
-    draw_duration_overestimate = draw_duration_estimate - draw_duration;
-  UMA_HISTOGRAM_CUSTOM_TIMES("Renderer.DrawDuration", draw_duration,
-                             base::TimeDelta::FromMilliseconds(1),
-                             base::TimeDelta::FromMilliseconds(100), 50);
-  UMA_HISTOGRAM_CUSTOM_TIMES("Renderer.DrawDurationUnderestimate",
-                             draw_duration_underestimate,
-                             base::TimeDelta::FromMilliseconds(1),
-                             base::TimeDelta::FromMilliseconds(100), 50);
-  UMA_HISTOGRAM_CUSTOM_TIMES("Renderer.DrawDurationOverestimate",
-                             draw_duration_overestimate,
-                             base::TimeDelta::FromMilliseconds(1),
-                             base::TimeDelta::FromMilliseconds(100), 50);
 }
 
 }  // namespace cc

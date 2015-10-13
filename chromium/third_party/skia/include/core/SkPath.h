@@ -206,8 +206,8 @@ public:
 
         @return true if the line is of zero length; otherwise false.
     */
-    static bool IsLineDegenerate(const SkPoint& p1, const SkPoint& p2) {
-        return p1.equalsWithinTolerance(p2);
+    static bool IsLineDegenerate(const SkPoint& p1, const SkPoint& p2, bool exact) {
+        return exact ? p1 == p2 : p1.equalsWithinTolerance(p2);
     }
 
     /** Test a quad for zero length
@@ -215,8 +215,8 @@ public:
         @return true if the quad is of zero length; otherwise false.
     */
     static bool IsQuadDegenerate(const SkPoint& p1, const SkPoint& p2,
-                                 const SkPoint& p3) {
-        return p1.equalsWithinTolerance(p2) &&
+                                 const SkPoint& p3, bool exact) {
+        return exact ? p1 == p2 && p2 == p3 : p1.equalsWithinTolerance(p2) &&
                p2.equalsWithinTolerance(p3);
     }
 
@@ -225,8 +225,8 @@ public:
         @return true if the cubic is of zero length; otherwise false.
     */
     static bool IsCubicDegenerate(const SkPoint& p1, const SkPoint& p2,
-                                  const SkPoint& p3, const SkPoint& p4) {
-        return p1.equalsWithinTolerance(p2) &&
+                                  const SkPoint& p3, const SkPoint& p4, bool exact) {
+        return exact ? p1 == p2 && p2 == p3 && p3 == p4 : p1.equalsWithinTolerance(p2) &&
                p2.equalsWithinTolerance(p3) &&
                p3.equalsWithinTolerance(p4);
     }
@@ -273,11 +273,12 @@ public:
     //! Swap contents of this and other. Guaranteed not to throw
     void swap(SkPath& other);
 
-    /** Returns the bounds of the path's points. If the path contains 0 or 1
-        points, the bounds is set to (0,0,0,0), and isEmpty() will return true.
-        Note: this bounds may be larger than the actual shape, since curves
-        do not extend as far as their control points. Additionally this bound
-        can contain trailing MoveTo points (cf. isRect).
+    /**
+     *  Returns the bounds of the path's points. If the path contains zero points/verbs, this
+     *  will return the "empty" rect [0, 0, 0, 0].
+     *  Note: this bounds may be larger than the actual shape, since curves
+     *  do not extend as far as their control points. Additionally this bound encompases all points,
+     *  even isolated moveTos either preceeding or following the last non-degenerate contour.
     */
     const SkRect& getBounds() const {
         return fPathRef->getBounds();
@@ -504,10 +505,10 @@ public:
      *  kInverseEvenOdd_FillType -> true
      */
     static bool IsInverseFillType(FillType fill) {
-        SK_COMPILE_ASSERT(0 == kWinding_FillType, fill_type_mismatch);
-        SK_COMPILE_ASSERT(1 == kEvenOdd_FillType, fill_type_mismatch);
-        SK_COMPILE_ASSERT(2 == kInverseWinding_FillType, fill_type_mismatch);
-        SK_COMPILE_ASSERT(3 == kInverseEvenOdd_FillType, fill_type_mismatch);
+        static_assert(0 == kWinding_FillType, "fill_type_mismatch");
+        static_assert(1 == kEvenOdd_FillType, "fill_type_mismatch");
+        static_assert(2 == kInverseWinding_FillType, "fill_type_mismatch");
+        static_assert(3 == kInverseEvenOdd_FillType, "fill_type_mismatch");
         return (fill & 2) != 0;
     }
 
@@ -520,10 +521,10 @@ public:
      *  kInverseEvenOdd_FillType -> kEvenOdd_FillType
      */
     static FillType ConvertToNonInverseFillType(FillType fill) {
-        SK_COMPILE_ASSERT(0 == kWinding_FillType, fill_type_mismatch);
-        SK_COMPILE_ASSERT(1 == kEvenOdd_FillType, fill_type_mismatch);
-        SK_COMPILE_ASSERT(2 == kInverseWinding_FillType, fill_type_mismatch);
-        SK_COMPILE_ASSERT(3 == kInverseEvenOdd_FillType, fill_type_mismatch);
+        static_assert(0 == kWinding_FillType, "fill_type_mismatch");
+        static_assert(1 == kEvenOdd_FillType, "fill_type_mismatch");
+        static_assert(2 == kInverseWinding_FillType, "fill_type_mismatch");
+        static_assert(3 == kInverseEvenOdd_FillType, "fill_type_mismatch");
         return (FillType)(fill & 1);
     }
 
@@ -800,11 +801,15 @@ public:
             @param  pts The points representing the current verb and/or segment
             @param doConsumeDegerates If true, first scan for segments that are
                    deemed degenerate (too short) and skip those.
+            @param exact if doConsumeDegenerates is true and exact is true, skip only
+                   degenerate elements with lengths exactly equal to zero. If exact
+                   is false, skip degenerate elements with lengths close to zero. If
+                   doConsumeDegenerates is false, exact has no effect.
             @return The verb for the current segment
         */
-        Verb next(SkPoint pts[4], bool doConsumeDegerates = true) {
+        Verb next(SkPoint pts[4], bool doConsumeDegerates = true, bool exact = false) {
             if (doConsumeDegerates) {
-                this->consumeDegenerateSegments();
+                this->consumeDegenerateSegments(exact);
             }
             return this->doNext(pts);
         }
@@ -844,7 +849,7 @@ public:
 
         inline const SkPoint& cons_moveTo();
         Verb autoClose(SkPoint pts[2]);
-        void consumeDegenerateSegments();
+        void consumeDegenerateSegments(bool exact);
         Verb doNext(SkPoint pts[4]);
     };
 
@@ -933,13 +938,13 @@ private:
         kCurrent_Version = 1
     };
 
-    SkAutoTUnref<SkPathRef> fPathRef;
+    SkAutoTUnref<SkPathRef>   fPathRef;
 
-    int                 fLastMoveToIndex;
-    uint8_t             fFillType;
-    mutable uint8_t     fConvexity;
-    mutable uint8_t     fFirstDirection;    // SkPathPriv::FirstDirection
-    mutable SkBool8     fIsVolatile;
+    int                       fLastMoveToIndex;
+    uint8_t                   fFillType;
+    mutable uint8_t           fConvexity;
+    mutable SkAtomic<uint8_t> fFirstDirection;    // SkPathPriv::FirstDirection
+    mutable SkBool8           fIsVolatile;
 
     /** Resets all fields other than fPathRef to their initial 'empty' values.
      *  Assumes the caller has already emptied fPathRef.

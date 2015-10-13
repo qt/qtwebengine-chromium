@@ -8,13 +8,11 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "mojo/application/public/cpp/app_lifetime_helper.h"
-#include "mojo/common/handle_watcher.h"
+#include "mojo/message_pump/handle_watcher.h"
 #include "mojo/services/network/public/interfaces/url_loader.mojom.h"
 #include "net/base/net_errors.h"
 #include "net/url_request/url_request.h"
 #include "third_party/mojo/src/mojo/public/cpp/bindings/binding.h"
-#include "third_party/mojo/src/mojo/public/cpp/bindings/error_handler.h"
-#include "third_party/mojo/src/mojo/public/cpp/bindings/interface_impl.h"
 
 namespace mojo {
 
@@ -22,7 +20,6 @@ class NetworkContext;
 class NetToMojoPendingBuffer;
 
 class URLLoaderImpl : public URLLoader,
-                      public ErrorHandler,
                       public net::URLRequest::Delegate {
  public:
   URLLoaderImpl(NetworkContext* context,
@@ -40,8 +37,7 @@ class URLLoaderImpl : public URLLoader,
   void FollowRedirect(const Callback<void(URLResponsePtr)>& callback) override;
   void QueryStatus(const Callback<void(URLLoaderStatusPtr)>& callback) override;
 
-  // ErrorHandler methods:
-  void OnConnectionError() override;
+  void OnConnectionError();
 
   // net::URLRequest::Delegate methods:
   void OnReceivedRedirect(net::URLRequest* url_request,

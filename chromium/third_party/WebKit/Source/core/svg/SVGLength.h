@@ -54,12 +54,12 @@ public:
     CSSPrimitiveValue::UnitType cssUnitTypeQuirk() const
     {
         if (m_unitType == LengthTypeNumber)
-            return CSSPrimitiveValue::UnitType::CSS_PX;
+            return CSSPrimitiveValue::UnitType::Pixels;
 
         if (m_unitType == LengthTypeREMS)
-            return CSSPrimitiveValue::UnitType::CSS_REMS;
+            return CSSPrimitiveValue::UnitType::Rems;
         if (m_unitType == LengthTypeCHS)
-            return CSSPrimitiveValue::UnitType::CSS_CHS;
+            return CSSPrimitiveValue::UnitType::Chs;
 
         return static_cast<CSSPrimitiveValue::UnitType>(m_unitType);
     }
@@ -106,8 +106,6 @@ public:
         return !m_valueInSpecifiedUnits;
     }
 
-    static PassRefPtrWillBeRawPtr<SVGLength> fromCSSPrimitiveValue(CSSPrimitiveValue*);
-    static PassRefPtrWillBeRawPtr<CSSPrimitiveValue> toCSSPrimitiveValue(PassRefPtrWillBeRawPtr<SVGLength>);
     static SVGLengthMode lengthModeForAnimatedLengthAttribute(const QualifiedName&);
 
     PassRefPtrWillBeRawPtr<SVGLength> blend(PassRefPtrWillBeRawPtr<SVGLength> from, float progress) const;

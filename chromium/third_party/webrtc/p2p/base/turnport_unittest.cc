@@ -201,11 +201,7 @@ class TurnPortTest : public testing::Test,
                                  kIceUfrag1, kIcePwd1,
                                  server_address, credentials, 0,
                                  std::string()));
-    // Set ICE protocol type to ICEPROTO_RFC5245, as port by default will be
-    // in Hybrid mode. Protocol type is necessary to send correct type STUN ping
-    // messages.
     // This TURN port will be the controlling.
-    turn_port_->SetIceProtocolType(cricket::ICEPROTO_RFC5245);
     turn_port_->SetIceRole(cricket::ICEROLE_CONTROLLING);
     ConnectSignals();
   }
@@ -223,11 +219,7 @@ class TurnPortTest : public testing::Test,
                                  kIceUfrag1, kIcePwd1,
                                  server_address, credentials, 0,
                                  origin));
-    // Set ICE protocol type to ICEPROTO_RFC5245, as port by default will be
-    // in Hybrid mode. Protocol type is necessary to send correct type STUN ping
-    // messages.
     // This TURN port will be the controlling.
-    turn_port_->SetIceProtocolType(cricket::ICEPROTO_RFC5245);
     turn_port_->SetIceRole(cricket::ICEROLE_CONTROLLING);
     ConnectSignals();
   }
@@ -249,11 +241,7 @@ class TurnPortTest : public testing::Test,
     turn_port_.reset(cricket::TurnPort::Create(
         main_, &socket_factory_, &network_, socket_.get(),
         kIceUfrag1, kIcePwd1, server_address, credentials, 0, std::string()));
-    // Set ICE protocol type to ICEPROTO_RFC5245, as port by default will be
-    // in Hybrid mode. Protocol type is necessary to send correct type STUN ping
-    // messages.
     // This TURN port will be the controlling.
-    turn_port_->SetIceProtocolType(cricket::ICEPROTO_RFC5245);
     turn_port_->SetIceRole(cricket::ICEROLE_CONTROLLING);
     ConnectSignals();
   }
@@ -272,10 +260,8 @@ class TurnPortTest : public testing::Test,
     udp_port_.reset(UDPPort::Create(main_, &socket_factory_, &network_,
                                     kLocalAddr2.ipaddr(), 0, 0,
                                     kIceUfrag2, kIcePwd2,
-                                    std::string()));
-    // Set protocol type to RFC5245, as turn port is also in same mode.
+                                    std::string(), false));
     // UDP port will be controlled.
-    udp_port_->SetIceProtocolType(cricket::ICEPROTO_RFC5245);
     udp_port_->SetIceRole(cricket::ICEROLE_CONTROLLED);
     udp_port_->SignalPortComplete.connect(
         this, &TurnPortTest::OnUdpPortComplete);
@@ -378,7 +364,7 @@ class TurnPortTest : public testing::Test,
     conn1->Ping(0);
     WAIT(!turn_unknown_address_, kTimeout);
     EXPECT_FALSE(turn_unknown_address_);
-    EXPECT_EQ(Connection::STATE_READ_INIT, conn1->read_state());
+    EXPECT_FALSE(conn1->receiving());
     EXPECT_EQ(Connection::STATE_WRITE_INIT, conn1->write_state());
 
     // Send ping from TURN to UDP.
@@ -389,14 +375,14 @@ class TurnPortTest : public testing::Test,
     conn2->Ping(0);
 
     EXPECT_EQ_WAIT(Connection::STATE_WRITABLE, conn2->write_state(), kTimeout);
-    EXPECT_EQ(Connection::STATE_READABLE, conn1->read_state());
-    EXPECT_EQ(Connection::STATE_READ_INIT, conn2->read_state());
+    EXPECT_TRUE(conn1->receiving());
+    EXPECT_TRUE(conn2->receiving());
     EXPECT_EQ(Connection::STATE_WRITE_INIT, conn1->write_state());
 
     // Send another ping from UDP to TURN.
     conn1->Ping(0);
     EXPECT_EQ_WAIT(Connection::STATE_WRITABLE, conn1->write_state(), kTimeout);
-    EXPECT_EQ(Connection::STATE_READABLE, conn2->read_state());
+    EXPECT_TRUE(conn2->receiving());
   }
 
   void TestTurnSendData() {
@@ -627,6 +613,28 @@ TEST_F(TurnPortTest, TestTurnTcpAllocateMismatch) {
   EXPECT_NE(first_addr, turn_port_->socket()->GetLocalAddress());
 }
 
+// Test that CreateConnection will return null if port becomes disconnected.
+TEST_F(TurnPortTest, TestCreateConnectionWhenSocketClosed) {
+  turn_server_.AddInternalSocket(kTurnTcpIntAddr, cricket::PROTO_TCP);
+  CreateTurnPort(kTurnUsername, kTurnPassword, kTurnTcpProtoAddr);
+  turn_port_->PrepareAddress();
+  ASSERT_TRUE_WAIT(turn_ready_, kTimeout);
+
+  CreateUdpPort();
+  udp_port_->PrepareAddress();
+  ASSERT_TRUE_WAIT(udp_ready_, kTimeout);
+  // Create a connection.
+  Connection* conn1 = turn_port_->CreateConnection(udp_port_->Candidates()[0],
+                                                   Port::ORIGIN_MESSAGE);
+  ASSERT_TRUE(conn1 != NULL);
+
+  // Close the socket and create a connection again.
+  turn_port_->OnSocketClose(turn_port_->socket(), 1);
+  conn1 = turn_port_->CreateConnection(udp_port_->Candidates()[0],
+                                       Port::ORIGIN_MESSAGE);
+  ASSERT_TRUE(conn1 == NULL);
+}
+
 // Test try-alternate-server feature.
 TEST_F(TurnPortTest, TestTurnAlternateServerUDP) {
   TestTurnAlternateServer(cricket::PROTO_UDP);
@@ -712,6 +720,8 @@ TEST_F(TurnPortTest, TestTurnSendDataTurnUdpToUdp) {
   // Create ports and prepare addresses.
   CreateTurnPort(kTurnUsername, kTurnPassword, kTurnUdpProtoAddr);
   TestTurnSendData();
+  EXPECT_EQ(cricket::UDP_PROTOCOL_NAME,
+            turn_port_->Candidates()[0].relay_protocol());
 }
 
 // Do a TURN allocation, establish a TCP connection, and send some data.
@@ -720,6 +730,8 @@ TEST_F(TurnPortTest, TestTurnSendDataTurnTcpToUdp) {
   // Create ports and prepare addresses.
   CreateTurnPort(kTurnUsername, kTurnPassword, kTurnTcpProtoAddr);
   TestTurnSendData();
+  EXPECT_EQ(cricket::TCP_PROTOCOL_NAME,
+            turn_port_->Candidates()[0].relay_protocol());
 }
 
 // Test TURN fails to make a connection from IPv6 address to a server which has
@@ -791,7 +803,7 @@ TEST_F(TurnPortTest, TestResolverShutdown) {
   // Need to supply unresolved address to kick off resolver.
   CreateTurnPort(kLocalIPv6Addr, kTurnUsername, kTurnPassword,
                  cricket::ProtocolAddress(rtc::SocketAddress(
-                    "stun.l.google.com", 3478), cricket::PROTO_UDP));
+                    "www.google.invalid", 3478), cricket::PROTO_UDP));
   turn_port_->PrepareAddress();
   ASSERT_TRUE_WAIT(turn_error_, kTimeout);
   EXPECT_TRUE(turn_port_->Candidates().empty());

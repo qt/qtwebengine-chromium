@@ -32,8 +32,8 @@
 #define ServiceWorkerGlobalScopeClientImpl_h
 
 #include "modules/serviceworkers/ServiceWorkerGlobalScopeClient.h"
-#include "public/platform/WebServiceWorkerClientsInfo.h"
-#include "public/platform/WebServiceWorkerSkipWaitingCallbacks.h"
+#include "public/platform/modules/serviceworker/WebServiceWorkerClientsInfo.h"
+#include "public/platform/modules/serviceworker/WebServiceWorkerSkipWaitingCallbacks.h"
 #include "wtf/OwnPtr.h"
 
 namespace blink {
@@ -43,6 +43,7 @@ class WebServiceWorkerResponse;
 class WebURL;
 
 class ServiceWorkerGlobalScopeClientImpl final : public NoBaseWillBeGarbageCollectedFinalized<ServiceWorkerGlobalScopeClientImpl>, public ServiceWorkerGlobalScopeClient {
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(ServiceWorkerGlobalScopeClientImpl);
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(ServiceWorkerGlobalScopeClientImpl);
 public:
     static PassOwnPtrWillBeRawPtr<ServiceWorkerGlobalScopeClient> create(WebServiceWorkerContextClient&);
@@ -62,13 +63,12 @@ public:
     void didHandleNotificationClickEvent(int eventID, WebServiceWorkerEventResult) override;
     void didHandlePushEvent(int pushEventID, WebServiceWorkerEventResult) override;
     void didHandleSyncEvent(int syncEventID, WebServiceWorkerEventResult) override;
-    void didHandleCrossOriginConnectEvent(int connectEventID, bool acceptConnect) override;
     void postMessageToClient(const WebString& clientUUID, const WebString& message, PassOwnPtr<WebMessagePortChannelArray>) override;
     void postMessageToCrossOriginClient(const WebCrossOriginServiceWorkerClient&, const WebString& message, PassOwnPtr<WebMessagePortChannelArray>) override;
     void skipWaiting(WebServiceWorkerSkipWaitingCallbacks*) override;
     void claim(WebServiceWorkerClientsClaimCallbacks*) override;
     void focus(const WebString& clientUUID, WebServiceWorkerClientCallbacks*) override;
-    void stashMessagePort(WebMessagePortChannel*, const WebString& name) override;
+    void navigate(const WebString& clientUUID, const WebURL&, WebServiceWorkerClientCallbacks*) override;
 
     DEFINE_INLINE_VIRTUAL_TRACE() { ServiceWorkerGlobalScopeClient::trace(visitor); }
 

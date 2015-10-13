@@ -12,11 +12,12 @@
 namespace blink {
 
 class Event;
+class IntRect;
 class ResourceRequest;
 
 class RemoteFrameClient : public FrameClient {
 public:
-    virtual ~RemoteFrameClient() { }
+    ~RemoteFrameClient() override { }
 
     virtual void navigate(const ResourceRequest&, bool shouldReplaceCurrentEntry) = 0;
     virtual void reload(FrameLoadType, ClientRedirectPolicy) = 0;
@@ -25,6 +26,8 @@ public:
     // FIXME: Remove this method once we have input routing in the browser
     // process. See http://crbug.com/339659.
     virtual void forwardInputEvent(Event*) = 0;
+
+    virtual void frameRectsChanged(const IntRect& frameRect) = 0;
 };
 
 } // namespace blink

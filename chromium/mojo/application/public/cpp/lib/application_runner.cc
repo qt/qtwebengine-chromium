@@ -6,12 +6,13 @@
 
 #include "base/at_exit.h"
 #include "base/command_line.h"
-#include "base/debug/stack_trace.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
+#include "base/process/launch.h"
+#include "base/threading/worker_pool.h"
 #include "mojo/application/public/cpp/application_delegate.h"
 #include "mojo/application/public/cpp/application_impl.h"
-#include "mojo/common/message_pump_mojo.h"
+#include "mojo/message_pump/message_pump_mojo.h"
 
 namespace mojo {
 
@@ -45,9 +46,6 @@ MojoResult ApplicationRunner::Run(MojoHandle application_request_handle,
   if (init_base) {
     InitBaseCommandLine();
     at_exit.reset(new base::AtExitManager);
-#ifndef NDEBUG
-    base::debug::EnableInProcessStackDumping();
-#endif
   }
 
   {
@@ -70,6 +68,13 @@ MojoResult ApplicationRunner::Run(MojoHandle application_request_handle,
     loop.reset();
     delegate_.reset();
   }
+
+  // By default the worker pool continues running until all tasks are done or
+  // the process is shut down. However, because the application could be
+  // unloaded before process shutdown, we have to wait for the worker pool to
+  // shut down cleanly.
+  base::WorkerPool::ShutDownCleanly();
+
   return MOJO_RESULT_OK;
 }
 

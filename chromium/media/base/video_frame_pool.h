@@ -25,8 +25,10 @@ class MEDIA_EXPORT VideoFramePool {
 
   // Returns a frame from the pool that matches the specified
   // parameters or creates a new frame if no suitable frame exists in
-  // the pool.
-  scoped_refptr<VideoFrame> CreateFrame(VideoFrame::Format format,
+  // the pool. The pool is drained if no matching frame is found.
+  // The buffer for the new frame will be zero initialized.  Reused frames will
+  // not be zero initialized.
+  scoped_refptr<VideoFrame> CreateFrame(VideoPixelFormat format,
                                         const gfx::Size& coded_size,
                                         const gfx::Rect& visible_rect,
                                         const gfx::Size& natural_size,

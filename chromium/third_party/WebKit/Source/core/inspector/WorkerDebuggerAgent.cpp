@@ -32,8 +32,8 @@
 #include "core/inspector/WorkerDebuggerAgent.h"
 
 #include "core/inspector/InjectedScript.h"
-#include "core/inspector/V8Debugger.h"
 #include "core/inspector/WorkerThreadDebugger.h"
+#include "core/inspector/v8/V8Debugger.h"
 #include "core/workers/WorkerGlobalScope.h"
 
 namespace blink {
@@ -44,8 +44,7 @@ PassOwnPtrWillBeRawPtr<WorkerDebuggerAgent> WorkerDebuggerAgent::create(WorkerTh
 }
 
 WorkerDebuggerAgent::WorkerDebuggerAgent(WorkerThreadDebugger* workerThreadDebugger, WorkerGlobalScope* inspectedWorkerGlobalScope, InjectedScriptManager* injectedScriptManager)
-    : InspectorDebuggerAgent(injectedScriptManager, workerThreadDebugger->debugger()->isolate())
-    , m_workerThreadDebugger(workerThreadDebugger)
+    : InspectorDebuggerAgent(injectedScriptManager, workerThreadDebugger->debugger(), WorkerThreadDebugger::contextGroupId())
     , m_inspectedWorkerGlobalScope(inspectedWorkerGlobalScope)
 {
 }
@@ -60,30 +59,9 @@ DEFINE_TRACE(WorkerDebuggerAgent)
     InspectorDebuggerAgent::trace(visitor);
 }
 
-void WorkerDebuggerAgent::startListeningV8Debugger()
+InjectedScript WorkerDebuggerAgent::defaultInjectedScript()
 {
-    m_workerThreadDebugger->addListener(this);
-}
-
-void WorkerDebuggerAgent::stopListeningV8Debugger()
-{
-    m_workerThreadDebugger->removeListener(this);
-}
-
-V8Debugger& WorkerDebuggerAgent::debugger()
-{
-    return *(m_workerThreadDebugger->debugger());
-}
-
-InjectedScript WorkerDebuggerAgent::injectedScriptForEval(ErrorString* error, const int* executionContextId)
-{
-    if (!executionContextId)
-        return injectedScriptManager()->injectedScriptFor(m_inspectedWorkerGlobalScope->script()->scriptState());
-
-    InjectedScript injectedScript = injectedScriptManager()->injectedScriptForId(*executionContextId);
-    if (injectedScript.isEmpty())
-        *error = "Execution context with given id not found.";
-    return injectedScript;
+    return m_v8DebuggerAgent->injectedScriptManager()->injectedScriptFor(m_inspectedWorkerGlobalScope->script()->scriptState());
 }
 
 void WorkerDebuggerAgent::muteConsole()

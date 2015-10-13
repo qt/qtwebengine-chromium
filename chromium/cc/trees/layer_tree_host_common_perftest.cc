@@ -116,7 +116,7 @@ class CalcDrawPropsTest : public LayerTreeHostCommonPerfTest {
         active_tree->InnerViewportScrollLayer(),
         active_tree->OuterViewportScrollLayer(),
         active_tree->elastic_overscroll()->Current(active_tree->IsActiveTree()),
-        active_tree->overscroll_elasticity_layer(), max_texture_size,
+        active_tree->OverscrollElasticityLayer(), max_texture_size,
         host_impl->settings().can_use_lcd_text,
         host_impl->settings().layers_always_allowed_lcd_text,
         can_render_to_separate_surface,
@@ -156,7 +156,7 @@ class BspTreePerfTest : public CalcDrawPropsTest {
     for (LayerImplList::iterator it = base_list.begin(); it != base_list.end();
          ++it) {
       DrawPolygon* draw_polygon =
-          new DrawPolygon(NULL, gfx::RectF((*it)->bounds()),
+          new DrawPolygon(NULL, gfx::RectF(gfx::SizeF((*it)->bounds())),
                           (*it)->draw_transform(), polygon_counter++);
       polygon_list.push_back(scoped_ptr<DrawPolygon>(draw_polygon));
     }

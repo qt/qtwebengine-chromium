@@ -12,6 +12,7 @@
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/swap_result.h"
+#include "ui/gfx/vsync_provider.h"
 #include "ui/ozone/ozone_export.h"
 #include "ui/ozone/platform/drm/gpu/overlay_plane.h"
 #include "ui/ozone/platform/drm/gpu/page_flip_request.h"
@@ -82,18 +83,17 @@ class OZONE_EXPORT DrmWindow {
   // Move the HW cursor to the specified location.
   void MoveCursor(const gfx::Point& location);
 
-  // Queue overlay planes and page flips.
-  // If hardware display controller is available, forward the information
-  // immediately, otherwise queue up on the window and forward when the hardware
-  // is once again ready.
-  void QueueOverlayPlane(const OverlayPlane& plane);
-
-  bool SchedulePageFlip(bool is_sync, const SwapCompletionCallback& callback);
-  bool TestPageFlip(const std::vector<OverlayCheck_Params>& planes,
-                    ScanoutBufferGenerator* buffer_generator);
+  void SchedulePageFlip(const std::vector<OverlayPlane>& planes,
+                        const SwapCompletionCallback& callback);
+  std::vector<OverlayCheck_Params> TestPageFlip(
+      const std::vector<OverlayCheck_Params>& planes,
+      ScanoutBufferGenerator* buffer_generator);
 
   // Returns the last buffer associated with this window.
   const OverlayPlane* GetLastModesetBuffer();
+
+  void GetVSyncParameters(
+      const gfx::VSyncProvider::UpdateVSyncCallback& callback) const;
 
  private:
   // Draw the last set cursor & update the cursor plane.
@@ -118,7 +118,7 @@ class OZONE_EXPORT DrmWindow {
   // the window isn't over an active display.
   HardwareDisplayController* controller_ = nullptr;
 
-  base::RepeatingTimer<DrmWindow> cursor_timer_;
+  base::RepeatingTimer cursor_timer_;
 
   scoped_refptr<DrmBuffer> cursor_buffers_[2];
   int cursor_frontbuffer_ = 0;
@@ -128,11 +128,9 @@ class OZONE_EXPORT DrmWindow {
   int cursor_frame_ = 0;
   int cursor_frame_delay_ms_ = 0;
 
-  // Planes and flips currently being queued in the absence of hardware display
-  // controller.
-  OverlayPlaneList pending_planes_;
   OverlayPlaneList last_submitted_planes_;
-  bool last_swap_sync_ = false;
+
+  bool force_buffer_reallocation_ = false;
 
   DISALLOW_COPY_AND_ASSIGN(DrmWindow);
 };

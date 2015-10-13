@@ -462,6 +462,7 @@ private:
     RetainPtr<WebScrollbarPartAnimation> _expansionTransitionAnimation;
 }
 - (id)initWithScrollbar:(blink::Scrollbar*)scrollbar;
+- (void)updateVisibilityImmediately:(bool)show;
 - (void)cancelAnimations;
 @end
 
@@ -475,6 +476,12 @@ private:
 
     _scrollbar = scrollbar;
     return self;
+}
+
+- (void)updateVisibilityImmediately:(bool)show
+{
+    [self cancelAnimations];
+    [scrollbarPainterForScrollbar(_scrollbar) setKnobAlpha:(show ? 1.0 : 0.0)];
 }
 
 - (void)cancelAnimations
@@ -688,28 +695,14 @@ ScrollAnimatorMac::~ScrollAnimatorMac()
     }
 }
 
-static bool scrollAnimationEnabledForSystem()
-{
-    static bool initialized = false;
-    static bool enabled = true;
-    if (!initialized) {
-        // Check setting for OS X 10.8+.
-        id value = [[NSUserDefaults standardUserDefaults] objectForKey:@"NSScrollAnimationEnabled"];
-        // Check setting for OS X < 10.8.
-        if (!value)
-            value = [[NSUserDefaults standardUserDefaults] objectForKey:@"AppleScrollAnimationEnabled"];
-        if (value)
-            enabled = [value boolValue];
-        initialized = true;
-    }
-    return enabled;
-}
-
 ScrollResultOneDimensional ScrollAnimatorMac::userScroll(ScrollbarOrientation orientation, ScrollGranularity granularity, float step, float delta)
 {
+    bool scrollAnimationEnabledForSystem = static_cast<ScrollbarThemeMacCommon*>(
+                                               ScrollbarTheme::theme())
+                                               ->scrollAnimationEnabledForSystem();
     m_haveScrolledSincePageLoad = true;
 
-    if (!scrollAnimationEnabledForSystem() || !m_scrollableArea->scrollAnimatorEnabled())
+    if (!scrollAnimationEnabledForSystem || !m_scrollableArea->scrollAnimatorEnabled())
         return ScrollAnimator::userScroll(orientation, granularity, step, delta);
 
     if (granularity == ScrollByPixel || granularity == ScrollByPrecisePixel)
@@ -1011,6 +1004,21 @@ void ScrollAnimatorMac::notifyContentAreaScrolled(const FloatSize& delta)
     // ScrollbarPainterController when we're really scrolling on an active page.
     if (scrollableArea()->scrollbarsCanBeActive())
         sendContentAreaScrolledSoon(delta);
+}
+
+bool ScrollAnimatorMac::setScrollbarsVisibleForTesting(bool show)
+{
+    if (ScrollbarThemeMacCommon::isOverlayAPIAvailable()) {
+        if (show)
+            [m_scrollbarPainterController.get() flashScrollers];
+        else
+            [m_scrollbarPainterController.get() hideOverlayScrollers];
+
+        [m_verticalScrollbarPainterDelegate.get() updateVisibilityImmediately:show];
+        [m_verticalScrollbarPainterDelegate.get() updateVisibilityImmediately:show];
+        return true;
+    }
+    return false;
 }
 
 void ScrollAnimatorMac::cancelAnimations()

@@ -47,7 +47,6 @@ class DocumentLoader;
 class FrameHost;
 class InspectorCSSAgent;
 class InspectorDebuggerAgent;
-class InspectorOverlay;
 class InspectorResourceContentLoader;
 class KURL;
 class LocalFrame;
@@ -59,6 +58,14 @@ typedef String ErrorString;
 class CORE_EXPORT InspectorPageAgent final : public InspectorBaseAgent<InspectorPageAgent, InspectorFrontend::Page>, public InspectorBackendDispatcher::PageCommandHandler {
     WTF_MAKE_NONCOPYABLE(InspectorPageAgent);
 public:
+    class Client {
+    public:
+        virtual ~Client() { }
+        virtual void pageLayoutInvalidated(bool resized) { }
+        virtual void setShowViewportSizeOnResize(bool show, bool showGrid) { }
+        virtual void setPausedInDebuggerMessage(const String*) { }
+    };
+
     enum ResourceType {
         DocumentResource,
         StylesheetResource,
@@ -68,12 +75,14 @@ public:
         ScriptResource,
         TextTrackResource,
         XHRResource,
+        FetchResource,
+        EventSourceResource,
         WebSocketResource,
         OtherResource
     };
 
-    static PassOwnPtrWillBeRawPtr<InspectorPageAgent> create(LocalFrame* inspectedFrame, InspectorOverlay*, InspectorResourceContentLoader*);
-    void setDeferredAgents(InspectorDebuggerAgent*, InspectorCSSAgent*);
+    static PassOwnPtrWillBeRawPtr<InspectorPageAgent> create(LocalFrame* inspectedFrame, Client*, InspectorResourceContentLoader*);
+    void setDebuggerAgent(InspectorDebuggerAgent*);
 
     static Vector<Document*> importsForFrame(LocalFrame*);
     static bool cachedResourceContent(Resource*, String* result, bool* base64Encoded);
@@ -114,18 +123,15 @@ public:
     void frameClearedScheduledNavigation(LocalFrame*);
     void willRunJavaScriptDialog(const String& message, ChromeClient::DialogType);
     void didRunJavaScriptDialog(bool result);
-    void didLayout();
-    void didScroll();
+    void didUpdateLayout();
     void didResizeMainFrame();
+    void didRecalculateStyle(int);
 
     // Inspector Controller API
     void disable(ErrorString*) override;
     void restore() override;
 
     // Cross-agents API
-    static DocumentLoader* assertDocumentLoader(ErrorString*, LocalFrame*);
-    LocalFrame* frameForId(const String& frameId);
-    LocalFrame* assertFrame(ErrorString*, const String& frameId);
     FrameHost* frameHost();
     LocalFrame* inspectedFrame() const { return m_inspectedFrame.get(); }
     LocalFrame* findFrameWithSecurityOrigin(const String& originRawString);
@@ -134,9 +140,7 @@ public:
     DECLARE_VIRTUAL_TRACE();
 
 private:
-    class GetResourceContentLoadListener;
-
-    InspectorPageAgent(LocalFrame* inspectedFrame, InspectorOverlay*, InspectorResourceContentLoader*);
+    InspectorPageAgent(LocalFrame* inspectedFrame, Client*, InspectorResourceContentLoader*);
 
     void finishReload();
     void getResourceContentAfterResourcesContentLoaded(const String& frameId, const String& url, PassRefPtrWillBeRawPtr<GetResourceContentCallback>);
@@ -147,8 +151,7 @@ private:
     PassRefPtr<TypeBuilder::Page::FrameResourceTree> buildObjectForFrameTree(LocalFrame*);
     RawPtrWillBeMember<LocalFrame> m_inspectedFrame;
     RawPtrWillBeMember<InspectorDebuggerAgent> m_debuggerAgent;
-    RawPtrWillBeMember<InspectorCSSAgent> m_cssAgent;
-    RawPtrWillBeMember<InspectorOverlay> m_overlay;
+    Client* m_client;
     long m_lastScriptIdentifier;
     String m_pendingScriptToEvaluateOnLoadOnce;
     String m_scriptToEvaluateOnLoadOnce;

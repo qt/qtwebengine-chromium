@@ -34,10 +34,12 @@
 #include "core/CoreExport.h"
 #include "core/animation/animatable/AnimatableValue.h"
 #include "platform/graphics/Color.h"
+#include "wtf/Allocator.h"
 
 namespace blink {
 
 class CORE_EXPORT AnimatableColorImpl {
+    DISALLOW_ALLOCATION();
 public:
     AnimatableColorImpl(float red, float green, float blue, float alpha);
     AnimatableColorImpl(Color);
@@ -58,14 +60,12 @@ private:
 // but inefficient.
 class CORE_EXPORT AnimatableColor final : public AnimatableValue {
 public:
-    static PassRefPtrWillBeRawPtr<AnimatableColor> create(const AnimatableColorImpl&, const AnimatableColorImpl& visitedLinkColor);
+    static PassRefPtr<AnimatableColor> create(const AnimatableColorImpl&, const AnimatableColorImpl& visitedLinkColor);
     Color color() const { return m_color.toColor(); }
     Color visitedLinkColor() const { return m_visitedLinkColor.toColor(); }
 
-    DEFINE_INLINE_VIRTUAL_TRACE() { AnimatableValue::trace(visitor); }
-
 protected:
-    virtual PassRefPtrWillBeRawPtr<AnimatableValue> interpolateTo(const AnimatableValue*, double fraction) const override;
+    PassRefPtr<AnimatableValue> interpolateTo(const AnimatableValue*, double fraction) const override;
 
 private:
     AnimatableColor(const AnimatableColorImpl& color, const AnimatableColorImpl& visitedLinkColor)
@@ -73,8 +73,8 @@ private:
         , m_visitedLinkColor(visitedLinkColor)
     {
     }
-    virtual AnimatableType type() const override { return TypeColor; }
-    virtual bool equalTo(const AnimatableValue*) const override;
+    AnimatableType type() const override { return TypeColor; }
+    bool equalTo(const AnimatableValue*) const override;
     const AnimatableColorImpl m_color;
     const AnimatableColorImpl m_visitedLinkColor;
 };

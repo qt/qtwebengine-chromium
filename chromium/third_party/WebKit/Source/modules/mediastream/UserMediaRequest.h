@@ -32,6 +32,7 @@
 #define UserMediaRequest_h
 
 #include "core/dom/ActiveDOMObject.h"
+#include "core/frame/OriginsUsingFeatures.h"
 #include "modules/ModulesExport.h"
 #include "modules/mediastream/NavigatorUserMediaErrorCallback.h"
 #include "modules/mediastream/NavigatorUserMediaSuccessCallback.h"
@@ -45,13 +46,14 @@ namespace blink {
 class Dictionary;
 class Document;
 class ExceptionState;
+class MediaStreamConstraints;
 class MediaStreamDescriptor;
 class UserMediaController;
 
 class MODULES_EXPORT UserMediaRequest final : public GarbageCollectedFinalized<UserMediaRequest>, public ContextLifecycleObserver {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(UserMediaRequest);
 public:
-    static UserMediaRequest* create(ExecutionContext*, UserMediaController*, const Dictionary& options, NavigatorUserMediaSuccessCallback*, NavigatorUserMediaErrorCallback*, ExceptionState&);
+    static UserMediaRequest* create(ExecutionContext*, UserMediaController*, const MediaStreamConstraints& options, NavigatorUserMediaSuccessCallback*, NavigatorUserMediaErrorCallback*, ExceptionState&);
     virtual ~UserMediaRequest();
 
     NavigatorUserMediaSuccessCallback* successCallback() const { return m_successCallback.get(); }
@@ -69,6 +71,10 @@ public:
     bool video() const;
     WebMediaConstraints audioConstraints() const;
     WebMediaConstraints videoConstraints() const;
+
+    // errorMessage is only set if requestIsPrivilegedContext() returns |false|.
+    // Caller is responsible for properly setting errors and canceling request.
+    bool isSecureContextUse(String& errorMessage);
 
     // ContextLifecycleObserver
     void contextDestroyed() override;

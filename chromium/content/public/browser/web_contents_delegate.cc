@@ -147,6 +147,13 @@ JavaScriptDialogManager* WebContentsDelegate::GetJavaScriptDialogManager(
   return nullptr;
 }
 
+scoped_ptr<BluetoothChooser> WebContentsDelegate::RunBluetoothChooser(
+    WebContents* web_contents,
+    const BluetoothChooser::EventHandler& event_handler,
+    const GURL& origin) {
+  return nullptr;
+}
+
 bool WebContentsDelegate::EmbedsFullscreenWidget() const {
   return false;
 }
@@ -187,6 +194,14 @@ bool WebContentsDelegate::CheckMediaAccessPermission(
              << "Not supported.";
   return false;
 }
+
+#if defined(OS_ANDROID)
+void WebContentsDelegate::RequestMediaDecodePermission(
+    WebContents* web_contents,
+    const base::Callback<void(bool)>& callback) {
+  callback.Run(false);
+}
+#endif
 
 bool WebContentsDelegate::RequestPpapiBrokerPermission(
     WebContents* web_contents,
@@ -231,6 +246,11 @@ SecurityStyle WebContentsDelegate::GetSecurityStyle(
     WebContents* web_contents,
     SecurityStyleExplanations* security_style_explanations) {
   return content::SECURITY_STYLE_UNKNOWN;
+}
+
+void WebContentsDelegate::ShowCertificateViewerInDevTools(
+    WebContents* web_contents,
+    int cert_id) {
 }
 
 }  // namespace content

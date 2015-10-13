@@ -25,20 +25,17 @@ intptr_t SurfaceFactoryOzone::GetNativeDisplay() {
 
 scoped_ptr<SurfaceOzoneEGL> SurfaceFactoryOzone::CreateEGLSurfaceForWidget(
     gfx::AcceleratedWidget widget) {
-  NOTIMPLEMENTED();
   return nullptr;
 }
 
 scoped_ptr<SurfaceOzoneEGL>
 SurfaceFactoryOzone::CreateSurfacelessEGLSurfaceForWidget(
     gfx::AcceleratedWidget widget) {
-  NOTIMPLEMENTED();
   return nullptr;
 }
 
 scoped_ptr<SurfaceOzoneCanvas> SurfaceFactoryOzone::CreateCanvasForWidget(
     gfx::AcceleratedWidget widget) {
-  NOTIMPLEMENTED();
   return nullptr;
 }
 
@@ -50,17 +47,9 @@ const int32* SurfaceFactoryOzone::GetEGLSurfaceProperties(
 scoped_refptr<ui::NativePixmap> SurfaceFactoryOzone::CreateNativePixmap(
     gfx::AcceleratedWidget widget,
     gfx::Size size,
-    BufferFormat format,
-    BufferUsage usage) {
+    gfx::BufferFormat format,
+    gfx::BufferUsage usage) {
   return NULL;
-}
-
-bool SurfaceFactoryOzone::CanShowPrimaryPlaneAsOverlay() {
-  return false;
-}
-
-bool SurfaceFactoryOzone::CanCreateNativePixmap(BufferUsage usage) {
-  return false;
 }
 
 }  // namespace ui

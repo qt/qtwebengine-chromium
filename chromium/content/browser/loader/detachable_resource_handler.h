@@ -48,7 +48,6 @@ class DetachableResourceHandler : public ResourceHandler,
 
   // ResourceHandler implementation:
   void SetController(ResourceController* controller) override;
-  bool OnUploadProgress(uint64 position, uint64 size) override;
   bool OnRequestRedirected(const net::RedirectInfo& redirect_info,
                            ResourceResponse* response,
                            bool* defer) override;
@@ -74,7 +73,7 @@ class DetachableResourceHandler : public ResourceHandler,
   scoped_ptr<ResourceHandler> next_handler_;
   scoped_refptr<net::IOBuffer> read_buffer_;
 
-  scoped_ptr<base::OneShotTimer<DetachableResourceHandler> > detached_timer_;
+  scoped_ptr<base::OneShotTimer> detached_timer_;
   base::TimeDelta cancel_delay_;
 
   bool is_deferred_;

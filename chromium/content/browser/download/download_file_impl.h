@@ -24,7 +24,7 @@ class DownloadDestinationObserver;
 class DownloadManager;
 struct DownloadCreateInfo;
 
-class CONTENT_EXPORT DownloadFileImpl : virtual public DownloadFile {
+class CONTENT_EXPORT DownloadFileImpl : public DownloadFile {
  public:
   // Takes ownership of the object pointed to by |request_handle|.
   // |bound_net_log| will be used for logging the download file's events.
@@ -116,7 +116,7 @@ class CONTENT_EXPORT DownloadFileImpl : virtual public DownloadFile {
   scoped_ptr<ByteStreamReader> stream_reader_;
 
   // Used to trigger progress updates.
-  scoped_ptr<base::RepeatingTimer<DownloadFileImpl> > update_timer_;
+  scoped_ptr<base::RepeatingTimer> update_timer_;
 
   // Statistics
   size_t bytes_seen_;

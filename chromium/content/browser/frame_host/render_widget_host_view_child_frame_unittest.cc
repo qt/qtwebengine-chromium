@@ -83,14 +83,14 @@ class RenderWidgetHostViewChildFrameTest : public testing::Test {
 // ImageTransportFactory doesn't exist on Android.
 #if !defined(OS_ANDROID)
     ImageTransportFactory::InitializeForUnitTests(
-        scoped_ptr<ImageTransportFactory>(
-            new NoTransportImageTransportFactory));
+        make_scoped_ptr(new NoTransportImageTransportFactory));
 #endif
 
     MockRenderProcessHost* process_host =
         new MockRenderProcessHost(browser_context_.get());
-    widget_host_ = new RenderWidgetHostImpl(
-        &delegate_, process_host, MSG_ROUTING_NONE, false);
+    int32 routing_id = process_host->GetNextRoutingID();
+    widget_host_ =
+        new RenderWidgetHostImpl(&delegate_, process_host, routing_id, false);
     view_ = new RenderWidgetHostViewChildFrame(widget_host_);
 
     test_frame_connector_ = new MockCrossProcessFrameConnector();

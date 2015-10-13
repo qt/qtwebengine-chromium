@@ -34,6 +34,7 @@
 #include "bindings/core/v8/V8Binding.h"
 #include "bindings/core/v8/V8EventListener.h"
 #include "core/CoreExport.h"
+#include "wtf/Allocator.h"
 #include <v8.h>
 
 namespace blink {
@@ -45,8 +46,9 @@ enum ListenerLookupType {
 
 // This is a container for V8EventListener objects that uses hidden properties of v8::Object to speed up lookups.
 class V8EventListenerList {
+    STATIC_ONLY(V8EventListenerList);
 public:
-    static PassRefPtr<V8EventListener> findWrapper(v8::Local<v8::Value> value, ScriptState* scriptState)
+    static PassRefPtrWillBeRawPtr<V8EventListener> findWrapper(v8::Local<v8::Value> value, ScriptState* scriptState)
     {
         ASSERT(scriptState->isolate()->InContext());
         if (!value->IsObject())
@@ -57,7 +59,7 @@ public:
     }
 
     template<typename WrapperType>
-    static PassRefPtr<V8EventListener> findOrCreateWrapper(v8::Local<v8::Value>, bool isAttribute, ScriptState*);
+    static PassRefPtrWillBeRawPtr<V8EventListener> findOrCreateWrapper(v8::Local<v8::Value>, bool isAttribute, ScriptState*);
 
     static void clearWrapper(v8::Local<v8::Object> listenerObject, bool isAttribute, v8::Isolate* isolate)
     {
@@ -65,7 +67,7 @@ public:
         listenerObject->DeleteHiddenValue(wrapperProperty);
     }
 
-    CORE_EXPORT static PassRefPtr<EventListener> getEventListener(ScriptState*, v8::Local<v8::Value>, bool isAttribute, ListenerLookupType);
+    CORE_EXPORT static PassRefPtrWillBeRawPtr<EventListener> getEventListener(ScriptState*, v8::Local<v8::Value>, bool isAttribute, ListenerLookupType);
 
 private:
     static V8EventListener* doFindWrapper(v8::Local<v8::Object> object, v8::Local<v8::String> wrapperProperty, ScriptState* scriptState)
@@ -85,7 +87,7 @@ private:
 };
 
 template<typename WrapperType>
-PassRefPtr<V8EventListener> V8EventListenerList::findOrCreateWrapper(v8::Local<v8::Value> value, bool isAttribute, ScriptState* scriptState)
+PassRefPtrWillBeRawPtr<V8EventListener> V8EventListenerList::findOrCreateWrapper(v8::Local<v8::Value> value, bool isAttribute, ScriptState* scriptState)
 {
     v8::Isolate* isolate = scriptState->isolate();
     ASSERT(isolate->InContext());
@@ -99,7 +101,7 @@ PassRefPtr<V8EventListener> V8EventListenerList::findOrCreateWrapper(v8::Local<v
     if (wrapper)
         return wrapper;
 
-    RefPtr<V8EventListener> wrapperPtr = WrapperType::create(object, isAttribute, scriptState);
+    RefPtrWillBeRawPtr<V8EventListener> wrapperPtr = WrapperType::create(object, isAttribute, scriptState);
     if (wrapperPtr)
         object->SetHiddenValue(wrapperProperty, v8::External::New(isolate, wrapperPtr.get()));
 

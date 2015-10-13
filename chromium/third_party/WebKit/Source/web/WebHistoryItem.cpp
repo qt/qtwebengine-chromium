@@ -33,7 +33,7 @@
 
 #include "bindings/core/v8/SerializedScriptValue.h"
 #include "core/loader/HistoryItem.h"
-#include "platform/network/FormData.h"
+#include "platform/network/EncodedFormData.h"
 #include "platform/weborigin/KURL.h"
 #include "public/platform/WebFloatPoint.h"
 #include "public/platform/WebHTTPBody.h"
@@ -95,14 +95,24 @@ void WebHistoryItem::setTarget(const WebString& target)
     m_private->setTarget(target);
 }
 
+WebFloatPoint WebHistoryItem::visualViewportScrollOffset() const
+{
+    return m_private->visualViewportScrollPoint();
+}
+
+void WebHistoryItem::setVisualViewportScrollOffset(const WebFloatPoint& scrollOffset)
+{
+    m_private->setVisualViewportScrollPoint(scrollOffset);
+}
+
 WebFloatPoint WebHistoryItem::pinchViewportScrollOffset() const
 {
-    return m_private->pinchViewportScrollPoint();
+    return visualViewportScrollOffset();
 }
 
 void WebHistoryItem::setPinchViewportScrollOffset(const WebFloatPoint& scrollOffset)
 {
-    m_private->setPinchViewportScrollPoint(scrollOffset);
+    setVisualViewportScrollOffset(scrollOffset);
 }
 
 WebPoint WebHistoryItem::scrollOffset() const
@@ -202,7 +212,7 @@ void WebHistoryItem::setHTTPBody(const WebHTTPBody& httpBody)
 WebVector<WebString> WebHistoryItem::getReferencedFilePaths() const
 {
     HashSet<String> filePaths;
-    const FormData* formData = m_private->formData();
+    const EncodedFormData* formData = m_private->formData();
     if (formData) {
         for (size_t i = 0; i < formData->elements().size(); ++i) {
             const FormDataElement& element = formData->elements()[i];

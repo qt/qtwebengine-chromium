@@ -183,12 +183,14 @@ cdm::KeyStatus ConvertKeyStatus(media::CdmKeyInformation::KeyStatus status) {
       return cdm::kInternalError;
     case media::CdmKeyInformation::KeyStatus::EXPIRED:
       return cdm::kExpired;
-    case media::CdmKeyInformation::KeyStatus::OUTPUT_NOT_ALLOWED:
-      return cdm::kOutputNotAllowed;
+    case media::CdmKeyInformation::KeyStatus::OUTPUT_RESTRICTED:
+      return cdm::kOutputRestricted;
     case media::CdmKeyInformation::KeyStatus::OUTPUT_DOWNSCALED:
       return cdm::kOutputDownscaled;
     case media::CdmKeyInformation::KeyStatus::KEY_STATUS_PENDING:
       return cdm::kStatusPending;
+    case media::CdmKeyInformation::KeyStatus::RELEASED:
+      return cdm::kReleased;
   }
   NOTREACHED();
   return cdm::kInternalError;

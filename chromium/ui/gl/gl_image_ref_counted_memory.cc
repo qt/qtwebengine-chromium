@@ -20,7 +20,7 @@ GLImageRefCountedMemory::~GLImageRefCountedMemory() {
 
 bool GLImageRefCountedMemory::Initialize(
     base::RefCountedMemory* ref_counted_memory,
-    gfx::GpuMemoryBuffer::Format format) {
+    gfx::BufferFormat format) {
   if (!GLImageMemory::Initialize(ref_counted_memory->front(), format))
     return false;
 
@@ -32,6 +32,29 @@ bool GLImageRefCountedMemory::Initialize(
 void GLImageRefCountedMemory::Destroy(bool have_context) {
   GLImageMemory::Destroy(have_context);
   ref_counted_memory_ = NULL;
+}
+
+void GLImageRefCountedMemory::OnMemoryDump(
+    base::trace_event::ProcessMemoryDump* pmd,
+    uint64_t process_tracing_id,
+    const std::string& dump_name) {
+  // Log size 0 if |ref_counted_memory_| has been released.
+  size_t size_in_bytes = ref_counted_memory_ ? ref_counted_memory_->size() : 0;
+
+  // Dump under "/private_memory", as the base class may also dump to
+  // "/texture_memory".
+  base::trace_event::MemoryAllocatorDump* dump =
+      pmd->CreateAllocatorDump(dump_name + "/private_memory");
+  dump->AddScalar(base::trace_event::MemoryAllocatorDump::kNameSize,
+                  base::trace_event::MemoryAllocatorDump::kUnitsBytes,
+                  static_cast<uint64_t>(size_in_bytes));
+
+  pmd->AddSuballocation(dump->guid(),
+                        base::trace_event::MemoryDumpManager::GetInstance()
+                            ->system_allocator_pool_name());
+
+  // Also dump the base class's texture memory.
+  GLImageMemory::OnMemoryDump(pmd, process_tracing_id, dump_name);
 }
 
 }  // namespace gfx

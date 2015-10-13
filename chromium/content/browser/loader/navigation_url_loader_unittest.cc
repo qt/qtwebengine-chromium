@@ -165,8 +165,9 @@ class NavigationURLLoaderTest : public testing::Test {
     job_factory_.SetProtocolHandler(
         "test", net::URLRequestTestJob::CreateProtocolHandler());
     job_factory_.SetProtocolHandler(
-        "blob", new StreamProtocolHandler(
-            StreamContext::GetFor(browser_context_.get())->registry()));
+        "blob",
+        make_scoped_ptr(new StreamProtocolHandler(
+            StreamContext::GetFor(browser_context_.get())->registry())));
     request_context->set_job_factory(&job_factory_);
 
     // NavigationURLLoader is only used for browser-side navigations.
@@ -185,8 +186,8 @@ class NavigationURLLoaderTest : public testing::Test {
         new NavigationRequestInfo(common_params, begin_params, url, true, false,
                                   -1, scoped_refptr<ResourceRequestBody>()));
 
-    return NavigationURLLoader::Create(
-        browser_context_.get(), 0, request_info.Pass(), delegate);
+    return NavigationURLLoader::Create(browser_context_.get(),
+                                       request_info.Pass(), delegate);
   }
 
   // Helper function for fetching the body of a URL to a string.

@@ -58,6 +58,9 @@ class CONTENT_EXPORT ServiceWorkerContextCore
   typedef base::Callback<void(ServiceWorkerStatusCode status,
                               const std::string& status_message,
                               int64 registration_id)> RegistrationCallback;
+  typedef base::Callback<void(ServiceWorkerStatusCode status,
+                              const std::string& status_message,
+                              int64 registration_id)> UpdateCallback;
   typedef base::Callback<
       void(ServiceWorkerStatusCode status)> UnregistrationCallback;
   typedef IDMap<ServiceWorkerProviderHost, IDMapOwnPointer> ProviderMap;
@@ -182,6 +185,19 @@ class CONTENT_EXPORT ServiceWorkerContextCore
                                 const UnregistrationCallback& callback);
   void UpdateServiceWorker(ServiceWorkerRegistration* registration,
                            bool force_bypass_cache);
+  void UpdateServiceWorker(ServiceWorkerRegistration* registration,
+                           bool force_bypass_cache,
+                           bool skip_script_comparison,
+                           ServiceWorkerProviderHost* provider_host,
+                           const UpdateCallback& callback);
+
+  // Used in DevTools to update the service worker registration without
+  // consulting the browser cache while loading the controlled page. The loading
+  // is delayed until the update completes and the new worker is activated. The
+  // new worker skips the waiting state and immediately becomes active after
+  // installed.
+  void SetForceUpdateOnPageLoad(int64_t registration_id,
+                                bool force_update_on_page_load);
 
   // This class maintains collections of live instances, this class
   // does not own these object or influence their lifetime.
@@ -226,6 +242,8 @@ class CONTENT_EXPORT ServiceWorkerContextCore
       int new_host_id,
       scoped_ptr<ServiceWorkerProviderHost> provider_host);
 
+  void ClearAllServiceWorkersForTest(const base::Closure& callback);
+
   base::WeakPtr<ServiceWorkerContextCore> AsWeakPtr() {
     return weak_factory_.GetWeakPtr();
   }
@@ -244,6 +262,11 @@ class CONTENT_EXPORT ServiceWorkerContextCore
                             ServiceWorkerStatusCode status,
                             const std::string& status_message,
                             ServiceWorkerRegistration* registration);
+
+  void UpdateComplete(const UpdateCallback& callback,
+                      ServiceWorkerStatusCode status,
+                      const std::string& status_message,
+                      ServiceWorkerRegistration* registration);
 
   void UnregistrationComplete(const GURL& pattern,
                               const UnregistrationCallback& callback,
@@ -269,6 +292,10 @@ class CONTENT_EXPORT ServiceWorkerContextCore
   std::map<int64, scoped_refptr<ServiceWorkerVersion>> protected_versions_;
   int next_handle_id_;
   int next_registration_handle_id_;
+  // Set in RegisterServiceWorker(), cleared in ClearAllServiceWorkersForTest().
+  // This is used to avoid unnecessary disk read operation in tests. This value
+  // is false if Chrome was relaunched after service workers were registered.
+  bool was_service_worker_registered_;
   scoped_refptr<base::ObserverListThreadSafe<ServiceWorkerContextObserver>>
       observer_list_;
   base::WeakPtrFactory<ServiceWorkerContextCore> weak_factory_;

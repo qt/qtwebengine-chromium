@@ -30,23 +30,25 @@
 
 #include <string>
 
+#include "talk/app/webrtc/dtlsidentitystore.h"
 #include "talk/app/webrtc/mediastreamsignaling.h"
 #include "talk/app/webrtc/peerconnectionfactory.h"
 #include "talk/app/webrtc/peerconnectioninterface.h"
+#include "talk/app/webrtc/rtpreceiverinterface.h"
+#include "talk/app/webrtc/rtpsenderinterface.h"
 #include "talk/app/webrtc/statscollector.h"
 #include "talk/app/webrtc/streamcollection.h"
 #include "talk/app/webrtc/webrtcsession.h"
 #include "webrtc/base/scoped_ptr.h"
 
 namespace webrtc {
-class MediaStreamHandlerContainer;
 
 typedef std::vector<PortAllocatorFactoryInterface::StunConfiguration>
     StunConfigurations;
 typedef std::vector<PortAllocatorFactoryInterface::TurnConfiguration>
     TurnConfigurations;
 
-// PeerConnectionImpl implements the PeerConnection interface.
+// PeerConnection implements the PeerConnectionInterface interface.
 // It uses MediaStreamSignaling and WebRtcSession to implement
 // the PeerConnection functionality.
 class PeerConnection : public PeerConnectionInterface,
@@ -61,61 +63,63 @@ class PeerConnection : public PeerConnectionInterface,
       const PeerConnectionInterface::RTCConfiguration& configuration,
       const MediaConstraintsInterface* constraints,
       PortAllocatorFactoryInterface* allocator_factory,
-      DTLSIdentityServiceInterface* dtls_identity_service,
+      rtc::scoped_ptr<DtlsIdentityStoreInterface> dtls_identity_store,
       PeerConnectionObserver* observer);
-  virtual rtc::scoped_refptr<StreamCollectionInterface> local_streams();
-  virtual rtc::scoped_refptr<StreamCollectionInterface> remote_streams();
-  virtual bool AddStream(MediaStreamInterface* local_stream);
-  virtual void RemoveStream(MediaStreamInterface* local_stream);
+  rtc::scoped_refptr<StreamCollectionInterface> local_streams() override;
+  rtc::scoped_refptr<StreamCollectionInterface> remote_streams() override;
+  bool AddStream(MediaStreamInterface* local_stream) override;
+  void RemoveStream(MediaStreamInterface* local_stream) override;
 
-  virtual rtc::scoped_refptr<DtmfSenderInterface> CreateDtmfSender(
-      AudioTrackInterface* track);
+  rtc::scoped_refptr<DtmfSenderInterface> CreateDtmfSender(
+      AudioTrackInterface* track) override;
 
-  virtual rtc::scoped_refptr<DataChannelInterface> CreateDataChannel(
+  std::vector<rtc::scoped_refptr<RtpSenderInterface>> GetSenders()
+      const override;
+  std::vector<rtc::scoped_refptr<RtpReceiverInterface>> GetReceivers()
+      const override;
+
+  rtc::scoped_refptr<DataChannelInterface> CreateDataChannel(
       const std::string& label,
-      const DataChannelInit* config);
-  virtual bool GetStats(StatsObserver* observer,
-                        webrtc::MediaStreamTrackInterface* track,
-                        StatsOutputLevel level);
+      const DataChannelInit* config) override;
+  bool GetStats(StatsObserver* observer,
+                webrtc::MediaStreamTrackInterface* track,
+                StatsOutputLevel level) override;
 
-  virtual SignalingState signaling_state();
+  SignalingState signaling_state() override;
 
   // TODO(bemasc): Remove ice_state() when callers are removed.
-  virtual IceState ice_state();
-  virtual IceConnectionState ice_connection_state();
-  virtual IceGatheringState ice_gathering_state();
+  IceState ice_state() override;
+  IceConnectionState ice_connection_state() override;
+  IceGatheringState ice_gathering_state() override;
 
-  virtual const SessionDescriptionInterface* local_description() const;
-  virtual const SessionDescriptionInterface* remote_description() const;
+  const SessionDescriptionInterface* local_description() const override;
+  const SessionDescriptionInterface* remote_description() const override;
 
   // JSEP01
-  virtual void CreateOffer(CreateSessionDescriptionObserver* observer,
-                           const MediaConstraintsInterface* constraints);
-  virtual void CreateOffer(CreateSessionDescriptionObserver* observer,
-                           const RTCOfferAnswerOptions& options);
-  virtual void CreateAnswer(CreateSessionDescriptionObserver* observer,
-                            const MediaConstraintsInterface* constraints);
-  virtual void SetLocalDescription(SetSessionDescriptionObserver* observer,
-                                   SessionDescriptionInterface* desc);
-  virtual void SetRemoteDescription(SetSessionDescriptionObserver* observer,
-                                    SessionDescriptionInterface* desc);
-  // TODO(mallinath) : Deprecated version, remove after all clients are updated.
-  virtual bool UpdateIce(const IceServers& configuration,
-                         const MediaConstraintsInterface* constraints);
-  virtual bool UpdateIce(
-      const PeerConnectionInterface::RTCConfiguration& config);
-  virtual bool AddIceCandidate(const IceCandidateInterface* candidate);
+  void CreateOffer(CreateSessionDescriptionObserver* observer,
+                   const MediaConstraintsInterface* constraints) override;
+  void CreateOffer(CreateSessionDescriptionObserver* observer,
+                   const RTCOfferAnswerOptions& options) override;
+  void CreateAnswer(CreateSessionDescriptionObserver* observer,
+                    const MediaConstraintsInterface* constraints) override;
+  void SetLocalDescription(SetSessionDescriptionObserver* observer,
+                           SessionDescriptionInterface* desc) override;
+  void SetRemoteDescription(SetSessionDescriptionObserver* observer,
+                            SessionDescriptionInterface* desc) override;
+  bool SetConfiguration(
+      const PeerConnectionInterface::RTCConfiguration& config) override;
+  bool AddIceCandidate(const IceCandidateInterface* candidate) override;
 
-  virtual void RegisterUMAObserver(UMAObserver* observer);
+  void RegisterUMAObserver(UMAObserver* observer) override;
 
-  virtual void Close();
+  void Close() override;
 
  protected:
-  virtual ~PeerConnection();
+  ~PeerConnection() override;
 
  private:
   // Implements MessageHandler.
-  virtual void OnMessage(rtc::Message* msg);
+  void OnMessage(rtc::Message* msg) override;
 
   // Implements MediaStreamSignalingObserver.
   void OnAddRemoteStream(MediaStreamInterface* stream) override;
@@ -156,14 +160,6 @@ class PeerConnection : public PeerConnectionInterface,
                             cricket::BaseSession::State state);
   void ChangeSignalingState(SignalingState signaling_state);
 
-  bool DoInitialize(IceTransportsType type,
-                    const StunConfigurations& stun_config,
-                    const TurnConfigurations& turn_config,
-                    const MediaConstraintsInterface* constraints,
-                    PortAllocatorFactoryInterface* allocator_factory,
-                    DTLSIdentityServiceInterface* dtls_identity_service,
-                    PeerConnectionObserver* observer);
-
   rtc::Thread* signaling_thread() const {
     return factory_->signaling_thread();
   }
@@ -174,6 +170,11 @@ class PeerConnection : public PeerConnectionInterface,
   bool IsClosed() const {
     return signaling_state_ == PeerConnectionInterface::kClosed;
   }
+
+  std::vector<rtc::scoped_refptr<RtpSenderInterface>>::iterator
+  FindSenderForTrack(MediaStreamTrackInterface* track);
+  std::vector<rtc::scoped_refptr<RtpReceiverInterface>>::iterator
+  FindReceiverForTrack(MediaStreamTrackInterface* track);
 
   // Storing the factory as a scoped reference pointer ensures that the memory
   // in the PeerConnectionFactoryImpl remains available as long as the
@@ -193,8 +194,10 @@ class PeerConnection : public PeerConnectionInterface,
   rtc::scoped_ptr<cricket::PortAllocator> port_allocator_;
   rtc::scoped_ptr<WebRtcSession> session_;
   rtc::scoped_ptr<MediaStreamSignaling> mediastream_signaling_;
-  rtc::scoped_ptr<MediaStreamHandlerContainer> stream_handler_container_;
   rtc::scoped_ptr<StatsCollector> stats_;
+
+  std::vector<rtc::scoped_refptr<RtpSenderInterface>> senders_;
+  std::vector<rtc::scoped_refptr<RtpReceiverInterface>> receivers_;
 };
 
 }  // namespace webrtc

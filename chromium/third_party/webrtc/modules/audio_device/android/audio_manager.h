@@ -16,66 +16,13 @@
 #include "webrtc/base/scoped_ptr.h"
 #include "webrtc/base/thread_checker.h"
 #include "webrtc/modules/audio_device/android/audio_common.h"
+#include "webrtc/modules/audio_device/audio_device_config.h"
 #include "webrtc/modules/audio_device/include/audio_device_defines.h"
 #include "webrtc/modules/audio_device/audio_device_generic.h"
 #include "webrtc/modules/utility/interface/helpers_android.h"
 #include "webrtc/modules/utility/interface/jvm_android.h"
 
 namespace webrtc {
-
-class AudioParameters {
- public:
-  enum { kBitsPerSample = 16 };
-  AudioParameters()
-      : sample_rate_(0),
-        channels_(0),
-        frames_per_buffer_(0),
-        frames_per_10ms_buffer_(0),
-        bits_per_sample_(kBitsPerSample) {}
-  AudioParameters(int sample_rate, int channels, int frames_per_buffer)
-      : sample_rate_(sample_rate),
-        channels_(channels),
-        frames_per_buffer_(frames_per_buffer),
-        frames_per_10ms_buffer_(sample_rate / 100),
-        bits_per_sample_(kBitsPerSample) {}
-  void reset(int sample_rate, int channels, int frames_per_buffer) {
-    sample_rate_ = sample_rate;
-    channels_ = channels;
-    frames_per_buffer_ = frames_per_buffer;
-    frames_per_10ms_buffer_ = (sample_rate / 100);
-  }
-  int sample_rate() const { return sample_rate_; }
-  int channels() const { return channels_; }
-  int frames_per_buffer() const { return frames_per_buffer_; }
-  int frames_per_10ms_buffer() const { return frames_per_10ms_buffer_; }
-  int bits_per_sample() const { return bits_per_sample_; }
-  bool is_valid() const {
-    return ((sample_rate_ > 0) && (channels_ > 0) && (frames_per_buffer_ > 0));
-  }
-  int GetBytesPerFrame() const { return channels_ * bits_per_sample_ / 8; }
-  int GetBytesPerBuffer() const {
-    return frames_per_buffer_ * GetBytesPerFrame();
-  }
-  int GetBytesPer10msBuffer() const {
-    return frames_per_10ms_buffer_ * GetBytesPerFrame();
-  }
-  float GetBufferSizeInMilliseconds() const {
-    if (sample_rate_ == 0)
-      return 0.0f;
-    return frames_per_buffer_ / (sample_rate_ / 1000.0f);
-  }
-
- private:
-  int sample_rate_;
-  int channels_;
-  // Lowest possible size of native audio buffer. Measured in number of frames.
-  // This size is injected into the OpenSL ES output (since it does not "talk
-  // Java") implementation but is currently not utilized by the Java
-  // implementation since it aquires the same value internally.
-  int frames_per_buffer_;
-  int frames_per_10ms_buffer_;
-  int bits_per_sample_;
-};
 
 // Implements support for functions in the WebRTC audio stack for Android that
 // relies on the AudioManager in android.media. It also populates an
@@ -127,12 +74,14 @@ class AudioManager {
   const AudioParameters& GetPlayoutAudioParameters();
   const AudioParameters& GetRecordAudioParameters();
 
-  // Returns true if the device supports a built-in Acoustic Echo Canceler.
-  // Some devices can also be blacklisted for use in combination with an AEC
-  // and these devices will return false.
+  // Returns true if the device supports built-in audio effects for AEC, AGC
+  // and NS. Some devices can also be blacklisted for use in combination with
+  // platform effects and these devices will return false.
   // Can currently only be used in combination with a Java based audio backend
   // for the recoring side (i.e. using the android.media.AudioRecord API).
   bool IsAcousticEchoCancelerSupported() const;
+  bool IsAutomaticGainControlSupported() const;
+  bool IsNoiseSuppressorSupported() const;
 
   // Returns true if the device supports the low-latency audio paths in
   // combination with OpenSL ES.
@@ -153,6 +102,8 @@ class AudioManager {
                                            jint sample_rate,
                                            jint channels,
                                            jboolean hardware_aec,
+                                           jboolean hardware_agc,
+                                           jboolean hardware_ns,
                                            jboolean low_latency_output,
                                            jint output_buffer_size,
                                            jint input_buffer_size,
@@ -161,6 +112,8 @@ class AudioManager {
                               jint sample_rate,
                               jint channels,
                               jboolean hardware_aec,
+                              jboolean hardware_agc,
+                              jboolean hardware_ns,
                               jboolean low_latency_output,
                               jint output_buffer_size,
                               jint input_buffer_size);
@@ -190,6 +143,10 @@ class AudioManager {
 
   // True if device supports hardware (or built-in) AEC.
   bool hardware_aec_;
+  // True if device supports hardware (or built-in) AGC.
+  bool hardware_agc_;
+  // True if device supports hardware (or built-in) NS.
+  bool hardware_ns_;
 
   // True if device supports the low-latency OpenSL ES audio path.
   bool low_latency_playout_;

@@ -9,6 +9,7 @@
 #include "ui/gfx/geometry/point.h"
 #include "ui/gfx/geometry/point_f.h"
 #include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/geometry/rect_f.h"
 #include "ui/gfx/geometry/size.h"
 #include "ui/mojo/geometry/geometry.mojom.h"
 
@@ -66,6 +67,15 @@ struct MOJO_GEOMETRY_EXPORT TypeConverter<Rect, gfx::Rect> {
 template <>
 struct MOJO_GEOMETRY_EXPORT TypeConverter<gfx::Rect, Rect> {
   static gfx::Rect Convert(const Rect& input);
+};
+
+template <>
+struct MOJO_GEOMETRY_EXPORT TypeConverter<Size, gfx::Size> {
+  static Size Convert(const gfx::Size& input);
+};
+template <>
+struct MOJO_GEOMETRY_EXPORT TypeConverter<gfx::Size, Size> {
+  static gfx::Size Convert(const Size& input);
 };
 
 }  // namespace mojo

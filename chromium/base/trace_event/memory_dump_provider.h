@@ -7,21 +7,31 @@
 
 #include "base/base_export.h"
 #include "base/macros.h"
+#include "base/trace_event/memory_dump_request_args.h"
 
 namespace base {
 namespace trace_event {
 
 class ProcessMemoryDump;
 
+// Args passed to OnMemoryDump(). This is to avoid rewriting all the subclasses
+// in the codebase when extending the MemoryDumpProvider API.
+struct MemoryDumpArgs {
+  MemoryDumpLevelOfDetail level_of_detail;
+};
+
 // The contract interface that memory dump providers must implement.
 class BASE_EXPORT MemoryDumpProvider {
  public:
   // Called by the MemoryDumpManager when generating memory dumps.
-  // The embedder should return true if the |pmd| was successfully populated,
-  // false if something went wrong and the dump should be considered invalid.
+  // The |args| specify if the embedder should generate light/heavy dumps on
+  // dump requests. The embedder should return true if the |pmd| was
+  // successfully populated, false if something went wrong and the dump should
+  // be considered invalid.
   // (Note, the MemoryDumpManager has a fail-safe logic which will disable the
   // MemoryDumpProvider for the entire trace session if it fails consistently).
-  virtual bool OnMemoryDump(ProcessMemoryDump* pmd) = 0;
+  virtual bool OnMemoryDump(const MemoryDumpArgs& args,
+                            ProcessMemoryDump* pmd) = 0;
 
  protected:
   MemoryDumpProvider() {}

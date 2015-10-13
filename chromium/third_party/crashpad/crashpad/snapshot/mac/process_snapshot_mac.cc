@@ -14,6 +14,7 @@
 
 #include "snapshot/mac/process_snapshot_mac.h"
 
+#include "base/logging.h"
 #include "util/misc/tri_state.h"
 
 namespace crashpad {
@@ -183,6 +184,11 @@ std::vector<const ModuleSnapshot*> ProcessSnapshotMac::Modules() const {
 const ExceptionSnapshot* ProcessSnapshotMac::Exception() const {
   INITIALIZATION_STATE_DCHECK_VALID(initialized_);
   return exception_.get();
+}
+
+std::vector<const MemorySnapshot*> ProcessSnapshotMac::ExtraMemory() const {
+  INITIALIZATION_STATE_DCHECK_VALID(initialized_);
+  return std::vector<const MemorySnapshot*>();
 }
 
 void ProcessSnapshotMac::InitializeThreads() {

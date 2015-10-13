@@ -23,6 +23,9 @@
 
 #include "core/layout/LayoutBoxModelObject.h"
 #include "core/layout/LayoutObject.h"
+#include "core/layout/api/LineLayoutBoxModel.h"
+#include "core/layout/api/LineLayoutItem.h"
+#include "core/layout/api/SelectionState.h"
 #include "platform/graphics/paint/DisplayItemClient.h"
 #include "platform/text/TextDirection.h"
 
@@ -84,7 +87,7 @@ public:
     void moveInInlineDirection(LayoutUnit delta) { moveInLogicalDirection(LayoutSize(delta, LayoutUnit())); }
     void moveInBlockDirection(LayoutUnit delta) { moveInLogicalDirection(LayoutSize(LayoutUnit(), delta)); }
 
-    virtual void paint(const PaintInfo&, const LayoutPoint&, LayoutUnit lineTop, LayoutUnit lineBottom);
+    virtual void paint(const PaintInfo&, const LayoutPoint&, LayoutUnit lineTop, LayoutUnit lineBottom) const;
     virtual bool nodeAtPoint(HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, LayoutUnit lineTop, LayoutUnit lineBottom);
 
     // InlineBoxes are allocated out of the rendering partition.
@@ -165,7 +168,9 @@ public:
     InlineBox* nextLeafChildIgnoringLineBreak() const;
     InlineBox* prevLeafChildIgnoringLineBreak() const;
 
+    // TODO(pilgrim): This will be removed as part of the Line Layout API refactoring crbug.com/499321
     LayoutObject& layoutObject() const { return m_layoutObject; }
+    LineLayoutItem lineLayoutItem() const { return LineLayoutItem(&m_layoutObject); }
 
     InlineFlowBox* parent() const
     {
@@ -250,7 +255,7 @@ public:
 
     virtual void dirtyLineBoxes();
 
-    virtual LayoutObject::SelectionState selectionState() const;
+    virtual SelectionState selectionState() const;
 
     virtual bool canAccommodateEllipsis(bool ltr, int blockEdge, int ellipsisWidth) const;
     // visibleLeftEdge, visibleRightEdge are in the parent's coordinate system.
@@ -262,29 +267,29 @@ public:
 
     int expansion() const { return m_bitfields.expansion(); }
 
-    bool visibleToHitTestRequest(const HitTestRequest& request) const { return layoutObject().visibleToHitTestRequest(request); }
+    bool visibleToHitTestRequest(const HitTestRequest& request) const { return lineLayoutItem().visibleToHitTestRequest(request); }
 
-    EVerticalAlign verticalAlign() const { return layoutObject().isText() ? ComputedStyle::initialVerticalAlign() : layoutObject().style(m_bitfields.firstLine())->verticalAlign(); }
+    EVerticalAlign verticalAlign() const { return lineLayoutItem().isText() ? ComputedStyle::initialVerticalAlign() : lineLayoutItem().style(m_bitfields.firstLine())->verticalAlign(); }
 
     // Use with caution! The type is not checked!
-    LayoutBoxModelObject* boxModelObject() const
+    LineLayoutBoxModel boxModelObject() const
     {
-        if (!layoutObject().isText())
-            return toLayoutBoxModelObject(&layoutObject());
-        return 0;
+        if (!lineLayoutItem().isText())
+            return LineLayoutBoxModel(toLayoutBoxModelObject(&m_layoutObject));
+        return LineLayoutBoxModel(nullptr);
     }
 
-    LayoutPoint locationIncludingFlipping();
+    LayoutPoint locationIncludingFlipping() const;
 
     // Converts from a rect in the logical space of the InlineBox to one in the physical space
     // of the containing block. The logical space of an InlineBox may be transposed for vertical text and
     // flipped for right-to-left text.
-    void logicalRectToPhysicalRect(LayoutRect&);
+    void logicalRectToPhysicalRect(LayoutRect&) const;
 
-    void flipForWritingMode(FloatRect&);
-    FloatPoint flipForWritingMode(const FloatPoint&);
-    void flipForWritingMode(LayoutRect&);
-    LayoutPoint flipForWritingMode(const LayoutPoint&);
+    void flipForWritingMode(FloatRect&) const;
+    FloatPoint flipForWritingMode(const FloatPoint&) const;
+    void flipForWritingMode(LayoutRect&) const;
+    LayoutPoint flipForWritingMode(const LayoutPoint&) const;
 
     bool knownToHaveNoOverflow() const { return m_bitfields.knownToHaveNoOverflow(); }
     void clearKnownToHaveNoOverflow();
@@ -302,6 +307,7 @@ public:
     void set##Name(bool name) { m_##name = name; }\
 
     class InlineBoxBitfields {
+        DISALLOW_ALLOCATION();
     public:
         InlineBoxBitfields(bool firstLine = false, bool constructed = false, bool dirty = false, bool extracted = false, bool isHorizontal = true)
             : m_firstLine(firstLine)
@@ -375,7 +381,7 @@ public:
 private:
     // Converts the given (top-left) position from the logical space of the InlineBox to the physical space of the
     // containing block. The size indicates the size of the box whose point is being flipped.
-    LayoutPoint logicalPositionToPhysicalPoint(const LayoutPoint&, const LayoutSize&);
+    LayoutPoint logicalPositionToPhysicalPoint(const LayoutPoint&, const LayoutSize&) const;
 
     InlineBox* m_next; // The next element on the same line as us.
     InlineBox* m_prev; // The previous element on the same line as us.

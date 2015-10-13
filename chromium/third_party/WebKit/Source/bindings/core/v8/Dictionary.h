@@ -95,6 +95,7 @@ struct NativeValueTraits<Dictionary> {
 // DictionaryHelper is a collection of static methods for getting or
 // converting a value from Dictionary.
 struct DictionaryHelper {
+    STATIC_ONLY(DictionaryHelper);
     template <typename T>
     static bool get(const Dictionary&, const String& key, T& value);
     template <typename T>

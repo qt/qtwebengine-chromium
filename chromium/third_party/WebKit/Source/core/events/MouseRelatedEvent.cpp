@@ -28,12 +28,12 @@
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
 #include "core/layout/LayoutObject.h"
-#include "core/paint/DeprecatedPaintLayer.h"
+#include "core/paint/PaintLayer.h"
 
 namespace blink {
 
 MouseRelatedEvent::MouseRelatedEvent()
-    : m_isSimulated(false)
+    : m_positionType(PositionType::Position)
     , m_hasCachedRelativePosition(false)
 {
 }
@@ -55,17 +55,17 @@ static LayoutSize contentsScrollOffset(AbstractView* abstractView)
 MouseRelatedEvent::MouseRelatedEvent(const AtomicString& eventType, bool canBubble, bool cancelable, PassRefPtrWillBeRawPtr<AbstractView> abstractView,
     int detail, const IntPoint& screenLocation, const IntPoint& rootFrameLocation,
     const IntPoint& movementDelta,
-    bool ctrlKey, bool altKey, bool shiftKey, bool metaKey, bool isSimulated, InputDevice* sourceDevice)
-    : UIEventWithKeyState(eventType, canBubble, cancelable, abstractView, detail, ctrlKey, altKey, shiftKey, metaKey, sourceDevice)
+    bool ctrlKey, bool altKey, bool shiftKey, bool metaKey, PositionType positionType, InputDeviceCapabilities* sourceCapabilities)
+    : UIEventWithKeyState(eventType, canBubble, cancelable, abstractView, detail, ctrlKey, altKey, shiftKey, metaKey, sourceCapabilities)
     , m_screenLocation(screenLocation)
     , m_movementDelta(movementDelta)
-    , m_isSimulated(isSimulated)
+    , m_positionType(positionType)
 {
     LayoutPoint adjustedPageLocation;
     LayoutPoint scrollPosition;
 
-    LocalFrame* frame = view() && view()->isLocalDOMWindow() ? toLocalDOMWindow(view())->frame() : 0;
-    if (frame && !isSimulated) {
+    LocalFrame* frame = view() && view()->isLocalDOMWindow() ? toLocalDOMWindow(view())->frame() : nullptr;
+    if (frame && hasPosition()) {
         if (FrameView* frameView = frame->view()) {
             scrollPosition = frameView->scrollPosition();
             adjustedPageLocation = frameView->rootFrameToContents(rootFrameLocation);
@@ -131,7 +131,7 @@ void MouseRelatedEvent::receivedTarget()
 
 void MouseRelatedEvent::computeRelativePosition()
 {
-    Node* targetNode = target() ? target()->toNode() : 0;
+    Node* targetNode = target() ? target()->toNode() : nullptr;
     if (!targetNode)
         return;
 
@@ -153,7 +153,7 @@ void MouseRelatedEvent::computeRelativePosition()
 
     // Adjust layerLocation to be relative to the layer.
     // FIXME: event.layerX and event.layerY are poorly defined,
-    // and probably don't always correspond to DeprecatedPaintLayer offsets.
+    // and probably don't always correspond to PaintLayer offsets.
     // https://bugs.webkit.org/show_bug.cgi?id=21868
     Node* n = targetNode;
     while (n && !n->layoutObject())
@@ -161,7 +161,7 @@ void MouseRelatedEvent::computeRelativePosition()
 
     if (n) {
         // FIXME: This logic is a wrong implementation of convertToLayerCoords.
-        for (DeprecatedPaintLayer* layer = n->layoutObject()->enclosingLayer(); layer; layer = layer->parent())
+        for (PaintLayer* layer = n->layoutObject()->enclosingLayer(); layer; layer = layer->parent())
             m_layerLocation -= toLayoutSize(layer->location());
     }
 
@@ -184,7 +184,7 @@ int MouseRelatedEvent::layerY()
 
 int MouseRelatedEvent::offsetX()
 {
-    if (isSimulated())
+    if (!hasPosition())
         return 0;
     if (!m_hasCachedRelativePosition)
         computeRelativePosition();
@@ -193,7 +193,7 @@ int MouseRelatedEvent::offsetX()
 
 int MouseRelatedEvent::offsetY()
 {
-    if (isSimulated())
+    if (!hasPosition())
         return 0;
     if (!m_hasCachedRelativePosition)
         computeRelativePosition();

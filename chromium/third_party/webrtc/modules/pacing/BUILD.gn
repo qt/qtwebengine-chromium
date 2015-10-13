@@ -27,5 +27,7 @@ source_set("pacing") {
 
   deps = [
     "../../system_wrappers",
+    "../bitrate_controller",
+    "../rtp_rtcp",
   ]
 }

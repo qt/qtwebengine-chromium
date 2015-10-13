@@ -49,6 +49,7 @@ class ShellGrabber : public Application {
   void AcceptConnection(const String& requestor_url,
                         InterfaceRequest<ServiceProvider> services,
                         ServiceProviderPtr exposed_services,
+                        Array<String> allowed_interfaces,
                         const String& url) override {
     MOJO_CHECK(false);
   }
@@ -100,7 +101,7 @@ MojoResult RunAllTests(MojoHandle application_request_handle) {
 
   // Shut down our message pipes before exiting.
   (void)g_application_request.PassMessagePipe();
-  (void)g_shell.PassInterface();
+  g_shell.reset();
 
   return (result == 0) ? MOJO_RESULT_OK : MOJO_RESULT_UNKNOWN;
 }
@@ -129,14 +130,19 @@ void ApplicationTestBase::SetUp() {
                                           g_application_request.Pass());
 
   // Fake application initialization.
-  application_impl_->Initialize(g_shell.Pass(), g_url);
+  Application* application = application_impl_;
+  application->Initialize(g_shell.Pass(), g_url);
 }
 
 void ApplicationTestBase::TearDown() {
   MOJO_CHECK(!g_application_request.is_pending());
   MOJO_CHECK(!g_shell);
 
-  application_impl_->UnbindConnections(&g_application_request, &g_shell);
+  // TODO: commented out until http://crbug.com/533107 is solved.
+  // {
+  // ApplicationImpl::TestApi test_api(application_impl_);
+  // test_api.UnbindConnections(&g_application_request, &g_shell);
+  // }
   delete application_impl_;
   if (ShouldCreateDefaultRunLoop())
     Environment::DestroyDefaultRunLoop();

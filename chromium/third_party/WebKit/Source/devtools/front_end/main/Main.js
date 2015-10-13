@@ -125,28 +125,27 @@ WebInspector.Main.prototype = {
         Runtime.experiments.register("animationInspection", "Animation Inspection");
         Runtime.experiments.register("applyCustomStylesheet", "Allow custom UI themes");
         Runtime.experiments.register("blackboxJSFramesOnTimeline", "Blackbox JavaScript frames on Timeline", true);
-        Runtime.experiments.register("timelineDetailsChart", "Costly functions view in Timeline details", true);
-        Runtime.experiments.register("customObjectFormatters", "Custom object formatters", true);
+        Runtime.experiments.register("colorContrastRatio", "Contrast ratio line in color picker", true);
         Runtime.experiments.register("emptySourceMapAutoStepping", "Empty sourcemap auto-stepping");
         Runtime.experiments.register("fileSystemInspection", "FileSystem inspection");
         Runtime.experiments.register("gpuTimeline", "GPU data on timeline", true);
+        Runtime.experiments.register("inspectDevicesDialog", "Inspect devices dialog", true);
         Runtime.experiments.register("inputEventsOnTimelineOverview", "Input events on Timeline overview", true);
         Runtime.experiments.register("layersPanel", "Layers panel");
         Runtime.experiments.register("layoutEditor", "Layout editor", true);
         Runtime.experiments.register("materialDesign", "Material design");
+        Runtime.experiments.register("multipleTimelineViews", "Multiple main views on Timeline", true);
         Runtime.experiments.register("networkRequestHeadersFilterInDetailsView", "Network request headers filter in details view", true);
         Runtime.experiments.register("networkRequestsOnTimeline", "Network requests on Timeline", true);
         Runtime.experiments.register("privateScriptInspection", "Private script inspection");
         Runtime.experiments.register("promiseTracker", "Promise inspector");
-        Runtime.experiments.register("securityPanel", "Security panel", true);
-        Runtime.experiments.register("serviceWorkersInPageFrontend", "Service workers in DevTools for page");
+        Runtime.experiments.register("securityPanel", "Security panel");
         Runtime.experiments.register("serviceWorkersInResources", "Service workers in Resources panel", true);
         Runtime.experiments.register("showPrimaryLoadWaterfallInNetworkTimeline", "Show primary load waterfall in Network timeline", true);
         Runtime.experiments.register("stepIntoAsync", "Step into async");
         Runtime.experiments.register("timelineInvalidationTracking", "Timeline invalidation tracking", true);
         Runtime.experiments.register("timelineTracingJSProfile", "Timeline tracing based JS profiler", true);
         Runtime.experiments.register("timelineFlowEvents", "Timeline flow events", true);
-        Runtime.experiments.register("inlineVariableValues", "Display variable values inline while debugging");
 
         Runtime.experiments.cleanUpStaleExperiments();
 
@@ -163,11 +162,11 @@ WebInspector.Main.prototype = {
                 Runtime.experiments.enableForTest("serviceWorkersInResources");
             if (testPath.indexOf("timeline/") !== -1 || testPath.indexOf("layers/") !== -1)
                 Runtime.experiments.enableForTest("layersPanel");
+            if (testPath.indexOf("security/") !== -1)
+                Runtime.experiments.enableForTest("securityPanel");
         }
 
         Runtime.experiments.setDefaultExperiments([
-            "inlineVariableValues",
-            "serviceWorkersInPageFrontend"
         ]);
     },
 
@@ -177,6 +176,10 @@ WebInspector.Main.prototype = {
     _createAppUI: function()
     {
         console.timeStamp("Main._createApp");
+
+        // Request filesystems early, we won't create connections until callback is fired. Things will happen in parallel.
+        WebInspector.isolatedFileSystemManager = new WebInspector.IsolatedFileSystemManager();
+        WebInspector.isolatedFileSystemManager.initialize(this._didInitializeFileSystemManager.bind(this));
 
         WebInspector.initializeUIUtils(window);
         WebInspector.installComponentRootStyles(/** @type {!Element} */ (document.body));
@@ -188,6 +191,7 @@ WebInspector.Main.prototype = {
         WebInspector.inspectorView = new WebInspector.InspectorView();
         WebInspector.ContextMenu.initialize();
         WebInspector.ContextMenu.installHandler(document);
+        WebInspector.Tooltip.installHandler(document);
         WebInspector.dockController = new WebInspector.DockController(canDock);
         WebInspector.overridesSupport = new WebInspector.OverridesSupport();
         WebInspector.emulatedDevicesList = new WebInspector.EmulatedDevicesList();
@@ -196,18 +200,21 @@ WebInspector.Main.prototype = {
 
         WebInspector.shortcutsScreen = new WebInspector.ShortcutsScreen();
         // set order of some sections explicitly
-        WebInspector.shortcutsScreen.section(WebInspector.UIString("Console"));
         WebInspector.shortcutsScreen.section(WebInspector.UIString("Elements Panel"));
+        WebInspector.shortcutsScreen.section(WebInspector.UIString("Styles Pane"));
+        WebInspector.shortcutsScreen.section(WebInspector.UIString("Debugger"));
+        WebInspector.shortcutsScreen.section(WebInspector.UIString("Console"));
 
         WebInspector.fileManager = new WebInspector.FileManager();
-        WebInspector.isolatedFileSystemManager = new WebInspector.IsolatedFileSystemManager();
-        WebInspector.workspace = new WebInspector.Workspace(WebInspector.isolatedFileSystemManager.mapping());
-        WebInspector.networkMapping = new WebInspector.NetworkMapping(WebInspector.workspace, WebInspector.isolatedFileSystemManager.mapping());
+        WebInspector.workspace = new WebInspector.Workspace();
+        WebInspector.fileSystemMapping = new WebInspector.FileSystemMapping();
+
+        var fileSystemWorkspaceBinding = new WebInspector.FileSystemWorkspaceBinding(WebInspector.isolatedFileSystemManager, WebInspector.workspace);
+        WebInspector.networkMapping = new WebInspector.NetworkMapping(WebInspector.workspace, fileSystemWorkspaceBinding, WebInspector.fileSystemMapping);
         WebInspector.networkProjectManager = new WebInspector.NetworkProjectManager(WebInspector.targetManager, WebInspector.workspace, WebInspector.networkMapping);
         WebInspector.presentationConsoleMessageHelper = new WebInspector.PresentationConsoleMessageHelper(WebInspector.workspace);
         WebInspector.cssWorkspaceBinding = new WebInspector.CSSWorkspaceBinding(WebInspector.targetManager, WebInspector.workspace, WebInspector.networkMapping);
         WebInspector.debuggerWorkspaceBinding = new WebInspector.DebuggerWorkspaceBinding(WebInspector.targetManager, WebInspector.workspace, WebInspector.networkMapping);
-        WebInspector.fileSystemWorkspaceBinding = new WebInspector.FileSystemWorkspaceBinding(WebInspector.isolatedFileSystemManager, WebInspector.workspace, WebInspector.networkMapping);
         WebInspector.breakpointManager = new WebInspector.BreakpointManager(null, WebInspector.workspace, WebInspector.networkMapping, WebInspector.targetManager, WebInspector.debuggerWorkspaceBinding);
         WebInspector.extensionServer = new WebInspector.ExtensionServer();
 
@@ -215,7 +222,7 @@ WebInspector.Main.prototype = {
         new WebInspector.ContentScriptProjectDecorator();
         new WebInspector.ExecutionContextSelector(WebInspector.targetManager, WebInspector.context);
 
-        var autoselectPanel = WebInspector.UIString("a panel chosen automatically");
+        var autoselectPanel = WebInspector.UIString("auto");
         var openAnchorLocationSetting = WebInspector.settings.createSetting("openLinkHandler", autoselectPanel);
         WebInspector.openAnchorLocationRegistry = new WebInspector.HandlerRegistry(openAnchorLocationSetting);
         WebInspector.openAnchorLocationRegistry.registerHandler(autoselectPanel, function() { return false; });
@@ -225,7 +232,7 @@ WebInspector.Main.prototype = {
         new WebInspector.RenderingOptions();
         new WebInspector.Main.PauseListener();
         new WebInspector.Main.InspectedNodeRevealer();
-        new WebInspector.ThrottlingIndicator();
+        new WebInspector.NetworkPanelIndicator();
         WebInspector.domBreakpointsSidebarPane = new WebInspector.DOMBreakpointsSidebarPane();
 
         WebInspector.actionRegistry = new WebInspector.ActionRegistry();
@@ -261,8 +268,6 @@ WebInspector.Main.prototype = {
             if (value !== null)
                 extension.instancePromise().then(handleQueryParam.bind(null, value));
         }
-        // Give UI cycles to repaint, then proceed with creating connection.
-        setTimeout(this._createConnection.bind(this), 0);
 
         /**
          * @param {string} value
@@ -272,12 +277,24 @@ WebInspector.Main.prototype = {
         {
             handler.handleQueryParam(value);
         }
+        this._appUIShown = true;
+
+        if (this._fileSystemManagerInitialized) {
+            // Allow UI cycles to repaint prior to creating connection.
+            setTimeout(this._createConnection.bind(this), 0);
+        }
+    },
+
+    _didInitializeFileSystemManager: function()
+    {
+        this._fileSystemManagerInitialized = true;
+        if (this._appUIShown)
+            this._createConnection();
     },
 
     _createConnection: function()
     {
         console.timeStamp("Main._createConnection");
-        InspectorBackend.loadFromJSONIfNeeded("../protocol.json");
 
         if (Runtime.queryParam("ws")) {
             var ws = "ws://" + Runtime.queryParam("ws");
@@ -299,6 +316,7 @@ WebInspector.Main.prototype = {
     _connectionEstablished: function(connection)
     {
         console.timeStamp("Main._connectionEstablished");
+        this._mainConnection = connection;
         connection.addEventListener(InspectorBackendClass.Connection.Events.Disconnected, onDisconnected);
 
         /**
@@ -311,7 +329,6 @@ WebInspector.Main.prototype = {
             new WebInspector.RemoteDebuggingTerminatedScreen(event.data.reason).showModal();
         }
 
-        InspectorBackend.setConnection(connection);
         var targetType = Runtime.queryParam("isSharedWorker") ? WebInspector.Target.Type.ServiceWorker : WebInspector.Target.Type.Page;
         WebInspector.targetManager.createTarget(WebInspector.UIString("Main"), targetType, connection, null, this._mainTargetCreated.bind(this));
     },
@@ -324,8 +341,10 @@ WebInspector.Main.prototype = {
         console.timeStamp("Main._mainTargetCreated");
         this._mainTarget = /** @type {!WebInspector.Target} */(target);
         this._registerShortcuts();
+        var main = this;
 
         this._mainTarget.registerInspectorDispatcher(this);
+        InspectorFrontendHost.events.addEventListener(InspectorFrontendHostAPI.Events.ReloadInspectedPage, this._reloadInspectedPage, this);
 
         if (this._mainTarget.isServiceWorker())
             this._mainTarget.runtimeAgent().run();
@@ -345,13 +364,19 @@ WebInspector.Main.prototype = {
             console.timeStamp("Main.inspectorAgentEnableCallback");
             WebInspector.notifications.dispatchEventToListeners(WebInspector.NotificationService.Events.InspectorAgentEnabledForTests);
             // Asynchronously run the extensions.
-            setTimeout(function() { WebInspector.extensionServer.initializeExtensions(); }, 0);
+            setTimeout(lateInitialization, 0);
+        }
+
+        function lateInitialization()
+        {
+            WebInspector.extensionServer.initializeExtensions();
+            new WebInspector.FrontendWebSocketAPI();
         }
     },
 
     _registerForwardedShortcuts: function()
     {
-        /** @const */ var forwardedActions = ["main.reload", "main.hard-reload", "main.toggle-dock"];
+        /** @const */ var forwardedActions = ["main.reload", "main.hard-reload", "main.toggle-dock", "debugger.toggle-breakpoints-active", "debugger.toggle-pause"];
         var actionKeys = WebInspector.shortcutRegistry.keysForActions(forwardedActions).map(WebInspector.KeyboardShortcut.keyCodeAndModifiersFromKey);
 
         actionKeys.push({keyCode: WebInspector.KeyboardShortcut.Keys.F8.code});
@@ -553,6 +578,15 @@ WebInspector.Main.prototype = {
     },
 
     /**
+     * @param {!WebInspector.Event} event
+     */
+    _reloadInspectedPage: function(event)
+    {
+        var hard = /** @type {boolean} */ (event.data);
+        WebInspector.Main._reloadPage(hard);
+    },
+
+    /**
      * @override
      * @param {!RuntimeAgent.RemoteObject} payload
      * @param {!Object=} hints
@@ -566,7 +600,7 @@ WebInspector.Main.prototype = {
         }
 
         if (object.type === "function") {
-            object.functionDetails(didGetDetails);
+            WebInspector.RemoteFunction.objectAsFunction(object).targetFunctionDetails().then(didGetDetails);
             return;
         }
 
@@ -619,15 +653,24 @@ WebInspector.Main.prototype = {
      */
     evaluateForTestInFrontend: function(callId, script)
     {
-        WebInspector.evaluateForTestInFrontend(callId, script);
-    }
-}
+        if (!InspectorFrontendHost.isUnderTest())
+            return;
 
-WebInspector.reload = function()
-{
-    if (WebInspector.dockController.canDock() && WebInspector.dockController.dockSide() === WebInspector.DockController.State.Undocked)
-        InspectorFrontendHost.setIsDocked(true, function() {});
-    window.location.reload();
+        /**
+         * @suppressGlobalPropertiesCheck
+         */
+        function invokeMethod()
+        {
+            try {
+                script = script + "//# sourceURL=evaluateInWebInspector" + callId + ".js";
+                window.eval(script);
+            } catch (e) {
+                console.error(e.stack);
+            }
+        }
+
+        this._mainConnection.runAfterPendingDispatches(invokeMethod);
+    }
 }
 
 /**
@@ -690,6 +733,26 @@ WebInspector.Main.ZoomActionDelegate.prototype = {
             InspectorFrontendHost.resetZoom();
             break;
         }
+    }
+}
+
+/**
+ * @constructor
+ * @implements {WebInspector.ActionDelegate}
+ */
+WebInspector.Main.InspectDevicesActionDelegate = function()
+{
+}
+
+WebInspector.Main.InspectDevicesActionDelegate.prototype = {
+    /**
+     * @override
+     * @param {!WebInspector.Context} context
+     * @param {string} actionId
+     */
+    handleAction: function(context, actionId)
+    {
+        InspectorFrontendHost.openInNewTab("chrome://inspect#devices");
     }
 }
 
@@ -769,17 +832,94 @@ WebInspector.Main.WarningErrorCounter.prototype = {
 
 /**
  * @constructor
+ * @implements {WebInspector.ToolbarItem.Provider}
  */
-WebInspector.ThrottlingIndicator = function()
+WebInspector.Main.MainMenuItem = function()
+{
+    this._item = new WebInspector.ToolbarButton(WebInspector.UIString("Customize and control DevTools"), "menu-toolbar-item");
+    this._item.addEventListener("mousedown", this._mouseDown, this);
+}
+
+WebInspector.Main.MainMenuItem.prototype = {
+    /**
+     * @override
+     * @return {?WebInspector.ToolbarItem}
+     */
+    item: function()
+    {
+        return this._item;
+    },
+
+    /**
+     * @param {!WebInspector.Event} event
+     */
+    _mouseDown: function(event)
+    {
+        var contextMenu = new WebInspector.ContextMenu(/** @type {!Event} */(event.data),
+            true,
+            this._item.element.totalOffsetLeft(),
+            this._item.element.totalOffsetTop() + this._item.element.offsetHeight);
+
+        if (WebInspector.dockController.canDock()) {
+            var dockItemElement = createElementWithClass("div", "flex-centered flex-auto");
+            var titleElement = dockItemElement.createChild("span", "flex-auto");
+            titleElement.textContent = WebInspector.UIString("Dock side");
+            var toggleDockSideShorcuts = WebInspector.shortcutRegistry.shortcutDescriptorsForAction("main.toggle-dock");
+            titleElement.title = WebInspector.UIString("Placement of DevTools relative to the page. (%s to restore last position)", toggleDockSideShorcuts[0].name);
+            dockItemElement.appendChild(titleElement);
+            var dockItemToolbar = new WebInspector.Toolbar(dockItemElement);
+            dockItemToolbar.makeBlueOnHover();
+            var undock = new WebInspector.ToolbarButton(WebInspector.UIString("Undock into separate window"), "dock-toolbar-item-undock");
+            var bottom = new WebInspector.ToolbarButton(WebInspector.UIString("Dock to bottom"), "dock-toolbar-item-bottom");
+            var right = new WebInspector.ToolbarButton(WebInspector.UIString("Dock to right"), "dock-toolbar-item-right");
+            undock.addEventListener("mouseup", setDockSide.bind(null, WebInspector.DockController.State.Undocked));
+            bottom.addEventListener("mouseup", setDockSide.bind(null, WebInspector.DockController.State.DockedToBottom));
+            right.addEventListener("mouseup", setDockSide.bind(null, WebInspector.DockController.State.DockedToRight));
+            undock.setToggled(WebInspector.dockController.dockSide() === WebInspector.DockController.State.Undocked);
+            bottom.setToggled(WebInspector.dockController.dockSide() === WebInspector.DockController.State.DockedToBottom);
+            right.setToggled(WebInspector.dockController.dockSide() === WebInspector.DockController.State.DockedToRight);
+            dockItemToolbar.appendToolbarItem(undock);
+            dockItemToolbar.appendToolbarItem(bottom);
+            dockItemToolbar.appendToolbarItem(right);
+            contextMenu.appendCustomItem(dockItemElement);
+            contextMenu.appendSeparator();
+        }
+
+        /**
+         * @param {string} side
+         */
+        function setDockSide(side)
+        {
+            WebInspector.dockController.setDockSide(side);
+            contextMenu.discard();
+        }
+
+        contextMenu.appendAction("main.toggle-drawer", WebInspector.inspectorView.drawerVisible() ? WebInspector.UIString("Hide console") : WebInspector.UIString("Show console"));
+        contextMenu.appendItemsAtLocation("mainMenu");
+        contextMenu.show();
+    }
+}
+
+/**
+ * @constructor
+ */
+WebInspector.NetworkPanelIndicator = function()
 {
     var networkConditionsSetting = WebInspector.moduleSetting("networkConditions");
     networkConditionsSetting.addChangeListener(updateVisibility);
+    var blockedURLsSetting = WebInspector.moduleSetting("blockedURLs");
+    blockedURLsSetting.addChangeListener(updateVisibility);
     updateVisibility();
 
     function updateVisibility()
     {
-        var throttlingEnabled = WebInspector.NetworkManager.IsThrottlingEnabled(networkConditionsSetting.get());
-        WebInspector.inspectorView.setPanelIcon("network", throttlingEnabled ? "warning-icon" : "", WebInspector.UIString("Network throttling is enabled"));
+        if (WebInspector.NetworkManager.IsThrottlingEnabled(networkConditionsSetting.get())) {
+            WebInspector.inspectorView.setPanelIcon("network", "warning-icon", WebInspector.UIString("Network throttling is enabled"));
+        } else if (blockedURLsSetting.get().length) {
+            WebInspector.inspectorView.setPanelIcon("network", "warning-icon", WebInspector.UIString("Requests may be blocked"));
+        } else {
+            WebInspector.inspectorView.setPanelIcon("network", "", "");
+        }
     }
 }
 

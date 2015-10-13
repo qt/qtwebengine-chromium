@@ -37,6 +37,8 @@
 namespace blink {
 
 class CORE_EXPORT V8DOMConfiguration final {
+    DISALLOW_ALLOCATION();
+    WTF_MAKE_NONCOPYABLE(V8DOMConfiguration);
 public:
     // The following Configuration structs and install methods are used for
     // setting multiple properties on ObjectTemplate / FunctionTemplate, used
@@ -64,14 +66,16 @@ public:
     // AttributeConfiguration translates into calls to SetAccessor() on either
     // the instance or the prototype ObjectTemplate, based on |instanceOrPrototypeConfiguration|.
     struct AttributeConfiguration {
+        AttributeConfiguration& operator=(const AttributeConfiguration&) = delete;
+        DISALLOW_ALLOCATION();
         const char* const name;
         v8::AccessorNameGetterCallback getter;
         v8::AccessorNameSetterCallback setter;
         v8::AccessorNameGetterCallback getterForMainWorld;
         v8::AccessorNameSetterCallback setterForMainWorld;
         const WrapperTypeInfo* data;
-        v8::AccessControl settings;
-        v8::PropertyAttribute attribute;
+        unsigned settings : 8; // v8::AccessControl
+        unsigned attribute : 8; // v8::PropertyAttribute
         unsigned exposeConfiguration : 1; // ExposeConfiguration
         unsigned propertyLocationConfiguration : 3; // PropertyLocationConfiguration
         unsigned holderCheckConfiguration : 1; // HolderCheckConfiguration
@@ -84,14 +88,16 @@ public:
     // AccessorConfiguration translates into calls to SetAccessorProperty()
     // on prototype ObjectTemplate.
     struct AccessorConfiguration {
+        AccessorConfiguration& operator=(const AccessorConfiguration&) = delete;
+        DISALLOW_ALLOCATION();
         const char* const name;
         v8::FunctionCallback getter;
         v8::FunctionCallback setter;
         v8::FunctionCallback getterForMainWorld;
         v8::FunctionCallback setterForMainWorld;
         const WrapperTypeInfo* data;
-        v8::AccessControl settings;
-        v8::PropertyAttribute attribute;
+        unsigned settings : 8; // v8::AccessControl
+        unsigned attribute : 8; // v8::PropertyAttribute
         unsigned exposeConfiguration : 1; // ExposeConfiguration
         unsigned propertyLocationConfiguration : 3; // PropertyLocationConfiguration
         unsigned holderCheckConfiguration : 1; // HolderCheckConfiguration
@@ -109,18 +115,18 @@ public:
         ConstantTypeUnsignedShort,
         ConstantTypeUnsignedLong,
         ConstantTypeFloat,
-        ConstantTypeDouble,
-        ConstantTypeString
+        ConstantTypeDouble
     };
 
     // ConstantConfiguration translates into calls to Set() for setting up an
     // object's constants. It sets the constant on both the FunctionTemplate and
     // the ObjectTemplate. PropertyAttributes is always ReadOnly.
     struct ConstantConfiguration {
+        ConstantConfiguration& operator=(const ConstantConfiguration&) = delete;
+        DISALLOW_ALLOCATION();
         const char* const name;
         int ivalue;
         double dvalue;
-        const char* const svalue;
         ConstantType type;
     };
 
@@ -142,6 +148,8 @@ public:
     // object's callbacks. It sets the method on both the FunctionTemplate or
     // the ObjectTemplate.
     struct MethodConfiguration {
+        MethodConfiguration& operator=(const MethodConfiguration&) = delete;
+        DISALLOW_ALLOCATION();
         v8::Local<v8::Name> methodName(v8::Isolate* isolate) const { return v8AtomicString(isolate, name); }
         v8::FunctionCallback callbackForWorld(const DOMWrapperWorld& world) const
         {
@@ -152,10 +160,14 @@ public:
         v8::FunctionCallback callback;
         v8::FunctionCallback callbackForMainWorld;
         int length;
-        ExposeConfiguration exposeConfiguration;
+        unsigned attribute : 8; // v8::PropertyAttribute
+        unsigned exposeConfiguration : 1; // ExposeConfiguration
+        unsigned propertyLocationConfiguration : 3; // PropertyLocationConfiguration
     };
 
     struct SymbolKeyedMethodConfiguration {
+        SymbolKeyedMethodConfiguration& operator=(const SymbolKeyedMethodConfiguration&) = delete;
+        DISALLOW_ALLOCATION();
         v8::Local<v8::Name> methodName(v8::Isolate* isolate) const { return getSymbol(isolate); }
         v8::FunctionCallback callbackForWorld(const DOMWrapperWorld&) const
         {
@@ -166,21 +178,23 @@ public:
         v8::FunctionCallback callback;
         // SymbolKeyedMethodConfiguration doesn't support per-world bindings.
         int length;
-        ExposeConfiguration exposeConfiguration;
+        unsigned attribute : 8; // v8::PropertyAttribute
+        unsigned exposeConfiguration : 1; // ExposeConfiguration
+        unsigned propertyLocationConfiguration : 3; // PropertyLocationConfiguration
     };
 
-    static void installMethods(v8::Isolate*, v8::Local<v8::ObjectTemplate> prototypeTemplate, v8::Local<v8::Signature>, v8::PropertyAttribute, const MethodConfiguration*, size_t callbackCount);
+    static void installMethods(v8::Isolate*, v8::Local<v8::ObjectTemplate> instanceTemplate, v8::Local<v8::ObjectTemplate> prototypeTemplate, v8::Local<v8::FunctionTemplate> interfaceTemplate, v8::Local<v8::Signature>, const MethodConfiguration*, size_t methodCount);
 
-    static void installMethod(v8::Isolate*, v8::Local<v8::FunctionTemplate>, v8::Local<v8::Signature>, v8::PropertyAttribute, const MethodConfiguration&);
+    static void installMethod(v8::Isolate*, v8::Local<v8::ObjectTemplate> instanceTemplate, v8::Local<v8::ObjectTemplate> prototypeTemplate, v8::Local<v8::FunctionTemplate> interfaceTemplate, v8::Local<v8::Signature>, const MethodConfiguration&);
 
-    static void installMethod(v8::Isolate*, v8::Local<v8::ObjectTemplate>, v8::Local<v8::Signature>, v8::PropertyAttribute, const MethodConfiguration&);
+    static void installMethod(v8::Isolate*, v8::Local<v8::Object> instance, v8::Local<v8::Object> prototype, v8::Local<v8::Function> interface, v8::Local<v8::Signature>, const MethodConfiguration&);
 
-    static void installMethod(v8::Isolate*, v8::Local<v8::ObjectTemplate>, v8::Local<v8::Signature>, v8::PropertyAttribute, const SymbolKeyedMethodConfiguration&);
+    static void installMethod(v8::Isolate*, v8::Local<v8::ObjectTemplate>, v8::Local<v8::Signature>, const SymbolKeyedMethodConfiguration&);
 
     static v8::Local<v8::Signature> installDOMClassTemplate(v8::Isolate*, v8::Local<v8::FunctionTemplate>, const char* interfaceName, v8::Local<v8::FunctionTemplate> parentClass, size_t fieldCount,
         const AttributeConfiguration*, size_t attributeCount,
         const AccessorConfiguration*, size_t accessorCount,
-        const MethodConfiguration*, size_t callbackCount);
+        const MethodConfiguration*, size_t methodCount);
 
     static v8::Local<v8::FunctionTemplate> domClassTemplate(v8::Isolate*, WrapperTypeInfo*, void (*)(v8::Local<v8::FunctionTemplate>, v8::Isolate*));
 };

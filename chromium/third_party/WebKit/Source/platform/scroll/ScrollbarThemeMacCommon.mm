@@ -67,6 +67,7 @@ static ScrollbarSet& scrollbarSet()
 static float gInitialButtonDelay = 0.5f;
 static float gAutoscrollButtonDelay = 0.05f;
 static NSScrollerStyle gPreferredScrollerStyle = NSScrollerStyleLegacy;
+static bool gScrollAnimationEnabledForSystem = false;
 
 ScrollbarTheme* ScrollbarTheme::nativeTheme()
 {
@@ -93,7 +94,7 @@ void ScrollbarThemeMacCommon::unregisterScrollbar(ScrollbarThemeClient* scrollba
     scrollbarSet().remove(scrollbar);
 }
 
-void ScrollbarThemeMacCommon::paintGivenTickmarks(SkCanvas* canvas, ScrollbarThemeClient* scrollbar, const IntRect& rect, const Vector<IntRect>& tickmarks)
+void ScrollbarThemeMacCommon::paintGivenTickmarks(SkCanvas* canvas, const ScrollbarThemeClient* scrollbar, const IntRect& rect, const Vector<IntRect>& tickmarks)
 {
     if (scrollbar->orientation() != VerticalScrollbar)
         return;
@@ -132,7 +133,7 @@ void ScrollbarThemeMacCommon::paintGivenTickmarks(SkCanvas* canvas, ScrollbarThe
     }
 }
 
-void ScrollbarThemeMacCommon::paintTickmarks(GraphicsContext* context, ScrollbarThemeClient* scrollbar, const IntRect& rect)
+void ScrollbarThemeMacCommon::paintTickmarks(GraphicsContext* context, const ScrollbarThemeClient* scrollbar, const IntRect& rect)
 {
     // Note: This is only used for css-styled scrollbars on mac.
     if (scrollbar->orientation() != VerticalScrollbar)
@@ -162,11 +163,12 @@ ScrollbarThemeMacCommon::~ScrollbarThemeMacCommon()
 {
 }
 
-void ScrollbarThemeMacCommon::preferencesChanged(float initialButtonDelay, float autoscrollButtonDelay, NSScrollerStyle preferredScrollerStyle, bool redraw)
+void ScrollbarThemeMacCommon::preferencesChanged(float initialButtonDelay, float autoscrollButtonDelay, NSScrollerStyle preferredScrollerStyle, bool redraw, bool scrollAnimationEnabled, ScrollbarButtonsPlacement buttonPlacement)
 {
-    updateButtonPlacement();
+    updateButtonPlacement(buttonPlacement);
     gInitialButtonDelay = initialButtonDelay;
     gAutoscrollButtonDelay = autoscrollButtonDelay;
+    gScrollAnimationEnabledForSystem = scrollAnimationEnabled;
     bool sendScrollerStyleNotification = gPreferredScrollerStyle != preferredScrollerStyle;
     gPreferredScrollerStyle = preferredScrollerStyle;
     if (redraw && !scrollbarSet().isEmpty()) {
@@ -184,6 +186,11 @@ void ScrollbarThemeMacCommon::preferencesChanged(float initialButtonDelay, float
     }
 }
 
+bool ScrollbarThemeMacCommon::scrollAnimationEnabledForSystem()
+{
+    return gScrollAnimationEnabledForSystem;
+}
+
 double ScrollbarThemeMacCommon::initialAutoscrollTimerDelay()
 {
     return gInitialButtonDelay;
@@ -194,7 +201,7 @@ double ScrollbarThemeMacCommon::autoscrollTimerDelay()
     return gAutoscrollButtonDelay;
 }
 
-bool ScrollbarThemeMacCommon::shouldDragDocumentInsteadOfThumb(ScrollbarThemeClient*, const PlatformMouseEvent& event)
+bool ScrollbarThemeMacCommon::shouldDragDocumentInsteadOfThumb(const ScrollbarThemeClient*, const PlatformMouseEvent& event)
 {
     return event.altKey();
 }

@@ -5,9 +5,11 @@
 #include "device/bluetooth/bluetooth_adapter.h"
 
 #include "base/bind.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/stl_util.h"
 #include "device/bluetooth/bluetooth_device.h"
 #include "device/bluetooth/bluetooth_discovery_session.h"
+#include "device/bluetooth/bluetooth_discovery_session_outcome.h"
 
 namespace device {
 
@@ -18,7 +20,7 @@ BluetoothAdapter::ServiceOptions::~ServiceOptions() {
 
 #if !defined(OS_ANDROID) && !defined(OS_CHROMEOS) && !defined(OS_MACOSX) && \
     !defined(OS_WIN)
-//static
+// static
 base::WeakPtr<BluetoothAdapter> BluetoothAdapter::CreateAdapter(
     const InitCallback& init_callback) {
   return base::WeakPtr<BluetoothAdapter>();
@@ -56,11 +58,12 @@ void BluetoothAdapter::StartDiscoverySessionWithFilter(
     const DiscoverySessionCallback& callback,
     const ErrorCallback& error_callback) {
   BluetoothDiscoveryFilter* ptr = discovery_filter.get();
-  AddDiscoverySession(ptr,
-                      base::Bind(&BluetoothAdapter::OnStartDiscoverySession,
-                                 weak_ptr_factory_.GetWeakPtr(),
-                                 base::Passed(&discovery_filter), callback),
-                      error_callback);
+  AddDiscoverySession(
+      ptr, base::Bind(&BluetoothAdapter::OnStartDiscoverySession,
+                      weak_ptr_factory_.GetWeakPtr(),
+                      base::Passed(&discovery_filter), callback),
+      base::Bind(&BluetoothAdapter::OnStartDiscoverySessionError,
+                 weak_ptr_factory_.GetWeakPtr(), error_callback));
 }
 
 scoped_ptr<BluetoothDiscoveryFilter>
@@ -159,12 +162,23 @@ BluetoothAdapter::~BluetoothAdapter() {
 void BluetoothAdapter::OnStartDiscoverySession(
     scoped_ptr<BluetoothDiscoveryFilter> discovery_filter,
     const DiscoverySessionCallback& callback) {
-  VLOG(1) << "Discovery session started!";
+  VLOG(1) << "BluetoothAdapter::OnStartDiscoverySession";
+  RecordBluetoothDiscoverySessionStartOutcome(
+      UMABluetoothDiscoverySessionOutcome::SUCCESS);
+
   scoped_ptr<BluetoothDiscoverySession> discovery_session(
       new BluetoothDiscoverySession(scoped_refptr<BluetoothAdapter>(this),
                                     discovery_filter.Pass()));
   discovery_sessions_.insert(discovery_session.get());
   callback.Run(discovery_session.Pass());
+}
+
+void BluetoothAdapter::OnStartDiscoverySessionError(
+    const ErrorCallback& callback,
+    UMABluetoothDiscoverySessionOutcome outcome) {
+  VLOG(1) << "OnStartDiscoverySessionError: " << static_cast<int>(outcome);
+  RecordBluetoothDiscoverySessionStartOutcome(outcome);
+  callback.Run();
 }
 
 void BluetoothAdapter::MarkDiscoverySessionsAsInactive() {
@@ -184,6 +198,14 @@ void BluetoothAdapter::DiscoverySessionBecameInactive(
     BluetoothDiscoverySession* discovery_session) {
   DCHECK(!discovery_session->IsActive());
   discovery_sessions_.erase(discovery_session);
+}
+
+void BluetoothAdapter::DeleteDeviceForTesting(const std::string& address) {
+  std::map<const std::string, BluetoothDevice*>::iterator device_iterator =
+      devices_.find(address);
+  BluetoothDevice* device = device_iterator->second;
+  devices_.erase(device_iterator);
+  delete device;
 }
 
 scoped_ptr<BluetoothDiscoveryFilter>
@@ -222,6 +244,22 @@ BluetoothAdapter::GetMergedDiscoveryFilterHelper(
   }
 
   return result.Pass();
+}
+
+// static
+void BluetoothAdapter::RecordBluetoothDiscoverySessionStartOutcome(
+    UMABluetoothDiscoverySessionOutcome outcome) {
+  UMA_HISTOGRAM_ENUMERATION(
+      "Bluetooth.DiscoverySession.Start.Outcome", static_cast<int>(outcome),
+      static_cast<int>(UMABluetoothDiscoverySessionOutcome::COUNT));
+}
+
+// static
+void BluetoothAdapter::RecordBluetoothDiscoverySessionStopOutcome(
+    UMABluetoothDiscoverySessionOutcome outcome) {
+  UMA_HISTOGRAM_ENUMERATION(
+      "Bluetooth.DiscoverySession.Stop.Outcome", static_cast<int>(outcome),
+      static_cast<int>(UMABluetoothDiscoverySessionOutcome::COUNT));
 }
 
 }  // namespace device

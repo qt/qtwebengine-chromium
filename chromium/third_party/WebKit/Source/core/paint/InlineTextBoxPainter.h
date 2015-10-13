@@ -7,6 +7,7 @@
 
 #include "core/style/ComputedStyleConstants.h"
 #include "platform/geometry/LayoutRect.h"
+#include "wtf/Allocator.h"
 
 namespace blink {
 
@@ -25,15 +26,16 @@ class LayoutPoint;
 class LayoutTextCombine;
 
 class InlineTextBoxPainter {
+    STACK_ALLOCATED();
 public:
-    InlineTextBoxPainter(InlineTextBox& inlineTextBox) : m_inlineTextBox(inlineTextBox) { }
+    InlineTextBoxPainter(const InlineTextBox& inlineTextBox) : m_inlineTextBox(inlineTextBox) { }
 
     void paint(const PaintInfo&, const LayoutPoint&);
     void paintDocumentMarkers(GraphicsContext*, const LayoutPoint& boxOrigin, const ComputedStyle&, const Font&, bool background);
     void paintDocumentMarker(GraphicsContext*, const LayoutPoint& boxOrigin, DocumentMarker*, const ComputedStyle&, const Font&, bool grammar);
     void paintTextMatchMarker(GraphicsContext*, const LayoutPoint& boxOrigin, DocumentMarker*, const ComputedStyle&, const Font&);
 
-    static void removeFromTextBlobCache(InlineTextBox&);
+    static void removeFromTextBlobCache(const InlineTextBox&);
 
 private:
     enum class PaintOptions { Normal, CombinedText };
@@ -42,12 +44,14 @@ private:
     void paintSingleCompositionBackgroundRun(GraphicsContext*, const LayoutPoint& boxOrigin, const ComputedStyle&, const Font&, Color backgroundColor, int startPos, int endPos);
     template <PaintOptions>
     void paintSelection(GraphicsContext*, const LayoutRect& boxRect, const ComputedStyle&, const Font&, Color textColor, LayoutTextCombine* = nullptr);
-    void paintDecoration(GraphicsContext*, const LayoutPoint& boxOrigin, TextDecoration);
+    void paintDecoration(const PaintInfo&, const LayoutPoint& boxOrigin, TextDecoration);
     void paintCompositionUnderline(GraphicsContext*, const LayoutPoint& boxOrigin, const CompositionUnderline&);
     unsigned underlinePaintStart(const CompositionUnderline&);
     unsigned underlinePaintEnd(const CompositionUnderline&);
+    bool shouldPaintTextBox(const PaintInfo&);
+    void expandToIncludeNewlineForSelection(LayoutRect&);
 
-    InlineTextBox& m_inlineTextBox;
+    const InlineTextBox& m_inlineTextBox;
 };
 
 } // namespace blink

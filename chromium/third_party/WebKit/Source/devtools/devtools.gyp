@@ -57,6 +57,12 @@
                     ],
                 },
                 {
+                    'destination': '<(PRODUCT_DIR)/resources/inspector/emulated_devices',
+                    'files': [
+                        '<@(devtools_emulated_devices_images)',
+                    ],
+                },
+                {
                     'destination': '<(PRODUCT_DIR)/resources/inspector/',
                     'files': [
                         '<@(devtools_compatibility_scripts)',
@@ -111,6 +117,8 @@
                             '<(PRODUCT_DIR)/resources/inspector/audits_module.js',
                             '<(PRODUCT_DIR)/resources/inspector/components_lazy_module.js',
                             '<(PRODUCT_DIR)/resources/inspector/console_module.js',
+                            '<(PRODUCT_DIR)/resources/inspector/devices_module.js',
+                            '<(PRODUCT_DIR)/resources/inspector/diff_module.js',
                             '<(PRODUCT_DIR)/resources/inspector/elements_module.js',
                             '<(PRODUCT_DIR)/resources/inspector/heap_snapshot_worker_module.js',
                             '<(PRODUCT_DIR)/resources/inspector/layers_module.js',
@@ -274,6 +282,8 @@
                             '<(_output_path)/cm_modes_module.js',
                             '<(_output_path)/components_lazy_module.js',
                             '<(_output_path)/console_module.js',
+                            '<(_output_path)/devices_module.js',
+                            '<(_output_path)/diff_module.js',
                             '<(_output_path)/elements_module.js',
                             '<(_output_path)/emulated_devices_module.js',
                             '<(_output_path)/heap_snapshot_worker_module.js',

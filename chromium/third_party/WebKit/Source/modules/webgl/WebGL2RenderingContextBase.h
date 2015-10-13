@@ -7,7 +7,6 @@
 
 #include "modules/webgl/WebGLExtension.h"
 #include "modules/webgl/WebGLRenderingContextBase.h"
-#include "wtf/PassRefPtr.h"
 
 namespace blink {
 
@@ -29,8 +28,8 @@ public:
     ~WebGL2RenderingContextBase() override;
 
     /* Buffer objects */
-    void copyBufferSubData(GLenum, GLenum, GLintptr, GLintptr, GLsizeiptr);
-    void getBufferSubData(GLenum target, GLintptr offset, DOMArrayBuffer* returnedData);
+    void copyBufferSubData(GLenum, GLenum, long long, long long, long long);
+    void getBufferSubData(GLenum target, long long offset, DOMArrayBuffer* returnedData);
 
     /* Framebuffer objects */
     void blitFramebuffer(GLint, GLint, GLint, GLint, GLint, GLint, GLint, GLint, GLbitfield, GLenum);
@@ -47,8 +46,8 @@ public:
     void texStorage2D(GLenum, GLsizei, GLenum, GLsizei, GLsizei);
     void texStorage3D(GLenum, GLsizei, GLenum, GLsizei, GLsizei, GLsizei);
     void texImage3D(GLenum, GLint, GLint, GLsizei, GLsizei, GLsizei, GLint, GLenum, GLenum, DOMArrayBufferView*);
-    void texSubImage3D(GLenum, GLint, GLint, GLint, GLint, GLsizei, GLsizei, GLsizei, GLenum, GLenum, DOMArrayBufferView*, ExceptionState&);
-    void texSubImage3D(GLenum, GLint, GLint, GLint, GLint, GLenum, GLenum, ImageData*, ExceptionState&);
+    void texSubImage3D(GLenum, GLint, GLint, GLint, GLint, GLsizei, GLsizei, GLsizei, GLenum, GLenum, DOMArrayBufferView*);
+    void texSubImage3D(GLenum, GLint, GLint, GLint, GLint, GLenum, GLenum, ImageData*);
     void texSubImage3D(GLenum, GLint, GLint, GLint, GLint, GLenum, GLenum, HTMLImageElement*, ExceptionState&);
     void texSubImage3D(GLenum, GLint, GLint, GLint, GLint, GLenum, GLenum, HTMLCanvasElement*, ExceptionState&);
     void texSubImage3D(GLenum, GLint, GLint, GLint, GLint, GLenum, GLenum, HTMLVideoElement*, ExceptionState&);
@@ -64,9 +63,13 @@ public:
     void uniform2ui(const WebGLUniformLocation*, GLuint, GLuint);
     void uniform3ui(const WebGLUniformLocation*, GLuint, GLuint, GLuint);
     void uniform4ui(const WebGLUniformLocation*, GLuint, GLuint, GLuint, GLuint);
+    void uniform1uiv(const WebGLUniformLocation*, const FlexibleUint32ArrayView&);
     void uniform1uiv(const WebGLUniformLocation*, Vector<GLuint>&);
+    void uniform2uiv(const WebGLUniformLocation*, const FlexibleUint32ArrayView&);
     void uniform2uiv(const WebGLUniformLocation*, Vector<GLuint>&);
+    void uniform3uiv(const WebGLUniformLocation*, const FlexibleUint32ArrayView&);
     void uniform3uiv(const WebGLUniformLocation*, Vector<GLuint>&);
+    void uniform4uiv(const WebGLUniformLocation*, const FlexibleUint32ArrayView&);
     void uniform4uiv(const WebGLUniformLocation*, Vector<GLuint>&);
     void uniformMatrix2x3fv(const WebGLUniformLocation*, GLboolean, DOMFloat32Array*);
     void uniformMatrix2x3fv(const WebGLUniformLocation*, GLboolean, Vector<GLfloat>&);
@@ -82,16 +85,18 @@ public:
     void uniformMatrix4x3fv(const WebGLUniformLocation*, GLboolean, Vector<GLfloat>&);
 
     void vertexAttribI4i(GLuint, GLint, GLint, GLint, GLint);
+    void vertexAttribI4iv(GLuint, const DOMInt32Array*);
     void vertexAttribI4iv(GLuint, const Vector<GLint>&);
     void vertexAttribI4ui(GLuint, GLuint, GLuint, GLuint, GLuint);
+    void vertexAttribI4uiv(GLuint, const DOMUint32Array*);
     void vertexAttribI4uiv(GLuint, const Vector<GLuint>&);
-    void vertexAttribIPointer(GLuint index, GLint size, GLenum type, GLsizei stride, GLintptr offset);
+    void vertexAttribIPointer(GLuint index, GLint size, GLenum type, GLsizei stride, long long offset);
 
     /* Writing to the drawing buffer */
     void vertexAttribDivisor(GLuint, GLuint);
     void drawArraysInstanced(GLenum, GLint, GLsizei, GLsizei);
-    void drawElementsInstanced(GLenum, GLsizei, GLenum, GLintptr, GLsizei);
-    void drawRangeElements(GLenum mode, GLuint start, GLuint end, GLsizei count, GLenum type, GLintptr offset);
+    void drawElementsInstanced(GLenum, GLsizei, GLenum, long long, GLsizei);
+    void drawRangeElements(GLenum mode, GLuint start, GLuint end, GLsizei count, GLenum type, long long offset);
 
     /* Multiple Render Targets */
     void drawBuffers(const Vector<GLenum>&);
@@ -104,16 +109,16 @@ public:
     void clearBufferfi(GLenum, GLint, GLfloat, GLint);
 
     /* Query Objects */
-    PassRefPtrWillBeRawPtr<WebGLQuery> createQuery();
+    WebGLQuery* createQuery();
     void deleteQuery(WebGLQuery*);
     GLboolean isQuery(WebGLQuery*);
     void beginQuery(GLenum, WebGLQuery*);
     void endQuery(GLenum);
-    PassRefPtrWillBeRawPtr<WebGLQuery> getQuery(GLenum, GLenum);
+    WebGLQuery* getQuery(GLenum, GLenum);
     ScriptValue getQueryParameter(ScriptState*, WebGLQuery*, GLenum);
 
     /* Sampler Objects */
-    PassRefPtrWillBeRawPtr<WebGLSampler> createSampler();
+    WebGLSampler* createSampler();
     void deleteSampler(WebGLSampler*);
     GLboolean isSampler(WebGLSampler*);
     void bindSampler(GLuint, WebGLSampler*);
@@ -122,29 +127,29 @@ public:
     ScriptValue getSamplerParameter(ScriptState*, WebGLSampler*, GLenum);
 
     /* Sync objects */
-    PassRefPtrWillBeRawPtr<WebGLSync> fenceSync(GLenum, GLbitfield);
+    WebGLSync* fenceSync(GLenum, GLbitfield);
     GLboolean isSync(WebGLSync*);
     void deleteSync(WebGLSync*);
-    GLenum clientWaitSync(WebGLSync*, GLbitfield, GLuint);
-    void waitSync(WebGLSync*, GLbitfield, GLuint);
+    GLenum clientWaitSync(WebGLSync*, GLbitfield, GLint64);
+    void waitSync(WebGLSync*, GLbitfield, GLint64);
 
     ScriptValue getSyncParameter(ScriptState*, WebGLSync*, GLenum);
 
     /* Transform Feedback */
-    PassRefPtrWillBeRawPtr<WebGLTransformFeedback> createTransformFeedback();
+    WebGLTransformFeedback* createTransformFeedback();
     void deleteTransformFeedback(WebGLTransformFeedback*);
     GLboolean isTransformFeedback(WebGLTransformFeedback*);
     void bindTransformFeedback(GLenum, WebGLTransformFeedback*);
     void beginTransformFeedback(GLenum);
     void endTransformFeedback();
     void transformFeedbackVaryings(WebGLProgram*, const Vector<String>&, GLenum);
-    PassRefPtrWillBeRawPtr<WebGLActiveInfo> getTransformFeedbackVarying(WebGLProgram*, GLuint);
+    WebGLActiveInfo* getTransformFeedbackVarying(WebGLProgram*, GLuint);
     void pauseTransformFeedback();
     void resumeTransformFeedback();
 
     /* Uniform Buffer Objects and Transform Feedback Buffers */
     void bindBufferBase(GLenum, GLuint, WebGLBuffer*);
-    void bindBufferRange(GLenum, GLuint, WebGLBuffer*, GLintptr, GLsizeiptr);
+    void bindBufferRange(GLenum, GLuint, WebGLBuffer*, long long, long long);
     ScriptValue getIndexedParameter(ScriptState*, GLenum, GLuint);
     Vector<GLuint> getUniformIndices(WebGLProgram*, const Vector<String>&);
     Vector<GLint> getActiveUniforms(WebGLProgram*, const Vector<GLuint>&, GLenum);
@@ -154,10 +159,13 @@ public:
     void uniformBlockBinding(WebGLProgram*, GLuint, GLuint);
 
     /* Vertex Array Objects */
-    PassRefPtrWillBeRawPtr<WebGLVertexArrayObject> createVertexArray();
+    WebGLVertexArrayObject* createVertexArray();
     void deleteVertexArray(WebGLVertexArrayObject*);
     GLboolean isVertexArray(WebGLVertexArrayObject*);
     void bindVertexArray(WebGLVertexArrayObject*);
+
+    /* Reading */
+    void readPixels(GLint x, GLint y, GLsizei width, GLsizei height, GLenum format, GLenum type, long long offset);
 
     /* WebGLRenderingContextBase overrides */
     void initializeNewContext() override;
@@ -166,6 +174,7 @@ public:
     ScriptValue getParameter(ScriptState*, GLenum pname) override;
     ScriptValue getTexParameter(ScriptState*, GLenum target, GLenum pname) override;
     ScriptValue getFramebufferAttachmentParameter(ScriptState*, GLenum target, GLenum attachment, GLenum pname) override;
+    void readPixels(GLint x, GLint y, GLsizei width, GLsizei height, GLenum format, GLenum type, DOMArrayBufferView* pixels) override;
     void restoreCurrentFramebuffer() override;
 
     EAGERLY_FINALIZE();
@@ -185,42 +194,64 @@ protected:
         TexStorageType3D,
     };
     bool validateTexStorage(const char*, GLenum, GLsizei, GLenum, GLsizei, GLsizei, GLsizei, TexStorageType);
-    bool validateTexSubImage3D(const char*, GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLsizei width, GLsizei height, GLsizei depth);
+    bool validateTexImage3D(const char* functionName, GLenum target, GLint level, GLenum internalformat, GLenum format, GLenum type);
+    bool validateTexSubImage3D(const char*, GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLenum format, GLenum type, GLsizei width, GLsizei height, GLsizei depth);
 
     ScriptValue getInt64Parameter(ScriptState*, GLenum);
 
     void texSubImage3DImpl(GLenum, GLint, GLint, GLint, GLint, GLenum, GLenum, Image*, WebGLImageConversion::ImageHtmlDomSource, bool, bool);
+    void samplerParameter(WebGLSampler*, GLenum, GLfloat, GLint, bool);
+
+    bool isBufferBoundToTransformFeedback(WebGLBuffer*);
+    bool isBufferBoundToNonTransformFeedback(WebGLBuffer*);
+    bool validateBufferTargetCompatibility(const char*, GLenum, WebGLBuffer*);
+
+    bool validateBufferBaseTarget(const char* functionName, GLenum target);
+    bool validateAndUpdateBufferBindBaseTarget(const char* functionName, GLenum, GLuint, WebGLBuffer*);
+
+    void vertexAttribIivImpl(const char*, GLuint, const GLint*, GLsizei);
+    void vertexAttribIuivImpl(const char*, GLuint, const GLuint*, GLsizei);
 
     /* WebGLRenderingContextBase overrides */
+    unsigned getMaxWebGLLocationLength() const override { return 1024; };
     bool validateCapability(const char* functionName, GLenum) override;
     bool validateBufferTarget(const char* functionName, GLenum target) override;
     bool validateAndUpdateBufferBindTarget(const char* functionName, GLenum, WebGLBuffer*) override;
     WebGLTexture* validateTextureBinding(const char* functionName, GLenum target, bool useSixEnumsForCubeMap) override;
     bool validateFramebufferTarget(GLenum target) override;
+    bool validateReadPixelsFormatAndType(GLenum format, GLenum type) override;
+    DOMArrayBufferView::ViewType readPixelsExpectedArrayBufferViewType(GLenum type) override;
     WebGLFramebuffer* getFramebufferBinding(GLenum target) override;
     GLint getMaxTextureLevelForTarget(GLenum target) override;
     void renderbufferStorageImpl(GLenum target, GLsizei samples, GLenum internalformat, GLsizei width, GLsizei height, const char* functionName) override;
     GLenum boundFramebufferColorFormat() override;
 
     WebGLBuffer* validateBufferDataTarget(const char* functionName, GLenum target) override;
+    bool validateBufferDataUsage(const char* functionName, GLenum usage) override;
 
     void removeBoundBuffer(WebGLBuffer*) override;
 
-    RefPtrWillBeMember<WebGLFramebuffer> m_readFramebufferBinding;
-    RefPtrWillBeMember<WebGLTransformFeedback> m_transformFeedbackBinding;
+    PersistentWillBeMember<WebGLFramebuffer> m_readFramebufferBinding;
+    PersistentWillBeMember<WebGLTransformFeedback> m_transformFeedbackBinding;
     GLint m_max3DTextureSize;
     GLint m_max3DTextureLevel;
 
-    RefPtrWillBeMember<WebGLBuffer> m_boundCopyReadBuffer;
-    RefPtrWillBeMember<WebGLBuffer> m_boundCopyWriteBuffer;
-    RefPtrWillBeMember<WebGLBuffer> m_boundPixelPackBuffer;
-    RefPtrWillBeMember<WebGLBuffer> m_boundPixelUnpackBuffer;
-    RefPtrWillBeMember<WebGLBuffer> m_boundTransformFeedbackBuffer;
-    RefPtrWillBeMember<WebGLBuffer> m_boundUniformBuffer;
+    std::set<GLenum> m_supportedInternalFormatsStorage;
 
-    RefPtrWillBeMember<WebGLQuery> m_currentBooleanOcclusionQuery;
-    RefPtrWillBeMember<WebGLQuery> m_currentTransformFeedbackPrimitivesWrittenQuery;
-    WillBeHeapVector<RefPtrWillBeMember<WebGLSampler>> m_samplerUnits;
+    PersistentWillBeMember<WebGLBuffer> m_boundCopyReadBuffer;
+    PersistentWillBeMember<WebGLBuffer> m_boundCopyWriteBuffer;
+    PersistentWillBeMember<WebGLBuffer> m_boundPixelPackBuffer;
+    PersistentWillBeMember<WebGLBuffer> m_boundPixelUnpackBuffer;
+    PersistentWillBeMember<WebGLBuffer> m_boundTransformFeedbackBuffer;
+    PersistentWillBeMember<WebGLBuffer> m_boundUniformBuffer;
+
+    PersistentHeapVectorWillBeHeapVector<Member<WebGLBuffer>> m_boundIndexedTransformFeedbackBuffers;
+    PersistentHeapVectorWillBeHeapVector<Member<WebGLBuffer>> m_boundIndexedUniformBuffers;
+    size_t m_maxBoundUniformBufferIndex;
+
+    PersistentWillBeMember<WebGLQuery> m_currentBooleanOcclusionQuery;
+    PersistentWillBeMember<WebGLQuery> m_currentTransformFeedbackPrimitivesWrittenQuery;
+    PersistentHeapVectorWillBeHeapVector<Member<WebGLSampler>> m_samplerUnits;
 };
 
 DEFINE_TYPE_CASTS(WebGL2RenderingContextBase, CanvasRenderingContext, context,

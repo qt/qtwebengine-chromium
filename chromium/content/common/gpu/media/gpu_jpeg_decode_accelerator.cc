@@ -64,7 +64,7 @@ bool VerifyDecodeParams(const AcceleratedJpegDecoderMsg_Decode_Params& params) {
   }
 
   if (params.output_buffer_size <
-      media::VideoFrame::AllocationSize(media::VideoFrame::I420,
+      media::VideoFrame::AllocationSize(media::PIXEL_FORMAT_I420,
                                         params.coded_size)) {
     LOG(ERROR) << "output_buffer_size is too small: "
                << params.output_buffer_size;
@@ -237,7 +237,7 @@ class GpuJpegDecodeAccelerator::MessageFilter : public IPC::MessageFilter {
     uint8_t* shm_memory = static_cast<uint8_t*>(output_shm->memory());
     scoped_refptr<media::VideoFrame> frame =
         media::VideoFrame::WrapExternalSharedMemory(
-            media::VideoFrame::I420,           // format
+            media::PIXEL_FORMAT_I420,          // format
             params.coded_size,                 // coded_size
             gfx::Rect(params.coded_size),      // visible_rect
             params.coded_size,                 // natural_size
@@ -326,25 +326,28 @@ GpuJpegDecodeAccelerator::~GpuJpegDecodeAccelerator() {
 void GpuJpegDecodeAccelerator::AddClient(int32 route_id,
                                          IPC::Message* reply_msg) {
   DCHECK(CalledOnValidThread());
-  scoped_ptr<media::JpegDecodeAccelerator> accelerator;
 
-// When adding more platforms, VideoCaptureGpuJpegDecoder::Supported need
-// update as well.
-#if defined(OS_CHROMEOS) && defined(ARCH_CPU_X86_FAMILY)
-  accelerator.reset(new VaapiJpegDecodeAccelerator(io_task_runner_));
-#elif defined(OS_CHROMEOS) && defined(USE_V4L2_CODEC)
-  scoped_refptr<V4L2Device> device = V4L2Device::Create(
-      V4L2Device::kJpegDecoder);
-  if (device) {
-    accelerator.reset(new V4L2JpegDecodeAccelerator(
-        device, io_task_runner_));
-  }
-#else
-  DVLOG(1) << "HW JPEG decode acceleration not available.";
-#endif
+  // When adding non-chromeos platforms, VideoCaptureGpuJpegDecoder::Initialize
+  // needs to be updated.
+
+  // This list is ordered by priority of use.
+  const GpuJpegDecodeAccelerator::CreateJDAFp create_jda_fps[] = {
+      &GpuJpegDecodeAccelerator::CreateV4L2JDA,
+      &GpuJpegDecodeAccelerator::CreateVaapiJDA,
+  };
 
   scoped_ptr<Client> client(new Client(this, route_id));
-  if (!accelerator.get() || !accelerator->Initialize(client.get())) {
+  scoped_ptr<media::JpegDecodeAccelerator> accelerator;
+  for (const auto& create_jda_function : create_jda_fps) {
+    scoped_ptr<media::JpegDecodeAccelerator> tmp_accelerator =
+        (*create_jda_function)(io_task_runner_);
+    if (tmp_accelerator && tmp_accelerator->Initialize(client.get())) {
+      accelerator = tmp_accelerator.Pass();
+      break;
+    }
+  }
+
+  if (!accelerator) {
     DLOG(ERROR) << "JPEG accelerator Initialize failed";
     GpuMsg_CreateJpegDecoder::WriteReplyParams(reply_msg, false);
     Send(reply_msg);
@@ -392,6 +395,46 @@ void GpuJpegDecodeAccelerator::ClientRemoved() {
 bool GpuJpegDecodeAccelerator::Send(IPC::Message* message) {
   DCHECK(CalledOnValidThread());
   return channel_->Send(message);
+}
+
+// static
+scoped_ptr<media::JpegDecodeAccelerator>
+GpuJpegDecodeAccelerator::CreateV4L2JDA(
+    const scoped_refptr<base::SingleThreadTaskRunner>& io_task_runner) {
+  scoped_ptr<media::JpegDecodeAccelerator> decoder;
+#if defined(OS_CHROMEOS) && defined(USE_V4L2_CODEC)
+  scoped_refptr<V4L2Device> device = V4L2Device::Create(
+      V4L2Device::kJpegDecoder);
+  if (device)
+    decoder.reset(new V4L2JpegDecodeAccelerator(device, io_task_runner));
+#endif
+  return decoder.Pass();
+}
+
+// static
+scoped_ptr<media::JpegDecodeAccelerator>
+GpuJpegDecodeAccelerator::CreateVaapiJDA(
+    const scoped_refptr<base::SingleThreadTaskRunner>& io_task_runner) {
+  scoped_ptr<media::JpegDecodeAccelerator> decoder;
+#if defined(OS_CHROMEOS) && defined(ARCH_CPU_X86_FAMILY)
+  decoder.reset(new VaapiJpegDecodeAccelerator(io_task_runner));
+#endif
+  return decoder.Pass();
+}
+
+// static
+bool GpuJpegDecodeAccelerator::IsSupported() {
+  const GpuJpegDecodeAccelerator::CreateJDAFp create_jda_fps[] = {
+      &GpuJpegDecodeAccelerator::CreateV4L2JDA,
+      &GpuJpegDecodeAccelerator::CreateVaapiJDA,
+  };
+  for (const auto& create_jda_function : create_jda_fps) {
+    scoped_ptr<media::JpegDecodeAccelerator> accelerator =
+        (*create_jda_function)(base::ThreadTaskRunnerHandle::Get());
+    if (accelerator && accelerator->IsSupported())
+      return true;
+  }
+  return false;
 }
 
 }  // namespace content

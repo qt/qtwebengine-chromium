@@ -12,12 +12,14 @@
 #include "GrGLGeometryShaderBuilder.h"
 #include "GrGLVertexShaderBuilder.h"
 #include "../GrGLProgramDataManager.h"
-#include "../GrGLPathProgramDataManager.h"
-#include "../GrGLUniformHandle.h"
 #include "../GrGLPrimitiveProcessor.h"
 #include "../GrGLXferProcessor.h"
-#include "../../GrPendingFragmentStage.h"
 #include "../../GrPipeline.h"
+
+class GrFragmentProcessor;
+
+// Enough precision to represent 1 / 2048 accurately in printf
+#define GR_SIGNIFICANT_POW2_DECIMAL_DIG 11
 
 /*
  * This is the base class for a series of interfaces.  This base class *MUST* remain abstract with
@@ -40,19 +42,19 @@ public:
     virtual ~GrGLUniformBuilder() {}
 
     typedef GrGLProgramDataManager::UniformHandle UniformHandle;
-    typedef GrGLPathProgramDataManager::SeparableVaryingHandle SeparableVaryingHandle;
+    typedef GrGLProgramDataManager::SeparableVaryingHandle SeparableVaryingHandle;
 
     /** Add a uniform variable to the current program, that has visibility in one or more shaders.
         visibility is a bitfield of ShaderVisibility values indicating from which shaders the
         uniform should be accessible. At least one bit must be set. Geometry shader uniforms are not
-        supported at this time. The actual uniform name will be mangled. If outName is not NULL then
+        supported at this time. The actual uniform name will be mangled. If outName is not nullptr then
         it will refer to the final uniform name after return. Use the addUniformArray variant to add
         an array of uniforms. */
     UniformHandle addUniform(uint32_t visibility,
                              GrSLType type,
                              GrSLPrecision precision,
                              const char* name,
-                             const char** outName = NULL) {
+                             const char** outName = nullptr) {
         return this->addUniformArray(visibility, type, precision, name, 0, outName);
     }
 
@@ -62,7 +64,7 @@ public:
         GrSLPrecision precision,
         const char* name,
         int arrayCount,
-        const char** outName = NULL) = 0;
+        const char** outName = nullptr) = 0;
 
     virtual const GrGLShaderVar& getUniformVariable(UniformHandle u) const = 0;
 
@@ -101,8 +103,8 @@ protected:
     };
 
     GrGLVarying(GrSLType type, Varying varying)
-        : fVarying(varying), fType(type), fVsOut(NULL), fGsIn(NULL), fGsOut(NULL),
-          fFsIn(NULL) {}
+        : fVarying(varying), fType(type), fVsOut(nullptr), fGsIn(nullptr), fGsOut(nullptr),
+          fFsIn(nullptr) {}
 
     Varying fVarying;
 
@@ -145,7 +147,7 @@ public:
      */
     virtual void addVarying(const char* name,
                             GrGLVarying*,
-                            GrSLPrecision fsPrecision = kDefault_GrSLPrecision) = 0;
+                            GrSLPrecision precision = kDefault_GrSLPrecision) = 0;
 
     /*
      * This call can be used by GP to pass an attribute through all shaders directly to 'output' in
@@ -239,7 +241,7 @@ public:
                                   const char** outName) override;
 
     const GrGLShaderVar& getUniformVariable(UniformHandle u) const override {
-        return fUniforms[u.toShaderBuilderIndex()].fVariable;
+        return fUniforms[u.toIndex()].fVariable;
     }
 
     const char* getUniformCStr(UniformHandle u) const override {
@@ -256,7 +258,7 @@ public:
     void addVarying(
             const char* name,
             GrGLVarying*,
-            GrSLPrecision fsPrecision = kDefault_GrSLPrecision) override;
+            GrSLPrecision precision = kDefault_GrSLPrecision) override;
 
     void addPassThroughAttribute(const GrPrimitiveProcessor::Attribute*,
                                  const char* output) override;
@@ -278,15 +280,14 @@ public:
 protected:
     typedef GrGLProgramDataManager::UniformInfo UniformInfo;
     typedef GrGLProgramDataManager::UniformInfoArray UniformInfoArray;
-
-    static GrGLProgramBuilder* CreateProgramBuilder(const DrawArgs&, GrGLGpu*);
+    typedef GrGLProgramDataManager::SeparableVaryingInfo SeparableVaryingInfo;
+    typedef GrGLProgramDataManager::SeparableVaryingInfoArray SeparableVaryingInfoArray;
 
     GrGLProgramBuilder(GrGLGpu*, const DrawArgs&);
 
     const GrPrimitiveProcessor& primitiveProcessor() const { return *fArgs.fPrimitiveProcessor; }
     const GrPipeline& pipeline() const { return *fArgs.fPipeline; }
     const GrProgramDesc& desc() const { return *fArgs.fDesc; }
-    const GrBatchTracker& batchTracker() const { return *fArgs.fBatchTracker; }
     const GrProgramDesc::KeyHeader& header() const { return fArgs.fDesc->header(); }
 
     // Generates a name for a variable. The generated string will be name prefixed by the prefix
@@ -298,7 +299,7 @@ protected:
     void nameExpression(GrGLSLExpr4*, const char* baseName);
     bool emitAndInstallProcs(GrGLSLExpr4* inputColor, GrGLSLExpr4* inputCoverage);
     void emitAndInstallFragProcs(int procOffset, int numProcs, GrGLSLExpr4* inOut);
-    void emitAndInstallProc(const GrPendingFragmentStage&,
+    void emitAndInstallProc(const GrFragmentProcessor&,
                             int index,
                             const GrGLSLExpr4& input,
                             GrGLSLExpr4* output);
@@ -308,7 +309,7 @@ protected:
                             GrGLSLExpr4* outputCoverage);
 
     // these emit functions help to keep the createAndEmitProcessors template general
-    void emitAndInstallProc(const GrPendingFragmentStage&,
+    void emitAndInstallProc(const GrFragmentProcessor&,
                             int index,
                             const char* outColor,
                             const char* inColor);
@@ -328,7 +329,7 @@ protected:
                       GrGLInstalledProc<Proc>*);
 
     GrGLProgram* finalize();
-    void bindProgramResourceLocations(GrGLuint programID);
+    virtual void bindProgramResourceLocations(GrGLuint programID);
     bool checkLinkStatus(GrGLuint programID);
     virtual void resolveProgramResourceLocations(GrGLuint programID);
     void cleanupProgram(GrGLuint programID, const SkTDArray<GrGLuint>& shaderIDs);
@@ -397,6 +398,7 @@ protected:
     GrGLPrimitiveProcessor::TransformsIn fCoordTransforms;
     GrGLPrimitiveProcessor::TransformsOut fOutCoords;
     SkTArray<UniformHandle> fSamplerUniforms;
+    SeparableVaryingInfoArray fSeparableVaryingInfos;
 
     friend class GrGLShaderBuilder;
     friend class GrGLVertexBuilder;

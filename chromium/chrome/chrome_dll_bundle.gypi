@@ -101,7 +101,6 @@
     },
   ],
   'variables': {
-    'libpeer_target_type%': 'static_library',
     'theme_dir_name': '<(branding_path_component)',
   },
   'postbuilds': [
@@ -149,16 +148,8 @@
       'files': [],
       'conditions': [
         ['disable_nacl!=1', {
-          'conditions': [
-            ['target_arch=="x64"', {
-              'files': [
-                '<(PRODUCT_DIR)/nacl_irt_x86_64.nexe',
-              ],
-            }, {
-              'files': [
-                '<(PRODUCT_DIR)/nacl_irt_x86_32.nexe',
-              ],
-            }],
+          'files': [
+            '<(PRODUCT_DIR)/nacl_irt_x86_64.nexe',
           ],
         }],
       ],
@@ -270,14 +261,6 @@
       'mac_bundle_resources': [
         '<(SHARED_INTERMEDIATE_DIR)/repack/chrome_200_percent.pak',
       ],
-    }],
-    ['enable_webrtc==1 and libpeer_target_type!="static_library"', {
-      'copies': [{
-       'destination': '<(PRODUCT_DIR)/$(CONTENTS_FOLDER_PATH)/Libraries',
-       'files': [
-          '<(PRODUCT_DIR)/libpeerconnection.so',
-        ],
-      }],
     }],
     ['icu_use_data_file_flag==1', {
       'mac_bundle_resources': [

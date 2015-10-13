@@ -17,8 +17,10 @@ PpapiCommandBufferProxy::PpapiCommandBufferProxy(
     const ppapi::HostResource& resource,
     PluginDispatcher* dispatcher,
     const gpu::Capabilities& capabilities,
-    const SerializedHandle& shared_state)
-    : capabilities_(capabilities),
+    const SerializedHandle& shared_state,
+    uint64_t command_buffer_id)
+    : command_buffer_id_(command_buffer_id),
+      capabilities_(capabilities),
       resource_(resource),
       dispatcher_(dispatcher) {
   shared_state_shm_.reset(
@@ -128,11 +130,16 @@ scoped_refptr<gpu::Buffer> PpapiCommandBufferProxy::CreateTransferBuffer(
   if (!Send(new PpapiHostMsg_PPBGraphics3D_CreateTransferBuffer(
             ppapi::API_ID_PPB_GRAPHICS_3D, resource_,
             base::checked_cast<uint32_t>(size), id, &handle))) {
+    if (last_state_.error == gpu::error::kNoError)
+      last_state_.error = gpu::error::kLostContext;
     return NULL;
   }
 
-  if (*id <= 0 || !handle.is_shmem())
+  if (*id <= 0 || !handle.is_shmem()) {
+    if (last_state_.error == gpu::error::kNoError)
+      last_state_.error = gpu::error::kOutOfBounds;
     return NULL;
+  }
 
   scoped_ptr<base::SharedMemory> shared_memory(
       new base::SharedMemory(handle.shmem(), false));
@@ -140,6 +147,8 @@ scoped_refptr<gpu::Buffer> PpapiCommandBufferProxy::CreateTransferBuffer(
   // Map the shared memory on demand.
   if (!shared_memory->memory()) {
     if (!shared_memory->Map(handle.size())) {
+      if (last_state_.error == gpu::error::kNoError)
+        last_state_.error = gpu::error::kOutOfBounds;
       *id = -1;
       return NULL;
     }
@@ -168,6 +177,14 @@ void PpapiCommandBufferProxy::SetLock(base::Lock*) {
 bool PpapiCommandBufferProxy::IsGpuChannelLost() {
   NOTIMPLEMENTED();
   return false;
+}
+
+gpu::CommandBufferNamespace PpapiCommandBufferProxy::GetNamespaceID() const {
+  return gpu::CommandBufferNamespace::GPU_IO;
+}
+
+uint64_t PpapiCommandBufferProxy::GetCommandBufferID() const {
+  return command_buffer_id_;
 }
 
 uint32 PpapiCommandBufferProxy::InsertSyncPoint() {

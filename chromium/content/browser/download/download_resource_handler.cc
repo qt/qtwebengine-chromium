@@ -142,11 +142,6 @@ DownloadResourceHandler::DownloadResourceHandler(
       PowerSaveBlocker::kReasonOther, "Download in progress");
 }
 
-bool DownloadResourceHandler::OnUploadProgress(uint64 position,
-                                               uint64 size) {
-  return true;
-}
-
 bool DownloadResourceHandler::OnRequestRedirected(
     const net::RedirectInfo& redirect_info,
     ResourceResponse* response,
@@ -204,8 +199,13 @@ bool DownloadResourceHandler::OnResponseStarted(
   info->referrer_url = GURL(request()->referrer());
   info->mime_type = response->head.mime_type;
   info->remote_address = request()->GetSocketAddress().host();
-  request()->GetResponseHeaderByName("content-disposition",
-                                     &info->content_disposition);
+  if (request()->response_headers()) {
+    // Grab the first content-disposition header.  There may be more than one,
+    // though as of this writing, the network stack ensures if there are, they
+    // are all duplicates.
+    request()->response_headers()->EnumerateHeader(
+        nullptr, "content-disposition", &info->content_disposition);
+  }
   RecordDownloadMimeType(info->mime_type);
   RecordDownloadContentDisposition(info->content_disposition);
 

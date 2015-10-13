@@ -416,7 +416,7 @@ StoragePartitionImpl* StoragePartitionImplMap::Get(
               browser_context_->GetResourceContext(),
               browser_context_->IsOffTheRecord(),
               partition->GetAppCacheService(),
-              blob_storage_context));
+              blob_storage_context).release());
   std::vector<std::string> additional_webui_schemes;
   GetContentClient()->browser()->GetAdditionalWebUISchemes(
       &additional_webui_schemes);
@@ -430,7 +430,7 @@ StoragePartitionImpl* StoragePartitionImplMap::Get(
                 browser_context_->GetResourceContext(),
                 browser_context_->IsOffTheRecord(),
                 partition->GetAppCacheService(),
-                blob_storage_context));
+                blob_storage_context).release());
   }
   protocol_handlers[kChromeDevToolsScheme] =
       linked_ptr<net::URLRequestJobFactory::ProtocolHandler>(
@@ -594,6 +594,12 @@ void StoragePartitionImplMap::PostCreateInitialization(
                    make_scoped_refptr(partition->GetURLRequestContext()),
                    make_scoped_refptr(
                        ChromeBlobStorageContext::GetFor(browser_context_))));
+
+    BrowserThread::PostTask(
+        BrowserThread::IO, FROM_HERE,
+        base::Bind(&ServiceWorkerContextWrapper::set_resource_context,
+                   partition->GetServiceWorkerContext(),
+                   browser_context_->GetResourceContext()));
 
     // We do not call InitializeURLRequestContext() for media contexts because,
     // other than the HTTP cache, the media contexts share the same backing

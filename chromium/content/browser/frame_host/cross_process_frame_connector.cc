@@ -41,6 +41,7 @@ bool CrossProcessFrameConnector::OnMessageReceived(const IPC::Message& msg) {
     IPC_MESSAGE_HANDLER(FrameHostMsg_ReclaimCompositorResources,
                         OnReclaimCompositorResources)
     IPC_MESSAGE_HANDLER(FrameHostMsg_ForwardInputEvent, OnForwardInputEvent)
+    IPC_MESSAGE_HANDLER(FrameHostMsg_FrameRectChanged, OnFrameRectChanged)
     IPC_MESSAGE_HANDLER(FrameHostMsg_InitializeChildFrame,
                         OnInitializeChildFrame)
     IPC_MESSAGE_HANDLER(FrameHostMsg_SatisfySequence, OnSatisfySequence)
@@ -152,6 +153,7 @@ void CrossProcessFrameConnector::GetScreenInfo(blink::WebScreenInfo* results) {
   if (frame_proxy_in_parent_renderer_->frame_tree_node()
           ->render_manager()
           ->ForInnerDelegate()) {
+    DCHECK(frame_proxy_in_parent_renderer_->frame_tree_node()->IsMainFrame());
     return;
   }
 
@@ -166,8 +168,6 @@ void CrossProcessFrameConnector::OnForwardInputEvent(
   if (!view_)
     return;
 
-  RenderWidgetHostImpl* child_widget =
-      RenderWidgetHostImpl::From(view_->GetRenderWidgetHost());
   RenderFrameHostManager* manager =
       frame_proxy_in_parent_renderer_->frame_tree_node()->render_manager();
   RenderWidgetHostImpl* parent_widget =
@@ -180,21 +180,26 @@ void CrossProcessFrameConnector::OnForwardInputEvent(
       return;
     NativeWebKeyboardEvent keyboard_event(
         *parent_widget->GetLastKeyboardEvent());
-    child_widget->ForwardKeyboardEvent(keyboard_event);
+    view_->ProcessKeyboardEvent(keyboard_event);
     return;
   }
 
   if (blink::WebInputEvent::isMouseEventType(event->type)) {
-    child_widget->ForwardMouseEvent(
-        *static_cast<const blink::WebMouseEvent*>(event));
+    view_->ProcessMouseEvent(*static_cast<const blink::WebMouseEvent*>(event));
     return;
   }
 
   if (event->type == blink::WebInputEvent::MouseWheel) {
-    child_widget->ForwardWheelEvent(
+    view_->ProcessMouseWheelEvent(
         *static_cast<const blink::WebMouseWheelEvent*>(event));
     return;
   }
+}
+
+void CrossProcessFrameConnector::OnFrameRectChanged(
+    const gfx::Rect& frame_rect) {
+  if (!frame_rect.size().IsEmpty())
+    SetSize(frame_rect);
 }
 
 void CrossProcessFrameConnector::SetDeviceScaleFactor(float scale_factor) {

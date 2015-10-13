@@ -57,6 +57,14 @@ def _baseline_name(fs, test_name, suffix):
     return fs.splitext(test_name)[0] + TestResultWriter.FILENAME_SUFFIX_EXPECTED + "." + suffix
 
 
+def _get_branch_name_or_ref(tool):
+    branch_name = tool.scm().current_branch()
+    if not branch_name:
+        # If HEAD is detached use commit SHA instead.
+        return tool.executive.run_command(['git', 'rev-parse', 'HEAD']).strip()
+    return branch_name
+
+
 class AbstractRebaseliningCommand(AbstractDeclarativeCommand):
     # not overriding execute() - pylint: disable=W0223
 
@@ -327,7 +335,7 @@ class AbstractParallelRebaselineCommand(AbstractRebaseliningCommand):
                 if builder_results:
                     self._builder_data[builder_name] = builder_results
                 else:
-                    _log.warning("No result for builder '%s'" % builder_name)
+                    raise Exception("No result for builder %s." % builder_name)
         return self._builder_data
 
     # The release builders cycle much faster than the debug ones and cover all the platforms.
@@ -656,6 +664,7 @@ class AutoRebaseline(AbstractParallelRebaselineCommand):
     name = "auto-rebaseline"
     help_text = "Rebaselines any NeedsRebaseline lines in TestExpectations that have cycled through all the bots."
     AUTO_REBASELINE_BRANCH_NAME = "auto-rebaseline-temporary-branch"
+    AUTO_REBASELINE_ALT_BRANCH_NAME = "auto-rebaseline-alt-temporary-branch"
 
     # Rietveld uploader stinks. Limit the number of rebaselines in a given patch to keep upload from failing.
     # FIXME: http://crbug.com/263676 Obviously we should fix the uploader here.
@@ -679,7 +688,7 @@ class AutoRebaseline(AbstractParallelRebaselineCommand):
                 return []
             revisions.append({
                 "builder": result.builder_name(),
-                "revision": result.blink_revision(),
+                "revision": result.chromium_revision(),
             })
         return revisions
 
@@ -689,6 +698,7 @@ class AutoRebaseline(AbstractParallelRebaselineCommand):
 
         tests = set()
         revision = None
+        commit = None
         author = None
         bugs = set()
         has_any_needs_rebaseline_lines = False
@@ -707,20 +717,21 @@ class AutoRebaseline(AbstractParallelRebaselineCommand):
             parsed_line = re.match("^(\S*)[^(]*\((\S*).*?([^ ]*)\ \[[^[]*$", line_without_comments)
 
             commit_hash = parsed_line.group(1)
-            svn_revision = tool.scm().svn_revision_from_git_commit(commit_hash)
+            commit_position = tool.scm().commit_position_from_git_commit(commit_hash)
 
             test = parsed_line.group(3)
             if print_revisions:
-                _log.info("%s is waiting for r%s" % (test, svn_revision))
+                _log.info("%s is waiting for r%s" % (test, commit_position))
 
-            if not svn_revision or svn_revision > min_revision:
+            if not commit_position or commit_position > min_revision:
                 continue
 
-            if revision and svn_revision != revision:
+            if revision and commit_position != revision:
                 continue
 
             if not revision:
-                revision = svn_revision
+                revision = commit_position
+                commit = commit_hash
                 author = parsed_line.group(2)
 
             bugs.update(re.findall("crbug\.com\/(\d+)", line_without_comments))
@@ -730,12 +741,12 @@ class AutoRebaseline(AbstractParallelRebaselineCommand):
                 _log.info("Too many tests to rebaseline in one patch. Doing the first %d." % self.MAX_LINES_TO_REBASELINE)
                 break
 
-        return tests, revision, author, bugs, has_any_needs_rebaseline_lines
+        return tests, revision, commit, author, bugs, has_any_needs_rebaseline_lines
 
-    def link_to_patch(self, revision):
-        return "http://src.chromium.org/viewvc/blink?view=revision&revision=" + str(revision)
+    def link_to_patch(self, commit):
+        return "https://chromium.googlesource.com/chromium/src/+/" + commit
 
-    def commit_message(self, author, revision, bugs):
+    def commit_message(self, author, revision, commit, bugs):
         bug_string = ""
         if bugs:
             bug_string = "BUG=%s\n" % ",".join(bugs)
@@ -745,7 +756,7 @@ class AutoRebaseline(AbstractParallelRebaselineCommand):
 %s
 
 %sTBR=%s
-""" % (revision, self.link_to_patch(revision), bug_string, author)
+""" % (revision, self.link_to_patch(commit), bug_string, author)
 
     def get_test_prefix_list(self, tests):
         test_prefix_list = {}
@@ -792,7 +803,7 @@ class AutoRebaseline(AbstractParallelRebaselineCommand):
 
     # FIXME: Move this somewhere more general.
     def tree_status(self):
-        blink_tree_status_url = "http://blink-status.appspot.com/status"
+        blink_tree_status_url = "http://chromium-status.appspot.com/status"
         status = urllib2.urlopen(blink_tree_status_url).read().lower()
         if status.find('closed') != -1 or status == "0":
             return 'closed'
@@ -814,7 +825,7 @@ class AutoRebaseline(AbstractParallelRebaselineCommand):
             return
 
         min_revision = int(min([item["revision"] for item in revision_data]))
-        tests, revision, author, bugs, has_any_needs_rebaseline_lines = self.tests_to_rebaseline(tool, min_revision, print_revisions=options.verbose)
+        tests, revision, commit, author, bugs, has_any_needs_rebaseline_lines = self.tests_to_rebaseline(tool, min_revision, print_revisions=options.verbose)
 
         if options.verbose:
             _log.info("Min revision across all bots is %s." % min_revision)
@@ -834,28 +845,22 @@ class AutoRebaseline(AbstractParallelRebaselineCommand):
         test_prefix_list, lines_to_remove = self.get_test_prefix_list(tests)
 
         did_finish = False
+        old_branch_name_or_ref = ''
+        rebaseline_branch_name = self.AUTO_REBASELINE_BRANCH_NAME
         try:
-            # Setup git-svn for dcommit if necessary.
-            if tool.executive.run_command(
-                    ['git', 'config', '--local', '--get-regexp', r'^svn-remote\.'],
-                    return_exit_code=True):
-                tool.executive.run_command(['git', 'auto-svn'])
-
             # Save the current branch name and checkout a clean branch for the patch.
-            old_branch_name = tool.executive.run_command(
-                ["git", "rev-parse", "--symbolic-full-name", "HEAD"])
-            if old_branch_name == "HEAD":
-                # If HEAD is detached use commit SHA instead.
-                old_branch_name = tool.executive.run_command(["git", "rev-parse", "HEAD"])
-            tool.scm().delete_branch(self.AUTO_REBASELINE_BRANCH_NAME)
-            tool.scm().create_clean_branch(self.AUTO_REBASELINE_BRANCH_NAME)
+            old_branch_name_or_ref = _get_branch_name_or_ref(tool)
+            if old_branch_name_or_ref == self.AUTO_REBASELINE_BRANCH_NAME:
+                rebaseline_branch_name = self.AUTO_REBASELINE_ALT_BRANCH_NAME
+            tool.scm().delete_branch(rebaseline_branch_name)
+            tool.scm().create_clean_branch(rebaseline_branch_name)
 
             # If the tests are passing everywhere, then this list will be empty. We don't need
             # to rebaseline, but we'll still need to update TestExpectations.
             if test_prefix_list:
                 self._rebaseline(options, test_prefix_list)
 
-            tool.scm().commit_locally_with_message(self.commit_message(author, revision, bugs))
+            tool.scm().commit_locally_with_message(self.commit_message(author, revision, commit, bugs))
 
             # FIXME: It would be nice if we could dcommit the patch without uploading, but still
             # go through all the precommit hooks. For rebaselines with lots of files, uploading
@@ -869,15 +874,22 @@ class AutoRebaseline(AbstractParallelRebaselineCommand):
                 # FIXME: Log the pull and dcommit stdout/stderr to the log-server.
                 tool.executive.run_command(['git', 'pull'])
 
-                self._run_git_cl_command(options, ['dcommit', '-f'])
+                self._run_git_cl_command(options, ['land', '-f', '-v'])
         except:
             traceback.print_exc(file=sys.stderr)
         finally:
             if did_finish:
-                self._run_git_cl_command(options, ['set_close'])
+                # Close the issue if dcommit failed.
+                issue_already_closed = tool.executive.run_command(
+                    ['git', 'config', 'branch.%s.rietveldissue' % rebaseline_branch_name],
+                    return_exit_code=True)
+                if not issue_already_closed:
+                    self._run_git_cl_command(options, ['set_close'])
+
             tool.scm().ensure_cleanly_tracking_remote_master()
-            tool.scm().checkout_branch(old_branch_name)
-            tool.scm().delete_branch(self.AUTO_REBASELINE_BRANCH_NAME)
+            if old_branch_name_or_ref:
+                tool.scm().checkout_branch(old_branch_name_or_ref)
+            tool.scm().delete_branch(rebaseline_branch_name)
 
 
 class RebaselineOMatic(AbstractDeclarativeCommand):
@@ -937,10 +949,11 @@ class RebaselineOMatic(AbstractDeclarativeCommand):
         self._log_queue = Queue.Queue(256)
         log_thread = threading.Thread(name='LogToServer', target=self._log_to_server_thread)
         log_thread.start()
+        old_branch_name_or_ref = ''
         try:
-            old_branch_name = self._tool.scm().current_branch()
+            old_branch_name_or_ref = _get_branch_name_or_ref(self._tool)
             self._run_logged_command(['git', 'pull'])
-            rebaseline_command = [self._tool.filesystem.join(self._tool.scm().checkout_root, 'Tools', 'Scripts', 'webkit-patch'), 'auto-rebaseline']
+            rebaseline_command = [self._tool.filesystem.join(self._tool.scm().checkout_root, 'third_party', 'WebKit', 'Tools', 'Scripts', 'webkit-patch'), 'auto-rebaseline']
             if self._verbose:
                 rebaseline_command.append('--verbose')
             self._run_logged_command(rebaseline_command)
@@ -948,7 +961,8 @@ class RebaselineOMatic(AbstractDeclarativeCommand):
             self._log_queue.put(self.QUIT_LOG)
             traceback.print_exc(file=sys.stderr)
             # Sometimes git crashes and leaves us on a detached head.
-            self._tool.scm().checkout_branch(old_branch_name)
+            if old_branch_name_or_ref:
+                self._tool.scm().checkout_branch(old_branch_name_or_ref)
         else:
             self._log_queue.put(self.QUIT_LOG)
         log_thread.join()

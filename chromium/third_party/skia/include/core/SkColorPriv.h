@@ -193,7 +193,7 @@ static inline unsigned Sk255To256(U8CPU value) {
 /** Multiplify value by 0..256, and shift the result down 8
     (i.e. return (value * alpha256) >> 8)
  */
-#define SkAlphaMul(value, alpha256)     (SkMulS16(value, alpha256) >> 8)
+#define SkAlphaMul(value, alpha256)     (((value) * (alpha256)) >> 8)
 
 //  The caller may want negative values, so keep all params signed (int)
 //  so we don't accidentally slip into unsigned math and lose the sign
@@ -213,9 +213,19 @@ static inline int SkAlphaBlend255(S16CPU src, S16CPU dst, U8CPU alpha) {
     SkASSERT((int16_t)dst == dst);
     SkASSERT((uint8_t)alpha == alpha);
 
-    int prod = SkMulS16(src - dst, alpha) + 128;
+    int prod = (src - dst) * alpha + 128;
     prod = (prod + (prod >> 8)) >> 8;
     return dst + prod;
+}
+
+static inline U8CPU SkUnitScalarClampToByte(SkScalar x) {
+    if (x < 0) {
+        return 0;
+    }
+    if (x >= SK_Scalar1) {
+        return 255;
+    }
+    return SkScalarToFixed(x) >> 8;
 }
 
 #define SK_R16_BITS     5
@@ -368,6 +378,18 @@ static inline void SkBlendRGB16(const uint16_t src[], uint16_t dst[],
 #else
     #define SkPMColorAssert(c)
 #endif
+
+static inline bool SkPMColorValid(SkPMColor c) {
+    auto a = SkGetPackedA32(c);
+    bool valid = a <= SK_A32_MASK
+              && SkGetPackedR32(c) <= a
+              && SkGetPackedG32(c) <= a
+              && SkGetPackedB32(c) <= a;
+    if (valid) {
+        SkPMColorAssert(c);  // Make sure we're consistent when it counts.
+    }
+    return valid;
+}
 
 /**
  *  Pack the components into a SkPMColor, checking (in the debug version) that

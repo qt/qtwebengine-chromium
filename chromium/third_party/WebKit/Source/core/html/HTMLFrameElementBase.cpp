@@ -32,6 +32,7 @@
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/RemoteFrame.h"
+#include "core/frame/RemoteFrameView.h"
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/layout/LayoutPart.h"
 #include "core/loader/FrameLoader.h"
@@ -70,7 +71,7 @@ bool HTMLFrameElementBase::isURLAllowed() const
     return true;
 }
 
-void HTMLFrameElementBase::openURL(bool lockBackForwardList)
+void HTMLFrameElementBase::openURL(bool replaceCurrentItem)
 {
     if (!isURLAllowed())
         return;
@@ -90,7 +91,7 @@ void HTMLFrameElementBase::openURL(bool lockBackForwardList)
         url = blankURL();
     }
 
-    if (!loadOrRedirectSubframe(url, m_frameName, lockBackForwardList))
+    if (!loadOrRedirectSubframe(url, m_frameName, replaceCurrentItem))
         return;
     if (!contentFrame() || scriptURL.isEmpty() || !contentFrame()->isLocalFrame())
         return;
@@ -100,7 +101,13 @@ void HTMLFrameElementBase::openURL(bool lockBackForwardList)
 void HTMLFrameElementBase::parseAttribute(const QualifiedName& name, const AtomicString& value)
 {
     if (name == srcdocAttr) {
-        setLocation("about:srcdoc");
+        if (!value.isNull()) {
+            setLocation("about:srcdoc");
+        } else {
+            const AtomicString& srcValue = fastGetAttribute(srcAttr);
+            if (!srcValue.isNull())
+                setLocation(stripLeadingAndTrailingHTMLSpaces(srcValue));
+        }
     } else if (name == srcAttr && !fastHasAttribute(srcdocAttr)) {
         setLocation(stripLeadingAndTrailingHTMLSpaces(value));
     } else if (name == idAttr) {
@@ -164,6 +171,8 @@ void HTMLFrameElementBase::attach(const AttachContext& context)
         if (Frame* frame = contentFrame()) {
             if (frame->isLocalFrame())
                 setWidget(toLocalFrame(frame)->view());
+            else if (frame->isRemoteFrame())
+                setWidget(toRemoteFrame(frame)->view());
         }
     }
 }

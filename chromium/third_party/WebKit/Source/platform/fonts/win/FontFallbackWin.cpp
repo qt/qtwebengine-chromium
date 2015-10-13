@@ -35,13 +35,35 @@
 #include "SkFontMgr.h"
 #include "SkTypeface.h"
 #include "wtf/HashMap.h"
+#include "wtf/StringExtras.h"
 #include "wtf/text/StringHash.h"
 #include "wtf/text/WTFString.h"
 #include <limits>
-#include <unicode/locid.h>
 #include <unicode/uchar.h>
 
 namespace blink {
+
+UScriptCode scriptCodeForUnifiedHanFromLocale(const icu::Locale& locale)
+{
+    // ICU default locale may have country as an empty string or differently.
+    // Avoid fullName comparisons for Japanese and Korean where language()
+    // can safely disambiguate.
+    if (strcasecmp(locale.getLanguage(), icu::Locale::getJapanese().getLanguage()) == 0)
+        return USCRIPT_HIRAGANA;
+    if (strcasecmp(locale.getLanguage(), icu::Locale::getKorean().getLanguage()) == 0)
+        return USCRIPT_HANGUL;
+
+    const icu::Locale& traditionalChinese = icu::Locale::getTraditionalChinese();
+    if (strcasecmp(locale.getLanguage(), traditionalChinese.getLanguage()) == 0
+        && (strcasecmp(locale.getCountry(), traditionalChinese.getCountry()) == 0
+            || strcasecmp(locale.getCountry(), "HK") == 0
+            || strcasecmp(locale.getScript(), "Hant") == 0)) {
+        return USCRIPT_TRADITIONAL_HAN;
+    }
+
+    // For other locales, use the simplified Chinese font for Han.
+    return USCRIPT_SIMPLIFIED_HAN;
+}
 
 namespace {
 
@@ -218,18 +240,8 @@ void initializeScriptFontMap(ScriptToFontMap& scriptFontMap, SkFontMgr* fontMana
     // Initialize the locale-dependent mapping.
     // Since Chrome synchronizes the ICU default locale with its UI locale,
     // this ICU locale tells the current UI locale of Chrome.
-    icu::Locale locale = icu::Locale::getDefault();
-    const UChar* localeFamily = 0;
-    if (locale == icu::Locale::getJapanese()) {
-        localeFamily = scriptFontMap[USCRIPT_HIRAGANA];
-    } else if (locale == icu::Locale::getKorean()) {
-        localeFamily = scriptFontMap[USCRIPT_HANGUL];
-    } else if (locale == icu::Locale::getTraditionalChinese()) {
-        localeFamily = scriptFontMap[USCRIPT_TRADITIONAL_HAN];
-    } else {
-        // For other locales, use the simplified Chinese font for Han.
-        localeFamily = scriptFontMap[USCRIPT_SIMPLIFIED_HAN];
-    }
+    const UChar* localeFamily = scriptFontMap[scriptCodeForUnifiedHanFromLocale(
+        icu::Locale::getDefault())];
     if (localeFamily)
         scriptFontMap[USCRIPT_HAN] = localeFamily;
 }
@@ -285,13 +297,21 @@ UScriptCode getScript(int ucs4)
 const UChar* getFontBasedOnUnicodeBlock(int ucs4, SkFontMgr* fontManager)
 {
     static const UChar* emojiFonts[] = {L"Segoe UI Emoji", L"Segoe UI Symbol"};
+    static const UChar* mathFonts[] = {L"Cambria Math", L"Segoe UI Symbol", L"Code2000"};
     static const UChar* symbolFont = L"Segoe UI Symbol";
-    const UChar* emojiFont = 0;
+    static const UChar* emojiFont = 0;
+    static const UChar* mathFont = 0;
     static bool initialized = false;
     if (!initialized) {
         for (size_t i = 0; i < WTF_ARRAY_LENGTH(emojiFonts); i++) {
             if (isFontPresent(emojiFonts[i], fontManager)) {
                 emojiFont = emojiFonts[i];
+                break;
+            }
+        }
+        for (size_t i = 0; i < WTF_ARRAY_LENGTH(mathFonts); i++) {
+            if (isFontPresent(mathFonts[i], fontManager)) {
+                mathFont = mathFonts[i];
                 break;
             }
         }
@@ -301,16 +321,31 @@ const UChar* getFontBasedOnUnicodeBlock(int ucs4, SkFontMgr* fontManager)
     UBlockCode block = ublock_getCode(ucs4);
     switch (block) {
     case UBLOCK_EMOTICONS:
+    case UBLOCK_ENCLOSED_ALPHANUMERIC_SUPPLEMENT:
         return emojiFont;
     case UBLOCK_PLAYING_CARDS:
     case UBLOCK_MISCELLANEOUS_SYMBOLS:
+    case UBLOCK_MISCELLANEOUS_SYMBOLS_AND_ARROWS:
     case UBLOCK_MISCELLANEOUS_SYMBOLS_AND_PICTOGRAPHS:
     case UBLOCK_TRANSPORT_AND_MAP_SYMBOLS:
     case UBLOCK_ALCHEMICAL_SYMBOLS:
     case UBLOCK_RUNIC:
-    case UBLOCK_SUPPLEMENTAL_MATHEMATICAL_OPERATORS:
     case UBLOCK_DINGBATS:
+    case UBLOCK_GOTHIC:
         return symbolFont;
+    case UBLOCK_ARROWS:
+    case UBLOCK_MATHEMATICAL_OPERATORS:
+    case UBLOCK_MISCELLANEOUS_TECHNICAL:
+    case UBLOCK_GEOMETRIC_SHAPES:
+    case UBLOCK_MISCELLANEOUS_MATHEMATICAL_SYMBOLS_A:
+    case UBLOCK_SUPPLEMENTAL_ARROWS_A:
+    case UBLOCK_SUPPLEMENTAL_ARROWS_B:
+    case UBLOCK_MISCELLANEOUS_MATHEMATICAL_SYMBOLS_B:
+    case UBLOCK_SUPPLEMENTAL_MATHEMATICAL_OPERATORS:
+    case UBLOCK_MATHEMATICAL_ALPHANUMERIC_SYMBOLS:
+    case UBLOCK_ARABIC_MATHEMATICAL_ALPHABETIC_SYMBOLS:
+    case UBLOCK_GEOMETRIC_SHAPES_EXTENDED:
+        return mathFont;
     default:
         return 0;
     };
@@ -369,8 +404,11 @@ const UChar* getFallbackFamily(UChar32 character,
     ASSERT(character);
     ASSERT(fontManager);
     const UChar* family = getFontBasedOnUnicodeBlock(character, fontManager);
-    if (family)
+    if (family) {
+        if (scriptChecked)
+            *scriptChecked = USCRIPT_INVALID_CODE;
         return family;
+    }
 
     UScriptCode script = getScript(character);
 

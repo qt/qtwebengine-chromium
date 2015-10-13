@@ -4,7 +4,7 @@
             "type": "@WebInspector.PanelFactory",
             "name": "elements",
             "title": "Elements",
-            "order": 0,
+            "order": 10,
             "className": "WebInspector.ElementsPanelFactory"
         },
         {
@@ -61,14 +61,6 @@
             "defaultValue": false
         },
         {
-            "type": "setting",
-            "category": "Elements",
-            "title": "Highlight DOM updates",
-            "settingName": "highlightDOMUpdates",
-            "settingType": "boolean",
-            "defaultValue": true
-        },
-        {
             "type": "@WebInspector.ToolbarItem.Provider",
             "className": "WebInspector.StylesSidebarPane.AddNewRuleButtonProvider",
             "order": 0,
@@ -79,6 +71,38 @@
             "className": "WebInspector.ElementStatePaneWidget.ButtonProvider",
             "order": 1,
             "location": "styles-sidebarpane-toolbar"
+        },
+        {
+            "type": "@WebInspector.ActionDelegate",
+            "actionId": "elements.hide-element",
+            "className": "WebInspector.ElementsActionDelegate",
+            "bindings": [
+                {
+                    "shortcut": "H"
+                }
+            ]
+        },
+        {
+            "type": "@WebInspector.ActionDelegate",
+            "actionId": "elements.edit-as-html",
+            "className": "WebInspector.ElementsActionDelegate",
+            "bindings": [
+                {
+                    "shortcut": "F2"
+                }
+            ]
+        },
+        {
+            "type": "@WebInspector.DOMPresentationUtils.MarkerDecorator",
+            "className": "WebInspector.ElementsPanel.PseudoStateMarkerDecorator",
+            "marker": "pseudo-state-marker"
+        },
+        {
+            "type": "@WebInspector.DOMPresentationUtils.MarkerDecorator",
+            "className": "WebInspector.DOMPresentationUtils.GenericDecorator",
+            "marker": "hidden-marker",
+            "title": "Element is hidden",
+            "color": "#555"
         }
     ],
     "dependencies": [
@@ -100,6 +124,7 @@
         "MetricsSidebarPane.js",
         "PlatformFontsWidget.js",
         "PropertiesWidget.js",
+        "PropertyChangeHighlighter.js",
         "StylesSectionModel.js",
         "StylesSidebarPane.js",
         "ComputedStyleWidget.js",

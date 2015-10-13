@@ -5,6 +5,7 @@
 #include "gpu/gles2_conform_support/egl/display.h"
 
 #include <vector>
+#include "base/at_exit.h"
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "gpu/command_buffer/client/gles2_implementation.h"
@@ -29,6 +30,9 @@ namespace egl {
 Display::Display(EGLNativeDisplayType display_id)
     : display_id_(display_id),
       is_initialized_(false),
+#if defined(COMMAND_BUFFER_GLES_LIB_SUPPORT_ONLY)
+      exit_manager_(new base::AtExitManager),
+#endif
       create_offscreen_(false),
       create_offscreen_width_(0),
       create_offscreen_height_(0) {
@@ -107,7 +111,8 @@ EGLSurface Display::CreateWindowSurface(EGLConfig config,
   }
 
   {
-    gpu::TransferBufferManager* manager = new gpu::TransferBufferManager();
+    gpu::TransferBufferManager* manager =
+        new gpu::TransferBufferManager(nullptr);
     transfer_buffer_manager_ = manager;
     manager->Initialize();
   }
@@ -116,14 +121,9 @@ EGLSurface Display::CreateWindowSurface(EGLConfig config,
   if (!command_buffer->Initialize())
     return NULL;
 
-  scoped_refptr<gpu::gles2::ContextGroup> group(
-      new gpu::gles2::ContextGroup(NULL,
-                                   NULL,
-                                   new gpu::gles2::ShaderTranslatorCache,
-                                   NULL,
-                                   NULL,
-                                   NULL,
-                                   true));
+  scoped_refptr<gpu::gles2::ContextGroup> group(new gpu::gles2::ContextGroup(
+      NULL, NULL, new gpu::gles2::ShaderTranslatorCache,
+      new gpu::gles2::FramebufferCompletenessCache, NULL, NULL, NULL, true));
 
   decoder_.reset(gpu::gles2::GLES2Decoder::Create(group.get()));
   if (!decoder_.get())
@@ -342,6 +342,14 @@ void Display::SetLock(base::Lock*) {
 bool Display::IsGpuChannelLost() {
   NOTIMPLEMENTED();
   return false;
+}
+
+gpu::CommandBufferNamespace Display::GetNamespaceID() const {
+  return gpu::CommandBufferNamespace::IN_PROCESS;
+}
+
+uint64_t Display::GetCommandBufferID() const {
+  return 0;
 }
 
 }  // namespace egl

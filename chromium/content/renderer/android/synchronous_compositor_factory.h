@@ -47,7 +47,6 @@ class SynchronousCompositorFactory {
 
   virtual scoped_refptr<base::SingleThreadTaskRunner>
   GetCompositorTaskRunner() = 0;
-  virtual bool RecordFullLayer() = 0;
   virtual scoped_ptr<cc::OutputSurface> CreateOutputSurface(
       int routing_id,
       scoped_refptr<FrameSwapMessageQueue> frame_swap_message_queue) = 0;
@@ -57,13 +56,17 @@ class SynchronousCompositorFactory {
 
   virtual scoped_ptr<cc::BeginFrameSource> CreateExternalBeginFrameSource(
       int routing_id) = 0;
+  virtual scoped_refptr<StreamTextureFactory> CreateStreamTextureFactory(
+      int frame_id) = 0;
 
+  // Methods below should not be called if OverrideWithFactory is false.
+  // Instead, just fallback to default implementation, as if factory
+  // does not exist.
+  virtual bool OverrideWithFactory() = 0;
   virtual scoped_refptr<cc_blink::ContextProviderWebContext>
   CreateOffscreenContextProvider(
       const blink::WebGraphicsContext3D::Attributes& attributes,
       const std::string& debug_name) = 0;
-  virtual scoped_refptr<StreamTextureFactory> CreateStreamTextureFactory(
-      int frame_id) = 0;
   virtual gpu_blink::WebGraphicsContext3DInProcessCommandBufferImpl*
       CreateOffscreenGraphicsContext3D(
           const blink::WebGraphicsContext3D::Attributes& attributes) = 0;

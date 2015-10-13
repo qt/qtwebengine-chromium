@@ -27,40 +27,17 @@ class CONTENT_EXPORT GpuMemoryBufferImpl : public gfx::GpuMemoryBuffer {
   static scoped_ptr<GpuMemoryBufferImpl> CreateFromHandle(
       const gfx::GpuMemoryBufferHandle& handle,
       const gfx::Size& size,
-      Format format,
-      Usage usage,
+      gfx::BufferFormat format,
+      gfx::BufferUsage usage,
       const DestructionCallback& callback);
 
   // Type-checking upcast routine. Returns an NULL on failure.
   static GpuMemoryBufferImpl* FromClientBuffer(ClientBuffer buffer);
 
-  // Returns the number of planes based on the format of the buffer.
-  static size_t NumberOfPlanesForGpuMemoryBufferFormat(Format format);
-
-  // Returns the subsampling factor applied to the given zero-indexed |plane| of
-  // the |format| both horizontally and vertically.
-  static size_t SubsamplingFactor(Format format, int plane);
-
-  // Returns the number of bytes used to store a row of the given zero-indexed
-  // |plane| of |format|.
-  // Note: This is an approximation and the exact size used by an implementation
-  // might be different.
-  static bool RowSizeInBytes(size_t width,
-                             Format format,
-                             int plane,
-                             size_t* size_in_bytes);
-
-  // Returns the number of bytes used to store all the planes of a given
-  // |format|.
-  // Note: This is an approximation and the exact size used by an implementation
-  // might be different.
-  static bool BufferSizeInBytes(const gfx::Size& size,
-                                Format format,
-                                size_t* size_in_bytes);
-
   // Overridden from gfx::GpuMemoryBuffer:
   bool IsMapped() const override;
-  Format GetFormat() const override;
+  gfx::BufferFormat GetFormat() const override;
+  gfx::GpuMemoryBufferId GetId() const override;
   ClientBuffer AsClientBuffer() override;
 
   void set_destruction_sync_point(uint32 sync_point) {
@@ -70,12 +47,12 @@ class CONTENT_EXPORT GpuMemoryBufferImpl : public gfx::GpuMemoryBuffer {
  protected:
   GpuMemoryBufferImpl(gfx::GpuMemoryBufferId id,
                       const gfx::Size& size,
-                      Format format,
+                      gfx::BufferFormat format,
                       const DestructionCallback& callback);
 
   const gfx::GpuMemoryBufferId id_;
   const gfx::Size size_;
-  const Format format_;
+  const gfx::BufferFormat format_;
   const DestructionCallback callback_;
   bool mapped_;
   uint32 destruction_sync_point_;

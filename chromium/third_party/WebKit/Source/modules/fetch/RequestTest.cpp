@@ -10,8 +10,8 @@
 #include "core/dom/Document.h"
 #include "core/frame/Frame.h"
 #include "core/testing/DummyPageHolder.h"
-#include "public/platform/WebServiceWorkerRequest.h"
 #include "public/platform/WebURLRequest.h"
+#include "public/platform/modules/serviceworker/WebServiceWorkerRequest.h"
 #include "wtf/HashMap.h"
 #include "wtf/text/WTFString.h"
 #include <gtest/gtest.h>
@@ -102,7 +102,7 @@ TEST_F(ServiceWorkerRequestTest, FromAndToWebRequest)
     EXPECT_EQ(method, String(secondWebRequest.method()));
     EXPECT_EQ(context, secondWebRequest.requestContext());
     EXPECT_EQ(referrer, KURL(secondWebRequest.referrerUrl()));
-    EXPECT_EQ(referrerPolicy, secondWebRequest.referrerPolicy());
+    EXPECT_EQ(WebReferrerPolicyDefault, secondWebRequest.referrerPolicy());
     EXPECT_EQ(webRequest.headers(), secondWebRequest.headers());
 }
 

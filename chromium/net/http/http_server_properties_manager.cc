@@ -14,6 +14,7 @@
 #include "base/thread_task_runner_handle.h"
 #include "base/values.h"
 #include "net/base/ip_address_number.h"
+#include "net/base/port_util.h"
 
 namespace net {
 
@@ -63,6 +64,7 @@ const char kProtocolKey[] = "protocol_str";
 const char kHostKey[] = "host";
 const char kPortKey[] = "port";
 const char kProbabilityKey[] = "probability";
+const char kExpirationKey[] = "expiration";
 const char kNetworkStatsKey[] = "network_stats";
 const char kSrttKey[] = "srtt";
 
@@ -84,8 +86,7 @@ HttpServerPropertiesManager::HttpServerPropertiesManager(
   pref_weak_ptr_factory_.reset(
       new base::WeakPtrFactory<HttpServerPropertiesManager>(this));
   pref_weak_ptr_ = pref_weak_ptr_factory_->GetWeakPtr();
-  pref_cache_update_timer_.reset(
-      new base::OneShotTimer<HttpServerPropertiesManager>);
+  pref_cache_update_timer_.reset(new base::OneShotTimer);
   pref_change_registrar_.Init(pref_service_);
   pref_change_registrar_.Add(
       path_,
@@ -104,8 +105,7 @@ void HttpServerPropertiesManager::InitializeOnNetworkThread() {
       new base::WeakPtrFactory<HttpServerPropertiesManager>(this));
   http_server_properties_impl_.reset(new HttpServerPropertiesImpl());
 
-  network_prefs_update_timer_.reset(
-      new base::OneShotTimer<HttpServerPropertiesManager>);
+  network_prefs_update_timer_.reset(new base::OneShotTimer);
 
   pref_task_runner_->PostTask(
       FROM_HERE,
@@ -199,10 +199,11 @@ AlternativeServiceVector HttpServerPropertiesManager::GetAlternativeServices(
 bool HttpServerPropertiesManager::SetAlternativeService(
     const HostPortPair& origin,
     const AlternativeService& alternative_service,
-    double alternative_probability) {
+    double alternative_probability,
+    base::Time expiration) {
   DCHECK(network_task_runner_->RunsTasksOnCurrentThread());
   const bool changed = http_server_properties_impl_->SetAlternativeService(
-      origin, alternative_service, alternative_probability);
+      origin, alternative_service, alternative_probability, expiration);
   if (changed) {
     ScheduleUpdatePrefsOnNetworkThread(SET_ALTERNATIVE_SERVICES);
   }
@@ -523,32 +524,34 @@ void HttpServerPropertiesManager::AddToSpdySettingsMap(
   spdy_settings_map->Put(server, settings_map);
 }
 
-AlternativeServiceInfo HttpServerPropertiesManager::ParseAlternativeServiceDict(
+bool HttpServerPropertiesManager::ParseAlternativeServiceDict(
     const base::DictionaryValue& alternative_service_dict,
-    const std::string& server_str) {
+    const std::string& server_str,
+    AlternativeServiceInfo* alternative_service_info) {
   // Protocol is mandatory.
   std::string protocol_str;
   if (!alternative_service_dict.GetStringWithoutPathExpansion(kProtocolKey,
                                                               &protocol_str)) {
     DVLOG(1) << "Malformed alternative service protocol string for server: "
              << server_str;
-    return AlternativeServiceInfo();
+    return false;
   }
   AlternateProtocol protocol = AlternateProtocolFromString(protocol_str);
   if (!IsAlternateProtocolValid(protocol)) {
     DVLOG(1) << "Invalid alternative service protocol string for server: "
              << server_str;
-    return AlternativeServiceInfo();
+    return false;
   }
+  alternative_service_info->alternative_service.protocol = protocol;
 
   // Host is optional, defaults to "".
-  std::string host;
+  alternative_service_info->alternative_service.host.clear();
   if (alternative_service_dict.HasKey(kHostKey) &&
-      !alternative_service_dict.GetStringWithoutPathExpansion(kHostKey,
-                                                              &host)) {
+      !alternative_service_dict.GetStringWithoutPathExpansion(
+          kHostKey, &(alternative_service_info->alternative_service.host))) {
     DVLOG(1) << "Malformed alternative service host string for server: "
              << server_str;
-    return AlternativeServiceInfo();
+    return false;
   }
 
   // Port is mandatory.
@@ -556,21 +559,56 @@ AlternativeServiceInfo HttpServerPropertiesManager::ParseAlternativeServiceDict(
   if (!alternative_service_dict.GetInteger(kPortKey, &port) ||
       !IsPortValid(port)) {
     DVLOG(1) << "Malformed alternative service port for server: " << server_str;
-    return AlternativeServiceInfo();
+    return false;
   }
+  alternative_service_info->alternative_service.port =
+      static_cast<uint32>(port);
 
   // Probability is optional, defaults to 1.0.
-  double probability = 1.0;
+  alternative_service_info->probability = 1.0;
   if (alternative_service_dict.HasKey(kProbabilityKey) &&
-      !alternative_service_dict.GetDoubleWithoutPathExpansion(kProbabilityKey,
-                                                              &probability)) {
+      !alternative_service_dict.GetDoubleWithoutPathExpansion(
+          kProbabilityKey, &(alternative_service_info->probability))) {
     DVLOG(1) << "Malformed alternative service probability for server: "
              << server_str;
-    return AlternativeServiceInfo();
+    return false;
   }
 
-  return AlternativeServiceInfo(protocol, host, static_cast<uint16>(port),
-                                probability);
+  // Expiration is optional, defaults to one day.
+  base::Time expiration;
+  if (!alternative_service_dict.HasKey(kExpirationKey)) {
+    alternative_service_info->expiration =
+        base::Time::Now() + base::TimeDelta::FromDays(1);
+    return true;
+  }
+
+  std::string expiration_string;
+  if (alternative_service_dict.GetStringWithoutPathExpansion(
+          kExpirationKey, &expiration_string)) {
+    int64 expiration_int64 = 0;
+    if (!base::StringToInt64(expiration_string, &expiration_int64)) {
+      DVLOG(1) << "Malformed alternative service expiration for server: "
+               << server_str;
+      return false;
+    }
+    alternative_service_info->expiration =
+        base::Time::FromInternalValue(expiration_int64);
+    return true;
+  }
+
+  // Early release 46 Dev and Canary versions stored expiration as double.
+  // TODO(bnc) Remove the following code parsing double around 2015-10-01.
+  double expiration_double;
+  if (alternative_service_dict.GetDoubleWithoutPathExpansion(
+          kExpirationKey, &expiration_double)) {
+    alternative_service_info->expiration =
+        base::Time::FromDoubleT(expiration_double);
+    return true;
+  }
+
+  DVLOG(1) << "Malformed alternative service expiration for server: "
+           << server_str;
+  return false;
 }
 
 bool HttpServerPropertiesManager::AddToAlternativeServiceMap(
@@ -590,11 +628,10 @@ bool HttpServerPropertiesManager::AddToAlternativeServiceMap(
       if (!alternative_service_list_item->GetAsDictionary(
               &alternative_service_dict))
         return false;
-      AlternativeServiceInfo alternative_service_info =
-          ParseAlternativeServiceDict(*alternative_service_dict,
-                                      server.ToString());
-      if (alternative_service_info.alternative_service.protocol ==
-          UNINITIALIZED_ALTERNATE_PROTOCOL) {
+      AlternativeServiceInfo alternative_service_info;
+      if (!ParseAlternativeServiceDict(*alternative_service_dict,
+                                       server.ToString(),
+                                       &alternative_service_info)) {
         return false;
       }
       alternative_service_info_vector.push_back(alternative_service_info);
@@ -607,11 +644,10 @@ bool HttpServerPropertiesManager::AddToAlternativeServiceMap(
             kAlternateProtocolKey, &alternative_service_dict)) {
       return true;
     }
-    AlternativeServiceInfo alternative_service_info =
-        ParseAlternativeServiceDict(*alternative_service_dict,
-                                    server.ToString());
-    if (alternative_service_info.alternative_service.protocol ==
-        UNINITIALIZED_ALTERNATE_PROTOCOL) {
+    AlternativeServiceInfo alternative_service_info;
+    if (!ParseAlternativeServiceDict(*alternative_service_dict,
+                                     server.ToString(),
+                                     &alternative_service_info)) {
       return false;
     }
     alternative_service_info_vector.push_back(alternative_service_info);
@@ -981,6 +1017,11 @@ void HttpServerPropertiesManager::SaveAlternativeServiceToServerPrefs(
         kProtocolKey, AlternateProtocolToString(alternative_service.protocol));
     alternative_service_dict->SetDouble(kProbabilityKey,
                                         alternative_service_info.probability);
+    // JSON cannot store int64, so expiration is converted to a string.
+    alternative_service_dict->SetString(
+        kExpirationKey,
+        base::Int64ToString(
+            alternative_service_info.expiration.ToInternalValue()));
     alternative_service_list->Append(alternative_service_dict);
   }
   if (alternative_service_list->GetSize() == 0)

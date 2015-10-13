@@ -61,7 +61,9 @@ VideoCodecVP9 VideoEncoder::GetDefaultVp9Settings() {
   vp9_settings.frameDroppingOn = true;
   vp9_settings.keyFrameInterval = 3000;
   vp9_settings.adaptiveQpMode = true;
-
+  vp9_settings.automaticResizeOn = false;
+  vp9_settings.numberOfSpatialLayers = 1;
+  vp9_settings.flexibleMode = false;
   return vp9_settings;
 }
 
@@ -240,15 +242,15 @@ bool VCMCodecDataBase::SetSendCodec(
     int number_of_cores,
     size_t max_payload_size,
     VCMEncodedFrameCallback* encoded_frame_callback) {
-  DCHECK(send_codec);
+  RTC_DCHECK(send_codec);
   if (max_payload_size == 0) {
     max_payload_size = kDefaultPayloadSize;
   }
-  DCHECK_GE(number_of_cores, 1);
-  DCHECK_GE(send_codec->plType, 1);
+  RTC_DCHECK_GE(number_of_cores, 1);
+  RTC_DCHECK_GE(send_codec->plType, 1);
   // Make sure the start bit rate is sane...
-  DCHECK_LE(send_codec->startBitrate, 1000000u);
-  DCHECK(send_codec->codecType != kVideoCodecUnknown);
+  RTC_DCHECK_LE(send_codec->startBitrate, 1000000u);
+  RTC_DCHECK(send_codec->codecType != kVideoCodecUnknown);
   bool reset_required = pending_encoder_reset_;
   if (number_of_cores_ != number_of_cores) {
     number_of_cores_ = number_of_cores;
@@ -580,7 +582,7 @@ VCMGenericDecoder* VCMCodecDataBase::GetDecoder(
     return NULL;
   }
   VCMReceiveCallback* callback = decoded_frame_callback->UserReceiveCallback();
-  if (callback) callback->IncomingCodecChanged(receive_codec_);
+  if (callback) callback->OnIncomingPayloadType(receive_codec_.plType);
   if (ptr_decoder_->RegisterDecodeCompleteCallback(decoded_frame_callback)
       < 0) {
     ReleaseDecoder(ptr_decoder_);

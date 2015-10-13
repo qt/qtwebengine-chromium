@@ -9,7 +9,7 @@
 #if defined(OS_WIN)
 #include "content/browser/accessibility/browser_accessibility_win.h"
 #endif
-#include "content/common/accessibility_messages.h"
+#include "content/public/browser/ax_event_notification_details.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace content {
@@ -90,15 +90,8 @@ class TestBrowserAccessibilityDelegate
     return gfx::kNullAcceleratedWidget;
   }
   gfx::NativeViewAccessible AccessibilityGetNativeViewAccessible() override {
-    return NULL;
+    return nullptr;
   }
-  BrowserAccessibilityManager* AccessibilityGetChildFrame(
-      int accessibility_node_id) override {
-    return NULL;
-  }
-  BrowserAccessibility* AccessibilityGetParentFrame() override { return NULL; }
-  void AccessibilityGetAllChildFrames(
-      std::vector<BrowserAccessibilityManager*>* child_frames) override {}
 
   bool got_fatal_error() const { return got_fatal_error_; }
   void reset_got_fatal_error() { got_fatal_error_ = false; }
@@ -141,7 +134,7 @@ TEST(BrowserAccessibilityManagerTest, TestNoLeaks) {
   BrowserAccessibilityManager* manager =
       BrowserAccessibilityManager::Create(
           MakeAXTreeUpdate(root, button, checkbox),
-          NULL,
+          nullptr,
           new CountedBrowserAccessibilityFactory());
 
   ASSERT_EQ(3, CountedBrowserAccessibility::global_obj_count_);
@@ -155,7 +148,7 @@ TEST(BrowserAccessibilityManagerTest, TestNoLeaks) {
   manager =
       BrowserAccessibilityManager::Create(
           MakeAXTreeUpdate(root, button, checkbox),
-          NULL,
+          nullptr,
           new CountedBrowserAccessibilityFactory());
   ASSERT_EQ(3, CountedBrowserAccessibility::global_obj_count_);
 
@@ -246,7 +239,7 @@ TEST(BrowserAccessibilityManagerTest, TestReuseBrowserAccessibilityObjects) {
       BrowserAccessibilityManager::Create(
           MakeAXTreeUpdate(tree1_root,
                            tree1_child1, tree1_child2, tree1_child3),
-          NULL,
+          nullptr,
           new CountedBrowserAccessibilityFactory());
   ASSERT_EQ(4, CountedBrowserAccessibility::global_obj_count_);
 
@@ -273,9 +266,9 @@ TEST(BrowserAccessibilityManagerTest, TestReuseBrowserAccessibilityObjects) {
   EXPECT_EQ(2, child3_accessible->GetIndexInParent());
 
   // Process a notification containing the changed subtree.
-  std::vector<AccessibilityHostMsg_EventParams> params;
-  params.push_back(AccessibilityHostMsg_EventParams());
-  AccessibilityHostMsg_EventParams* msg = &params[0];
+  std::vector<AXEventNotificationDetails> params;
+  params.push_back(AXEventNotificationDetails());
+  AXEventNotificationDetails* msg = &params[0];
   msg->event_type = ui::AX_EVENT_CHILDREN_CHANGED;
   msg->update.nodes.push_back(tree2_root);
   msg->update.nodes.push_back(tree2_child0);
@@ -422,7 +415,7 @@ TEST(BrowserAccessibilityManagerTest, TestReuseBrowserAccessibilityObjects2) {
                            tree1_child1, tree1_grandchild1,
                            tree1_child2, tree1_grandchild2,
                            tree1_child3, tree1_grandchild3),
-          NULL,
+          nullptr,
           new CountedBrowserAccessibilityFactory());
   ASSERT_EQ(8, CountedBrowserAccessibility::global_obj_count_);
 
@@ -449,9 +442,9 @@ TEST(BrowserAccessibilityManagerTest, TestReuseBrowserAccessibilityObjects2) {
 
   // Process a notification containing the changed subtree rooted at
   // the container.
-  std::vector<AccessibilityHostMsg_EventParams> params;
-  params.push_back(AccessibilityHostMsg_EventParams());
-  AccessibilityHostMsg_EventParams* msg = &params[0];
+  std::vector<AXEventNotificationDetails> params;
+  params.push_back(AXEventNotificationDetails());
+  AXEventNotificationDetails* msg = &params[0];
   msg->event_type = ui::AX_EVENT_CHILDREN_CHANGED;
   msg->update.nodes.push_back(tree2_container);
   msg->update.nodes.push_back(tree2_child0);
@@ -550,14 +543,14 @@ TEST(BrowserAccessibilityManagerTest, TestMoveChildUp) {
   BrowserAccessibilityManager* manager =
       BrowserAccessibilityManager::Create(
           MakeAXTreeUpdate(tree1_1, tree1_2, tree1_3, tree1_4),
-          NULL,
+          nullptr,
           new CountedBrowserAccessibilityFactory());
   ASSERT_EQ(4, CountedBrowserAccessibility::global_obj_count_);
 
   // Process a notification containing the changed subtree.
-  std::vector<AccessibilityHostMsg_EventParams> params;
-  params.push_back(AccessibilityHostMsg_EventParams());
-  AccessibilityHostMsg_EventParams* msg = &params[0];
+  std::vector<AXEventNotificationDetails> params;
+  params.push_back(AXEventNotificationDetails());
+  AXEventNotificationDetails* msg = &params[0];
   msg->event_type = ui::AX_EVENT_CHILDREN_CHANGED;
   msg->update.nodes.push_back(tree2_1);
   msg->update.nodes.push_back(tree2_4);
@@ -684,7 +677,7 @@ TEST(BrowserAccessibilityManagerTest, BoundsForRange) {
   scoped_ptr<BrowserAccessibilityManager> manager(
       BrowserAccessibilityManager::Create(
           MakeAXTreeUpdate(root, static_text, inline_text1, inline_text2),
-          NULL,
+          nullptr,
           new CountedBrowserAccessibilityFactory()));
 
   BrowserAccessibility* root_accessible = manager->GetRoot();
@@ -772,7 +765,7 @@ TEST(BrowserAccessibilityManagerTest, BoundsForRangeBiDi) {
   scoped_ptr<BrowserAccessibilityManager> manager(
       BrowserAccessibilityManager::Create(
           MakeAXTreeUpdate(root, static_text, inline_text1, inline_text2),
-          NULL,
+          nullptr,
           new CountedBrowserAccessibilityFactory()));
 
   BrowserAccessibility* root_accessible = manager->GetRoot();
@@ -832,7 +825,7 @@ TEST(BrowserAccessibilityManagerTest, BoundsForRangeScrolledWindow) {
   scoped_ptr<BrowserAccessibilityManager> manager(
       BrowserAccessibilityManager::Create(
           MakeAXTreeUpdate(root, static_text, inline_text),
-          NULL,
+          nullptr,
           new CountedBrowserAccessibilityFactory()));
 
   BrowserAccessibility* root_accessible = manager->GetRoot();
@@ -918,7 +911,7 @@ TEST(BrowserAccessibilityManagerTest, MAYBE_BoundsForRangeOnParentElement) {
           MakeAXTreeUpdate(
               root, div, static_text1, img,
               static_text2, inline_text1, inline_text2),
-          NULL,
+          nullptr,
           new CountedBrowserAccessibilityFactory()));
   BrowserAccessibility* root_accessible = manager->GetRoot();
 
@@ -965,28 +958,227 @@ TEST(BrowserAccessibilityManagerTest, NextPreviousInTreeOrder) {
   scoped_ptr<BrowserAccessibilityManager> manager(
       BrowserAccessibilityManager::Create(
           MakeAXTreeUpdate(root, node2, node3, node4, node5),
-          NULL,
+          nullptr,
           new CountedBrowserAccessibilityFactory()));
 
-  BrowserAccessibility* root_accessible = manager->GetRoot();
-  BrowserAccessibility* node2_accessible = root_accessible->PlatformGetChild(0);
-  BrowserAccessibility* node3_accessible = root_accessible->PlatformGetChild(1);
-  BrowserAccessibility* node4_accessible =
-      node3_accessible->PlatformGetChild(0);
-  BrowserAccessibility* node5_accessible = root_accessible->PlatformGetChild(2);
+  auto root_accessible = manager->GetRoot();
+  auto node2_accessible = root_accessible->PlatformGetChild(0);
+  auto node3_accessible = root_accessible->PlatformGetChild(1);
+  auto node4_accessible = node3_accessible->PlatformGetChild(0);
+  auto node5_accessible = root_accessible->PlatformGetChild(2);
 
-  ASSERT_EQ(NULL, manager->NextInTreeOrder(NULL));
-  ASSERT_EQ(node2_accessible, manager->NextInTreeOrder(root_accessible));
-  ASSERT_EQ(node3_accessible, manager->NextInTreeOrder(node2_accessible));
-  ASSERT_EQ(node4_accessible, manager->NextInTreeOrder(node3_accessible));
-  ASSERT_EQ(node5_accessible, manager->NextInTreeOrder(node4_accessible));
-  ASSERT_EQ(NULL, manager->NextInTreeOrder(node5_accessible));
+  EXPECT_EQ(nullptr, manager->NextInTreeOrder(nullptr));
+  EXPECT_EQ(node2_accessible, manager->NextInTreeOrder(root_accessible));
+  EXPECT_EQ(node3_accessible, manager->NextInTreeOrder(node2_accessible));
+  EXPECT_EQ(node4_accessible, manager->NextInTreeOrder(node3_accessible));
+  EXPECT_EQ(node5_accessible, manager->NextInTreeOrder(node4_accessible));
+  EXPECT_EQ(nullptr, manager->NextInTreeOrder(node5_accessible));
 
-  ASSERT_EQ(NULL, manager->PreviousInTreeOrder(NULL));
-  ASSERT_EQ(node4_accessible, manager->PreviousInTreeOrder(node5_accessible));
-  ASSERT_EQ(node3_accessible, manager->PreviousInTreeOrder(node4_accessible));
-  ASSERT_EQ(node2_accessible, manager->PreviousInTreeOrder(node3_accessible));
-  ASSERT_EQ(root_accessible, manager->PreviousInTreeOrder(node2_accessible));
+  EXPECT_EQ(nullptr, manager->PreviousInTreeOrder(nullptr));
+  EXPECT_EQ(node4_accessible, manager->PreviousInTreeOrder(node5_accessible));
+  EXPECT_EQ(node3_accessible, manager->PreviousInTreeOrder(node4_accessible));
+  EXPECT_EQ(node2_accessible, manager->PreviousInTreeOrder(node3_accessible));
+  EXPECT_EQ(root_accessible, manager->PreviousInTreeOrder(node2_accessible));
+}
+
+TEST(BrowserAccessibilityManagerTest, NextPreviousTextOnlyObject) {
+  ui::AXNodeData root;
+  root.id = 1;
+  root.role = ui::AX_ROLE_ROOT_WEB_AREA;
+
+  ui::AXNodeData node2;
+  node2.id = 2;
+  root.child_ids.push_back(2);
+
+  ui::AXNodeData text1;
+  text1.id = 3;
+  text1.role = ui::AX_ROLE_STATIC_TEXT;
+  root.child_ids.push_back(3);
+
+  ui::AXNodeData node3;
+  node3.id = 4;
+  root.child_ids.push_back(4);
+
+  ui::AXNodeData text2;
+  text2.id = 5;
+  text2.role = ui::AX_ROLE_STATIC_TEXT;
+  node3.child_ids.push_back(5);
+
+  ui::AXNodeData node4;
+  node4.id = 6;
+  node3.child_ids.push_back(6);
+
+  ui::AXNodeData text3;
+  text3.id = 7;
+  text3.role = ui::AX_ROLE_STATIC_TEXT;
+  node3.child_ids.push_back(7);
+
+  ui::AXNodeData node5;
+  node5.id = 8;
+  root.child_ids.push_back(8);
+
+  ui::AXNodeData text4;
+  text4.id = 9;
+  text4.role = ui::AX_ROLE_LINE_BREAK;
+  node5.child_ids.push_back(9);
+
+  scoped_ptr<BrowserAccessibilityManager> manager(
+      BrowserAccessibilityManager::Create(
+          MakeAXTreeUpdate(root, node2, node3, node4, node5,
+              text1, text2, text3, text4),
+          nullptr,
+          new CountedBrowserAccessibilityFactory()));
+
+  auto root_accessible = manager->GetRoot();
+  auto node2_accessible = root_accessible->PlatformGetChild(0);
+  auto text1_accessible = root_accessible->PlatformGetChild(1);
+  auto node3_accessible = root_accessible->PlatformGetChild(2);
+  auto text2_accessible = node3_accessible->PlatformGetChild(0);
+  auto node4_accessible = node3_accessible->PlatformGetChild(1);
+  auto text3_accessible = node3_accessible->PlatformGetChild(2);
+  auto node5_accessible = root_accessible->PlatformGetChild(3);
+  auto text4_accessible = node5_accessible->PlatformGetChild(0);
+
+  EXPECT_EQ(nullptr, manager->NextTextOnlyObject(nullptr));
+  EXPECT_EQ(text1_accessible, manager->NextTextOnlyObject(root_accessible));
+  EXPECT_EQ(text1_accessible, manager->NextTextOnlyObject(node2_accessible));
+  EXPECT_EQ(text2_accessible, manager->NextTextOnlyObject(text1_accessible));
+  EXPECT_EQ(text2_accessible, manager->NextTextOnlyObject(node3_accessible));
+  EXPECT_EQ(text3_accessible, manager->NextTextOnlyObject(text2_accessible));
+  EXPECT_EQ(text3_accessible, manager->NextTextOnlyObject(node4_accessible));
+  EXPECT_EQ(text4_accessible, manager->NextTextOnlyObject(text3_accessible));
+  EXPECT_EQ(text4_accessible, manager->NextTextOnlyObject(node5_accessible));
+  EXPECT_EQ(nullptr, manager->NextTextOnlyObject(text4_accessible));
+
+  EXPECT_EQ(nullptr, manager->PreviousTextOnlyObject(nullptr));
+  EXPECT_EQ(
+      text3_accessible, manager->PreviousTextOnlyObject(text4_accessible));
+  EXPECT_EQ(
+      text3_accessible, manager->PreviousTextOnlyObject(node5_accessible));
+  EXPECT_EQ(
+      text2_accessible, manager->PreviousTextOnlyObject(text3_accessible));
+  EXPECT_EQ(
+      text2_accessible, manager->PreviousTextOnlyObject(node4_accessible));
+  EXPECT_EQ(
+      text1_accessible, manager->PreviousTextOnlyObject(text2_accessible));
+  EXPECT_EQ(
+      text1_accessible, manager->PreviousTextOnlyObject(node3_accessible));
+  EXPECT_EQ(nullptr, manager->PreviousTextOnlyObject(node2_accessible));
+  EXPECT_EQ(nullptr, manager->PreviousTextOnlyObject(root_accessible));
+}
+
+TEST(BrowserAccessibilityManagerTest, DeletingFocusedNodeDoesNotCrash) {
+  // Create a really simple tree with one root node and one focused child.
+  ui::AXNodeData root;
+  root.id = 1;
+  root.role = ui::AX_ROLE_ROOT_WEB_AREA;
+  root.state = 0;
+  root.child_ids.push_back(2);
+
+  ui::AXNodeData node2;
+  node2.id = 2;
+  node2.state = 1 << ui::AX_STATE_FOCUSED;
+
+  scoped_ptr<BrowserAccessibilityManager> manager(
+      BrowserAccessibilityManager::Create(
+          MakeAXTreeUpdate(root, node2),
+          nullptr,
+          new CountedBrowserAccessibilityFactory()));
+
+  ASSERT_EQ(1, manager->GetRoot()->GetId());
+  ASSERT_EQ(1, manager->GetFocus(manager->GetRoot())->GetId());
+
+  // Send the focus event for node 2.
+  std::vector<AXEventNotificationDetails> events;
+  events.push_back(AXEventNotificationDetails());
+  events[0].update = MakeAXTreeUpdate(node2);
+  events[0].id = 2;
+  events[0].event_type = ui::AX_EVENT_FOCUS;
+  manager->OnAccessibilityEvents(events);
+
+  ASSERT_EQ(1, manager->GetRoot()->GetId());
+  ASSERT_EQ(2, manager->GetFocus(manager->GetRoot())->GetId());
+
+  // Now replace the tree with a new tree consisting of a single root.
+  ui::AXNodeData root2;
+  root2.id = 3;
+  root2.role = ui::AX_ROLE_ROOT_WEB_AREA;
+  root2.state = 0;
+
+  std::vector<AXEventNotificationDetails> events2;
+  events2.push_back(AXEventNotificationDetails());
+  events2[0].update = MakeAXTreeUpdate(root2);
+  events2[0].id = -1;
+  events2[0].event_type = ui::AX_EVENT_NONE;
+  manager->OnAccessibilityEvents(events2);
+
+  // Make sure that the focused node was updated to the new root and
+  // that this doesn't crash.
+  ASSERT_EQ(3, manager->GetRoot()->GetId());
+  ASSERT_EQ(3, manager->GetFocus(manager->GetRoot())->GetId());
+}
+
+TEST(BrowserAccessibilityManagerTest, DeletingFocusedNodeDoesNotCrash2) {
+  // Create a really simple tree with one root node and one focused child.
+  ui::AXNodeData root;
+  root.id = 1;
+  root.role = ui::AX_ROLE_ROOT_WEB_AREA;
+  root.state = 0;
+  root.child_ids.push_back(2);
+  root.child_ids.push_back(3);
+  root.child_ids.push_back(4);
+
+  ui::AXNodeData node2;
+  node2.id = 2;
+  node2.state = 1 << ui::AX_STATE_FOCUSED;
+
+  ui::AXNodeData node3;
+  node3.id = 3;
+  node3.state = 0;
+
+  ui::AXNodeData node4;
+  node4.id = 4;
+  node4.state = 0;
+
+  scoped_ptr<BrowserAccessibilityManager> manager(
+      BrowserAccessibilityManager::Create(
+          MakeAXTreeUpdate(root, node2, node3, node4),
+          nullptr,
+          new CountedBrowserAccessibilityFactory()));
+
+  ASSERT_EQ(1, manager->GetRoot()->GetId());
+  ASSERT_EQ(1, manager->GetFocus(manager->GetRoot())->GetId());
+
+  // Send the focus event for node 2.
+  std::vector<AXEventNotificationDetails> events;
+  events.push_back(AXEventNotificationDetails());
+  events[0].update = MakeAXTreeUpdate(node2);
+  events[0].id = 2;
+  events[0].event_type = ui::AX_EVENT_FOCUS;
+  manager->OnAccessibilityEvents(events);
+
+  ASSERT_EQ(1, manager->GetRoot()->GetId());
+  ASSERT_EQ(2, manager->GetFocus(manager->GetRoot())->GetId());
+
+  // Now replace the tree with a new tree consisting of a single root.
+  ui::AXNodeData root2;
+  root2.id = 3;
+  root2.role = ui::AX_ROLE_ROOT_WEB_AREA;
+  root2.state = 0;
+
+  // Make an update the explicitly clears the previous root.
+  std::vector<AXEventNotificationDetails> events2;
+  events2.push_back(AXEventNotificationDetails());
+  events2[0].update = MakeAXTreeUpdate(root2);
+  events2[0].update.node_id_to_clear = 1;
+  events2[0].id = -1;
+  events2[0].event_type = ui::AX_EVENT_NONE;
+  manager->OnAccessibilityEvents(events2);
+
+  // Make sure that the focused node was updated to the new root and
+  // that this doesn't crash.
+  ASSERT_EQ(3, manager->GetRoot()->GetId());
+  ASSERT_EQ(3, manager->GetFocus(manager->GetRoot())->GetId());
 }
 
 }  // namespace content

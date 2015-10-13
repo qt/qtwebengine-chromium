@@ -33,6 +33,8 @@ void ClosingDelegate::OnDataReceived(scoped_ptr<SpdyBuffer> buffer) {}
 
 void ClosingDelegate::OnDataSent() {}
 
+void ClosingDelegate::OnTrailers(const SpdyHeaderBlock& trailers) {}
+
 void ClosingDelegate::OnClose(int status) {
   DCHECK(stream_);
   stream_->Close();
@@ -69,6 +71,8 @@ void StreamDelegateBase::OnDataReceived(scoped_ptr<SpdyBuffer> buffer) {
 
 void StreamDelegateBase::OnDataSent() {}
 
+void StreamDelegateBase::OnTrailers(const SpdyHeaderBlock& trailers) {}
+
 void StreamDelegateBase::OnClose(int status) {
   if (!stream_.get())
     return;
@@ -97,7 +101,8 @@ std::string StreamDelegateBase::TakeReceivedData() {
 std::string StreamDelegateBase::GetResponseHeaderValue(
     const std::string& name) const {
   SpdyHeaderBlock::const_iterator it = response_headers_.find(name);
-  return (it == response_headers_.end()) ? std::string() : it->second;
+  return (it == response_headers_.end()) ? std::string()
+                                         : it->second.as_string();
 }
 
 StreamDelegateDoNothing::StreamDelegateDoNothing(

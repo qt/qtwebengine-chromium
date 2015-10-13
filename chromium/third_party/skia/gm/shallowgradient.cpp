@@ -12,13 +12,13 @@ typedef SkShader* (*MakeShaderProc)(const SkColor[], int count, const SkSize&);
 
 static SkShader* shader_linear(const SkColor colors[], int count, const SkSize& size) {
     SkPoint pts[] = { { 0, 0 }, { size.width(), size.height() } };
-    return SkGradientShader::CreateLinear(pts, colors, NULL, count,
+    return SkGradientShader::CreateLinear(pts, colors, nullptr, count,
                                           SkShader::kClamp_TileMode);
 }
 
 static SkShader* shader_radial(const SkColor colors[], int count, const SkSize& size) {
     SkPoint center = { size.width()/2, size.height()/2 };
-    return SkGradientShader::CreateRadial(center, size.width()/2, colors, NULL, count,
+    return SkGradientShader::CreateRadial(center, size.width()/2, colors, nullptr, count,
                                           SkShader::kClamp_TileMode);
 }
 
@@ -26,13 +26,13 @@ static SkShader* shader_conical(const SkColor colors[], int count, const SkSize&
     SkPoint center = { size.width()/2, size.height()/2 };
     return SkGradientShader::CreateTwoPointConical(center, size.width()/64,
                                                    center, size.width()/2,
-                                                   colors, NULL, count,
+                                                   colors, nullptr, count,
                                                    SkShader::kClamp_TileMode);
 }
 
 static SkShader* shader_sweep(const SkColor colors[], int count, const SkSize& size) {
     return SkGradientShader::CreateSweep(size.width()/2, size.height()/2,
-                                         colors, NULL, count);
+                                         colors, nullptr, count);
 }
 
 class ShallowGradientGM : public skiagm::GM {
@@ -52,7 +52,8 @@ protected:
     }
 
     void onDraw(SkCanvas* canvas) override {
-        const SkColor colors[] = { 0xFF555555, 0xFF444444 };
+        const SkColor colors[] = { sk_tool_utils::color_to_565(0xFF555555), 
+                sk_tool_utils::color_to_565(0xFF444444) };
         const int colorCount = SK_ARRAY_COUNT(colors);
 
         SkRect r = { 0, 0, this->width(), this->height() };

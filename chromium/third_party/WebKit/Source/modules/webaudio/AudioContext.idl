@@ -35,6 +35,7 @@ enum AudioContextState {
     Conditional=WEB_AUDIO,
     Constructor,
     ConstructorCallWith=Document,
+    ImplementedAs=AbstractAudioContext,
     NoInterfaceObject,
     RaisesException=Constructor,
 ] interface AudioContext : EventTarget {
@@ -78,7 +79,7 @@ enum AudioContextState {
     [RaisesException, MeasureAs=AudioContextCreateScriptProcessor, RaisesException] ScriptProcessorNode createScriptProcessor(optional unsigned long bufferSize, optional unsigned long numberOfInputChannels, optional unsigned long numberOfOutputChannels);
     [RaisesException, MeasureAs=AudioContextCreateStereoPanner] StereoPannerNode createStereoPanner();
     [RaisesException, MeasureAs=AudioContextCreateOscillator] OscillatorNode createOscillator();
-    [RaisesException, MeasureAs=AudioContextCreatePeriodicWave, RaisesException] PeriodicWave createPeriodicWave(Float32Array real, Float32Array imag);
+    [RaisesException, MeasureAs=AudioContextCreatePeriodicWave, RaisesException] PeriodicWave createPeriodicWave(Float32Array real, Float32Array imag, optional Dictionary options);
 
     // Channel splitting and merging
     [RaisesException, MeasureAs=AudioContextCreateChannelSplitter] ChannelSplitterNode createChannelSplitter(optional unsigned long numberOfOutputs);

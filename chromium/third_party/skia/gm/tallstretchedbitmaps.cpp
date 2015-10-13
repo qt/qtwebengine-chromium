@@ -88,7 +88,7 @@ protected:
             SkRect dstRect = SkRect::MakeWH(SkIntToScalar(bmp.width()), 10.f * itemHeight);
             SkPaint paint;
             paint.setFilterQuality(kLow_SkFilterQuality);
-            canvas->drawBitmapRect(bmp, &subRect, dstRect, &paint);
+            canvas->drawBitmapRect(bmp, subRect, dstRect, &paint);
             canvas->translate(SkIntToScalar(bmp.width() + 10), 0);
         }
     }
@@ -103,5 +103,4 @@ private:
 
 //////////////////////////////////////////////////////////////////////////////
 
-DEF_GM(return SkNEW(TallStretchedBitmapsGM);)
-
+DEF_GM(return new TallStretchedBitmapsGM;)

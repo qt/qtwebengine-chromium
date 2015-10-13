@@ -138,6 +138,20 @@ static std::string ToStringIfSet(const char* key, const Settable<T>& val) {
   return str;
 }
 
+template <class T>
+static std::string VectorToString(const std::vector<T>& vals) {
+    std::ostringstream ost;
+    ost << "[";
+    for (size_t i = 0; i < vals.size(); ++i) {
+      if (i > 0) {
+        ost << ", ";
+      }
+      ost << vals[i].ToString();
+    }
+    ost << "]";
+    return ost.str();
+}
+
 // Options that can be applied to a VoiceMediaChannel or a VoiceMediaEngine.
 // Used to be flags, but that makes it hard to selectively apply options.
 // We are moving all of the setting of options to structs like this,
@@ -327,7 +341,6 @@ struct VideoOptions {
         change.system_low_adaptation_threshhold);
     system_high_adaptation_threshhold.SetFrom(
         change.system_high_adaptation_threshhold);
-    buffered_mode_latency.SetFrom(change.buffered_mode_latency);
     dscp.SetFrom(change.dscp);
     suspend_below_min_bitrate.SetFrom(change.suspend_below_min_bitrate);
     unsignalled_recv_stream_limit.SetFrom(change.unsignalled_recv_stream_limit);
@@ -356,7 +369,7 @@ struct VideoOptions {
                o.system_low_adaptation_threshhold &&
            system_high_adaptation_threshhold ==
                o.system_high_adaptation_threshhold &&
-           buffered_mode_latency == o.buffered_mode_latency && dscp == o.dscp &&
+           dscp == o.dscp &&
            suspend_below_min_bitrate == o.suspend_below_min_bitrate &&
            unsignalled_recv_stream_limit == o.unsignalled_recv_stream_limit &&
            use_simulcast_adapter == o.use_simulcast_adapter &&
@@ -385,7 +398,6 @@ struct VideoOptions {
     ost << ToStringIfSet("process", process_adaptation_threshhold);
     ost << ToStringIfSet("low", system_low_adaptation_threshhold);
     ost << ToStringIfSet("high", system_high_adaptation_threshhold);
-    ost << ToStringIfSet("buffered mode latency", buffered_mode_latency);
     ost << ToStringIfSet("dscp", dscp);
     ost << ToStringIfSet("suspend below min bitrate",
                          suspend_below_min_bitrate);
@@ -439,8 +451,6 @@ struct VideoOptions {
   Settable<float> system_low_adaptation_threshhold;
   // High threshhold for cpu adaptation.  (Adapt down)
   Settable<float> system_high_adaptation_threshhold;
-  // Specify buffered mode latency in milliseconds.
-  Settable<int> buffered_mode_latency;
   // Set DSCP value for packet sent from video channel.
   Settable<bool> dscp;
   // Enable WebRTC suspension of video. No video frames will be sent when the
@@ -457,9 +467,6 @@ struct VideoOptions {
 struct RtpHeaderExtension {
   RtpHeaderExtension() : id(0) {}
   RtpHeaderExtension(const std::string& u, int i) : uri(u), id(i) {}
-  std::string uri;
-  int id;
-  // TODO(juberti): SendRecv direction;
 
   bool operator==(const RtpHeaderExtension& ext) const {
     // id is a reserved word in objective-c. Therefore the id attribute has to
@@ -467,6 +474,19 @@ struct RtpHeaderExtension {
     return this->id == ext.id &&
         uri == ext.uri;
   }
+
+  std::string ToString() const {
+    std::ostringstream ost;
+    ost << "{";
+    ost << "id: , " << id;
+    ost << "uri: " << uri;
+    ost << "}";
+    return ost.str();
+  }
+
+  std::string uri;
+  int id;
+  // TODO(juberti): SendRecv direction;
 };
 
 // Returns the named header extension if found among all extensions, NULL
@@ -546,20 +566,10 @@ class MediaChannel : public sigslot::has_slots<> {
   // multiple SSRCs.
   virtual bool RemoveRecvStream(uint32 ssrc) = 0;
 
-  // Mutes the channel.
-  virtual bool MuteStream(uint32 ssrc, bool on) = 0;
-
-  // Sets the RTP extension headers and IDs to use when sending RTP.
-  virtual bool SetRecvRtpHeaderExtensions(
-      const std::vector<RtpHeaderExtension>& extensions) = 0;
-  virtual bool SetSendRtpHeaderExtensions(
-      const std::vector<RtpHeaderExtension>& extensions) = 0;
   // Returns the absoulte sendtime extension id value from media channel.
   virtual int GetRtpSendTimeExtnId() const {
     return -1;
   }
-  // Sets the maximum allowed bandwidth to use when sending data.
-  virtual bool SetMaxSendBandwidth(int bps) = 0;
 
   // Base method to send packet using NetworkInterface.
   bool SendPacket(rtc::Buffer* packet) {
@@ -989,6 +999,45 @@ struct DataMediaInfo {
   std::vector<DataReceiverInfo> receivers;
 };
 
+template <class Codec>
+struct RtpParameters {
+  virtual std::string ToString() {
+    std::ostringstream ost;
+    ost << "{";
+    ost << "codecs: " << VectorToString(codecs) << ", ";
+    ost << "extensions: " << VectorToString(extensions);
+    ost << "}";
+    return ost.str();
+  }
+
+  std::vector<Codec> codecs;
+  std::vector<RtpHeaderExtension> extensions;
+  // TODO(pthatcher): Add streams.
+};
+
+template <class Codec, class Options>
+struct RtpSendParameters : RtpParameters<Codec> {
+  std::string ToString() override {
+    std::ostringstream ost;
+    ost << "{";
+    ost << "codecs: " << VectorToString(this->codecs) << ", ";
+    ost << "extensions: " << VectorToString(this->extensions) << ", ";
+    ost << "max_bandiwidth_bps: " << max_bandwidth_bps << ", ";
+    ost << "options: " << options.ToString();
+    ost << "}";
+    return ost.str();
+  }
+
+  int max_bandwidth_bps = -1;
+  Options options;
+};
+
+struct AudioSendParameters : RtpSendParameters<AudioCodec, AudioOptions> {
+};
+
+struct AudioRecvParameters : RtpParameters<AudioCodec> {
+};
+
 class VoiceMediaChannel : public MediaChannel {
  public:
   enum Error {
@@ -1014,18 +1063,18 @@ class VoiceMediaChannel : public MediaChannel {
 
   VoiceMediaChannel() {}
   virtual ~VoiceMediaChannel() {}
-  // Sets the codecs/payload types to be used for incoming media.
-  virtual bool SetRecvCodecs(const std::vector<AudioCodec>& codecs) = 0;
-  // Sets the codecs/payload types to be used for outgoing media.
-  virtual bool SetSendCodecs(const std::vector<AudioCodec>& codecs) = 0;
+  virtual bool SetSendParameters(const AudioSendParameters& params) = 0;
+  virtual bool SetRecvParameters(const AudioRecvParameters& params) = 0;
   // Starts or stops playout of received audio.
   virtual bool SetPlayout(bool playout) = 0;
   // Starts or stops sending (and potentially capture) of local audio.
   virtual bool SetSend(SendFlags flag) = 0;
+  // Configure stream for sending.
+  virtual bool SetAudioSend(uint32 ssrc, bool enable,
+                            const AudioOptions* options,
+                            AudioRenderer* renderer) = 0;
   // Sets the renderer object to be used for the specified remote audio stream.
   virtual bool SetRemoteRenderer(uint32 ssrc, AudioRenderer* renderer) = 0;
-  // Sets the renderer object to be used for the specified local audio stream.
-  virtual bool SetLocalRenderer(uint32 ssrc, AudioRenderer* renderer) = 0;
   // Gets current energy levels for all incoming streams.
   virtual bool GetActiveStreams(AudioInfo::StreamList* actives) = 0;
   // Get the current energy level of the stream sent to the speaker.
@@ -1038,12 +1087,6 @@ class VoiceMediaChannel : public MediaChannel {
     int type_event_delay) = 0;
   // Set left and right scale for speaker output volume of the specified ssrc.
   virtual bool SetOutputScaling(uint32 ssrc, double left, double right) = 0;
-  // Get left and right scale for speaker output volume of the specified ssrc.
-  virtual bool GetOutputScaling(uint32 ssrc, double* left, double* right) = 0;
-  // Specifies a ringback tone to be played during call setup.
-  virtual bool SetRingbackTone(const char *buf, int len) = 0;
-  // Plays or stops the aforementioned ringback tone
-  virtual bool PlayRingbackTone(uint32 ssrc, bool play, bool loop) = 0;
   // Returns if the telephone-event has been negotiated.
   virtual bool CanInsertDtmf() { return false; }
   // Send and/or play a DTMF |event| according to the |flags|.
@@ -1054,19 +1097,12 @@ class VoiceMediaChannel : public MediaChannel {
   virtual bool InsertDtmf(uint32 ssrc, int event, int duration, int flags) = 0;
   // Gets quality stats for the channel.
   virtual bool GetStats(VoiceMediaInfo* info) = 0;
-  // Gets last reported error for this media channel.
-  virtual void GetLastMediaError(uint32* ssrc,
-                                 VoiceMediaChannel::Error* error) {
-    ASSERT(error != NULL);
-    *error = ERROR_NONE;
-  }
-  // Sets the media options to use.
-  virtual bool SetOptions(const AudioOptions& options) = 0;
-  virtual bool GetOptions(AudioOptions* options) const = 0;
+};
 
-  // Signal errors from MediaChannel.  Arguments are:
-  //     ssrc(uint32), and error(VoiceMediaChannel::Error).
-  sigslot::signal2<uint32, VoiceMediaChannel::Error> SignalMediaError;
+struct VideoSendParameters : RtpSendParameters<VideoCodec, VideoOptions> {
+};
+
+struct VideoRecvParameters : RtpParameters<VideoCodec> {
 };
 
 class VideoMediaChannel : public MediaChannel {
@@ -1088,20 +1124,18 @@ class VideoMediaChannel : public MediaChannel {
 
   VideoMediaChannel() : renderer_(NULL) {}
   virtual ~VideoMediaChannel() {}
-  // Allow video channel to unhook itself from an associated voice channel.
-  virtual void DetachVoiceChannel() = 0;
-  // Sets the codecs/payload types to be used for incoming media.
-  virtual bool SetRecvCodecs(const std::vector<VideoCodec>& codecs) = 0;
-  // Sets the codecs/payload types to be used for outgoing media.
-  virtual bool SetSendCodecs(const std::vector<VideoCodec>& codecs) = 0;
+
+  virtual bool SetSendParameters(const VideoSendParameters& params) = 0;
+  virtual bool SetRecvParameters(const VideoRecvParameters& params) = 0;
   // Gets the currently set codecs/payload types to be used for outgoing media.
   virtual bool GetSendCodec(VideoCodec* send_codec) = 0;
   // Sets the format of a specified outgoing stream.
   virtual bool SetSendStreamFormat(uint32 ssrc, const VideoFormat& format) = 0;
-  // Starts or stops playout of received video.
-  virtual bool SetRender(bool render) = 0;
   // Starts or stops transmission (and potentially capture) of local video.
   virtual bool SetSend(bool send) = 0;
+  // Configure stream for sending.
+  virtual bool SetVideoSend(uint32 ssrc, bool enable,
+                            const VideoOptions* options) = 0;
   // Sets the renderer object to be used for the specified stream.
   // If SSRC is 0, the renderer is used for the 'default' stream.
   virtual bool SetRenderer(uint32 ssrc, VideoRenderer* renderer) = 0;
@@ -1114,14 +1148,7 @@ class VideoMediaChannel : public MediaChannel {
   virtual bool SendIntraFrame() = 0;
   // Reuqest each of the remote senders to send an intra frame.
   virtual bool RequestIntraFrame() = 0;
-  // Sets the media options to use.
-  virtual bool SetOptions(const VideoOptions& options) = 0;
-  virtual bool GetOptions(VideoOptions* options) const = 0;
   virtual void UpdateAspectRatio(int ratio_w, int ratio_h) = 0;
-
-  // Signal errors from MediaChannel.  Arguments are:
-  //     ssrc(uint32), and error(VideoMediaChannel::Error).
-  sigslot::signal2<uint32, Error> SignalMediaError;
 
  protected:
   VideoRenderer *renderer_;
@@ -1193,6 +1220,27 @@ struct SendDataParams {
 
 enum SendDataResult { SDR_SUCCESS, SDR_ERROR, SDR_BLOCK };
 
+struct DataOptions {
+  std::string ToString() {
+    return "{}";
+  }
+};
+
+struct DataSendParameters : RtpSendParameters<DataCodec, DataOptions> {
+  std::string ToString() {
+    std::ostringstream ost;
+    // Options and extensions aren't used.
+    ost << "{";
+    ost << "codecs: " << VectorToString(codecs) << ", ";
+    ost << "max_bandiwidth_bps: " << max_bandwidth_bps;
+    ost << "}";
+    return ost.str();
+  }
+};
+
+struct DataRecvParameters : RtpParameters<DataCodec> {
+};
+
 class DataMediaChannel : public MediaChannel {
  public:
   enum Error {
@@ -1207,10 +1255,9 @@ class DataMediaChannel : public MediaChannel {
 
   virtual ~DataMediaChannel() {}
 
-  virtual bool SetSendCodecs(const std::vector<DataCodec>& codecs) = 0;
-  virtual bool SetRecvCodecs(const std::vector<DataCodec>& codecs) = 0;
+  virtual bool SetSendParameters(const DataSendParameters& params) = 0;
+  virtual bool SetRecvParameters(const DataRecvParameters& params) = 0;
 
-  virtual bool MuteStream(uint32 ssrc, bool on) { return false; }
   // TODO(pthatcher): Implement this.
   virtual bool GetStats(DataMediaInfo* info) { return true; }
 
@@ -1225,9 +1272,6 @@ class DataMediaChannel : public MediaChannel {
   sigslot::signal3<const ReceiveDataParams&,
                    const char*,
                    size_t> SignalDataReceived;
-  // Signal errors from MediaChannel.  Arguments are:
-  //     ssrc(uint32), and error(DataMediaChannel::Error).
-  sigslot::signal2<uint32, DataMediaChannel::Error> SignalMediaError;
   // Signal when the media channel is ready to send the stream. Arguments are:
   //     writable(bool)
   sigslot::signal1<bool> SignalReadyToSend;

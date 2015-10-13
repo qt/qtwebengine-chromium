@@ -28,7 +28,7 @@ using ::testing::Invoke;
 class ExternalPcm16B : public AudioDecoder {
  public:
   ExternalPcm16B() {}
-  virtual int Init() { return 0; }
+  void Reset() override {}
 
  protected:
   int DecodeInternal(const uint8_t* encoded,
@@ -36,15 +36,14 @@ class ExternalPcm16B : public AudioDecoder {
                      int sample_rate_hz,
                      int16_t* decoded,
                      SpeechType* speech_type) override {
-    int16_t ret = WebRtcPcm16b_Decode(
-        encoded, static_cast<int16_t>(encoded_len), decoded);
+    size_t ret = WebRtcPcm16b_Decode(encoded, encoded_len, decoded);
     *speech_type = ConvertSpeechType(1);
-    return ret;
+    return static_cast<int>(ret);
   }
   size_t Channels() const override { return 1; }
 
  private:
-  DISALLOW_COPY_AND_ASSIGN(ExternalPcm16B);
+  RTC_DISALLOW_COPY_AND_ASSIGN(ExternalPcm16B);
 };
 
 // Create a mock of ExternalPcm16B which delegates all calls to the real object.
@@ -59,8 +58,8 @@ class MockExternalPcm16B : public ExternalPcm16B {
         .WillByDefault(Invoke(&real_, &ExternalPcm16B::HasDecodePlc));
     ON_CALL(*this, DecodePlc(_, _))
         .WillByDefault(Invoke(&real_, &ExternalPcm16B::DecodePlc));
-    ON_CALL(*this, Init())
-        .WillByDefault(Invoke(&real_, &ExternalPcm16B::Init));
+    ON_CALL(*this, Reset())
+        .WillByDefault(Invoke(&real_, &ExternalPcm16B::Reset));
     ON_CALL(*this, IncomingPacket(_, _, _, _, _))
         .WillByDefault(Invoke(&real_, &ExternalPcm16B::IncomingPacket));
     ON_CALL(*this, ErrorCode())
@@ -79,9 +78,8 @@ class MockExternalPcm16B : public ExternalPcm16B {
   MOCK_CONST_METHOD0(HasDecodePlc,
       bool());
   MOCK_METHOD2(DecodePlc,
-      int(int num_frames, int16_t* decoded));
-  MOCK_METHOD0(Init,
-      int());
+      size_t(size_t num_frames, int16_t* decoded));
+  MOCK_METHOD0(Reset, void());
   MOCK_METHOD5(IncomingPacket,
       int(const uint8_t* payload, size_t payload_len,
           uint16_t rtp_sequence_number, uint32_t rtp_timestamp,

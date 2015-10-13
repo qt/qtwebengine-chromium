@@ -25,11 +25,6 @@
       'include_dirs': [
         '<(DEPTH)/third_party/wtl/include',
       ],
-      'sources': [
-        '<(SHARED_INTERMEDIATE_DIR)/blink/public/resources/blink_resources.rc',
-        '<(SHARED_INTERMEDIATE_DIR)/content/content_resources.rc',
-        '<(SHARED_INTERMEDIATE_DIR)/net/net_resources.rc',
-      ],
       'conditions': [
         ['win_use_allocator_shim==1', {
           'dependencies': [

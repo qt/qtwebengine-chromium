@@ -26,6 +26,7 @@
 #endif
 
 #include "webrtc/base/basictypes.h"
+#include "webrtc/base/constructormagic.h"
 #include "webrtc/base/socketaddress.h"
 
 // Rather than converting errors into a private namespace,
@@ -109,7 +110,7 @@
 #define EREMOTE WSAEREMOTE
 #undef EACCES
 #define SOCKET_EACCES WSAEACCES
-#endif  // WEBRTC_WIN 
+#endif  // WEBRTC_WIN
 
 #if defined(WEBRTC_POSIX)
 #define INVALID_SOCKET (-1)
@@ -180,7 +181,7 @@ class Socket {
   Socket() {}
 
  private:
-  DISALLOW_COPY_AND_ASSIGN(Socket);
+  RTC_DISALLOW_COPY_AND_ASSIGN(Socket);
 };
 
 }  // namespace rtc

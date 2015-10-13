@@ -60,9 +60,9 @@ unsigned StyleSheetContents::estimatedSizeInBytes() const
 StyleSheetContents::StyleSheetContents(StyleRuleImport* ownerRule, const String& originalURL, const CSSParserContext& context)
     : m_ownerRule(ownerRule)
     , m_originalURL(originalURL)
+    , m_defaultNamespace(starAtom)
     , m_hasSyntacticallyValidCSSHeader(true)
     , m_didLoadErrorOccur(false)
-    , m_usesRemUnits(false)
     , m_isMutable(false)
     , m_isInMemoryCache(false)
     , m_hasFontFaceRule(false)
@@ -76,11 +76,12 @@ StyleSheetContents::StyleSheetContents(const StyleSheetContents& o)
     : m_ownerRule(nullptr)
     , m_originalURL(o.m_originalURL)
     , m_importRules(o.m_importRules.size())
+    , m_namespaceRules(o.m_namespaceRules.size())
     , m_childRules(o.m_childRules.size())
     , m_namespaces(o.m_namespaces)
+    , m_defaultNamespace(o.m_defaultNamespace)
     , m_hasSyntacticallyValidCSSHeader(o.m_hasSyntacticallyValidCSSHeader)
     , m_didLoadErrorOccur(false)
-    , m_usesRemUnits(o.m_usesRemUnits)
     , m_isMutable(false)
     , m_isInMemoryCache(false)
     , m_hasFontFaceRule(o.m_hasFontFaceRule)
@@ -158,10 +159,12 @@ void StyleSheetContents::parserAppendRule(PassRefPtrWillBeRawPtr<StyleRuleBase> 
     }
 
     if (rule->isNamespaceRule()) {
-        // Parser enforces that @namespace rules come before anything else
+        // Parser enforces that @namespace rules come before all rules other than
+        // import/charset rules
         ASSERT(m_childRules.isEmpty());
         StyleRuleNamespace& namespaceRule = toStyleRuleNamespace(*rule);
         parserAddNamespace(namespaceRule.prefix(), namespaceRule.uri());
+        m_namespaceRules.append(&namespaceRule);
         return;
     }
 
@@ -186,12 +189,18 @@ StyleRuleBase* StyleSheetContents::ruleAt(unsigned index) const
         return m_importRules[index].get();
 
     index -= m_importRules.size();
+
+    if (index < m_namespaceRules.size())
+        return m_namespaceRules[index].get();
+
+    index -= m_namespaceRules.size();
+
     return m_childRules[index].get();
 }
 
 unsigned StyleSheetContents::ruleCount() const
 {
-    return m_importRules.size() + m_childRules.size();
+    return m_importRules.size() + m_namespaceRules.size() + m_childRules.size();
 }
 
 void StyleSheetContents::clearRules()
@@ -201,6 +210,7 @@ void StyleSheetContents::clearRules()
         m_importRules[i]->clearParentStyleSheet();
     }
     m_importRules.clear();
+    m_namespaceRules.clear();
     m_childRules.clear();
 }
 
@@ -233,13 +243,37 @@ bool StyleSheetContents::wrapperInsertRule(PassRefPtrWillBeRawPtr<StyleRuleBase>
 
     index -= m_importRules.size();
 
+    if (index < m_namespaceRules.size() || (index == m_namespaceRules.size() && rule->isNamespaceRule())) {
+        // Inserting non-namespace rules other than import rule before @namespace is not allowed.
+        if (!rule->isNamespaceRule())
+            return false;
+        // Inserting @namespace rule when rules other than import/namespace/charset are present is not allowed.
+        if (!m_childRules.isEmpty())
+            return false;
+
+        StyleRuleNamespace* namespaceRule = toStyleRuleNamespace(rule.get());
+        m_namespaceRules.insert(index, namespaceRule);
+        // For now to be compatible with IE and Firefox if namespace rule with same prefix is added
+        // irrespective of adding the rule at any index, last added rule's value is considered.
+        // TODO (ramya.v@samsung.com): As per spec last valid rule should be considered,
+        // which means if namespace rule is added in the middle of existing namespace rules,
+        // rule which comes later in rule list with same prefix needs to be considered.
+        parserAddNamespace(namespaceRule->prefix(), namespaceRule->uri());
+        return true;
+    }
+
+    if (rule->isNamespaceRule())
+        return false;
+
+    index -= m_namespaceRules.size();
+
     if (rule->isFontFaceRule())
         setHasFontFaceRule(true);
     m_childRules.insert(index, rule);
     return true;
 }
 
-void StyleSheetContents::wrapperDeleteRule(unsigned index)
+bool StyleSheetContents::wrapperDeleteRule(unsigned index)
 {
     ASSERT(m_isMutable);
     ASSERT_WITH_SECURITY_IMPLICATION(index < ruleCount());
@@ -249,19 +283,31 @@ void StyleSheetContents::wrapperDeleteRule(unsigned index)
         if (m_importRules[index]->isFontFaceRule())
             notifyRemoveFontFaceRule(toStyleRuleFontFace(m_importRules[index].get()));
         m_importRules.remove(index);
-        return;
+        return true;
     }
     index -= m_importRules.size();
+
+    if (index < m_namespaceRules.size()) {
+        if (!m_childRules.isEmpty())
+            return false;
+        m_namespaceRules.remove(index);
+        return true;
+    }
+    index -= m_namespaceRules.size();
 
     if (m_childRules[index]->isFontFaceRule())
         notifyRemoveFontFaceRule(toStyleRuleFontFace(m_childRules[index].get()));
     m_childRules.remove(index);
+    return true;
 }
 
 void StyleSheetContents::parserAddNamespace(const AtomicString& prefix, const AtomicString& uri)
 {
-    if (uri.isNull() || prefix.isNull())
+    ASSERT(!uri.isNull());
+    if (prefix.isNull()) {
+        m_defaultNamespace = uri;
         return;
+    }
     PrefixNamespaceURIMap::AddResult result = m_namespaces.add(prefix, uri);
     if (result.isNewEntry)
         return;
@@ -271,7 +317,9 @@ void StyleSheetContents::parserAddNamespace(const AtomicString& prefix, const At
 const AtomicString& StyleSheetContents::determineNamespace(const AtomicString& prefix)
 {
     if (prefix.isNull())
-        return nullAtom; // No namespace. If an element/attribute has a namespace, we won't match it.
+        return defaultNamespace();
+    if (prefix.isEmpty())
+        return emptyAtom; // No namespace. If an element/attribute has a namespace, we won't match it.
     if (prefix == starAtom)
         return starAtom; // We'll match any namespace.
     return m_namespaces.get(prefix);
@@ -412,7 +460,7 @@ Node* StyleSheetContents::singleOwnerNode() const
 {
     StyleSheetContents* root = rootStyleSheet();
     if (!root->hasOneClient())
-        return 0;
+        return nullptr;
     if (root->m_loadingClients.size())
         return (*root->m_loadingClients.begin())->ownerNode();
     return (*root->m_completedClients.begin())->ownerNode();
@@ -465,7 +513,7 @@ bool StyleSheetContents::hasFailedOrCanceledSubresources() const
 Document* StyleSheetContents::clientSingleOwnerDocument() const
 {
     if (!m_hasSingleOwnerDocument || clientSize() <= 0)
-        return 0;
+        return nullptr;
 
     if (m_loadingClients.size())
         return (*m_loadingClients.begin())->ownerDocument();
@@ -474,7 +522,7 @@ Document* StyleSheetContents::clientSingleOwnerDocument() const
 
 StyleSheetContents* StyleSheetContents::parentStyleSheet() const
 {
-    return m_ownerRule ? m_ownerRule->parentStyleSheet() : 0;
+    return m_ownerRule ? m_ownerRule->parentStyleSheet() : nullptr;
 }
 
 void StyleSheetContents::registerClient(CSSStyleSheet* sheet)
@@ -626,6 +674,7 @@ DEFINE_TRACE(StyleSheetContents)
 #if ENABLE(OILPAN)
     visitor->trace(m_ownerRule);
     visitor->trace(m_importRules);
+    visitor->trace(m_namespaceRules);
     visitor->trace(m_childRules);
     visitor->trace(m_loadingClients);
     visitor->trace(m_completedClients);

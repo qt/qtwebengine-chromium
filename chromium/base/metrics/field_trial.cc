@@ -13,7 +13,6 @@
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/sys_byteorder.h"
 
 namespace base {
 
@@ -137,6 +136,11 @@ const std::string& FieldTrial::group_name() {
   // Call |group()| to ensure group gets assigned and observers are notified.
   group();
   DCHECK(!group_name_.empty());
+  return group_name_;
+}
+
+const std::string& FieldTrial::GetGroupNameWithoutActivation() {
+  FinalizeGroupChoice();
   return group_name_;
 }
 
@@ -355,32 +359,39 @@ FieldTrial* FieldTrialList::FactoryGetFieldTrialWithRandomizationSeed(
 }
 
 // static
-FieldTrial* FieldTrialList::Find(const std::string& name) {
+FieldTrial* FieldTrialList::Find(const std::string& trial_name) {
   if (!global_)
     return NULL;
   AutoLock auto_lock(global_->lock_);
-  return global_->PreLockedFind(name);
+  return global_->PreLockedFind(trial_name);
 }
 
 // static
-int FieldTrialList::FindValue(const std::string& name) {
-  FieldTrial* field_trial = Find(name);
+int FieldTrialList::FindValue(const std::string& trial_name) {
+  FieldTrial* field_trial = Find(trial_name);
   if (field_trial)
     return field_trial->group();
   return FieldTrial::kNotFinalized;
 }
 
 // static
-std::string FieldTrialList::FindFullName(const std::string& name) {
-  FieldTrial* field_trial = Find(name);
+std::string FieldTrialList::FindFullName(const std::string& trial_name) {
+  FieldTrial* field_trial = Find(trial_name);
   if (field_trial)
     return field_trial->group_name();
   return std::string();
 }
 
 // static
-bool FieldTrialList::TrialExists(const std::string& name) {
-  return Find(name) != NULL;
+bool FieldTrialList::TrialExists(const std::string& trial_name) {
+  return Find(trial_name) != NULL;
+}
+
+// static
+bool FieldTrialList::IsTrialActive(const std::string& trial_name) {
+  FieldTrial* field_trial = Find(trial_name);
+  FieldTrial::ActiveGroup active_group;
+  return field_trial && field_trial->GetActiveGroup(&active_group);
 }
 
 // static

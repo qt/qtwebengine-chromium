@@ -56,6 +56,7 @@ class GritNodeUnittest(unittest.TestCase):
   # Verifies that GetInputFiles() returns the correct list of files
   # corresponding to ChromeScaledImage nodes when assets are missing.
   def testGetInputFilesChromeScaledImage(self):
+    chrome_html_path = util.PathFromRoot('grit/testdata/chrome_html.html')
     xml = '''<?xml version="1.0" encoding="utf-8"?>
       <grit latest_public_release="0" current_release="1">
         <outputs>
@@ -66,12 +67,15 @@ class GritNodeUnittest(unittest.TestCase):
           <structures fallback_to_low_resolution="true">
             <structure type="chrome_scaled_image" name="IDR_A" file="a.png" />
             <structure type="chrome_scaled_image" name="IDR_B" file="b.png" />
+            <structure type="chrome_html" name="HTML_FILE1" file="%s" flattenhtml="true" />
           </structures>
         </release>
-      </grit>'''
+      </grit>''' % chrome_html_path
 
     grd = grd_reader.Parse(StringIO.StringIO(xml), util.PathFromRoot('grit/testdata'))
-    expected = ['default_100_percent/a.png', 'default_100_percent/b.png', 'special_100_percent/a.png']
+    expected = ['chrome_html.html', 'default_100_percent/a.png',
+                'default_100_percent/b.png', 'included_sample.html',
+                'special_100_percent/a.png']
     actual = [os.path.relpath(path, util.PathFromRoot('grit/testdata')) for path in grd.GetInputFiles()]
     # Convert path separator for Windows paths.
     actual = [path.replace('\\', '/') for path in actual]

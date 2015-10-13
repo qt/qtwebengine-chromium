@@ -28,7 +28,7 @@ import zipfile
 # Note: this revision is only used for Windows. Other platforms use update.sh.
 # TODO(thakis): Use the same revision on Windows and non-Windows.
 # TODO(thakis): Remove update.sh, use update.py everywhere.
-LLVM_WIN_REVISION = '239674'
+LLVM_WIN_REVISION = '247874'
 
 use_head_revision = 'LLVM_FORCE_HEAD_REVISION' in os.environ
 if use_head_revision:
@@ -60,7 +60,7 @@ LLVM_BUILD_TOOLS_DIR = os.path.abspath(
     os.path.join(LLVM_DIR, '..', 'llvm-build-tools'))
 STAMP_FILE = os.path.join(LLVM_DIR, '..', 'llvm-build', 'cr_build_revision')
 BINUTILS_DIR = os.path.join(THIRD_PARTY_DIR, 'binutils')
-VERSION = '3.7.0'
+VERSION = '3.8.0'
 
 # URL for pre-built binaries.
 CDS_URL = 'https://commondatastorage.googleapis.com/chromium-browser-clang'
@@ -241,74 +241,12 @@ def ApplyLocalPatches():
   # remove patches over time.
   assert sys.platform != 'win32'
 
-  # Apply patch for tests failing with --disable-pthreads (llvm.org/PR11974)
-  clang_patches = [ r"""\
---- test/Index/crash-recovery-modules.m	(revision 202554)
-+++ test/Index/crash-recovery-modules.m	(working copy)
-@@ -12,6 +12,8 @@
- 
- // REQUIRES: crash-recovery
- // REQUIRES: shell
-+// XFAIL: *
-+//    (PR11974)
- 
- @import Crash;
-""", r"""\
---- unittests/libclang/LibclangTest.cpp (revision 215949)
-+++ unittests/libclang/LibclangTest.cpp (working copy)
-@@ -431,7 +431,7 @@
-   EXPECT_EQ(0U, clang_getNumDiagnostics(ClangTU));
- }
-
--TEST_F(LibclangReparseTest, ReparseWithModule) {
-+TEST_F(LibclangReparseTest, DISABLED_ReparseWithModule) {
-   const char *HeaderTop = "#ifndef H\n#define H\nstruct Foo { int bar;";
-   const char *HeaderBottom = "\n};\n#endif\n";
-   const char *MFile = "#include \"HeaderFile.h\"\nint main() {"
-"""
-      ]
-
-  # This Go bindings test doesn't work after bootstrap on Linux, PR21552.
-  llvm_patches = [ r"""\
---- test/Bindings/Go/go.test    (revision 223109)
-+++ test/Bindings/Go/go.test    (working copy)
-@@ -1,3 +1,3 @@
--; RUN: llvm-go test llvm.org/llvm/bindings/go/llvm
-+; RUN: true
- 
- ; REQUIRES: shell
-"""
-      ]
-
-  # The UBSan run-time, which is now bundled with the ASan run-time, doesn't
-  # work on Mac OS X 10.8 (PR23539).
-  compiler_rt_patches = [ r"""\
---- CMakeLists.txt	(revision 241602)
-+++ CMakeLists.txt	(working copy)
-@@ -305,6 +305,7 @@
-       list(APPEND SANITIZER_COMMON_SUPPORTED_OS iossim)
-     endif()
-   endif()
-+  set(SANITIZER_MIN_OSX_VERSION "10.7")
-   if(SANITIZER_MIN_OSX_VERSION VERSION_LESS "10.7")
-     message(FATAL_ERROR "Too old OS X version: ${SANITIZER_MIN_OSX_VERSION}")
-   endif()
-"""
-      ]
-
-  for path, patches in [(LLVM_DIR, llvm_patches),
-                        (CLANG_DIR, clang_patches),
-                        (COMPILER_RT_DIR, compiler_rt_patches)]:
-    print 'Applying patches in', path
-    for patch in patches:
-      print patch
-      p = subprocess.Popen( ['patch', '-p0', '-d', path], stdin=subprocess.PIPE)
-      (stdout, stderr) = p.communicate(input=patch)
-      if p.returncode != 0:
-        raise RuntimeError('stdout %s, stderr %s' % (stdout, stderr))
+  # No patches.
 
 
 def DeleteChromeToolsShim():
+  OLD_SHIM_DIR = os.path.join(LLVM_DIR, 'tools', 'zzz-chrometools')
+  shutil.rmtree(OLD_SHIM_DIR, ignore_errors=True)
   shutil.rmtree(CHROME_TOOLS_SHIM_DIR, ignore_errors=True)
 
 
@@ -404,8 +342,13 @@ def UpdateClang(args):
       try:
         DownloadUrl(cds_full_url, f)
         f.seek(0)
+        # TODO(thakis): Delete LLVM_BUILD_DIR before extracting.
         tarfile.open(mode='r:gz', fileobj=f).extractall(path=LLVM_BUILD_DIR)
         print 'clang %s unpacked' % PACKAGE_VERSION
+        # Download the gold plugin if requested to by an environment variable.
+        # This is used by the CFI ClusterFuzz bot.
+        if 'LLVM_DOWNLOAD_GOLD_PLUGIN' in os.environ:
+          RunCommand(['python', CHROMIUM_DIR+'/build/download_gold_plugin.py'])
         WriteStampFile(PACKAGE_VERSION)
         return 0
       except urllib2.HTTPError:
@@ -433,6 +376,23 @@ def UpdateClang(args):
     ApplyLocalPatches()
 
   cc, cxx = None, None
+  libstdcpp = None
+  if args.gcc_toolchain:  # This option is only used on Linux.
+    # Use the specified gcc installation for building.
+    cc = os.path.join(args.gcc_toolchain, 'bin', 'gcc')
+    cxx = os.path.join(args.gcc_toolchain, 'bin', 'g++')
+
+    if not os.access(cc, os.X_OK):
+      print 'Invalid --gcc-toolchain: "%s"' % args.gcc_toolchain
+      print '"%s" does not appear to be valid.' % cc
+      return 1
+
+    # Set LD_LIBRARY_PATH to make auxiliary targets (tablegen, bootstrap
+    # compiler, etc.) find the .so.
+    libstdcpp = subprocess.check_output(
+        [cxx, '-print-file-name=libstdc++.so.6']).rstrip()
+    os.environ['LD_LIBRARY_PATH'] = os.path.dirname(libstdcpp)
+
   cflags = cxxflags = ldflags = []
 
   # LLVM uses C++11 starting in llvm 3.5. On Linux, this means libstdc++4.7+ is
@@ -478,6 +438,10 @@ def UpdateClang(args):
     if args.run_tests:
       RunCommand(['ninja', 'check-all'], msvc_arch='x64')
     RunCommand(['ninja', 'install'], msvc_arch='x64')
+    if args.gcc_toolchain:
+      # Copy that gcc's stdlibc++.so.6 to the build dir, so the bootstrap
+      # compiler can start.
+      CopyFile(libstdcpp, os.path.join(LLVM_BOOTSTRAP_INSTALL_DIR, 'lib'))
 
     if sys.platform == 'win32':
       cc = os.path.join(LLVM_BOOTSTRAP_INSTALL_DIR, 'bin', 'clang-cl.exe')
@@ -489,6 +453,12 @@ def UpdateClang(args):
     else:
       cc = os.path.join(LLVM_BOOTSTRAP_INSTALL_DIR, 'bin', 'clang')
       cxx = os.path.join(LLVM_BOOTSTRAP_INSTALL_DIR, 'bin', 'clang++')
+
+    if args.gcc_toolchain:
+      # Tell the bootstrap compiler to use a specific gcc prefix to search
+      # for standard library headers and shared object files.
+      cflags = ['--gcc-toolchain=' + args.gcc_toolchain]
+      cxxflags = ['--gcc-toolchain=' + args.gcc_toolchain]
     print 'Building final compiler'
 
   if sys.platform == 'darwin':
@@ -557,6 +527,7 @@ def UpdateClang(args):
 
   cmake_args = base_cmake_args + [
       '-DLLVM_BINUTILS_INCDIR=' + binutils_incdir,
+      '-DLLVM_EXPERIMENTAL_TARGETS_TO_BUILD=WebAssembly',
       '-DCMAKE_C_FLAGS=' + ' '.join(cflags),
       '-DCMAKE_CXX_FLAGS=' + ' '.join(cxxflags),
       '-DCMAKE_EXE_LINKER_FLAGS=' + ' '.join(ldflags),
@@ -576,6 +547,15 @@ def UpdateClang(args):
   os.chdir(LLVM_BUILD_DIR)
   RunCommand(['cmake'] + cmake_args + [LLVM_DIR],
              msvc_arch='x64', env=deployment_env)
+
+  if args.gcc_toolchain:
+    # Copy in the right stdlibc++.so.6 so clang can start.
+    if not os.path.exists(os.path.join(LLVM_BUILD_DIR, 'lib')):
+      os.mkdir(os.path.join(LLVM_BUILD_DIR, 'lib'))
+    libstdcpp = subprocess.check_output(
+        [cxx] + cxxflags + ['-print-file-name=libstdc++.so.6']).rstrip()
+    CopyFile(libstdcpp, os.path.join(LLVM_BUILD_DIR, 'lib'))
+
   RunCommand(['ninja'], msvc_arch='x64')
 
   if args.tools:
@@ -606,7 +586,8 @@ def UpdateClang(args):
       '-DCMAKE_CXX_FLAGS=' + ' '.join(cxxflags)]
   if sys.platform != 'win32':
     compiler_rt_args += ['-DLLVM_CONFIG_PATH=' +
-                         os.path.join(LLVM_BUILD_DIR, 'bin', 'llvm-config')]
+                         os.path.join(LLVM_BUILD_DIR, 'bin', 'llvm-config'),
+                        '-DSANITIZER_MIN_OSX_VERSION="10.7"']
   RunCommand(['cmake'] + compiler_rt_args + [LLVM_DIR],
               msvc_arch='x86', env=deployment_env)
   RunCommand(['ninja', 'compiler-rt'], msvc_arch='x86')
@@ -695,8 +676,13 @@ def main():
                       help="run only if the script thinks clang is needed")
   parser.add_argument('--force-local-build', action='store_true',
                       help="don't try to download prebuild binaries")
+  parser.add_argument('--gcc-toolchain', help='set the version for which gcc '
+                      'version be used for building; --gcc-toolchain=/opt/foo '
+                      'picks /opt/foo/bin/gcc')
   parser.add_argument('--print-revision', action='store_true',
                       help='print current clang revision and exit.')
+  parser.add_argument('--print-clang-version', action='store_true',
+                      help='print current clang version (e.g. x.y.z) and exit.')
   parser.add_argument('--run-tests', action='store_true',
                       help='run tests after building; only for local builds')
   parser.add_argument('--tools', nargs='*',
@@ -712,9 +698,6 @@ def main():
 
   args = parser.parse_args()
 
-  if re.search(r'\b(make_clang_dir)=', os.environ.get('GYP_DEFINES', '')):
-    print 'Skipping Clang update (make_clang_dir= was set in GYP_DEFINES).'
-    return 0
   if args.if_needed:
     is_clang_required = False
     # clang is always used on Mac and Linux.
@@ -730,6 +713,9 @@ def main():
       is_clang_required = True
     if not is_clang_required:
       return 0
+    if re.search(r'\b(make_clang_dir)=', os.environ.get('GYP_DEFINES', '')):
+      print 'Skipping Clang update (make_clang_dir= was set in GYP_DEFINES).'
+      return 0
 
   global LLVM_WIN_REVISION, PACKAGE_VERSION
   if args.print_revision:
@@ -737,6 +723,10 @@ def main():
       print GetSvnRevision(LLVM_DIR)
     else:
       print PACKAGE_VERSION
+    return 0
+
+  if args.print_clang_version:
+    sys.stdout.write(VERSION)
     return 0
 
   # Don't buffer stdout, so that print statements are immediately flushed.

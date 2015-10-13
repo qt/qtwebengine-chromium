@@ -28,17 +28,11 @@
 
 #include "platform/graphics/DecodingImageGenerator.h"
 #include "platform/graphics/ImageDecodingStore.h"
+#include "third_party/skia/include/core/SkImage.h"
 #include "third_party/skia/include/core/SkImageInfo.h"
 #include "wtf/PassOwnPtr.h"
 
 namespace blink {
-
-namespace {
-
-// URI label for SkDiscardablePixelRef.
-const char labelDiscardable[] = "discardable";
-
-} // namespace
 
 bool DeferredImageDecoder::s_enabled = true;
 
@@ -55,22 +49,15 @@ DeferredImageDecoder::~DeferredImageDecoder()
 {
 }
 
-PassOwnPtr<DeferredImageDecoder> DeferredImageDecoder::create(const SharedBuffer& data, ImageSource::AlphaOption alphaOption, ImageSource::GammaAndColorProfileOption gammaAndColorOption)
+PassOwnPtr<DeferredImageDecoder> DeferredImageDecoder::create(const SharedBuffer& data, ImageDecoder::AlphaOption alphaOption, ImageDecoder::GammaAndColorProfileOption colorOptions)
 {
-    OwnPtr<ImageDecoder> actualDecoder = ImageDecoder::create(data, alphaOption, gammaAndColorOption);
+    OwnPtr<ImageDecoder> actualDecoder = ImageDecoder::create(data, alphaOption, colorOptions);
     return actualDecoder ? adoptPtr(new DeferredImageDecoder(actualDecoder.release())) : nullptr;
 }
 
 PassOwnPtr<DeferredImageDecoder> DeferredImageDecoder::createForTesting(PassOwnPtr<ImageDecoder> decoder)
 {
     return adoptPtr(new DeferredImageDecoder(decoder));
-}
-
-bool DeferredImageDecoder::isLazyDecoded(const SkBitmap& bitmap)
-{
-    return bitmap.pixelRef()
-        && bitmap.pixelRef()->getURI()
-        && !memcmp(bitmap.pixelRef()->getURI(), labelDiscardable, sizeof(labelDiscardable));
 }
 
 void DeferredImageDecoder::setEnabled(bool enabled)
@@ -88,26 +75,26 @@ String DeferredImageDecoder::filenameExtension() const
     return m_actualDecoder ? m_actualDecoder->filenameExtension() : m_filenameExtension;
 }
 
-bool DeferredImageDecoder::createFrameAtIndex(size_t index, SkBitmap* bitmap)
+PassRefPtr<SkImage> DeferredImageDecoder::createFrameAtIndex(size_t index)
 {
     prepareLazyDecodedFrames();
     if (index < m_frameData.size()) {
         // ImageFrameGenerator has the latest known alpha state. There will be a
         // performance boost if this frame is opaque.
-        *bitmap = createBitmap(index);
         FrameData* frameData = &m_frameData[index];
         frameData->m_hasAlpha = m_frameGenerator->hasAlpha(index);
-        bitmap->setAlphaType(frameData->m_hasAlpha ? kPremul_SkAlphaType : kOpaque_SkAlphaType);
         frameData->m_frameBytes = m_size.area() *  sizeof(ImageFrame::PixelData);
-        return true;
+        return createImage(index, !frameData->m_hasAlpha);
     }
+
     if (!m_actualDecoder)
-        return false;
+        return nullptr;
+
     ImageFrame* buffer = m_actualDecoder->frameBufferAtIndex(index);
     if (!buffer || buffer->status() == ImageFrame::FrameEmpty)
-        return false;
-    *bitmap = buffer->bitmap();
-    return true;
+        return nullptr;
+
+    return adoptRef(SkImage::NewFromBitmap(buffer->bitmap()));
 }
 
 void DeferredImageDecoder::setData(SharedBuffer& data, bool allDataReceived)
@@ -266,27 +253,23 @@ void DeferredImageDecoder::prepareLazyDecodedFrames()
     }
 }
 
-// Creates a SkBitmap that is backed by SkDiscardablePixelRef.
-SkBitmap DeferredImageDecoder::createBitmap(size_t index)
+// Creates an SkImage that is backed by SkDiscardablePixelRef.
+PassRefPtr<SkImage> DeferredImageDecoder::createImage(size_t index, bool knownToBeOpaque) const
 {
     SkISize decodedSize = m_frameGenerator->getFullSize();
     ASSERT(decodedSize.width() > 0);
     ASSERT(decodedSize.height() > 0);
 
-#if SK_B32_SHIFT // Little-endian RGBA pixels. (Android)
-    const SkColorType colorType = kRGBA_8888_SkColorType;
-#else
-    const SkColorType colorType = kBGRA_8888_SkColorType;
-#endif
-    const SkImageInfo info = SkImageInfo::Make(decodedSize.width(), decodedSize.height(), colorType, kPremul_SkAlphaType);
+    const SkImageInfo info = SkImageInfo::MakeN32(decodedSize.width(), decodedSize.height(),
+        knownToBeOpaque ? kOpaque_SkAlphaType : kPremul_SkAlphaType);
 
-    SkBitmap bitmap;
     DecodingImageGenerator* generator = new DecodingImageGenerator(m_frameGenerator, info, index);
-    bool installed = SkInstallDiscardablePixelRef(generator, &bitmap);
-    ASSERT_UNUSED(installed, installed);
-    bitmap.pixelRef()->setURI(labelDiscardable);
-    generator->setGenerationId(bitmap.getGenerationID());
-    return bitmap;
+    RefPtr<SkImage> image = adoptRef(SkImage::NewFromGenerator(generator));
+    if (!image)
+        return nullptr;
+
+    generator->setGenerationId(image->uniqueID());
+    return image.release();
 }
 
 bool DeferredImageDecoder::hotSpot(IntPoint& hotSpot) const

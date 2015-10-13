@@ -306,7 +306,7 @@ static dispatch_queue_t kBackgroundQueue = nil;
 namespace webrtc {
 
 AVFoundationVideoCapturer::AVFoundationVideoCapturer()
-    : _capturer(nil), _startThread(nullptr), _startTime(0) {
+    : _capturer(nil), _startThread(nullptr) {
   // Set our supported formats. This matches kDefaultPreset.
   std::vector<cricket::VideoFormat> supportedFormats;
   supportedFormats.push_back(cricket::VideoFormat(kDefaultFormat));
@@ -336,7 +336,7 @@ cricket::CaptureState AVFoundationVideoCapturer::Start(
 
   // Keep track of which thread capture started on. This is the thread that
   // frames need to be sent to.
-  DCHECK(!_startThread);
+  RTC_DCHECK(!_startThread);
   _startThread = rtc::Thread::Current();
 
   SetCaptureFormat(&format);
@@ -344,7 +344,6 @@ cricket::CaptureState AVFoundationVideoCapturer::Start(
   // to spin up, and this call returns async.
   // TODO(tkchin): make this better.
   [_capturer startCaptureAsync];
-  _startTime = rtc::TimeNanos();
   SetCaptureState(cricket::CaptureState::CS_RUNNING);
 
   return cricket::CaptureState::CS_STARTING;
@@ -412,7 +411,8 @@ void AVFoundationVideoCapturer::CaptureSampleBuffer(
   // Sanity check assumption that planar bytes are contiguous.
   uint8_t* uvPlaneAddress =
       (uint8_t*)CVPixelBufferGetBaseAddressOfPlane(imageBuffer, kUVPlaneIndex);
-  DCHECK(uvPlaneAddress == yPlaneAddress + yPlaneHeight * yPlaneBytesPerRow);
+  RTC_DCHECK(
+      uvPlaneAddress == yPlaneAddress + yPlaneHeight * yPlaneBytesPerRow);
 
   // Stuff data into a cricket::CapturedFrame.
   int64 currentTime = rtc::TimeNanos();
@@ -423,7 +423,6 @@ void AVFoundationVideoCapturer::CaptureSampleBuffer(
   frame.pixel_height = 1;
   frame.fourcc = static_cast<uint32>(cricket::FOURCC_NV12);
   frame.time_stamp = currentTime;
-  frame.elapsed_time = currentTime - _startTime;
   frame.data = yPlaneAddress;
   frame.data_size = frameSize;
 
@@ -439,7 +438,7 @@ void AVFoundationVideoCapturer::CaptureSampleBuffer(
 
 void AVFoundationVideoCapturer::SignalFrameCapturedOnStartThread(
     const cricket::CapturedFrame* frame) {
-  DCHECK(_startThread->IsCurrent());
+  RTC_DCHECK(_startThread->IsCurrent());
   // This will call a superclass method that will perform the frame conversion
   // to I420.
   SignalFrameCaptured(this, frame);

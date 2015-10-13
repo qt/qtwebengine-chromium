@@ -87,7 +87,7 @@ void AbstractInlineTextBox::detach()
 
 PassRefPtr<AbstractInlineTextBox> AbstractInlineTextBox::nextInlineTextBox() const
 {
-    ASSERT(!m_inlineTextBox || !m_inlineTextBox->layoutObject().needsLayout());
+    ASSERT(!m_inlineTextBox || !m_inlineTextBox->lineLayoutItem().needsLayout());
     if (!m_inlineTextBox)
         return nullptr;
 
@@ -99,7 +99,7 @@ LayoutRect AbstractInlineTextBox::bounds() const
     if (!m_inlineTextBox || !m_layoutText)
         return LayoutRect();
 
-    FloatRect boundaries = m_inlineTextBox->calculateBoundaries();
+    FloatRect boundaries(m_inlineTextBox->calculateBoundaries());
     return LayoutRect(m_layoutText->localToAbsoluteQuad(boundaries).enclosingBoundingBox());
 }
 
@@ -160,8 +160,8 @@ String AbstractInlineTextBox::text() const
     unsigned len = m_inlineTextBox->len();
     if (Node* node = m_layoutText->node()) {
         if (node->isTextNode())
-            return plainText(Position(node, start), Position(node, start + len), TextIteratorIgnoresStyleVisibility);
-        return plainText(Position(node, PositionAnchorType::BeforeAnchor), Position(node, PositionAnchorType::AfterAnchor), TextIteratorIgnoresStyleVisibility);
+            return plainText(EphemeralRange(Position(node, start), Position(node, start + len)), TextIteratorIgnoresStyleVisibility);
+        return plainText(EphemeralRange(Position(node, PositionAnchorType::BeforeAnchor), Position(node, PositionAnchorType::AfterAnchor)), TextIteratorIgnoresStyleVisibility);
     }
 
     String result = m_layoutText->text().substring(start, len).simplifyWhiteSpace(WTF::DoNotStripWhiteSpace);
@@ -172,19 +172,19 @@ String AbstractInlineTextBox::text() const
 
 bool AbstractInlineTextBox::isFirst() const
 {
-    ASSERT(!m_inlineTextBox || !m_inlineTextBox->layoutObject().needsLayout());
+    ASSERT(!m_inlineTextBox || !m_inlineTextBox->lineLayoutItem().needsLayout());
     return !m_inlineTextBox || !m_inlineTextBox->prevTextBox();
 }
 
 bool AbstractInlineTextBox::isLast() const
 {
-    ASSERT(!m_inlineTextBox || !m_inlineTextBox->layoutObject().needsLayout());
+    ASSERT(!m_inlineTextBox || !m_inlineTextBox->lineLayoutItem().needsLayout());
     return !m_inlineTextBox || !m_inlineTextBox->nextTextBox();
 }
 
 PassRefPtr<AbstractInlineTextBox> AbstractInlineTextBox::nextOnLine() const
 {
-    ASSERT(!m_inlineTextBox || !m_inlineTextBox->layoutObject().needsLayout());
+    ASSERT(!m_inlineTextBox || !m_inlineTextBox->lineLayoutItem().needsLayout());
     if (!m_inlineTextBox)
         return nullptr;
 
@@ -197,7 +197,7 @@ PassRefPtr<AbstractInlineTextBox> AbstractInlineTextBox::nextOnLine() const
 
 PassRefPtr<AbstractInlineTextBox> AbstractInlineTextBox::previousOnLine() const
 {
-    ASSERT(!m_inlineTextBox || !m_inlineTextBox->layoutObject().needsLayout());
+    ASSERT(!m_inlineTextBox || !m_inlineTextBox->lineLayoutItem().needsLayout());
     if (!m_inlineTextBox)
         return nullptr;
 

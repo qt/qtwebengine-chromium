@@ -111,15 +111,17 @@ extern PLATFORM_EXPORT GCInfo const** s_gcInfoTable;
 // reachable. There is a GCInfo struct for each class that directly
 // inherits from GarbageCollected or GarbageCollectedFinalized.
 struct GCInfo {
+    using GetClassNameCallback = const String (*)();
+
     bool hasFinalizer() const { return m_nonTrivialFinalizer; }
     bool hasVTable() const { return m_hasVTable; }
     TraceCallback m_trace;
     FinalizationCallback m_finalize;
     bool m_nonTrivialFinalizer;
     bool m_hasVTable;
-#if ENABLE(GC_PROFILING)
-    // |m_className| is held as a reference to prevent dtor being called at exit.
-    const String& m_className;
+#if ENABLE(GC_PROFILING) || ENABLE(DETAILED_MEMORY_INFRA)
+    const String className() const { return m_className(); }
+    GetClassNameCallback m_className;
 #endif
 };
 
@@ -133,6 +135,8 @@ public:
 
     static void init();
     static void shutdown();
+
+    static size_t gcInfoIndex() { return s_gcInfoIndex; }
 
     // The (max + 1) GCInfo index supported.
     // We assume that 14 bits is enough to represent all possible types: during
@@ -170,8 +174,8 @@ struct GCInfoAtBase {
             FinalizerTrait<T>::finalize,
             FinalizerTrait<T>::nonTrivialFinalizer,
             WTF::IsPolymorphic<T>::value,
-#if ENABLE(GC_PROFILING)
-            TypenameStringTrait<T>::get()
+#if ENABLE(GC_PROFILING) || ENABLE(DETAILED_MEMORY_INFRA)
+            TypenameStringTrait<T>::get
 #endif
         };
         RETURN_GCINFO_INDEX();

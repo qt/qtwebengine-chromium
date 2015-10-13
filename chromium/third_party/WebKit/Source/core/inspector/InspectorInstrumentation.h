@@ -45,7 +45,8 @@
 #include "core/layout/HitTestResult.h"
 #include "core/layout/LayoutImage.h"
 #include "core/page/ChromeClient.h"
-#include "platform/network/FormData.h"
+#include "platform/network/EncodedFormData.h"
+#include "platform/network/ResourceRequest.h"
 #include "platform/network/WebSocketHandshakeRequest.h"
 #include "platform/network/WebSocketHandshakeResponse.h"
 #include "wtf/RefPtr.h"
@@ -81,6 +82,7 @@ private:
 namespace InspectorInstrumentation {
 
 class CORE_EXPORT FrontendCounter {
+    STATIC_ONLY(FrontendCounter);
 private:
     friend void frontendCreated();
     friend void frontendDeleted();
@@ -90,7 +92,7 @@ private:
 
 inline void frontendCreated() { atomicIncrement(&FrontendCounter::s_frontendCounter); }
 inline void frontendDeleted() { atomicDecrement(&FrontendCounter::s_frontendCounter); }
-inline bool hasFrontends() { return FrontendCounter::s_frontendCounter; }
+inline bool hasFrontends() { return acquireLoad(&FrontendCounter::s_frontendCounter); }
 
 CORE_EXPORT void registerInstrumentingAgents(InstrumentingAgents*);
 CORE_EXPORT void unregisterInstrumentingAgents(InstrumentingAgents*);

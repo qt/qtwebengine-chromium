@@ -30,7 +30,8 @@ class CONTENT_EXPORT ChildDiscardableSharedMemoryManager
       size_t size) override;
 
   // Overridden from base::trace_event::MemoryDumpProvider:
-  bool OnMemoryDump(base::trace_event::ProcessMemoryDump* pmd) override;
+  bool OnMemoryDump(const base::trace_event::MemoryDumpArgs& args,
+                    base::trace_event::ProcessMemoryDump* pmd) override;
 
   // Release memory and associated resources that have been purged.
   void ReleaseFreeMemory();
@@ -38,6 +39,11 @@ class CONTENT_EXPORT ChildDiscardableSharedMemoryManager
   bool LockSpan(DiscardableSharedMemoryHeap::Span* span);
   void UnlockSpan(DiscardableSharedMemoryHeap::Span* span);
   void ReleaseSpan(scoped_ptr<DiscardableSharedMemoryHeap::Span> span);
+
+  base::trace_event::MemoryAllocatorDump* CreateMemoryAllocatorDump(
+      DiscardableSharedMemoryHeap::Span* span,
+      const char* name,
+      base::trace_event::ProcessMemoryDump* pmd) const;
 
  private:
   scoped_ptr<base::DiscardableSharedMemory>

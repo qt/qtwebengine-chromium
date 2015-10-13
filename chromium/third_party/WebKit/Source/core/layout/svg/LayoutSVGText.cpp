@@ -25,7 +25,6 @@
  */
 
 #include "config.h"
-
 #include "core/layout/svg/LayoutSVGText.h"
 
 #include "core/editing/PositionWithAffinity.h"
@@ -33,7 +32,9 @@
 #include "core/layout/HitTestResult.h"
 #include "core/layout/LayoutAnalyzer.h"
 #include "core/layout/LayoutState.h"
+#include "core/layout/LayoutView.h"
 #include "core/layout/PointerEventsHitRules.h"
+#include "core/layout/api/LineLayoutItem.h"
 #include "core/layout/svg/LayoutSVGInline.h"
 #include "core/layout/svg/LayoutSVGInlineText.h"
 #include "core/layout/svg/LayoutSVGRoot.h"
@@ -53,6 +54,20 @@
 #include "platform/geometry/TransformState.h"
 
 namespace blink {
+
+namespace {
+
+const LayoutSVGText* findTextRoot(const LayoutObject* start)
+{
+    ASSERT(start);
+    for (; start; start = start->parent()) {
+        if (start->isSVGText())
+            return toLayoutSVGText(start);
+    }
+    return nullptr;
+}
+
+}
 
 LayoutSVGText::LayoutSVGText(SVGTextElement* node)
     : LayoutSVGBlock(node)
@@ -75,22 +90,12 @@ bool LayoutSVGText::isChildAllowed(LayoutObject* child, const ComputedStyle&) co
 
 LayoutSVGText* LayoutSVGText::locateLayoutSVGTextAncestor(LayoutObject* start)
 {
-    ASSERT(start);
-    while (start && !start->isSVGText())
-        start = start->parent();
-    if (!start || !start->isSVGText())
-        return nullptr;
-    return toLayoutSVGText(start);
+    return const_cast<LayoutSVGText*>(findTextRoot(start));
 }
 
 const LayoutSVGText* LayoutSVGText::locateLayoutSVGTextAncestor(const LayoutObject* start)
 {
-    ASSERT(start);
-    while (start && !start->isSVGText())
-        start = start->parent();
-    if (!start || !start->isSVGText())
-        return nullptr;
-    return toLayoutSVGText(start);
+    return findTextRoot(start);
 }
 
 static inline void collectLayoutAttributes(LayoutObject* text, Vector<SVGTextLayoutAttributes*>& attributes)
@@ -446,16 +451,16 @@ PositionWithAffinity LayoutSVGText::positionForPoint(const LayoutPoint& pointInC
 {
     RootInlineBox* rootBox = firstRootBox();
     if (!rootBox)
-        return createPositionWithAffinity(0, DOWNSTREAM);
+        return createPositionWithAffinity(0);
 
     ASSERT(!rootBox->nextRootBox());
     ASSERT(childrenInline());
 
     InlineBox* closestBox = toSVGRootInlineBox(rootBox)->closestLeafChildForPosition(pointInContents);
     if (!closestBox)
-        return createPositionWithAffinity(0, DOWNSTREAM);
+        return createPositionWithAffinity(0);
 
-    return closestBox->layoutObject().positionForPoint(LayoutPoint(pointInContents.x(), closestBox->y()));
+    return closestBox->lineLayoutItem().positionForPoint(LayoutPoint(pointInContents.x(), closestBox->y()));
 }
 
 void LayoutSVGText::absoluteQuads(Vector<FloatQuad>& quads, bool* wasFixed) const
@@ -463,7 +468,7 @@ void LayoutSVGText::absoluteQuads(Vector<FloatQuad>& quads, bool* wasFixed) cons
     quads.append(localToAbsoluteQuad(strokeBoundingBox(), 0 /* mode */, wasFixed));
 }
 
-void LayoutSVGText::paint(const PaintInfo& paintInfo, const LayoutPoint&)
+void LayoutSVGText::paint(const PaintInfo& paintInfo, const LayoutPoint&) const
 {
     SVGTextPainter(*this).paint(paintInfo);
 }
@@ -510,6 +515,26 @@ void LayoutSVGText::removeChild(LayoutObject* child)
     subtreeChildWillBeRemoved(child, affectedAttributes);
     LayoutSVGBlock::removeChild(child);
     subtreeChildWasRemoved(affectedAttributes);
+}
+
+void LayoutSVGText::invalidateTreeIfNeeded(PaintInvalidationState& paintInvalidationState)
+{
+    ASSERT(!needsLayout());
+
+    if (!shouldCheckForPaintInvalidation(paintInvalidationState))
+        return;
+
+    PaintInvalidationReason reason = invalidatePaintIfNeeded(paintInvalidationState, paintInvalidationState.paintInvalidationContainer());
+    clearPaintInvalidationState(paintInvalidationState);
+
+    if (reason == PaintInvalidationDelayedFull)
+        paintInvalidationState.pushDelayedPaintInvalidationTarget(*this);
+
+    ForceHorriblySlowRectMapping slowRectMapping(&paintInvalidationState);
+    PaintInvalidationState childTreeWalkState(paintInvalidationState, *this, paintInvalidationState.paintInvalidationContainer());
+    if (reason == PaintInvalidationSVGResourceChange)
+        childTreeWalkState.setForceSubtreeInvalidationWithinContainer();
+    invalidatePaintOfSubtreesIfNeeded(childTreeWalkState);
 }
 
 }

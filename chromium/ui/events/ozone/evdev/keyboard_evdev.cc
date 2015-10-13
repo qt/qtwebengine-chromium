@@ -21,7 +21,7 @@ namespace ui {
 // We can't include ui/events/keycodes/dom/dom_code.h here because of
 // conflicts with preprocessor macros in <linux/input.h>, so we use the
 // same underlying data with an additional prefix.
-#define USB_KEYMAP(usb, xkb, win, mac, code, id) DOM_CODE_ ## id = usb
+#define USB_KEYMAP(usb, evdev, xkb, win, mac, code, id) DOM_CODE_ ## id = usb
 #define USB_KEYMAP_DECLARATION enum class DomCode
 #include "ui/events/keycodes/dom/keycode_converter_data.inc"
 #undef USB_KEYMAP
@@ -212,22 +212,17 @@ void KeyboardEvdev::DispatchKey(unsigned int key,
   int flags = modifiers_->GetModifierFlags();
   DomKey dom_key;
   KeyboardCode key_code;
-  uint16 character;
-  uint32 platform_keycode = 0;
-  if (!keyboard_layout_engine_->Lookup(dom_code, flags, &dom_key, &character,
-                                       &key_code, &platform_keycode)) {
+  if (!keyboard_layout_engine_->Lookup(dom_code, flags, &dom_key, &key_code))
     return;
-  }
   if (!repeat) {
     int flag = ModifierDomKeyToEventFlag(dom_key);
     UpdateModifier(flag, down);
   }
 
   KeyEvent event(down ? ET_KEY_PRESSED : ET_KEY_RELEASED, key_code, dom_code,
-                 modifiers_->GetModifierFlags(), dom_key, character, timestamp);
+                 modifiers_->GetModifierFlags(), dom_key, timestamp);
   event.set_source_device_id(device_id);
-  if (platform_keycode)
-    event.set_platform_keycode(platform_keycode);
   callback_.Run(&event);
 }
+
 }  // namespace ui

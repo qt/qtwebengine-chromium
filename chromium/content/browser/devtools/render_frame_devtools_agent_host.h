@@ -34,6 +34,7 @@ namespace dom { class DOMHandler; }
 namespace emulation { class EmulationHandler; }
 namespace input { class InputHandler; }
 namespace inspector { class InspectorHandler; }
+namespace io { class IOHandler; }
 namespace network { class NetworkHandler; }
 namespace page { class PageHandler; }
 namespace power { class PowerHandler; }
@@ -126,10 +127,13 @@ class CONTENT_EXPORT RenderFrameDevToolsAgentHost
 
   scoped_ptr<FrameHostHolder> current_;
   scoped_ptr<FrameHostHolder> pending_;
+  // Stores per-host state between DisconnectWebContents and ConnectWebContents.
+  scoped_ptr<FrameHostHolder> disconnected_;
 
   scoped_ptr<devtools::dom::DOMHandler> dom_handler_;
   scoped_ptr<devtools::input::InputHandler> input_handler_;
   scoped_ptr<devtools::inspector::InspectorHandler> inspector_handler_;
+  scoped_ptr<devtools::io::IOHandler> io_handler_;
   scoped_ptr<devtools::network::NetworkHandler> network_handler_;
   scoped_ptr<devtools::page::PageHandler> page_handler_;
   scoped_ptr<devtools::power::PowerHandler> power_handler_;

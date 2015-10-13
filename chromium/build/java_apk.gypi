@@ -39,6 +39,8 @@
 #    that are generated at build time. This should be set automatically by a
 #    target's dependencies. The .java files in these directories are not
 #    included in the 'inputs' list (unlike additional_src_dirs).
+#  library_jars_paths - The path to library jars to be included in the classpath.
+#    These will not be included into the final apk.
 #  input_jars_paths - The path to jars to be included in the classpath. This
 #    should be filled automatically by depending on the appropriate targets.
 #  is_test_apk - Set to 1 if building a test apk.  This prevents resources from
@@ -49,6 +51,8 @@
 #  resource_dir - The directory for resources.
 #  shared_resources - Make a resource package that can be loaded by a different
 #    application at runtime to access the package's resources.
+#  app_as_shared_library - Make a resource package that can be loaded as shared
+#    library.
 #  R_package - A custom Java package to generate the resource file R.java in.
 #    By default, the package given in AndroidManifest.xml will be used.
 #  include_all_resources - Set to 1 to include all resource IDs in all generated
@@ -66,15 +70,22 @@
 #  java_in_dir_suffix - To override the /src suffix on java_in_dir.
 #  app_manifest_version_name - set the apps 'human readable' version number.
 #  app_manifest_version_code - set the apps version number.
+#  dependencies_locale_zip_alternative_paths - a list of paths that used to
+#    replace dependencies_locale_zip_paths of all_dependent_settings.
 {
   'variables': {
     'tested_apk_obfuscated_jar_path%': '/',
     'tested_apk_dex_path%': '/',
+    'tested_apk_is_multidex%': 0,
     'additional_input_paths': [],
+    'additional_locale_input_paths': [],
     'create_density_splits%': 0,
     'language_splits': [],
+    'library_jars_paths': [],
     'input_jars_paths': [],
     'library_dexed_jars_paths': [],
+    'main_dex_list_path': '<(intermediate_dir)/main_dex_list.txt',
+    'main_dex_list_paths': ['<(main_dex_list_path)'],
     'additional_src_dirs': [],
     'generated_src_dirs': [],
     'app_manifest_version_name%': '<(android_app_version_name)',
@@ -88,6 +99,8 @@
     'R_package%':'',
     'include_all_resources%': 0,
     'additional_R_text_files': [],
+    'dependencies_locale_zip_alternative_paths%': [],
+    'dependencies_locale_zip_paths': [],
     'dependencies_res_zip_paths': [],
     'additional_res_packages': [],
     'additional_bundled_libs%': [],
@@ -131,7 +144,7 @@
     'jar_path': '<(PRODUCT_DIR)/lib.java/<(jar_name)',
     'obfuscated_jar_path': '<(intermediate_dir)/obfuscated.jar',
     'test_jar_path': '<(PRODUCT_DIR)/test.lib.java/<(apk_name).jar',
-    'dex_path': '<(intermediate_dir)/classes.dex',
+    'enable_multidex%': 0,
     'emma_device_jar': '<(android_sdk_root)/tools/lib/emma_device.jar',
     'android_manifest_path%': '<(java_in_dir)/AndroidManifest.xml',
     'split_android_manifest_path': '<(intermediate_dir)/split-manifests/<(android_app_abi)/AndroidManifest.xml',
@@ -139,6 +152,7 @@
     'link_stamp': '<(intermediate_dir)/link.stamp',
     'resource_zip_path': '<(intermediate_dir)/<(_target_name).resources.zip',
     'shared_resources%': 0,
+    'app_as_shared_library%': 0,
     'final_apk_path%': '<(PRODUCT_DIR)/apks/<(apk_name).apk',
     'final_apk_path_no_extension%': '<(PRODUCT_DIR)/apks/<(apk_name)',
     'final_abi_split_apk_path%': '<(PRODUCT_DIR)/apks/<(apk_name)-abi-<(android_app_abi).apk',
@@ -160,6 +174,7 @@
         'unsigned_apk_path': '<(intermediate_dir)/<(apk_name)-unsigned.apk',
         'unsigned_abi_split_apk_path': '<(intermediate_dir)/<(apk_name)-abi-<(android_app_abi)-unsigned.apk',
         'create_abi_split%': 0,
+        'enable_multidex%': 0,
       },
       'unsigned_apk_path': '<(unsigned_apk_path)',
       'unsigned_abi_split_apk_path': '<(unsigned_abi_split_apk_path)',
@@ -193,6 +208,11 @@
         }, {
           'managed_input_apk_path': '<(unsigned_apk_path)',
         }],
+        ['enable_multidex == 1', {
+          'dex_path': '<(intermediate_dir)/classes.dex.zip',
+        }, {
+          'dex_path': '<(intermediate_dir)/classes.dex',
+        }],
       ],
     },
     'native_lib_target%': '',
@@ -213,7 +233,13 @@
     'native_lib_placeholder_stamp': '<(apk_package_native_libs_dir)/<(android_app_abi)/native_lib_placeholder.stamp',
     'native_lib_placeholders': [],
     'main_apk_name': '<(apk_name)',
-    'enable_errorprone%': '0',
+    'dex_path': '<(dex_path)',
+    'conditions': [
+      ['chromium_code == 0', {
+        'enable_errorprone': 0,
+      }],
+    ],
+    'enable_errorprone%': 0,
     'errorprone_exe_path': '<(PRODUCT_DIR)/bin.java/chromium_errorprone',
   },
   # Pass the jar path to the apk's "fake" jar target.  This would be better as
@@ -231,6 +257,7 @@
       'apk_output_jar_path': '<(jar_path)',
       'tested_apk_obfuscated_jar_path': '<(obfuscated_jar_path)',
       'tested_apk_dex_path': '<(dex_path)',
+      'tested_apk_is_multidex': '<(enable_multidex)',
     },
   },
   'conditions': [
@@ -247,7 +274,7 @@
         'additional_R_text_files': ['<(intermediate_dir)/R.txt'],
       },
     }],
-    ['native_lib_target != "" and component == "shared_library"', {
+    ['native_lib_target != "" and android_must_copy_system_libraries == 1', {
       'dependencies': [
         '<(DEPTH)/build/android/setup.gyp:copy_system_libraries',
       ],
@@ -259,7 +286,7 @@
     }],
     ['enable_errorprone == 1', {
       'dependencies': [
-        '<(DEPTH)/third_party/errorprone/errorprone.gyp:chromium_errorprone',
+        '<(DEPTH)/third_party/errorprone/errorprone.gyp:require_errorprone',
       ],
     }],
     ['native_lib_target != ""', {
@@ -721,6 +748,17 @@
         {
           'action_name': 'findbugs_<(_target_name)',
           'message': 'Running findbugs on <(_target_name)',
+          'variables': {
+            'additional_findbugs_args': [],
+            'findbugs_verbose%': 0,
+          },
+          'conditions': [
+            ['findbugs_verbose == 1', {
+              'variables': {
+                'additional_findbugs_args+': ['-vv'],
+              },
+            }],
+          ],
           'inputs': [
             '<(DEPTH)/build/android/findbugs_diff.py',
             '<(DEPTH)/build/android/findbugs_filter/findbugs_exclude.xml',
@@ -736,12 +774,12 @@
             'python', '<(DEPTH)/build/android/findbugs_diff.py',
             '--auxclasspath-gyp', '>(input_jars_paths)',
             '--stamp', '<(findbugs_stamp)',
+            '<@(additional_findbugs_args)',
             '<(jar_path)',
           ],
         },
       ],
-    },
-    ]
+    }],
   ],
   'dependencies': [
     '<(DEPTH)/tools/android/md5sum/md5sum.gyp:md5sum',
@@ -751,12 +789,27 @@
       'action_name': 'process_resources',
       'message': 'processing resources for <(_target_name)',
       'variables': {
+        'local_additional_input_paths': [
+          '>@(additional_input_paths)',
+        ],
+        'local_dependencies_res_zip_paths': [
+          '>@(dependencies_res_zip_paths)'
+        ],
         # Write the inputs list to a file, so that its mtime is updated when
         # the list of inputs changes.
-        'inputs_list_file': '>|(apk_codegen.<(_target_name).gypcmd >@(additional_input_paths) >@(resource_input_paths))',
+        'inputs_list_file': '>|(apk_codegen.<(_target_name).gypcmd >@(local_additional_input_paths) >@(resource_input_paths))',
+
         'process_resources_options': [],
         'conditions': [
+          ['dependencies_locale_zip_alternative_paths == []', {
+            'local_dependencies_res_zip_paths': ['>@(dependencies_locale_zip_paths)'],
+            'local_additional_input_paths': ['>@(additional_locale_input_paths)']
+          }, {
+            'local_dependencies_res_zip_paths': ['<@(dependencies_locale_zip_alternative_paths)'],
+            'local_additional_input_paths': ['>@(dependencies_locale_zip_alternative_paths)'],
+          }],
           ['is_test_apk == 1', {
+            'dependencies_locale_zip_paths=': [],
             'dependencies_res_zip_paths=': [],
             'additional_res_packages=': [],
           }],
@@ -765,6 +818,9 @@
           }],
           ['shared_resources == 1', {
             'process_resources_options+': ['--shared-resources']
+          }],
+          ['app_as_shared_library == 1', {
+            'process_resources_options+': ['--app-as-shared-lib']
           }],
           ['R_package != ""', {
             'process_resources_options+': ['--custom-package', '<(R_package)']
@@ -778,9 +834,9 @@
         '<(DEPTH)/build/android/gyp/util/build_utils.py',
         '<(DEPTH)/build/android/gyp/process_resources.py',
         '<(android_manifest_path)',
-        '>@(additional_input_paths)',
+        '>@(local_additional_input_paths)',
         '>@(resource_input_paths)',
-        '>@(dependencies_res_zip_paths)',
+        '>@(local_dependencies_res_zip_paths)',
         '>(inputs_list_file)',
       ],
       'outputs': [
@@ -794,7 +850,7 @@
         '--aapt-path', '<(android_aapt_path)',
 
         '--android-manifest', '<(android_manifest_path)',
-        '--dependencies-res-zips', '>(dependencies_res_zip_paths)',
+        '--dependencies-res-zips', '>(local_dependencies_res_zip_paths)',
 
         '--extra-res-packages', '>(additional_res_packages)',
         '--extra-r-text-files', '>(additional_R_text_files)',
@@ -861,7 +917,7 @@
       'action': [
         'python', '<(DEPTH)/build/android/gyp/javac.py',
         '--bootclasspath=<(android_sdk_jar)',
-        '--classpath=>(input_jars_paths) <(android_sdk_jar)',
+        '--classpath=>(input_jars_paths) <(android_sdk_jar) >(library_jars_paths)',
         '--src-gendirs=>(gen_src_dirs)',
         '--javac-includes=<(javac_includes)',
         '--chromium-code=<(chromium_code)',
@@ -871,6 +927,14 @@
         '<@(extra_args)',
         '>@(java_sources)',
       ],
+    },
+    {
+      'action_name': 'main_dex_list_for_<(_target_name)',
+      'variables': {
+        'jar_path': '<(javac_jar_path)',
+        'output_path': '<(main_dex_list_path)',
+      },
+      'includes': [ 'android/main_dex_action.gypi' ],
     },
     {
       'action_name': 'instr_jar_<(_target_name)',
@@ -983,7 +1047,7 @@
         '--test-jar-path', '<(test_jar_path)',
         '--obfuscated-jar-path', '<(obfuscated_jar_path)',
 
-        '--proguard-jar-path', '<(android_sdk_root)/tools/proguard/lib/proguard.jar',
+        '--proguard-jar-path', '<(DEPTH)/third_party/proguard/lib/proguard.jar',
 
         '--stamp', '<(obfuscate_stamp)',
 
@@ -993,14 +1057,40 @@
     {
       'action_name': 'dex_<(_target_name)',
       'variables': {
+        'dex_additional_options': [],
         'dex_input_paths': [
-          '>@(library_dexed_jars_paths)',
           '<(jar_path)',
         ],
         'output_path': '<(dex_path)',
         'proguard_enabled_input_path': '<(obfuscated_jar_path)',
       },
+      'conditions': [
+        ['enable_multidex == 1', {
+          'variables': {
+            'dex_additional_options': [
+              '--multi-dex',
+              '--main-dex-list-paths', '>@(main_dex_list_paths)',
+            ],
+          },
+          'inputs': [
+            '>@(main_dex_list_paths)',
+          ],
+        }]
+      ],
       'target_conditions': [
+        ['enable_multidex == 1 or tested_apk_is_multidex == 1', {
+          'variables': {
+            'dex_input_paths': [
+              '>@(input_jars_paths)',
+            ],
+          },
+        }, {
+          'variables': {
+            'dex_input_paths': [
+              '>@(library_dexed_jars_paths)',
+            ],
+          },
+        }],
         ['emma_instrument != 0', {
           'variables': {
             'dex_no_locals': 1,
@@ -1029,14 +1119,20 @@
     },
     {
       'variables': {
+        'local_dependencies_res_zip_paths': ['>@(dependencies_res_zip_paths)'],
         'extra_inputs': ['<(codegen_stamp)'],
         'resource_zips': [
           '<(resource_zip_path)',
         ],
         'conditions': [
+          ['dependencies_locale_zip_alternative_paths == []', {
+            'local_dependencies_res_zip_paths': ['>@(dependencies_locale_zip_paths)'],
+          }, {
+            'local_dependencies_res_zip_paths': ['<@(dependencies_locale_zip_alternative_paths)'],
+          }],
           ['is_test_apk == 0', {
             'resource_zips': [
-              '>@(dependencies_res_zip_paths)',
+              '>@(local_dependencies_res_zip_paths)',
             ],
           }],
         ],

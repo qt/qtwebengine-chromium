@@ -53,7 +53,7 @@ namespace aria_strings {
 
 // static
 BrowserAccessibilityManager* BrowserAccessibilityManager::Create(
-    const ui::AXTreeUpdate& initial_tree,
+    const SimpleAXTreeUpdate& initial_tree,
     BrowserAccessibilityDelegate* delegate,
     BrowserAccessibilityFactory* factory) {
   return new BrowserAccessibilityManagerAndroid(
@@ -67,7 +67,7 @@ BrowserAccessibilityManager::ToBrowserAccessibilityManagerAndroid() {
 
 BrowserAccessibilityManagerAndroid::BrowserAccessibilityManagerAndroid(
     ScopedJavaLocalRef<jobject> content_view_core,
-    const ui::AXTreeUpdate& initial_tree,
+    const SimpleAXTreeUpdate& initial_tree,
     BrowserAccessibilityDelegate* delegate,
     BrowserAccessibilityFactory* factory)
     : BrowserAccessibilityManager(delegate, factory),
@@ -86,13 +86,14 @@ BrowserAccessibilityManagerAndroid::~BrowserAccessibilityManagerAndroid() {
 }
 
 // static
-ui::AXTreeUpdate BrowserAccessibilityManagerAndroid::GetEmptyDocument() {
+SimpleAXTreeUpdate
+    BrowserAccessibilityManagerAndroid::GetEmptyDocument() {
   ui::AXNodeData empty_document;
   empty_document.id = 0;
   empty_document.role = ui::AX_ROLE_ROOT_WEB_AREA;
   empty_document.state = 1 << ui::AX_STATE_READ_ONLY;
 
-  ui::AXTreeUpdate update;
+  SimpleAXTreeUpdate update;
   update.nodes.push_back(empty_document);
   return update;
 }
@@ -192,7 +193,10 @@ void BrowserAccessibilityManagerAndroid::NotifyAccessibilityEvent(
 }
 
 jint BrowserAccessibilityManagerAndroid::GetRootId(JNIEnv* env, jobject obj) {
-  return static_cast<jint>(GetRoot()->GetId());
+  if (GetRoot())
+    return static_cast<jint>(GetRoot()->GetId());
+  else
+    return -1;
 }
 
 jboolean BrowserAccessibilityManagerAndroid::IsNodeValid(

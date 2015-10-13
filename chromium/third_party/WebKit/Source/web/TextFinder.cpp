@@ -32,18 +32,20 @@
 #include "config.h"
 #include "web/TextFinder.h"
 
-#include "core/dom/DocumentMarker.h"
-#include "core/dom/DocumentMarkerController.h"
 #include "core/dom/Range.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/editing/Editor.h"
 #include "core/editing/VisibleSelection.h"
-#include "core/editing/iterators/CharacterIterator.h"
+#include "core/editing/iterators/SearchBuffer.h"
+#include "core/editing/markers/DocumentMarker.h"
+#include "core/editing/markers/DocumentMarkerController.h"
 #include "core/frame/FrameView.h"
 #include "core/layout/LayoutObject.h"
+#include "core/layout/TextAutosizer.h"
 #include "core/page/Page.h"
 #include "modules/accessibility/AXObject.h"
 #include "modules/accessibility/AXObjectCacheImpl.h"
+#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/Timer.h"
 #include "public/platform/WebVector.h"
 #include "public/web/WebAXObject.h"
@@ -132,7 +134,7 @@ bool TextFinder::find(int identifier, const WebString& searchText, const WebFind
     VisibleSelection selection(ownerFrame().frame()->selection().selection());
     bool activeSelection = !selection.isNone();
     if (activeSelection) {
-        m_activeMatch = selection.firstRange().get();
+        m_activeMatch = firstRangeOf(selection).get();
         ownerFrame().frame()->selection().clear();
     }
 
@@ -155,9 +157,12 @@ bool TextFinder::find(int identifier, const WebString& searchText, const WebFind
         return false;
     }
 
-#if OS(ANDROID)
-    ownerFrame().viewImpl()->zoomToFindInPageRect(ownerFrame().frameView()->contentsToRootFrame(enclosingIntRect(LayoutObject::absoluteBoundingBoxRectForRange(m_activeMatch.get()))));
-#endif
+    // If the user is browsing a page with autosizing, adjust the zoom to the
+    // column where the next hit has been found. Doing this when autosizing is
+    // not set will result in a zoom reset on small devices.
+    if (ownerFrame().frame()->document()->textAutosizer()->pageNeedsAutosizing()) {
+        ownerFrame().viewImpl()->zoomToFindInPageRect(ownerFrame().frameView()->contentsToRootFrame(enclosingIntRect(LayoutObject::absoluteBoundingBoxRectForRange(m_activeMatch.get()))));
+    }
 
     setMarkerActive(m_activeMatch.get(), true);
     WebLocalFrameImpl* oldActiveFrame = mainFrameImpl->ensureTextFinder().m_currentActiveMatchFrame;
@@ -230,7 +235,8 @@ void TextFinder::reportFindInPageResultToAccessibility(int identifier)
     }
 }
 
-void TextFinder::scopeStringMatches(int identifier, const WebString& searchText, const WebFindOptions& options, bool reset)
+template <typename Strategy>
+void TextFinder::scopeStringMatchesAlgorithm(int identifier, const WebString& searchText, const WebFindOptions& options, bool reset)
 {
     if (reset) {
         // This is a brand new search, so we need to reset everything.
@@ -272,15 +278,15 @@ void TextFinder::scopeStringMatches(int identifier, const WebString& searchText,
     }
 
     WebLocalFrameImpl* mainFrameImpl = ownerFrame().viewImpl()->mainFrameImpl();
-    Position searchStart = firstPositionInNode(ownerFrame().frame()->document());
-    Position searchEnd = lastPositionInNode(ownerFrame().frame()->document());
+    PositionTemplate<Strategy> searchStart = PositionTemplate<Strategy>::firstPositionInNode(ownerFrame().frame()->document());
+    PositionTemplate<Strategy> searchEnd = PositionTemplate<Strategy>::lastPositionInNode(ownerFrame().frame()->document());
     ASSERT(searchStart.document() == searchEnd.document());
 
     if (m_resumeScopingFromRange) {
         // This is a continuation of a scoping operation that timed out and didn't
         // complete last time around, so we should start from where we left off.
         ASSERT(m_resumeScopingFromRange->collapsed());
-        searchStart = m_resumeScopingFromRange->endPosition();
+        searchStart = fromPositionInDOMTree<Strategy>(m_resumeScopingFromRange->endPosition());
         if (searchStart.document() != searchEnd.document())
             return;
     }
@@ -299,13 +305,12 @@ void TextFinder::scopeStringMatches(int identifier, const WebString& searchText,
         // than the timeout value, and is not interruptible as it is currently
         // written. We may need to rewrite it with interruptibility in mind, or
         // find an alternative.
-        EphemeralRange result = findPlainText(EphemeralRange(searchStart, searchEnd), searchText, options.matchCase ? 0 : CaseInsensitive);
+        EphemeralRangeTemplate<Strategy> result = findPlainText(EphemeralRangeTemplate<Strategy>(searchStart, searchEnd), searchText, options.matchCase ? 0 : CaseInsensitive);
         if (result.isCollapsed()) {
             // Not found.
             break;
         }
-
-        RefPtrWillBeRawPtr<Range> resultRange = Range::create(result.document(), result.startPosition(), result.endPosition());
+        RefPtrWillBeRawPtr<Range> resultRange = Range::create(result.document(), toPositionInDOMTree(result.startPosition()), toPositionInDOMTree(result.endPosition()));
         if (resultRange->collapsed()) {
             // resultRange will be collapsed if the matched text spans over multiple TreeScopes.
             // FIXME: Show such matches to users.
@@ -356,7 +361,7 @@ void TextFinder::scopeStringMatches(int identifier, const WebString& searchText,
         // text nodes.
         searchStart = result.endPosition();
 
-        m_resumeScopingFromRange = Range::create(result.document(), result.endPosition(), result.endPosition());
+        m_resumeScopingFromRange = Range::create(result.document(), toPositionInDOMTree(result.endPosition()), toPositionInDOMTree(result.endPosition()));
         timedOut = (currentTime() - startTime) >= maxScopingDuration;
     } while (!timedOut);
 
@@ -390,6 +395,13 @@ void TextFinder::scopeStringMatches(int identifier, const WebString& searchText,
     }
 
     finishCurrentScopingEffort(identifier);
+}
+
+void TextFinder::scopeStringMatches(int identifier, const WebString& searchText, const WebFindOptions& options, bool reset)
+{
+    if (RuntimeEnabledFeatures::selectionForComposedTreeEnabled())
+        return scopeStringMatchesAlgorithm<EditingInComposedTreeStrategy>(identifier, searchText, options, reset);
+    scopeStringMatchesAlgorithm<EditingStrategy>(identifier, searchText, options, reset);
 }
 
 void TextFinder::flushCurrentScopingEffort(int identifier)

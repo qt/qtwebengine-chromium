@@ -58,7 +58,7 @@ public:
     ScrollbarOverlayStyle scrollbarOverlayStyle() const override;
     void getTickmarks(Vector<IntRect>&) const override;
     bool isScrollableAreaActive() const override;
-    IntPoint convertFromContainingWindow(const IntPoint&) override;
+    IntPoint convertFromContainingWindow(const IntPoint&) const override;
     bool isCustomScrollbar() const override;
     ScrollbarOrientation orientation() const override;
     bool isLeftSideVerticalScrollbar() const override;
@@ -71,6 +71,7 @@ public:
     ScrollbarPart pressedPart() const override;
     ScrollbarPart hoveredPart() const override;
     void styleChanged() override;
+    void visibilityChanged() override;
     bool enabled() const override;
     void setEnabled(bool) override;
     bool isOverlayScrollbar() const override;

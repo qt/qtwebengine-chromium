@@ -14,6 +14,7 @@
 #include "net/http/http_status_code.h"
 #include "net/proxy/proxy_config.h"
 #include "net/proxy/proxy_config_service_fixed.h"
+#include "net/socket/ssl_client_socket.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_builder.h"
 
@@ -56,10 +57,10 @@ void ConnectivityCheckerImpl::Initialize() {
       check_url_str.empty() ? kDefaultConnectivityCheckUrl : check_url_str));
 
   net::URLRequestContextBuilder builder;
-  builder.set_proxy_config_service(
-      new net::ProxyConfigServiceFixed(net::ProxyConfig::CreateDirect()));
+  builder.set_proxy_config_service(make_scoped_ptr(
+      new net::ProxyConfigServiceFixed(net::ProxyConfig::CreateDirect())));
   builder.DisableHttpCache();
-  url_request_context_.reset(builder.Build());
+  url_request_context_ = builder.Build().Pass();
 
   net::NetworkChangeNotifier::AddNetworkChangeObserver(this);
   task_runner_->PostTask(FROM_HERE,
@@ -112,10 +113,13 @@ void ConnectivityCheckerImpl::Check() {
 
   timeout_.Reset(base::Bind(&ConnectivityCheckerImpl::OnUrlRequestTimeout,
                             this));
+  // Exponential backoff for timeout in 3, 6 and 12 sec.
+  const int timeout = kRequestTimeoutInSeconds
+                      << (check_errors_ > 2 ? 2 : check_errors_);
   base::MessageLoop::current()->PostDelayedTask(
       FROM_HERE,
       timeout_.callback(),
-      base::TimeDelta::FromSeconds(kRequestTimeoutInSeconds));
+      base::TimeDelta::FromSeconds(timeout));
 }
 
 void ConnectivityCheckerImpl::OnNetworkChanged(
@@ -163,6 +167,7 @@ void ConnectivityCheckerImpl::OnSSLCertificateError(
     bool fatal) {
   LOG(ERROR) << "OnSSLCertificateError: cert_status=" << ssl_info.cert_status;
   timeout_.Cancel();
+  net::SSLClientSocket::ClearSessionCache();
   OnUrlRequestError();
 }
 

@@ -25,6 +25,50 @@ namespace {
 
 const ResourceFormat kRGBResourceFormat = RGBA_8888;
 
+VideoFrameExternalResources::ResourceType ResourceTypeForVideoFrame(
+    media::VideoFrame* video_frame) {
+  switch (video_frame->format()) {
+    case media::PIXEL_FORMAT_ARGB:
+    case media::PIXEL_FORMAT_XRGB:
+    case media::PIXEL_FORMAT_UYVY:
+      switch (video_frame->mailbox_holder(0).texture_target) {
+        case GL_TEXTURE_2D:
+          return (video_frame->format() == media::PIXEL_FORMAT_XRGB)
+                     ? VideoFrameExternalResources::RGB_RESOURCE
+                     : VideoFrameExternalResources::RGBA_RESOURCE;
+        case GL_TEXTURE_EXTERNAL_OES:
+          return VideoFrameExternalResources::STREAM_TEXTURE_RESOURCE;
+        case GL_TEXTURE_RECTANGLE_ARB:
+          return VideoFrameExternalResources::IO_SURFACE;
+        default:
+          NOTREACHED();
+          break;
+      }
+      break;
+    case media::PIXEL_FORMAT_I420:
+      return VideoFrameExternalResources::YUV_RESOURCE;
+      break;
+    case media::PIXEL_FORMAT_NV12:
+      DCHECK_EQ(static_cast<uint32_t>(GL_TEXTURE_RECTANGLE_ARB),
+                video_frame->mailbox_holder(0).texture_target);
+      return VideoFrameExternalResources::IO_SURFACE;
+      break;
+    case media::PIXEL_FORMAT_YV12:
+    case media::PIXEL_FORMAT_YV16:
+    case media::PIXEL_FORMAT_YV24:
+    case media::PIXEL_FORMAT_YV12A:
+    case media::PIXEL_FORMAT_NV21:
+    case media::PIXEL_FORMAT_YUY2:
+    case media::PIXEL_FORMAT_RGB24:
+    case media::PIXEL_FORMAT_RGB32:
+    case media::PIXEL_FORMAT_MJPEG:
+    case media::PIXEL_FORMAT_MT21:
+    case media::PIXEL_FORMAT_UNKNOWN:
+      break;
+  }
+  return VideoFrameExternalResources::NONE;
+}
+
 class SyncPointClientImpl : public media::VideoFrame::SyncPointClient {
  public:
   explicit SyncPointClientImpl(gpu::gles2::GLES2Interface* gl,
@@ -139,7 +183,14 @@ void VideoResourceUpdater::DeleteResource(ResourceList::iterator resource_it) {
 VideoFrameExternalResources VideoResourceUpdater::
     CreateExternalResourcesFromVideoFrame(
         const scoped_refptr<media::VideoFrame>& video_frame) {
-  if (video_frame->format() == media::VideoFrame::UNKNOWN)
+#if defined(VIDEO_HOLE)
+  if (video_frame->storage_type() == media::VideoFrame::STORAGE_HOLE) {
+    VideoFrameExternalResources external_resources;
+    external_resources.type = VideoFrameExternalResources::HOLE;
+    return external_resources;
+  }
+#endif  // defined(VIDEO_HOLE)
+  if (video_frame->format() == media::PIXEL_FORMAT_UNKNOWN)
     return VideoFrameExternalResources();
   DCHECK(video_frame->HasTextures() || video_frame->IsMappable());
   if (video_frame->HasTextures())
@@ -164,19 +215,11 @@ static gfx::Size SoftwarePlaneDimension(
 VideoFrameExternalResources VideoResourceUpdater::CreateForSoftwarePlanes(
     const scoped_refptr<media::VideoFrame>& video_frame) {
   TRACE_EVENT0("cc", "VideoResourceUpdater::CreateForSoftwarePlanes");
-  const media::VideoFrame::Format input_frame_format = video_frame->format();
-
-#if defined(VIDEO_HOLE)
-  if (video_frame->storage_type() == media::VideoFrame::STORAGE_HOLE) {
-    VideoFrameExternalResources external_resources;
-    external_resources.type = VideoFrameExternalResources::HOLE;
-    return external_resources;
-  }
-#endif  // defined(VIDEO_HOLE)
+  const media::VideoPixelFormat input_frame_format = video_frame->format();
 
   // Only YUV software video frames are supported.
-  if (!media::VideoFrame::IsYuvPlanar(input_frame_format)) {
-    NOTREACHED() << media::VideoFrame::FormatToString(input_frame_format);
+  if (!media::IsYuvPlanar(input_frame_format)) {
+    NOTREACHED() << media::VideoPixelFormatToString(input_frame_format);
     return VideoFrameExternalResources();
   }
 
@@ -305,16 +348,19 @@ VideoFrameExternalResources VideoResourceUpdater::CreateForSoftwarePlanes(
       gfx::Size resource_size_pixels = plane_resource.resource_size;
       // The |video_stride_pixels| is the width of the video frame we are
       // uploading (including non-frame data to fill in the stride).
-      size_t video_stride_pixels = video_frame->stride(i);
+      int video_stride_pixels = video_frame->stride(i);
 
-      size_t bytes_per_pixel = BitsPerPixel(plane_resource.resource_format) / 8;
+      size_t bytes_per_row = ResourceUtil::UncheckedWidthInBytes<size_t>(
+          resource_size_pixels.width(), plane_resource.resource_format);
       // Use 4-byte row alignment (OpenGL default) for upload performance.
       // Assuming that GL_UNPACK_ALIGNMENT has not changed from default.
-      size_t upload_image_stride = MathUtil::RoundUp<size_t>(
-          bytes_per_pixel * resource_size_pixels.width(), 4u);
+      size_t upload_image_stride =
+          MathUtil::UncheckedRoundUp<size_t>(bytes_per_row, 4u);
 
       const uint8_t* pixels;
-      if (upload_image_stride == video_stride_pixels * bytes_per_pixel) {
+      size_t video_bytes_per_row = ResourceUtil::UncheckedWidthInBytes<size_t>(
+          video_stride_pixels, plane_resource.resource_format);
+      if (upload_image_stride == video_bytes_per_row) {
         pixels = video_frame->data(i);
       } else {
         // Avoid malloc for each frame/plane if possible.
@@ -324,9 +370,9 @@ VideoFrameExternalResources VideoResourceUpdater::CreateForSoftwarePlanes(
           upload_pixels_.resize(needed_size);
         for (int row = 0; row < resource_size_pixels.height(); ++row) {
           uint8_t* dst = &upload_pixels_[upload_image_stride * row];
-          const uint8_t* src = video_frame->data(i) +
-                               bytes_per_pixel * video_stride_pixels * row;
-          memcpy(dst, src, resource_size_pixels.width() * bytes_per_pixel);
+          const uint8_t* src =
+              video_frame->data(i) + (video_bytes_per_row * row);
+          memcpy(dst, src, bytes_per_row);
         }
         pixels = &upload_pixels_[0];
       }
@@ -372,52 +418,21 @@ VideoFrameExternalResources VideoResourceUpdater::CreateForHardwarePlanes(
   if (!context_provider_)
     return VideoFrameExternalResources();
 
-  const size_t textures = media::VideoFrame::NumPlanes(video_frame->format());
-  DCHECK_GE(textures, 1u);
   VideoFrameExternalResources external_resources;
   external_resources.read_lock_fences_enabled = true;
-  switch (video_frame->format()) {
-    case media::VideoFrame::ARGB:
-    case media::VideoFrame::XRGB:
-      DCHECK_EQ(1u, textures);
-      switch (video_frame->mailbox_holder(0).texture_target) {
-        case GL_TEXTURE_2D:
-          external_resources.type =
-              (video_frame->format() == media::VideoFrame::XRGB)
-                  ? VideoFrameExternalResources::RGB_RESOURCE
-                  : VideoFrameExternalResources::RGBA_RESOURCE;
-          break;
-        case GL_TEXTURE_EXTERNAL_OES:
-          external_resources.type =
-              VideoFrameExternalResources::STREAM_TEXTURE_RESOURCE;
-          break;
-        case GL_TEXTURE_RECTANGLE_ARB:
-          external_resources.type = VideoFrameExternalResources::IO_SURFACE;
-          break;
-        default:
-          NOTREACHED();
-          return VideoFrameExternalResources();
-      }
-      break;
-    case media::VideoFrame::I420:
-      external_resources.type = VideoFrameExternalResources::YUV_RESOURCE;
-      break;
-#if defined(OS_MACOSX) || defined(OS_CHROMEOS)
-    case media::VideoFrame::NV12:
-#endif
-    case media::VideoFrame::YV12:
-    case media::VideoFrame::YV16:
-    case media::VideoFrame::YV24:
-    case media::VideoFrame::YV12A:
-    case media::VideoFrame::UNKNOWN:
-      DLOG(ERROR) << "Unsupported Texture format"
-                  << media::VideoFrame::FormatToString(video_frame->format());
-      return external_resources;
-  }
-  DCHECK_NE(VideoFrameExternalResources::NONE, external_resources.type);
 
-  for (size_t i = 0; i < textures; ++i) {
+  external_resources.type = ResourceTypeForVideoFrame(video_frame.get());
+  if (external_resources.type == VideoFrameExternalResources::NONE) {
+    DLOG(ERROR) << "Unsupported Texture format"
+                << media::VideoPixelFormatToString(video_frame->format());
+    return external_resources;
+  }
+
+  const size_t num_planes = media::VideoFrame::NumPlanes(video_frame->format());
+  for (size_t i = 0; i < num_planes; ++i) {
     const gpu::MailboxHolder& mailbox_holder = video_frame->mailbox_holder(i);
+    if (mailbox_holder.mailbox.IsZero())
+      break;
     external_resources.mailboxes.push_back(
         TextureMailbox(mailbox_holder.mailbox, mailbox_holder.texture_target,
                        mailbox_holder.sync_point, video_frame->coded_size(),

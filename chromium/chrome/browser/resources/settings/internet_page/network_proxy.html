@@ -1,8 +1,9 @@
 <link rel="import" href="chrome://resources/polymer/v1_0/polymer/polymer.html">
+<link rel="import" href="chrome://resources/polymer/v1_0/paper-button/paper-button.html">
+<link rel="import" href="chrome://resources/polymer/v1_0/paper-checkbox/paper-checkbox.html">
+<link rel="import" href="chrome://resources/polymer/v1_0/paper-input/paper-input.html">
 <link rel="import" href="chrome://resources/polymer/v1_0/paper-styles/paper-styles.html">
-<link rel="import" href="chrome://resources/cr_elements/v1_0/cr_checkbox/cr_checkbox.html">
-<link rel="import" href="chrome://resources/cr_elements/v1_0/cr_input/cr_input.html">
-<link rel="import" href="chrome://resources/cr_elements/v1_0/cr_onc/cr_onc_types.html">
+<link rel="import" href="chrome://resources/cr_elements/v1_0/network/cr_onc_types.html">
 <link rel="import" href="network_property_list.html">
 <link rel="import" href="network_proxy_input.html">
 <link rel="import" href="network_proxy_exclusions.html">
@@ -23,9 +24,9 @@
       <div hidden$="[[!matches_(proxy.Type, ProxySettingsType.PAC)]]"
           class="layout horizontal">
         <span>Autoconfiguration URL:</span>
-        <cr-input no-label-float class="flex" value="{{proxy.PAC}}"
-            on-blur="onProxyInputChanged_">
-        </cr-input>
+        <paper-input no-label-float class="flex" value="{{proxy.PAC}}"
+            on-blur="onProxyInputChange_">
+        </paper-input>
       </div>
 
       <div hidden$="[[!matches_(proxy.Type, ProxySettingsType.WPAD)]]"
@@ -35,44 +36,44 @@
 
       <div hidden$="[[!matches_(proxy.Type, ProxySettingsType.MANUAL)]]"
           class="layout vertical">
-        <cr-checkbox id="useUrl" checked="{{useSameProxy}}">
+        <paper-checkbox id="useUrl" checked="{{useSameProxy}}">
             Use the same proxy for all protocols
-        </cr-checkbox>
+        </paper-checkbox>
         <div hidden$="[[!useSameProxy]]" class="layout vertical">
           <network-proxy-input editable="[[editable]]"
               value="{{proxy.Manual.HTTPProxy}}"
-              label="Proxy" on-changed="onProxyInputChanged_">
+              label="Proxy" on-proxy-change="onProxyInputChange_">
           </network-proxy-input>
         </div>
         <div hidden$="[[useSameProxy]]" class="layout vertical">
           <network-proxy-input editable="[[editable]]"
               value="{{proxy.Manual.HTTPProxy}}"
-              label="HTTP Proxy" on-changed="onProxyInputChanged_">
+              label="HTTP Proxy" on-proxy-change="onProxyInputChange_">
           </network-proxy-input>
           <network-proxy-input editable="[[editable]]"
               value="{{proxy.Manual.SecureHTTPProxy}}"
-              label="Secure HTTP Proxy" on-changed="onProxyInputChanged_">
+              label="Secure HTTP Proxy" on-proxy-change="onProxyInputChange_">
           </network-proxy-input>
           <network-proxy-input editable="[[editable]]"
               value="{{proxy.Manual.FTPProxy}}"
-              label="FTP Proxy" on-changed="onProxyInputChanged_">
+              label="FTP Proxy" on-proxy-change="onProxyInputChange_">
           </network-proxy-input>
           <network-proxy-input editable="[[editable]]"
               value="{{proxy.Manual.SOCKS}}"
-              label="SOCKS host" on-changed="onProxyInputChanged_">
+              label="SOCKS host" on-proxy-change="onProxyInputChange_">
           </network-proxy-input>
         </div>
 
         <span>Do not use the proxy settings for these hosts and domains:</span>
         <network-proxy-exclusions exclusions="{{proxy.ExcludeDomains}}"
-             on-changed="onProxyExclusionsChanged_">
+             on-proxy-change="onProxyExclusionsChange_">
         </network-proxy-exclusions>
         <div class="layout horizontal baseline">
-          <cr-input id="proxyExclusion" class="flex" no-label-float>
-          </cr-input>
-          <cr-button on-click="onAddProxyExclusion_">
+          <paper-input id="proxyExclusion" class="flex" no-label-float>
+          </paper-input>
+          <paper-button on-tap="onAddProxyExclusion_">
             Add Exception
-          </cr-button>
+          </paper-button>
         </div>
       </div>
     </div>

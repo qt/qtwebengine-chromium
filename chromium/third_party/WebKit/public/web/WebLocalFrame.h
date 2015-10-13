@@ -91,6 +91,17 @@ public:
     // instead.
     virtual bool isResourceLoadInProgress() const = 0;
 
+    // Returns true if there is a pending redirect or location change.
+    // This could be caused by:
+    // * an HTTP Refresh header
+    // * an X-Frame-Options header
+    // * the respective http-equiv meta tags
+    // * window.location value being mutated
+    // * CSP policy block
+    // * reload
+    // * form submission
+    virtual bool isNavigationScheduled() const = 0;
+
     // Override the normal rules for whether a load has successfully committed
     // in this frame. Used to propagate state when this frame has navigated
     // cross process.
@@ -137,6 +148,11 @@ public:
     // selection to collapse. If the new extent is set to the same position as
     // the current base, this function will do nothing.
     virtual void moveRangeSelectionExtent(const WebPoint&) = 0;
+
+    // Focus ------------------------------------------------------------------
+
+    // Called when this frame loses focus to a frame in another process.
+    virtual void clearFocus() = 0;
 
     // Content Settings -------------------------------------------------------
 

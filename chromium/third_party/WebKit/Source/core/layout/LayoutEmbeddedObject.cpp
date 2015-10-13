@@ -51,15 +51,15 @@ LayoutEmbeddedObject::~LayoutEmbeddedObject()
 {
 }
 
-DeprecatedPaintLayerType LayoutEmbeddedObject::layerTypeRequired() const
+PaintLayerType LayoutEmbeddedObject::layerTypeRequired() const
 {
-    // This can't just use LayoutPart::layerTypeRequired, because DeprecatedPaintLayerCompositor
+    // This can't just use LayoutPart::layerTypeRequired, because PaintLayerCompositor
     // doesn't loop through LayoutEmbeddedObjects the way it does frames in order
     // to update the self painting bit on their Layer.
     // Also, unlike iframes, embeds don't used the usesCompositing bit on LayoutView
     // in requiresAcceleratedCompositing.
     if (requiresAcceleratedCompositing())
-        return NormalDeprecatedPaintLayer;
+        return NormalPaintLayer;
     return LayoutPart::layerTypeRequired();
 }
 
@@ -84,6 +84,10 @@ void LayoutEmbeddedObject::setPluginUnavailabilityReason(PluginUnavailabilityRea
     m_pluginUnavailabilityReason = pluginUnavailabilityReason;
 
     m_unavailablePluginReplacementText = localizedUnavailablePluginReplacementText(node(), pluginUnavailabilityReason);
+
+    // node() is nullptr when LayoutPart is being destroyed.
+    if (node())
+        setShouldDoFullPaintInvalidation();
 }
 
 bool LayoutEmbeddedObject::showsUnavailablePluginIndicator() const
@@ -91,7 +95,7 @@ bool LayoutEmbeddedObject::showsUnavailablePluginIndicator() const
     return m_showsUnavailablePluginIndicator;
 }
 
-void LayoutEmbeddedObject::paintContents(const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
+void LayoutEmbeddedObject::paintContents(const PaintInfo& paintInfo, const LayoutPoint& paintOffset) const
 {
     Element* element = toElement(node());
     if (!isHTMLPlugInElement(element))
@@ -100,7 +104,7 @@ void LayoutEmbeddedObject::paintContents(const PaintInfo& paintInfo, const Layou
     LayoutPart::paintContents(paintInfo, paintOffset);
 }
 
-void LayoutEmbeddedObject::paint(const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
+void LayoutEmbeddedObject::paint(const PaintInfo& paintInfo, const LayoutPoint& paintOffset) const
 {
     if (showsUnavailablePluginIndicator()) {
         LayoutReplaced::paint(paintInfo, paintOffset);
@@ -110,7 +114,7 @@ void LayoutEmbeddedObject::paint(const PaintInfo& paintInfo, const LayoutPoint& 
     LayoutPart::paint(paintInfo, paintOffset);
 }
 
-void LayoutEmbeddedObject::paintReplaced(const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
+void LayoutEmbeddedObject::paintReplaced(const PaintInfo& paintInfo, const LayoutPoint& paintOffset) const
 {
     EmbeddedObjectPainter(*this).paintReplaced(paintInfo, paintOffset);
 }

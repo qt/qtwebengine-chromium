@@ -31,10 +31,10 @@
 #include "core/layout/svg/SVGLayoutTreeAsText.h"
 
 #include "core/layout/LayoutTreeAsText.h"
+#include "core/layout/api/LineLayoutSVGInlineText.h"
 #include "core/layout/line/InlineTextBox.h"
 #include "core/layout/svg/LayoutSVGGradientStop.h"
 #include "core/layout/svg/LayoutSVGImage.h"
-#include "core/layout/svg/LayoutSVGInlineText.h"
 #include "core/layout/svg/LayoutSVGResourceClipper.h"
 #include "core/layout/svg/LayoutSVGResourceFilter.h"
 #include "core/layout/svg/LayoutSVGResourceLinearGradient.h"
@@ -400,10 +400,10 @@ static inline void writeSVGInlineTextBox(TextStream& ts, SVGInlineTextBox* textB
     if (fragments.isEmpty())
         return;
 
-    LayoutSVGInlineText& textLayoutObject = toLayoutSVGInlineText(textBox->layoutObject());
+    LineLayoutSVGInlineText textLineLayout = LineLayoutSVGInlineText(textBox->lineLayoutItem());
 
-    const SVGComputedStyle& svgStyle = textLayoutObject.style()->svgStyle();
-    String text = textBox->layoutObject().text();
+    const SVGComputedStyle& svgStyle = textLineLayout.style()->svgStyle();
+    String text = textBox->lineLayoutItem().text();
 
     unsigned fragmentsSize = fragments.size();
     for (unsigned i = 0; i < fragmentsSize; ++i) {
@@ -510,8 +510,7 @@ void writeSVGResourceContainer(TextStream& ts, const LayoutObject& object, int i
         ts << "\n";
         // Creating a placeholder filter which is passed to the builder.
         FloatRect dummyRect;
-        IntRect dummyIntRect;
-        RefPtrWillBeRawPtr<SVGFilter> dummyFilter = SVGFilter::create(dummyIntRect, dummyRect, dummyRect, true);
+        RefPtrWillBeRawPtr<Filter> dummyFilter = Filter::create(dummyRect, dummyRect, 1, Filter::BoundingBox);
         if (RefPtrWillBeRawPtr<SVGFilterBuilder> builder = filter->buildPrimitives(dummyFilter.get())) {
             if (FilterEffect* lastEffect = builder->lastEffect())
                 lastEffect->externalRepresentation(ts, indent + 1);

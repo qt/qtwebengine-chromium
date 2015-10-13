@@ -21,9 +21,8 @@ const char kGooglemailDomain[] = "googlemail.com";
 
 std::string CanonicalizeEmailImpl(const std::string& email_address,
                                   bool change_googlemail_to_gmail) {
-  std::vector<std::string> parts;
-  char at = '@';
-  base::SplitString(email_address, at, &parts);
+  std::vector<std::string> parts = base::SplitString(
+      email_address, "@", base::TRIM_WHITESPACE, base::SPLIT_WANT_ALL);
   if (parts.size() != 2U) {
     NOTREACHED() << "expecting exactly one @, but got "
                  << (parts.empty() ? 0 : parts.size() - 1)
@@ -36,7 +35,7 @@ std::string CanonicalizeEmailImpl(const std::string& email_address,
       base::RemoveChars(parts[0], ".", &parts[0]);
   }
 
-  std::string new_email = base::StringToLowerASCII(JoinString(parts, at));
+  std::string new_email = base::ToLowerASCII(base::JoinString(parts, "@"));
   VLOG(1) << "Canonicalized " << email_address << " to " << new_email;
   return new_email;
 }
@@ -72,7 +71,7 @@ std::string CanonicalizeEmail(const std::string& email_address) {
 std::string CanonicalizeDomain(const std::string& domain) {
   // Canonicalization of domain names means lower-casing them. Make sure to
   // update this function in sync with Canonicalize if this ever changes.
-  return base::StringToLowerASCII(domain);
+  return base::ToLowerASCII(domain);
 }
 
 std::string SanitizeEmail(const std::string& email_address) {

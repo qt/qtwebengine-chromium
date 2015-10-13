@@ -8,6 +8,7 @@
 #include <set>
 #include <vector>
 
+#include "base/gtest_prod_util.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "content/browser/service_worker/service_worker_registration.h"
@@ -130,6 +131,7 @@ class CONTENT_EXPORT ServiceWorkerProviderHost
   scoped_ptr<ServiceWorkerRequestHandler> CreateRequestHandler(
       FetchRequestMode request_mode,
       FetchCredentialsMode credentials_mode,
+      FetchRedirectMode redirect_mode,
       ResourceType resource_type,
       RequestContextType request_context_type,
       RequestContextFrameType frame_type,

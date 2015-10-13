@@ -19,21 +19,24 @@
 #include "media/base/media_switches.h"
 
 namespace media {
+namespace {
 
-static const int kStreamCloseDelaySeconds = 5;
+const int kStreamCloseDelaySeconds = 5;
 
 // Default maximum number of output streams that can be open simultaneously
 // for all platforms.
-static const int kDefaultMaxOutputStreams = 16;
+const int kDefaultMaxOutputStreams = 16;
 
 // Default maximum number of input streams that can be open simultaneously
 // for all platforms.
-static const int kDefaultMaxInputStreams = 16;
+const int kDefaultMaxInputStreams = 16;
 
-static const int kMaxInputChannels = 3;
+const int kMaxInputChannels = 3;
 
-const char AudioManagerBase::kDefaultDeviceName[] = "Default";
+}  // namespace
+
 const char AudioManagerBase::kDefaultDeviceId[] = "default";
+const char AudioManagerBase::kCommunicationsDeviceId[] = "communications";
 const char AudioManagerBase::kLoopbackInputDeviceId[] = "loopback";
 
 struct AudioManagerBase::DispatcherParams {
@@ -261,10 +264,11 @@ AudioOutputStream* AudioManagerBase::MakeAudioOutputStreamProxy(
                  << output_params.frames_per_buffer();
 
       // Tell the AudioManager to create a fake output device.
-      output_params = AudioParameters(
-          AudioParameters::AUDIO_FAKE, params.channel_layout(),
-          params.sample_rate(), params.bits_per_sample(),
-          params.frames_per_buffer());
+      output_params = params;
+      output_params.set_format(AudioParameters::AUDIO_FAKE);
+    } else if (params.effects() != output_params.effects()) {
+      // Turn off effects that weren't requested.
+      output_params.set_effects(params.effects() & output_params.effects());
     }
   }
 

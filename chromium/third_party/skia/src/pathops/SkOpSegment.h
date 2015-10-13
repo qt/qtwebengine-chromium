@@ -182,6 +182,7 @@ public:
     void dumpPts() const;
     void dumpPtsInner() const;
 
+    void findCollapsed();
     SkOpSegment* findNextOp(SkTDArray<SkOpSpanBase*>* chase, SkOpSpanBase** nextStart,
                              SkOpSpanBase** nextEnd, bool* unsortable, SkPathOp op,
                              int xorMiMask, int xorSuMask);
@@ -221,7 +222,7 @@ public:
     }
 
     SkOpSegment* isSimple(SkOpSpanBase** end, int* step) {
-        return nextChase(end, step, NULL, NULL);
+        return nextChase(end, step, nullptr, nullptr);
     }
 
     bool isVertical() const {
@@ -301,10 +302,6 @@ public:
 
     void setContour(SkOpContour* contour) {
         fContour = contour;
-    }
-
-    void setCubicType(SkDCubic::CubicType cubicType) {
-        fCubicType = cubicType;
     }
 
     void setNext(SkOpSegment* next) {
@@ -403,8 +400,6 @@ private:
     int fCount;  // number of spans (one for a non-intersecting segment)
     int fDoneCount;  // number of processed spans (zero initially)
     SkPath::Verb fVerb;
-    SkDCubic::CubicType fCubicType;
-    bool fTopsFound;
     bool fVisited;  // used by missing coincidence check
     SkDEBUGCODE(int fID);
 };

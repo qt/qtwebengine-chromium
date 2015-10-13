@@ -66,6 +66,7 @@
  *
  * TODO(fork): clean up callers so that they include what they use. */
 #include <openssl/aead.h>
+#include <openssl/base64.h>
 #include <openssl/cipher.h>
 #include <openssl/digest.h>
 #include <openssl/obj.h>
@@ -209,10 +210,13 @@ OPENSSL_EXPORT EVP_PKEY *d2i_AutoPrivateKey(EVP_PKEY **out, const uint8_t **inp,
  * the result, whether written or not, or a negative value on error. */
 OPENSSL_EXPORT int i2d_PrivateKey(const EVP_PKEY *key, uint8_t **outp);
 
-/* i2d_PublicKey marshals a public key from |key| to an ASN.1, DER
- * structure. If |outp| is not NULL then the result is written to |*outp| and
+/* i2d_PublicKey marshals a public key from |key| to a type-specific format.
+ * If |outp| is not NULL then the result is written to |*outp| and
  * |*outp| is advanced just past the output. It returns the number of bytes in
- * the result, whether written or not, or a negative value on error. */
+ * the result, whether written or not, or a negative value on error.
+ *
+ * RSA keys are serialized as a DER-encoded RSAPublicKey (RFC 3447) structure.
+ * EC keys are serialized as an EC point per SEC 1. */
 OPENSSL_EXPORT int i2d_PublicKey(EVP_PKEY *key, uint8_t **outp);
 
 
@@ -639,17 +643,6 @@ OPENSSL_EXPORT int EVP_PKEY_CTX_get0_rsa_oaep_label(EVP_PKEY_CTX *ctx,
 
 /* Deprecated functions. */
 
-/* EVP_PKEY_dup adds one to the reference count of |pkey| and returns
- * |pkey|.
- *
- * WARNING: this is a |_dup| function that doesn't actually duplicate! Use
- * |EVP_PKEY_up_ref| if you want to increment the reference count without
- * confusion. */
-OPENSSL_EXPORT EVP_PKEY *EVP_PKEY_dup(EVP_PKEY *pkey);
-
-
-/* Private functions */
-
 /* OpenSSL_add_all_algorithms does nothing. */
 OPENSSL_EXPORT void OpenSSL_add_all_algorithms(void);
 
@@ -661,6 +654,9 @@ OPENSSL_EXPORT void OpenSSL_add_all_digests(void);
 
 /* EVP_cleanup does nothing. */
 OPENSSL_EXPORT void EVP_cleanup(void);
+
+
+/* Private functions */
 
 /* EVP_PKEY_asn1_find returns the ASN.1 method table for the given |nid|, which
  * should be one of the |EVP_PKEY_*| values. It returns NULL if |nid| is
@@ -681,10 +677,10 @@ struct evp_pkey_st {
 
   union {
     char *ptr;
-    struct rsa_st *rsa; /* RSA */
-    struct dsa_st *dsa; /* DSA */
-    struct dh_st *dh; /* DH */
-    struct ec_key_st *ec; /* ECC */
+    RSA *rsa;
+    DSA *dsa;
+    DH *dh;
+    EC_KEY *ec;
   } pkey;
 
   /* ameth contains a pointer to a method table that contains many ASN.1
@@ -697,74 +693,6 @@ struct evp_pkey_st {
 }  /* extern C */
 #endif
 
-#define EVP_F_EVP_PKEY_derive_init 108
-#define EVP_F_EVP_PKEY_encrypt 110
-#define EVP_F_EVP_PKEY_encrypt_init 111
-#define EVP_F_EVP_PKEY_get1_DH 112
-#define EVP_F_EVP_PKEY_get1_EC_KEY 114
-#define EVP_F_EVP_PKEY_get1_RSA 115
-#define EVP_F_EVP_PKEY_keygen 116
-#define EVP_F_EVP_PKEY_sign 120
-#define EVP_F_EVP_PKEY_sign_init 121
-#define EVP_F_EVP_PKEY_verify 122
-#define EVP_F_EVP_PKEY_verify_init 123
-#define EVP_F_d2i_AutoPrivateKey 125
-#define EVP_F_d2i_PrivateKey 126
-#define EVP_F_do_EC_KEY_print 127
-#define EVP_F_do_sigver_init 129
-#define EVP_F_eckey_param2type 130
-#define EVP_F_eckey_param_decode 131
-#define EVP_F_eckey_priv_decode 132
-#define EVP_F_eckey_priv_encode 133
-#define EVP_F_eckey_pub_decode 134
-#define EVP_F_eckey_pub_encode 135
-#define EVP_F_eckey_type2param 136
-#define EVP_F_evp_pkey_ctx_new 137
-#define EVP_F_hmac_signctx 138
-#define EVP_F_i2d_PublicKey 139
-#define EVP_F_old_ec_priv_decode 140
-#define EVP_F_old_rsa_priv_decode 141
-#define EVP_F_pkey_ec_ctrl 142
-#define EVP_F_pkey_ec_derive 143
-#define EVP_F_pkey_ec_keygen 144
-#define EVP_F_pkey_ec_paramgen 145
-#define EVP_F_pkey_ec_sign 146
-#define EVP_F_pkey_rsa_ctrl 147
-#define EVP_F_pkey_rsa_decrypt 148
-#define EVP_F_pkey_rsa_encrypt 149
-#define EVP_F_pkey_rsa_sign 150
-#define EVP_F_rsa_algor_to_md 151
-#define EVP_F_rsa_digest_verify_init_from_algorithm 152
-#define EVP_F_rsa_mgf1_to_md 153
-#define EVP_F_rsa_priv_decode 154
-#define EVP_F_rsa_priv_encode 155
-#define EVP_F_rsa_pss_to_ctx 156
-#define EVP_F_rsa_pub_decode 157
-#define EVP_F_pkey_hmac_ctrl 158
-#define EVP_F_EVP_PKEY_CTX_get0_rsa_oaep_label 159
-#define EVP_F_EVP_DigestSignAlgorithm 160
-#define EVP_F_EVP_DigestVerifyInitFromAlgorithm 161
-#define EVP_F_EVP_PKEY_CTX_ctrl 162
-#define EVP_F_EVP_PKEY_CTX_dup 163
-#define EVP_F_EVP_PKEY_copy_parameters 164
-#define EVP_F_EVP_PKEY_decrypt 165
-#define EVP_F_EVP_PKEY_decrypt_init 166
-#define EVP_F_EVP_PKEY_derive 167
-#define EVP_F_EVP_PKEY_derive_set_peer 168
-#define EVP_F_EVP_PKEY_get1_DSA 169
-#define EVP_F_EVP_PKEY_keygen_init 170
-#define EVP_F_EVP_PKEY_new 171
-#define EVP_F_EVP_PKEY_set_type 172
-#define EVP_F_check_padding_md 173
-#define EVP_F_do_dsa_print 174
-#define EVP_F_do_rsa_print 175
-#define EVP_F_dsa_param_decode 176
-#define EVP_F_dsa_priv_decode 177
-#define EVP_F_dsa_priv_encode 178
-#define EVP_F_dsa_pub_decode 179
-#define EVP_F_dsa_pub_encode 180
-#define EVP_F_dsa_sig_print 181
-#define EVP_F_old_dsa_priv_decode 182
 #define EVP_R_BUFFER_TOO_SMALL 100
 #define EVP_R_COMMAND_NOT_SUPPORTED 101
 #define EVP_R_DIFFERENT_KEY_TYPES 104

@@ -47,7 +47,7 @@ struct WebCursorInfo;
 // Handles window-level notifications from core on behalf of a WebView.
 class ChromeClientImpl final : public ChromeClient {
 public:
-    explicit ChromeClientImpl(WebViewImpl*);
+    static PassOwnPtrWillBeRawPtr<ChromeClientImpl> create(WebViewImpl*);
     ~ChromeClientImpl() override;
 
     void* webView() const override;
@@ -62,6 +62,7 @@ public:
     void takeFocus(WebFocusType) override;
     void focusedNodeChanged(Node* fromNode, Node* toNode) override;
     void focusedFrameChanged(LocalFrame*) override;
+    bool hadFormInteraction() const override;
     Page* createWindow(
         LocalFrame*, const FrameLoadRequest&, const WindowFeatures&, NavigationPolicy, ShouldSendReferrer) override;
     void show(NavigationPolicy) override;
@@ -119,6 +120,9 @@ public:
     // Pass 0 as the GraphicsLayer to detatch the root layer.
     void attachRootGraphicsLayer(GraphicsLayer*, LocalFrame* localRoot) override;
 
+    void setCompositedDisplayList(PassOwnPtr<CompositedDisplayList>) override;
+    CompositedDisplayList* compositedDisplayListForTesting() override;
+
     void attachCompositorAnimationTimeline(WebCompositorAnimationTimeline*, LocalFrame* localRoot) override;
     void detachCompositorAnimationTimeline(WebCompositorAnimationTimeline*, LocalFrame* localRoot) override;
 
@@ -135,9 +139,10 @@ public:
     // ChromeClientImpl:
     void setCursorForPlugin(const WebCursorInfo&);
     void setNewWindowNavigationPolicy(WebNavigationPolicy);
+    void setCursorOverridden(bool);
 
     bool hasOpenedPopup() const override;
-    PassRefPtrWillBeRawPtr<PopupMenu> openPopupMenu(LocalFrame&, PopupMenuClient*) override;
+    PassRefPtrWillBeRawPtr<PopupMenu> openPopupMenu(LocalFrame&, HTMLSelectElement&) override;
     PagePopup* openPagePopup(PagePopupClient*);
     void closePagePopup(PagePopup*);
     DOMWindow* pagePopupWindowForTesting() const override;
@@ -154,7 +159,6 @@ public:
     void didEndEditingOnTextField(HTMLInputElement&) override;
     void openTextDataListChooser(HTMLInputElement&) override;
     void textFieldDataListChanged(HTMLInputElement&) override;
-    void xhrSucceeded(LocalFrame*) override;
     void ajaxSucceeded(LocalFrame*) override;
 
     void didCancelCompositionOnSelectionChange() override;
@@ -170,7 +174,11 @@ public:
 
     FloatSize elasticOverscroll() const override;
 
+    void didObserveNonGetFetchFromScript() const override;
+
 private:
+    explicit ChromeClientImpl(WebViewImpl*);
+
     bool isChromeClientImpl() const override { return true; }
     void registerPopupOpeningObserver(PopupOpeningObserver*) override;
     void unregisterPopupOpeningObserver(PopupOpeningObserver*) override;
@@ -182,6 +190,7 @@ private:
     WindowFeatures m_windowFeatures;
     Vector<PopupOpeningObserver*> m_popupOpeningObservers;
     Cursor m_lastSetMouseCursorForTesting;
+    bool m_cursorOverridden;
 };
 
 DEFINE_TYPE_CASTS(ChromeClientImpl, ChromeClient, client, client->isChromeClientImpl(), client.isChromeClientImpl());

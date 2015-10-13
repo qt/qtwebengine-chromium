@@ -4,6 +4,7 @@
 
 #include "media/base/android/media_codec_bridge.h"
 
+#include <algorithm>
 
 #include "base/android/build_info.h"
 #include "base/android/jni_android.h"
@@ -24,6 +25,14 @@ using base::android::ConvertJavaStringToUTF8;
 using base::android::ConvertUTF8ToJavaString;
 using base::android::JavaIntArrayToIntVector;
 using base::android::ScopedJavaLocalRef;
+
+#define RETURN_ON_ERROR(condition)                          \
+  do {                                                           \
+    if (!(condition)) {                                          \
+      LOG(ERROR) << "Unable to parse AAC header: " #condition; \
+      return false;                                              \
+    }                                                            \
+  } while (0)
 
 namespace media {
 
@@ -52,6 +61,8 @@ static const std::string VideoCodecToAndroidMimeType(const VideoCodec& codec) {
   switch (codec) {
     case kCodecH264:
       return "video/avc";
+    case kCodecHEVC:
+      return "video/hevc";
     case kCodecVP8:
       return "video/x-vnd.on2.vp8";
     case kCodecVP9:
@@ -65,6 +76,8 @@ static const std::string CodecTypeToAndroidMimeType(const std::string& codec) {
   // TODO(xhwang): Shall we handle more detailed strings like "mp4a.40.2"?
   if (codec == "avc1")
     return "video/avc";
+  if (codec == "hvc1")
+    return "video/hevc";
   if (codec == "mp4a")
     return "audio/mp4a-latm";
   if (codec == "vp8" || codec == "vp8.0")
@@ -84,6 +97,8 @@ static const std::string AndroidMimeTypeToCodecType(const std::string& mime) {
     return "mp4v";
   if (mime == "video/avc")
     return "avc1";
+  if (mime == "video/hevc")
+    return "hvc1";
   if (mime == "video/x-vnd.on2.vp8")
     return "vp8";
   if (mime == "video/x-vnd.on2.vp9")
@@ -246,10 +261,14 @@ bool MediaCodecBridge::IsKnownUnaccelerated(const std::string& mime_type,
   // devices while HW decoder video freezes and distortions are
   // investigated - http://crbug.com/446974.
   if (codec_name.length() > 0) {
-    return (base::StartsWithASCII(codec_name, "OMX.google.", true) ||
-            base::StartsWithASCII(codec_name, "OMX.SEC.", true) ||
-            base::StartsWithASCII(codec_name, "OMX.MTK.", true) ||
-            base::StartsWithASCII(codec_name, "OMX.Exynos.", true));
+    return (base::StartsWith(codec_name, "OMX.google.",
+                             base::CompareCase::SENSITIVE) ||
+            base::StartsWith(codec_name, "OMX.SEC.",
+                             base::CompareCase::SENSITIVE) ||
+            base::StartsWith(codec_name, "OMX.MTK.",
+                             base::CompareCase::SENSITIVE) ||
+            base::StartsWith(codec_name, "OMX.Exynos.",
+                             base::CompareCase::SENSITIVE));
   }
   return true;
 }
@@ -488,17 +507,23 @@ bool MediaCodecBridge::CopyFromOutputBuffer(int index,
                                             size_t offset,
                                             void* dst,
                                             int dst_size) {
-  JNIEnv* env = AttachCurrentThread();
-  ScopedJavaLocalRef<jobject> j_buffer(
-      Java_MediaCodecBridge_getOutputBuffer(env, j_media_codec_.obj(), index));
-  void* src_data =
-      reinterpret_cast<uint8*>(env->GetDirectBufferAddress(j_buffer.obj())) +
-      offset;
-  int src_capacity = env->GetDirectBufferCapacity(j_buffer.obj()) - offset;
+  void* src_data = nullptr;
+  int src_capacity = GetOutputBufferAddress(index, offset, &src_data);
   if (src_capacity < dst_size)
     return false;
   memcpy(dst, src_data, dst_size);
   return true;
+}
+
+int MediaCodecBridge::GetOutputBufferAddress(int index,
+                                             size_t offset,
+                                             void** addr) {
+  JNIEnv* env = AttachCurrentThread();
+  ScopedJavaLocalRef<jobject> j_buffer(
+      Java_MediaCodecBridge_getOutputBuffer(env, j_media_codec_.obj(), index));
+  *addr = reinterpret_cast<uint8*>(
+      env->GetDirectBufferAddress(j_buffer.obj())) + offset;
+  return env->GetDirectBufferCapacity(j_buffer.obj()) - offset;
 }
 
 bool MediaCodecBridge::FillInputBuffer(int index,
@@ -625,18 +650,19 @@ bool AudioCodecBridge::ConfigureMediaFormat(jobject j_format,
       uint8 profile = 0;
       uint8 frequency_index = 0;
       uint8 channel_config = 0;
-      if (!reader.ReadBits(5, &profile) ||
-          !reader.ReadBits(4, &frequency_index)) {
-        LOG(ERROR) << "Unable to parse AAC header";
-        return false;
-      }
-      if (0xf == frequency_index && !reader.SkipBits(24)) {
-        LOG(ERROR) << "Unable to parse AAC header";
-        return false;
-      }
-      if (!reader.ReadBits(4, &channel_config)) {
-        LOG(ERROR) << "Unable to parse AAC header";
-        return false;
+      RETURN_ON_ERROR(reader.ReadBits(5, &profile));
+      RETURN_ON_ERROR(reader.ReadBits(4, &frequency_index));
+
+      if (0xf == frequency_index)
+        RETURN_ON_ERROR(reader.SkipBits(24));
+      RETURN_ON_ERROR(reader.ReadBits(4, &channel_config));
+
+      if (profile == 5 || profile == 29) {
+        // Read extension config.
+        RETURN_ON_ERROR(reader.ReadBits(4, &frequency_index));
+        if (frequency_index == 0xf)
+          RETURN_ON_ERROR(reader.SkipBits(24));
+        RETURN_ON_ERROR(reader.ReadBits(5, &profile));
       }
 
       if (profile < 1 || profile > 4 || frequency_index == 0xf ||
@@ -693,18 +719,23 @@ bool AudioCodecBridge::ConfigureMediaFormat(jobject j_format,
   return true;
 }
 
-int64 AudioCodecBridge::PlayOutputBuffer(int index, size_t size) {
+int64 AudioCodecBridge::PlayOutputBuffer(int index,
+                                         size_t size,
+                                         size_t offset,
+                                         bool postpone) {
   DCHECK_LE(0, index);
   int numBytes = base::checked_cast<int>(size);
-  JNIEnv* env = AttachCurrentThread();
-  ScopedJavaLocalRef<jobject> buf =
-      Java_MediaCodecBridge_getOutputBuffer(env, media_codec(), index);
-  uint8* buffer = static_cast<uint8*>(env->GetDirectBufferAddress(buf.obj()));
 
-  ScopedJavaLocalRef<jbyteArray> byte_array =
-      base::android::ToJavaByteArray(env, buffer, numBytes);
-  return Java_MediaCodecBridge_playOutputBuffer(
-      env, media_codec(), byte_array.obj());
+  void* buffer = nullptr;
+  int capacity = GetOutputBufferAddress(index, offset, &buffer);
+  numBytes = std::min(capacity, numBytes);
+  CHECK_GE(numBytes, 0);
+
+  JNIEnv* env = AttachCurrentThread();
+  ScopedJavaLocalRef<jbyteArray> byte_array = base::android::ToJavaByteArray(
+          env, static_cast<uint8*>(buffer), numBytes);
+  return Java_MediaCodecBridge_playOutputBuffer(env, media_codec(),
+                                                byte_array.obj(), postpone);
 }
 
 void AudioCodecBridge::SetVolume(double volume) {

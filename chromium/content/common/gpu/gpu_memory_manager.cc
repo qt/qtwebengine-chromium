@@ -152,11 +152,6 @@ void GpuMemoryManager::TrackMemoryAllocatedChange(
       NOTREACHED();
       break;
   }
-  if (new_size != old_size) {
-    TRACE_COUNTER1("gpu",
-                   "GpuMemoryUsage",
-                   GetCurrentUsage());
-  }
 
   if (GetCurrentUsage() > bytes_allocated_historical_max_ +
                           kBytesAllocatedUnmanagedStep) {
@@ -206,10 +201,10 @@ void GpuMemoryManager::SetClientStateVisible(
   ScheduleManage(visible ? kScheduleManageNow : kScheduleManageLater);
 }
 
-uint64 GpuMemoryManager::GetClientMemoryUsage(
-    const GpuMemoryManagerClient* client) const {
+uint64 GpuMemoryManager::GetTrackerMemoryUsage(
+    gpu::gles2::MemoryTracker* tracker) const {
   TrackingGroupMap::const_iterator tracking_group_it =
-      tracking_groups_.find(client->GetMemoryTracker());
+      tracking_groups_.find(tracker);
   DCHECK(tracking_group_it != tracking_groups_.end());
   return tracking_group_it->second->GetSize();
 }

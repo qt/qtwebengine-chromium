@@ -180,7 +180,7 @@ class CONTENT_EXPORT RenderWidgetHost : public IPC::Sender {
   // asynchronously.
   virtual void CopyFromBackingStore(const gfx::Rect& src_rect,
                                     const gfx::Size& accelerated_dst_size,
-                                    ReadbackRequestCallback& callback,
+                                    const ReadbackRequestCallback& callback,
                                     const SkColorType color_type) = 0;
   // Ensures that the view does not drop the backing store even when hidden.
   virtual bool CanCopyFromBackingStore() = 0;
@@ -248,6 +248,8 @@ class CONTENT_EXPORT RenderWidgetHost : public IPC::Sender {
 
   // Get the screen info corresponding to this render widget.
   virtual void GetWebScreenInfo(blink::WebScreenInfo* result) = 0;
+  // Get the color profile corresponding to this render widget.
+  virtual bool GetScreenColorProfile(std::vector<char>* color_profile) = 0;
 
  protected:
   friend class RenderWidgetHostImpl;

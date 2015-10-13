@@ -34,6 +34,23 @@
 
 namespace blink {
 
+static bool compatibleInfo(const SkImageInfo& src, const SkImageInfo& dst)
+{
+    if (src == dst)
+        return true;
+
+    // It is legal to write kOpaque_SkAlphaType pixels into a kPremul_SkAlphaType buffer.
+    // This can happen when DeferredImageDecoder allocates an kOpaque_SkAlphaType image
+    // generator based on cached frame info, while the ImageFrame-allocated dest bitmap
+    // stays kPremul_SkAlphaType.
+    if (src.alphaType() == kOpaque_SkAlphaType && dst.alphaType() == kPremul_SkAlphaType) {
+        const SkImageInfo& tmp = src.makeAlphaType(kPremul_SkAlphaType);
+        return tmp == dst;
+    }
+
+    return false;
+}
+
 // Creates a SkPixelRef such that the memory for pixels is given by an external body.
 // This is used to write directly to the memory given by Skia during decoding.
 class ImageFrameGenerator::ExternalMemoryAllocator : public SkBitmap::Allocator {
@@ -51,10 +68,10 @@ public:
         if (kUnknown_SkColorType == info.colorType())
             return false;
 
-        if (info != m_info || m_rowBytes != dst->rowBytes())
+        if (!compatibleInfo(m_info, info) || m_rowBytes != dst->rowBytes())
             return false;
 
-        if (!dst->installPixels(m_info, m_pixels, m_rowBytes))
+        if (!dst->installPixels(info, m_pixels, m_rowBytes))
             return false;
         dst->lockPixels();
         return true;
@@ -170,7 +187,7 @@ bool ImageFrameGenerator::decodeToYUV(SkISize componentSizes[3], void* planes[3]
     // FIXME: YUV decoding does not currently support progressive decoding.
     ASSERT(allDataReceived);
 
-    OwnPtr<ImageDecoder> decoder = ImageDecoder::create(*data, ImageSource::AlphaPremultiplied, ImageSource::GammaAndColorProfileApplied);
+    OwnPtr<ImageDecoder> decoder = ImageDecoder::create(*data, ImageDecoder::AlphaPremultiplied, ImageDecoder::GammaAndColorProfileApplied);
     if (!decoder)
         return false;
 
@@ -280,7 +297,7 @@ bool ImageFrameGenerator::decode(size_t index, ImageDecoder** decoder, SkBitmap*
             *decoder = m_imageDecoderFactory->create().leakPtr();
 
         if (!*decoder)
-            *decoder = ImageDecoder::create(*data, ImageSource::AlphaPremultiplied, ImageSource::GammaAndColorProfileApplied).leakPtr();
+            *decoder = ImageDecoder::create(*data, ImageDecoder::AlphaPremultiplied, ImageDecoder::GammaAndColorProfileApplied).leakPtr();
 
         if (!*decoder)
             return false;
@@ -345,7 +362,7 @@ bool ImageFrameGenerator::getYUVComponentSizes(SkISize componentSizes[3])
     if (!allDataReceived)
         return false;
 
-    OwnPtr<ImageDecoder> decoder = ImageDecoder::create(*data, ImageSource::AlphaPremultiplied, ImageSource::GammaAndColorProfileApplied);
+    OwnPtr<ImageDecoder> decoder = ImageDecoder::create(*data, ImageDecoder::AlphaPremultiplied, ImageDecoder::GammaAndColorProfileApplied);
     if (!decoder)
         return false;
 

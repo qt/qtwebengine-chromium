@@ -14,7 +14,7 @@
 #include "core/css/StyleSheetContents.h"
 #include "core/css/parser/CSSParserObserver.h"
 #include "core/css/parser/CSSParserObserverWrapper.h"
-#include "core/css/parser/CSSParserValues.h"
+#include "core/css/parser/CSSParserSelector.h"
 #include "core/css/parser/CSSPropertyParser.h"
 #include "core/css/parser/CSSSelectorParser.h"
 #include "core/css/parser/CSSSupportsParser.h"
@@ -30,7 +30,6 @@ namespace blink {
 
 CSSParserImpl::CSSParserImpl(const CSSParserContext& context, StyleSheetContents* styleSheet)
 : m_context(context)
-, m_defaultNamespace(starAtom)
 , m_styleSheet(styleSheet)
 , m_observerWrapper(nullptr)
 {
@@ -388,8 +387,6 @@ PassRefPtrWillBeRawPtr<StyleRuleNamespace> CSSParserImpl::consumeNamespaceRule(C
     if (uri.isNull() || !prelude.atEnd())
         return nullptr; // Parse error, expected string or URI
 
-    if (namespacePrefix.isNull())
-        m_defaultNamespace = uri;
     return StyleRuleNamespace::create(namespacePrefix, uri);
 }
 
@@ -538,7 +535,7 @@ PassRefPtrWillBeRawPtr<StyleRulePage> CSSParserImpl::consumePageRule(CSSParserTo
 
     OwnPtr<CSSParserSelector> selector;
     if (!typeSelector.isNull() && pseudo.isNull()) {
-        selector = CSSParserSelector::create(QualifiedName(nullAtom, typeSelector, m_defaultNamespace));
+        selector = CSSParserSelector::create(QualifiedName(nullAtom, typeSelector, m_styleSheet->defaultNamespace()));
     } else {
         selector = CSSParserSelector::create();
         if (!pseudo.isNull()) {
@@ -548,7 +545,7 @@ PassRefPtrWillBeRawPtr<StyleRulePage> CSSParserImpl::consumePageRule(CSSParserTo
                 return nullptr; // Parse error; unknown page pseudo-class
         }
         if (!typeSelector.isNull())
-            selector->prependTagSelector(QualifiedName(nullAtom, typeSelector, m_defaultNamespace));
+            selector->prependTagSelector(QualifiedName(nullAtom, typeSelector, m_styleSheet->defaultNamespace()));
     }
 
     if (m_observerWrapper) {
@@ -601,7 +598,7 @@ static void observeSelectors(CSSParserObserverWrapper& wrapper, CSSParserTokenRa
 PassRefPtrWillBeRawPtr<StyleRule> CSSParserImpl::consumeStyleRule(CSSParserTokenRange prelude, CSSParserTokenRange block)
 {
     CSSSelectorList selectorList;
-    CSSSelectorParser::parseSelector(prelude, m_context, m_defaultNamespace, m_styleSheet, selectorList);
+    CSSSelectorParser::parseSelector(prelude, m_context, m_styleSheet, selectorList);
     if (!selectorList.isValid())
         return nullptr; // Parse error, invalid selector list
 
@@ -708,13 +705,7 @@ void CSSParserImpl::consumeDeclaration(CSSParserTokenRange range, StyleRule::Typ
 
 void CSSParserImpl::consumeDeclarationValue(CSSParserTokenRange range, CSSPropertyID unresolvedProperty, bool important, StyleRule::Type ruleType)
 {
-    bool usesRemUnits;
-    CSSParserValueList valueList(range, usesRemUnits);
-    if (!valueList.size())
-        return; // Parser error
-    if (usesRemUnits && m_styleSheet)
-        m_styleSheet->parserSetUsesRemUnits(true);
-    CSSPropertyParser::parseValue(unresolvedProperty, important, &valueList, m_context, m_parsedProperties, ruleType);
+    CSSPropertyParser::parseValue(unresolvedProperty, important, range, m_context, m_parsedProperties, ruleType);
 }
 
 PassOwnPtr<Vector<double>> CSSParserImpl::consumeKeyframeKeyList(CSSParserTokenRange range)

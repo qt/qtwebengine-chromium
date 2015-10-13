@@ -10,6 +10,7 @@
 #include "base/strings/string16.h"
 #include "base/threading/platform_thread.h"
 #include "build/build_config.h"
+#include "components/scheduler/ppapi/webthread_impl_for_ppapi.h"
 #include "content/child/child_thread_impl.h"
 #include "content/common/child_process_messages.h"
 #include "ppapi/proxy/plugin_globals.h"
@@ -41,16 +42,15 @@ class PpapiBlinkPlatformImpl::SandboxSupport : public WebSandboxSupport {
   virtual ~SandboxSupport() {}
 
 #if defined(OS_MACOSX)
-  virtual bool loadFont(NSFont* srcFont, CGFontRef* out, uint32_t* fontID);
+  bool loadFont(NSFont* srcFont, CGFontRef* out, uint32_t* fontID) override;
 #elif defined(OS_POSIX)
   SandboxSupport();
-  virtual void getFallbackFontForCharacter(
-      WebUChar32 character,
-      const char* preferred_locale,
-      blink::WebFallbackFont* fallbackFont);
-  virtual void getRenderStyleForStrike(const char* family,
-                                       int sizeAndStyle,
-                                       blink::WebFontRenderStyle* out);
+  void getFallbackFontForCharacter(WebUChar32 character,
+                                   const char* preferred_locale,
+                                   blink::WebFallbackFont* fallbackFont);
+  void getRenderStyleForStrike(const char* family,
+                               int sizeAndStyle,
+                               blink::WebFontRenderStyle* out) override;
 
  private:
   // WebKit likes to ask us for the correct font family to use for a set of
@@ -114,7 +114,8 @@ void PpapiBlinkPlatformImpl::SandboxSupport::getRenderStyleForStrike(
 
 #endif  // !defined(OS_ANDROID) && !defined(OS_WIN)
 
-PpapiBlinkPlatformImpl::PpapiBlinkPlatformImpl() {
+PpapiBlinkPlatformImpl::PpapiBlinkPlatformImpl()
+    : main_thread_(new scheduler::WebThreadImplForPPAPI()) {
 #if !defined(OS_ANDROID) && !defined(OS_WIN)
   sandbox_support_.reset(new PpapiBlinkPlatformImpl::SandboxSupport);
 #endif
@@ -130,6 +131,12 @@ void PpapiBlinkPlatformImpl::Shutdown() {
   // need to clear that map now, just before blink::shutdown() is called.
   sandbox_support_.reset();
 #endif
+}
+
+blink::WebThread* PpapiBlinkPlatformImpl::currentThread() {
+  if (main_thread_->isCurrentThread())
+    return main_thread_.get();
+  return BlinkPlatformImpl::currentThread();
 }
 
 blink::WebClipboard* PpapiBlinkPlatformImpl::clipboard() {

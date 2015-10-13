@@ -35,7 +35,6 @@
 #include "platform/WebThreadSupportingGC.h"
 #include "platform/weborigin/SecurityOrigin.h"
 #include "wtf/Forward.h"
-#include "wtf/MessageQueue.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
@@ -96,17 +95,23 @@ public:
     WorkerReportingProxy& workerReportingProxy() const { return m_workerReportingProxy; }
 
     void postTask(const WebTraceLocation&, PassOwnPtr<ExecutionContextTask>);
-    void appendDebuggerTask(PassOwnPtr<WebThread::Task>);
+    void appendDebuggerTask(PassOwnPtr<WebTaskRunner::Task>);
 
-    enum WaitMode { WaitForMessage, DontWaitForMessage };
-    MessageQueueWaitResult runDebuggerTask(WaitMode = WaitForMessage);
+    enum WaitMode { WaitForTask, DontWaitForTask };
+    enum TaskQueueResult {
+        Terminated, // Queue was destroyed while waiting for a task.
+        Timeout, // Timeout was specified and it expired.
+        TaskReceived, // A task was successfully received and returned.
+    };
+    TaskQueueResult runDebuggerTask(WaitMode = WaitForTask);
 
     // These methods should be called if the holder of the thread is
     // going to call runDebuggerTask in a loop.
-    void willEnterNestedLoop();
-    void didLeaveNestedLoop();
+    void willRunDebuggerTasks();
+    void didRunDebuggerTasks();
 
-    WorkerGlobalScope* workerGlobalScope() const { return m_workerGlobalScope.get(); }
+    // Can be called only on the worker thread, WorkerGlobalScope is not thread safe.
+    WorkerGlobalScope* workerGlobalScope();
 
     // Returns true once one of the terminate* methods is called.
     bool terminated();
@@ -136,10 +141,8 @@ protected:
     virtual void destroyIsolate();
     virtual void terminateV8Execution();
 
-    // This is protected virtual for testing.
-    virtual bool doIdleGc(double deadlineSeconds);
-
 private:
+    class DebuggerTaskQueue;
     friend class WorkerMicrotaskRunner;
 
     // Called on the main thread.
@@ -148,13 +151,13 @@ private:
     // Called on the worker thread.
     void initialize(PassOwnPtr<WorkerThreadStartupData>);
     void shutdown();
-    void performIdleWork(double deadlineSeconds);
+    void performShutdownTask();
     void postDelayedTask(const WebTraceLocation&, PassOwnPtr<ExecutionContextTask>, long long delayMs);
 
     bool m_started;
     bool m_terminated;
     bool m_shutdown;
-    MessageQueue<WebThread::Task> m_debuggerMessageQueue;
+    OwnPtr<DebuggerTaskQueue> m_debuggerTaskQueue;
     OwnPtr<WebThread::TaskObserver> m_microtaskRunner;
 
     RefPtr<WorkerLoaderProxy> m_workerLoaderProxy;
@@ -170,7 +173,6 @@ private:
     RefPtrWillBePersistent<WorkerGlobalScope> m_workerGlobalScope;
 
     v8::Isolate* m_isolate;
-    OwnPtr<V8IsolateInterruptor> m_interruptor;
 
     // Used to signal thread shutdown.
     OwnPtr<WebWaitableEvent> m_shutdownEvent;

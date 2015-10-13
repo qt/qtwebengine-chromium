@@ -7,24 +7,40 @@
 #ifndef MANDOLINE_UI_AURA_INPUT_METHOD_MANDOLINE_H_
 #define MANDOLINE_UI_AURA_INPUT_METHOD_MANDOLINE_H_
 
+namespace mus {
+class View;
+}  // namespace mojo
+
 namespace mandoline {
 
 class InputMethodMandoline : public ui::InputMethodBase {
  public:
-  explicit InputMethodMandoline(ui::internal::InputMethodDelegate* delegate);
+  InputMethodMandoline(ui::internal::InputMethodDelegate* delegate,
+                       mus::View* view);
   ~InputMethodMandoline() override;
 
  private:
   // Overridden from ui::InputMethod:
+  void OnFocus() override;
+  void OnBlur() override;
   bool OnUntranslatedIMEMessage(const base::NativeEvent& event,
                                 NativeEventResult* result) override;
-  bool DispatchKeyEvent(const ui::KeyEvent& event) override;
+  void DispatchKeyEvent(ui::KeyEvent* event) override;
+  void OnTextInputTypeChanged(const ui::TextInputClient* client) override;
   void OnCaretBoundsChanged(const ui::TextInputClient* client) override;
   void CancelComposition(const ui::TextInputClient* client) override;
   void OnInputLocaleChanged() override;
   std::string GetInputLocale() override;
-  bool IsActive() override;
   bool IsCandidatePopupOpen() const override;
+
+  // Overridden from ui::InputMethodBase:
+  void OnDidChangeFocusedClient(ui::TextInputClient* focused_before,
+                                ui::TextInputClient* focused) override;
+
+  void UpdateTextInputType();
+
+  // The toplevel view which is not owned by this class.
+  mus::View* view_;
 
   DISALLOW_COPY_AND_ASSIGN(InputMethodMandoline);
 };

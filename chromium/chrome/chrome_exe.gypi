@@ -5,15 +5,11 @@
 {
   'targets': [
     {
+      # GN version: //chrome
       'target_name': 'chrome',
       'type': 'none',
       'dependencies': [ 'chrome_initial', ],
       'conditions': [
-        ['OS=="linux" and clang_type_profiler==1', {
-          'dependencies!': [
-            '<(DEPTH)/base/allocator/allocator.gyp:type_profiler',
-          ],
-        }],
         ['OS == "win"', {
           'actions': [
             {
@@ -47,7 +43,7 @@
       ],
     },
     {
-      # GN version: //chrome
+      # GN version: //chrome:chrome_initial
       'target_name': 'chrome_initial',
       'type': 'executable',
       # Name the exe chrome.exe, not chrome_initial.exe.
@@ -92,11 +88,6 @@
         'INFOPLIST_FILE': 'app/app-Info.plist',
       },
       'conditions': [
-        ['order_profiling!=0 and (chromeos==1 or OS=="linux")', {
-          'dependencies' : [
-            '../tools/cygprofile/cygprofile.gyp:cygprofile',
-          ],
-        }],
         ['order_text_section!=""', {
           'target_conditions' : [
             ['_toolset=="target"', {
@@ -362,47 +353,6 @@
                 '<(version_full)'
               ],
             },
-            {
-              # This postbuid step is responsible for creating the following
-              # helpers:
-              #
-              # For unofficial Chromium branding, Chromium Helper EH.app and
-              # Chromium Helper NP.app are created from Chromium Helper.app.
-              # For official Google Chrome branding, Google Chrome Helper
-              # EH.app and Google Chrome Helper NP.app are created from
-              # Google Chrome Helper.app.
-              #
-              # The EH helper is marked for an executable heap. The NP helper
-              # is marked for no PIE (ASLR).
-              #
-              # Normally, applications shipping as part of offical builds with
-              # Google Chrome branding have dsymutil (dwarf-with-dsym,
-              # mac_real_dsym) and dump_syms (mac_breakpad) run on them to
-              # produce a .dSYM bundle and a Breakpad .sym file. This is
-              # unnecessary for the "More Helpers" because they're identical
-              # to the original helper except for the bits in their Mach-O
-              # headers that change to enable or disable special features.
-              # Each .dSYM is identified by UUID stored in a Mach-O file's
-              # LC_UUID load command. Because the "More Helpers" share a UUID
-              # with the original helper, there's no need to run dsymutil
-              # again. All helpers can share the same .dSYM. Special handling
-              # is performed in chrome/tools/build/mac/dump_product_syms to
-              # prepare their Breakpad symbol files.
-              'postbuild_name': 'Make More Helpers',
-              'action': [
-                '../build/mac/make_more_helpers.sh',
-                'Versions/<(version_full)',
-                '<(mac_product_name)',
-              ],
-            },
-            {
-              # Make sure there isn't any Objective-C in the browser app's
-              # executable.
-              'postbuild_name': 'Verify No Objective-C',
-              'action': [
-                '../build/mac/verify_no_objc.sh',
-              ],
-            },
           ],  # postbuilds
         }, {  # OS != "mac"
           'conditions': [
@@ -466,6 +416,7 @@
             '../breakpad/breakpad.gyp:breakpad_sender',
             '../chrome_elf/chrome_elf.gyp:chrome_elf',
             '../components/components.gyp:crash_component',
+            '../components/components.gyp:crash_core_common',
             '../sandbox/sandbox.gyp:sandbox',
             '../ui/gfx/gfx.gyp:gfx',
             '../win8/metro_driver/metro_driver.gyp:metro_driver',
@@ -485,7 +436,6 @@
           ],
           'msvs_settings': {
             'VCLinkerTool': {
-              'ImportLibrary': '$(OutDir)\\lib\\chrome_exe.lib',
               'OutputFile': '$(OutDir)\\initialexe\\chrome.exe',
               'DelayLoadDLLs': [
                 'dbghelp.dll',
@@ -533,12 +483,14 @@
               'message': 'Copy first run complete sentinel file',
             },
             {
+              # GN version: //chrome/app/version_assembly:chrome_exe_manifest
               'action_name': 'chrome_exe_manifest',
               'includes': [
                   'app/version_assembly/chrome_exe_manifest_action.gypi',
               ],
             },
             {
+              # GN version: //chrome/app/version_assembly:version_assembly_manifest
               'action_name': 'version_assembly_manifest',
               'includes': [
                   'app/version_assembly/version_assembly_manifest_action.gypi',
@@ -599,6 +551,7 @@
                 '../breakpad/breakpad.gyp:breakpad_handler_win64',
                 '../breakpad/breakpad.gyp:breakpad_sender_win64',
                 '../components/components.gyp:breakpad_win64',
+                '../components/components.gyp:crash_core_common_win64',
                 '../chrome/common_constants.gyp:common_constants_win64',
                 '../components/nacl.gyp:nacl_win64',
                 '../crypto/crypto.gyp:crypto_nacl_win64',

@@ -143,7 +143,6 @@ class SpdyProxyClientSocketTest
 INSTANTIATE_TEST_CASE_P(NextProto,
                         SpdyProxyClientSocketTest,
                         testing::Values(kProtoSPDY31,
-                                        kProtoHTTP2_14,
                                         kProtoHTTP2));
 
 SpdyProxyClientSocketTest::SpdyProxyClientSocketTest()
@@ -311,11 +310,15 @@ void SpdyProxyClientSocketTest::AssertAsyncWriteWithReadsSucceeds(
 
 void SpdyProxyClientSocketTest::PopulateConnectRequestIR(
     SpdyHeaderBlock* block) {
-  (*block)[spdy_util_.GetMethodKey()] = "CONNECT";
-  (*block)[spdy_util_.GetPathKey()] = kOriginHostPort;
-  (*block)[spdy_util_.GetHostKey()] = kOriginHost;
-  (*block)["user-agent"] = kUserAgent;
   spdy_util_.MaybeAddVersionHeader(block);
+  (*block)[spdy_util_.GetMethodKey()] = "CONNECT";
+  if (spdy_util_.spdy_version() == HTTP2) {
+    (*block)[spdy_util_.GetHostKey()] = kOriginHostPort;
+  } else {
+    (*block)[spdy_util_.GetHostKey()] = kOriginHost;
+    (*block)[spdy_util_.GetPathKey()] = kOriginHostPort;
+  }
+  (*block)["user-agent"] = kUserAgent;
 }
 
 void SpdyProxyClientSocketTest::PopulateConnectReplyIR(SpdyHeaderBlock* block,

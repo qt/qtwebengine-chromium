@@ -5,6 +5,8 @@
 #ifndef BlockFlowPainter_h
 #define BlockFlowPainter_h
 
+#include "wtf/Allocator.h"
+
 namespace blink {
 
 class LayoutPoint;
@@ -12,12 +14,13 @@ struct PaintInfo;
 class LayoutBlockFlow;
 
 class BlockFlowPainter {
+    STACK_ALLOCATED();
 public:
-    BlockFlowPainter(LayoutBlockFlow& layoutBlockFlow) : m_layoutBlockFlow(layoutBlockFlow) { }
+    BlockFlowPainter(const LayoutBlockFlow& layoutBlockFlow) : m_layoutBlockFlow(layoutBlockFlow) { }
     void paintFloats(const PaintInfo&, const LayoutPoint&, bool preservePhase);
     void paintSelection(const PaintInfo&, const LayoutPoint&);
 private:
-    LayoutBlockFlow& m_layoutBlockFlow;
+    const LayoutBlockFlow& m_layoutBlockFlow;
 };
 
 } // namespace blink

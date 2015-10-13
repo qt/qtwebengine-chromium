@@ -27,10 +27,6 @@ html {
     display: block
 }
 
-:root {
-    scroll-blocks-on: start-touch wheel-event
-}
-
 /* children of the <head> element all have display:none */
 head {
     display: none
@@ -812,6 +808,10 @@ select:-internal-list-box:focus option:checked {
     color: -internal-active-list-box-selection-text !important;
 }
 
+select:-internal-list-box:focus option:checked:disabled {
+    background-color: -internal-inactive-list-box-selection !important;
+}
+
 select:-internal-list-box option:checked {
     background-color: -internal-inactive-list-box-selection !important;
     color: -internal-inactive-list-box-selection-text !important;
@@ -980,7 +980,7 @@ html:focus, body:focus, input[readonly]:focus {
     outline: none
 }
 
-applet:focus, embed:focus, iframe:focus, object:focus {
+embed:focus, iframe:focus, object:focus {
     outline: none
 }
   

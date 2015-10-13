@@ -24,10 +24,13 @@
 #include "core/events/Event.h"
 
 #include "core/dom/StaticNodeList.h"
+#include "core/events/EventDispatchMediator.h"
 #include "core/events/EventTarget.h"
 #include "core/frame/OriginsUsingFeatures.h"
 #include "core/frame/UseCounter.h"
 #include "core/svg/SVGElement.h"
+#include "core/timing/DOMWindowPerformance.h"
+#include "core/timing/Performance.h"
 #include "wtf/CurrentTime.h"
 
 namespace blink {
@@ -46,10 +49,11 @@ Event::Event(const AtomicString& eventType, bool canBubbleArg, bool cancelableAr
     , m_defaultPrevented(false)
     , m_defaultHandled(false)
     , m_cancelBubble(false)
+    , m_isTrusted(false)
     , m_eventPhase(0)
     , m_currentTarget(nullptr)
     , m_createTime(convertSecondsToDOMTimeStamp(currentTime()))
-    , m_uiCreateTime(0)
+    , m_platformTimeStamp(monotonicallyIncreasingTime())
 {
 }
 
@@ -70,6 +74,7 @@ void Event::initEvent(const AtomicString& eventTypeArg, bool canBubbleArg, bool 
     m_propagationStopped = false;
     m_immediatePropagationStopped = false;
     m_defaultPrevented = false;
+    m_isTrusted = false;
 
     m_type = eventTypeArg;
     m_canBubble = canBubbleArg;
@@ -237,16 +242,39 @@ WillBeHeapVector<RefPtrWillBeMember<EventTarget>> Event::path(ScriptState* scrip
     return WillBeHeapVector<RefPtrWillBeMember<EventTarget>>();
 }
 
+PassRefPtrWillBeRawPtr<EventDispatchMediator> Event::createMediator()
+{
+    return EventDispatchMediator::create(this);
+}
+
 EventTarget* Event::currentTarget() const
 {
     if (!m_currentTarget)
-        return 0;
+        return nullptr;
     Node* node = m_currentTarget->toNode();
     if (node && node->isSVGElement()) {
         if (SVGElement* svgElement = toSVGElement(node)->correspondingElement())
             return svgElement;
     }
     return m_currentTarget.get();
+}
+
+double Event::timeStamp(ScriptState* scriptState) const
+{
+    double timeStamp = 0;
+    // TODO(majidvp): Get rid of m_createTime once the flag is enabled by default;
+    if (UNLIKELY(RuntimeEnabledFeatures::hiResEventTimeStampEnabled())) {
+        // Only expose monotonic time after changing its origin to its target
+        // document's time origin.
+        if (scriptState && scriptState->domWindow()) {
+            Performance* performance = DOMWindowPerformance::performance(*scriptState->domWindow());
+            timeStamp = performance->monotonicTimeToDOMHighResTimeStamp(m_platformTimeStamp);
+        }
+    } else {
+        timeStamp = m_createTime;
+    }
+
+    return timeStamp;
 }
 
 DEFINE_TRACE(Event)

@@ -124,7 +124,7 @@ function load() {
   if (!cr.isMac) {
     PageManager.registerOverlay(EditDictionaryOverlay.getInstance(),
                                 LanguageOptions.getInstance(),
-                                [$('edit-dictionary-button')]);
+                                [$('edit-custom-dictionary-button')]);
   }
   PageManager.registerOverlay(FontSettings.getInstance(),
                               BrowserOptions.getInstance(),
@@ -210,7 +210,7 @@ function load() {
                                 BrowserOptions.getInstance());
     PageManager.registerOverlay(PowerOverlay.getInstance(),
                                 BrowserOptions.getInstance(),
-                                [$('power-settings-button')]);
+                                [$('power-settings-link')]);
     PageManager.registerOverlay(ThirdPartyImeConfirmOverlay.getInstance(),
                                 LanguageOptions.getInstance());
   }

@@ -4,6 +4,9 @@
 # found in the LICENSE file.
 
 {
+  'variables': {
+    'skia_warnings_as_errors': 0,
+  },
   'targets': [
   {
     # Only used by win, down below.
@@ -30,8 +33,8 @@
         'conditions': [
           [ 'skia_android_framework', { 'include_dirs': [ 'external/zlib' ] }],
           [ 'skia_os == "mac" or skia_os == "ios"', {
-              # XCode needs and explicit file path, not a logical name like -lz.
-              'link_settings': { 'libraries': [ '$(SDKROOT)/usr/lib/libz.dylib' ] },
+              # XCode needs a full library name, not -lz.
+              'link_settings': { 'libraries': [ 'libz.dylib' ] },
           }],
           [ 'skia_os not in ["mac", "ios", "win"]',{
               'link_settings': { 'libraries': [ '-lz' ] },

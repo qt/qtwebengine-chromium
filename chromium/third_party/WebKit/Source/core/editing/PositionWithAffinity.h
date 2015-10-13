@@ -6,23 +6,23 @@
 #define PositionWithAffinity_h
 
 #include "core/CoreExport.h"
-#include "core/dom/Position.h"
+#include "core/editing/Position.h"
 #include "core/editing/TextAffinity.h"
 
 namespace blink {
 
-template <typename Position>
+template <typename Strategy>
 class CORE_TEMPLATE_CLASS_EXPORT PositionWithAffinityTemplate {
     DISALLOW_ALLOCATION();
 public:
-    typedef Position PositionType;
-
-    PositionWithAffinityTemplate(const PositionType&, EAffinity = DOWNSTREAM);
+    // TODO(yosin) We should have single parameter constructor not to use
+    // default parameter for avoiding include "TextAffinity.h"
+    PositionWithAffinityTemplate(const PositionTemplate<Strategy>&, TextAffinity = TextAffinity::Downstream);
     PositionWithAffinityTemplate();
     ~PositionWithAffinityTemplate();
 
-    EAffinity affinity() const { return m_affinity; }
-    const PositionType& position() const { return m_position; }
+    TextAffinity affinity() const { return m_affinity; }
+    const PositionTemplate<Strategy>& position() const { return m_position; }
 
     // Returns true if both |this| and |other| is null or both |m_position|
     // and |m_affinity| equal.
@@ -38,15 +38,30 @@ public:
     }
 
 private:
-    PositionType m_position;
-    EAffinity m_affinity;
+    PositionTemplate<Strategy> m_position;
+    TextAffinity m_affinity;
 };
 
-extern template class CORE_EXTERN_TEMPLATE_EXPORT PositionWithAffinityTemplate<Position>;
-extern template class CORE_EXTERN_TEMPLATE_EXPORT PositionWithAffinityTemplate<PositionInComposedTree>;
+extern template class CORE_EXTERN_TEMPLATE_EXPORT PositionWithAffinityTemplate<EditingStrategy>;
+extern template class CORE_EXTERN_TEMPLATE_EXPORT PositionWithAffinityTemplate<EditingInComposedTreeStrategy>;
 
-using PositionWithAffinity = PositionWithAffinityTemplate<Position>;
-using PositionInComposedTreeWithAffinity = PositionWithAffinityTemplate<PositionInComposedTree>;
+using PositionWithAffinity = PositionWithAffinityTemplate<EditingStrategy>;
+using PositionInComposedTreeWithAffinity = PositionWithAffinityTemplate<EditingInComposedTreeStrategy>;
+
+template <typename Strategy>
+PositionWithAffinityTemplate<Strategy> fromPositionInDOMTree(const PositionWithAffinity&);
+
+template <>
+inline PositionWithAffinity fromPositionInDOMTree<EditingStrategy>(const PositionWithAffinity& positionWithAffinity)
+{
+    return positionWithAffinity;
+}
+
+template <>
+inline PositionInComposedTreeWithAffinity fromPositionInDOMTree<EditingInComposedTreeStrategy>(const PositionWithAffinity& positionWithAffinity)
+{
+    return PositionInComposedTreeWithAffinity(toPositionInComposedTree(positionWithAffinity.position()), positionWithAffinity.affinity());
+}
 
 } // namespace blink
 

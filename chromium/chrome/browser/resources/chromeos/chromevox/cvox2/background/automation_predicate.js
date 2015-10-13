@@ -158,6 +158,17 @@ AutomationPredicate.leafWithText = function(node) {
 };
 
 /**
+ * Matches against non-inline textbox 'nodes' which have an equivalent in the
+ *     DOM.
+ * @param {chrome.automation.AutomationNode} node
+ * @return {boolean}
+ */
+AutomationPredicate.leafDomNode = function(node) {
+  return AutomationPredicate.leaf(node) ||
+      node.role == RoleType.staticText;
+};
+
+/**
  * @param {chrome.automation.AutomationNode} first
  * @param {chrome.automation.AutomationNode} second
  * @return {boolean}
@@ -177,11 +188,15 @@ AutomationPredicate.linebreak = function(first, second) {
  * @return {boolean}
  */
 AutomationPredicate.shouldIgnoreLeaf = function(node) {
+  if (node.name || node.value)
+    return false;
+
   return AutomationPredicate.leaf(node) &&
       (node.role == RoleType.client ||
-      node.role == RoleType.div ||
-      (node.role == 'image' && node.name == '') ||
-      (node.role == 'staticText' && node.value == ''));
+       node.role == RoleType.div ||
+       node.role == RoleType.group ||
+       node.role == RoleType.image ||
+       node.role == RoleType.staticText);
 };
 
 });  // goog.scope

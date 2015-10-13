@@ -8,11 +8,12 @@
 #include "modules/EventModules.h"
 #include "modules/ModulesExport.h"
 #include "modules/notifications/Notification.h"
-#include "modules/notifications/NotificationEventInit.h"
 #include "modules/serviceworkers/ExtendableEvent.h"
 #include "platform/heap/Handle.h"
 
 namespace blink {
+
+class NotificationEventInit;
 
 class MODULES_EXPORT NotificationEvent final : public ExtendableEvent {
     DEFINE_WRAPPERTYPEINFO();
@@ -33,6 +34,7 @@ public:
     ~NotificationEvent() override;
 
     Notification* notification() const { return m_notification.get(); }
+    String action() const { return m_action; }
 
     const AtomicString& interfaceName() const override;
 
@@ -44,6 +46,7 @@ private:
     NotificationEvent(const AtomicString& type, const NotificationEventInit&, WaitUntilObserver*);
 
     PersistentWillBeMember<Notification> m_notification;
+    String m_action;
 };
 
 } // namespace blink

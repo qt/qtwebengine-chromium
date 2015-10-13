@@ -40,8 +40,8 @@ TEST_F(UsbDescriptorsTest, ShortStringDescriptor) {
 
 TEST_F(UsbDescriptorsTest, OddLengthStringDescriptor) {
   // There's an extra byte at the end of the string.
-  static const uint8_t kBuffer[] = {
-      0x0d, 0x03, 'H', 0, 'e', 0, 'l', 0, 'l', 0, 'o', 0, '!'};
+  static const uint8_t kBuffer[] = {0x0d, 0x03, 'H', 0,   'e', 0,  'l',
+                                    0,    'l',  0,   'o', 0,   '!'};
   base::string16 string;
   ASSERT_TRUE(ParseUsbStringDescriptor(
       std::vector<uint8_t>(kBuffer, kBuffer + sizeof(kBuffer)), &string));

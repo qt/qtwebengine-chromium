@@ -16,16 +16,20 @@ class GL_EXPORT GLImageSharedMemory : public GLImageMemory {
   GLImageSharedMemory(const gfx::Size& size, unsigned internalformat);
 
   bool Initialize(const gfx::GpuMemoryBufferHandle& handle,
-                  gfx::GpuMemoryBuffer::Format format);
+                  gfx::BufferFormat format);
 
   // Overridden from GLImage:
   void Destroy(bool have_context) override;
+  void OnMemoryDump(base::trace_event::ProcessMemoryDump* pmd,
+                    uint64_t process_tracing_id,
+                    const std::string& dump_name) override;
 
  protected:
   ~GLImageSharedMemory() override;
 
  private:
   scoped_ptr<base::SharedMemory> shared_memory_;
+  gfx::GenericSharedMemoryId shared_memory_id_;
 
   DISALLOW_COPY_AND_ASSIGN(GLImageSharedMemory);
 };

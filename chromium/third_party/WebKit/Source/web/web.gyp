@@ -83,6 +83,7 @@
             'conditions': [
                 ['component=="shared_library"', {
                     'dependencies': [
+                        '../platform/blink_platform_tests.gyp:blink_platform_test_support',
                         '../wtf/wtf_tests.gyp:wtf_unittest_helpers',
                         '<(DEPTH)/base/base.gyp:test_support_base',
                         '<(DEPTH)/testing/gmock.gyp:gmock',
@@ -124,11 +125,6 @@
                         'WebTestingSupport.cpp',
                     ],
                     'conditions': [
-                        ['use_openssl==0 and (OS=="win" or OS=="mac")', {
-                            'dependencies': [
-                                '<(DEPTH)/third_party/nss/nss.gyp:*',
-                            ],
-                        }],
                         ['link_core_modules_separately==1', {
                             'dependencies': [
                                 '../core/core.gyp:webcore_shared',
@@ -191,7 +187,6 @@
                     },
                 }, { # else: OS!="mac"
                     'sources/': [
-                        ['exclude', 'WebInputEventFactoryMac.mm$'],
                         ['exclude', 'mac/WebScrollbarTheme.cpp$'],
                     ],
                 }],

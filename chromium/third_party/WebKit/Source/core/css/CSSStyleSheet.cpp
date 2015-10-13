@@ -61,14 +61,14 @@ private:
     StyleSheetCSSRuleList(CSSStyleSheet* sheet) : m_styleSheet(sheet) { }
 
 #if !ENABLE(OILPAN)
-    virtual void ref() override { m_styleSheet->ref(); }
-    virtual void deref() override { m_styleSheet->deref(); }
+    void ref() override { m_styleSheet->ref(); }
+    void deref() override { m_styleSheet->deref(); }
 #endif
 
-    virtual unsigned length() const override { return m_styleSheet->length(); }
-    virtual CSSRule* item(unsigned index) const override { return m_styleSheet->item(index); }
+    unsigned length() const override { return m_styleSheet->length(); }
+    CSSRule* item(unsigned index) const override { return m_styleSheet->item(index); }
 
-    virtual CSSStyleSheet* styleSheet() const override { return m_styleSheet; }
+    CSSStyleSheet* styleSheet() const override { return m_styleSheet; }
 
     RawPtrWillBeMember<CSSStyleSheet> m_styleSheet;
 };
@@ -239,7 +239,7 @@ CSSRule* CSSStyleSheet::item(unsigned index)
 {
     unsigned ruleCount = length();
     if (index >= ruleCount)
-        return 0;
+        return nullptr;
 
     if (m_childRuleCSSOMWrappers.isEmpty())
         m_childRuleCSSOMWrappers.grow(ruleCount);
@@ -269,9 +269,9 @@ bool CSSStyleSheet::canAccessRules() const
     Document* document = ownerDocument();
     if (!document)
         return true;
-    if (document->securityOrigin()->canRequest(baseURL))
+    if (document->securityOrigin()->canRequestNoSuborigin(baseURL))
         return true;
-    if (m_allowRuleAccessFromOrigin && document->securityOrigin()->canAccess(m_allowRuleAccessFromOrigin.get()))
+    if (m_allowRuleAccessFromOrigin && document->securityOrigin()->canAccessCheckSuborigins(m_allowRuleAccessFromOrigin.get()))
         return true;
     return false;
 }
@@ -292,9 +292,7 @@ unsigned CSSStyleSheet::insertRule(const String& ruleString, unsigned index, Exc
     CSSParserContext context(m_contents->parserContext(), UseCounter::getFrom(this));
     RefPtrWillBeRawPtr<StyleRuleBase> rule = CSSParser::parseRule(context, m_contents.get(), ruleString);
 
-    // FIXME: @namespace rules have special handling in the CSSOM spec, but it
-    // mostly doesn't make sense since we don't support CSSNamespaceRule
-    if (!rule || rule->isNamespaceRule()) {
+    if (!rule) {
         exceptionState.throwDOMException(SyntaxError, "Failed to parse the rule '" + ruleString + "'.");
         return 0;
     }
@@ -302,7 +300,10 @@ unsigned CSSStyleSheet::insertRule(const String& ruleString, unsigned index, Exc
 
     bool success = m_contents->wrapperInsertRule(rule, index);
     if (!success) {
-        exceptionState.throwDOMException(HierarchyRequestError, "Failed to insert the rule.");
+        if (rule->isNamespaceRule())
+            exceptionState.throwDOMException(InvalidStateError, "Failed to insert the rule");
+        else
+            exceptionState.throwDOMException(HierarchyRequestError, "Failed to insert the rule.");
         return 0;
     }
     if (!m_childRuleCSSOMWrappers.isEmpty())
@@ -327,7 +328,11 @@ void CSSStyleSheet::deleteRule(unsigned index, ExceptionState& exceptionState)
     }
     RuleMutationScope mutationScope(this);
 
-    m_contents->wrapperDeleteRule(index);
+    bool success = m_contents->wrapperDeleteRule(index);
+    if (!success) {
+        exceptionState.throwDOMException(InvalidStateError, "Failed to delete rule");
+        return;
+    }
 
     if (!m_childRuleCSSOMWrappers.isEmpty()) {
         if (m_childRuleCSSOMWrappers[index])
@@ -384,7 +389,7 @@ bool CSSStyleSheet::isLoading() const
 MediaList* CSSStyleSheet::media() const
 {
     if (!m_mediaQueries)
-        return 0;
+        return nullptr;
 
     if (!m_mediaCSSOMWrapper)
         m_mediaCSSOMWrapper = MediaList::create(m_mediaQueries.get(), const_cast<CSSStyleSheet*>(this));
@@ -393,7 +398,7 @@ MediaList* CSSStyleSheet::media() const
 
 CSSStyleSheet* CSSStyleSheet::parentStyleSheet() const
 {
-    return m_ownerRule ? m_ownerRule->parentStyleSheet() : 0;
+    return m_ownerRule ? m_ownerRule->parentStyleSheet() : nullptr;
 }
 
 Document* CSSStyleSheet::ownerDocument() const
@@ -401,7 +406,7 @@ Document* CSSStyleSheet::ownerDocument() const
     const CSSStyleSheet* root = this;
     while (root->parentStyleSheet())
         root = root->parentStyleSheet();
-    return root->ownerNode() ? &root->ownerNode()->document() : 0;
+    return root->ownerNode() ? &root->ownerNode()->document() : nullptr;
 }
 
 void CSSStyleSheet::setAllowRuleAccessFromOrigin(PassRefPtr<SecurityOrigin> allowedOrigin)

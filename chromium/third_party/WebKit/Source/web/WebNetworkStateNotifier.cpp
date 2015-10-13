@@ -40,9 +40,9 @@ void WebNetworkStateNotifier::setOnLine(bool onLine)
     networkStateNotifier().setOnLine(onLine);
 }
 
-void WebNetworkStateNotifier::setWebConnectionType(WebConnectionType type)
+void WebNetworkStateNotifier::setWebConnection(WebConnectionType type, double maxBandwidthMbps)
 {
-    networkStateNotifier().setWebConnectionType(type);
+    networkStateNotifier().setWebConnection(type, maxBandwidthMbps);
 }
 
 } // namespace blink

@@ -37,7 +37,7 @@
 #include "core/dom/shadow/ElementShadow.h"
 #include "core/dom/shadow/InsertionPoint.h"
 #include "core/dom/shadow/ShadowRootRareData.h"
-#include "core/editing/markup.h"
+#include "core/editing/serializers/Serialization.h"
 #include "core/html/HTMLShadowElement.h"
 #include "public/platform/Platform.h"
 
@@ -105,9 +105,9 @@ void ShadowRoot::dispose()
 ShadowRoot* ShadowRoot::olderShadowRootForBindings() const
 {
     ShadowRoot* older = olderShadowRoot();
-    while (older && !older->shouldExposeToBindings())
+    while (older && !older->isOpen())
         older = older->olderShadowRoot();
-    ASSERT(!older || older->shouldExposeToBindings());
+    ASSERT(!older || older->isOpen());
     return older;
 }
 

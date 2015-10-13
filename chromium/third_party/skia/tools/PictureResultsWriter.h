@@ -20,6 +20,8 @@
 #include "SkTArray.h"
 #include "TimerData.h"
 
+#include <stdlib.h>
+
 /**
  * Base class for writing picture bench results.
  */
@@ -102,7 +104,7 @@ private:
 class PictureResultsLoggerWriter : public PictureResultsWriter {
 private:
     void logProgress(const char str[]) {
-        if(fLogger != NULL) {
+        if(fLogger != nullptr) {
             fLogger->logProgress(str);
         }
     }

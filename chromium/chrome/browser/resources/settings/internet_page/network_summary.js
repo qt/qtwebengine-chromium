@@ -6,7 +6,6 @@
  * @fileoverview Polymer element for displaying a summary of network states
  * by type: Ethernet, WiFi, Cellular, WiMAX, and VPN.
  */
-(function() {
 
 /** @typedef {chrome.networkingPrivate.DeviceStateProperties} */
 var DeviceStateProperties;
@@ -24,11 +23,11 @@ var DeviceStateObject;
 
 /**
  * @typedef {{
- *   Ethernet: (?CrOnc.NetworkStateProperties|undefined),
- *   WiFi: (?CrOnc.NetworkStateProperties|undefined),
- *   Cellular: (?CrOnc.NetworkStateProperties|undefined),
- *   WiMAX: (?CrOnc.NetworkStateProperties|undefined),
- *   VPN: (?CrOnc.NetworkStateProperties|undefined)
+ *   Ethernet: (!CrOnc.NetworkStateProperties|undefined),
+ *   WiFi: (!CrOnc.NetworkStateProperties|undefined),
+ *   Cellular: (!CrOnc.NetworkStateProperties|undefined),
+ *   WiMAX: (!CrOnc.NetworkStateProperties|undefined),
+ *   VPN: (!CrOnc.NetworkStateProperties|undefined)
  * }}
  */
 var NetworkStateObject;
@@ -44,8 +43,16 @@ var NetworkStateObject;
  */
 var NetworkStateListObject;
 
-/** @const {!Array<string>} */
-var NETWORK_TYPES = ['Ethernet', 'WiFi', 'Cellular', 'WiMAX', 'VPN'];
+(function() {
+
+/** @const {!Array<chrome.networkingPrivate.NetworkType>} */
+var NETWORK_TYPES = [
+  CrOnc.Type.ETHERNET,
+  CrOnc.Type.WI_FI,
+  CrOnc.Type.CELLULAR,
+  CrOnc.Type.WI_MAX,
+  CrOnc.Type.VPN
+];
 
 Polymer({
   is: 'network-summary',
@@ -81,25 +88,25 @@ Polymer({
 
   /**
    * Listener function for chrome.networkingPrivate.onNetworkListChanged event.
-   * @type {?function(!Array<string>)}
+   * @type {function(!Array<string>)}
    * @private
    */
-  networkListChangedListener_: null,
+  networkListChangedListener_: function() {},
 
   /**
    * Listener function for chrome.networkingPrivate.onDeviceStateListChanged
    * event.
-   * @type {?function(!Array<string>)}
+   * @type {function(!Array<string>)}
    * @private
    */
-  deviceStateListChangedListener_: null,
+  deviceStateListChangedListener_: function() {},
 
   /**
    * Listener function for chrome.networkingPrivate.onNetworksChanged event.
-   * @type {?function(!Array<string>)}
+   * @type {function(!Array<string>)}
    * @private
    */
-  networksChangedListener_: null,
+  networksChangedListener_: function() {},
 
   /**
    * Dictionary of GUIDs identifying primary (active) networks for each type.
@@ -148,7 +155,8 @@ Polymer({
    */
   onWiFiExpanded_: function(event) {
     this.getNetworkStates_();  // Get the latest network states (only).
-    chrome.networkingPrivate.requestNetworkScan();
+    if (event.detail.expanded)
+      chrome.networkingPrivate.requestNetworkScan();
   },
 
   /**
@@ -162,13 +170,14 @@ Polymer({
       this.connectToNetwork_(state);
       return;
     }
-    MoreRouting.navigateTo('internet-detail', {guid: state.GUID});
+    this.fire('show-detail', state);
   },
 
   /**
    * Event triggered when the enabled state of a network-summary-item is
    * toggled.
-   * @param {!{detail: {enabled: boolean, type: string}}} event
+   * @param {!{detail: {enabled: boolean,
+   *                    type: chrome.networkingPrivate.NetworkType}}} event
    * @private
    */
   onDeviceEnabledToggled_: function(event) {
@@ -198,8 +207,26 @@ Polymer({
   onNetworksChangedEvent_: function(networkIds) {
     networkIds.forEach(function(id) {
       if (id in this.networkIds_) {
-        chrome.networkingPrivate.getState(id,
-                                          this.getStateCallback_.bind(this));
+        chrome.networkingPrivate.getState(
+            id,
+            function(state) {
+              if (chrome.runtime.lastError) {
+                if (chrome.runtime.lastError.message !=
+                    'Error.NetworkUnavailable') {
+                  console.error('Unexpected networkingPrivate.getState error:',
+                                chrome.runtime.lastError, 'For:', id);
+                }
+                return;
+              }
+              // Async call, ensure id still exists.
+              if (!this.networkIds_[id])
+                return;
+              if (!state) {
+                this.networkIds_[id] = undefined;
+                return;
+              }
+              this.updateNetworkState_(state.Type, state);
+            }.bind(this));
       }
     }, this);
   },
@@ -211,7 +238,13 @@ Polymer({
    * @private
    */
   connectToNetwork_: function(state) {
-    chrome.networkingPrivate.startConnect(state.GUID);
+    chrome.networkingPrivate.startConnect(state.GUID, function() {
+      if (chrome.runtime.lastError &&
+          chrome.runtime.lastError != 'connecting') {
+        console.error('Unexpected networkingPrivate.startConnect error:',
+                      chrome.runtime.lastError);
+      }
+    });
   },
 
   /**
@@ -237,7 +270,7 @@ Polymer({
    */
   getNetworkStates_: function() {
     var filter = {
-      networkType: 'All',
+      networkType: chrome.networkingPrivate.NetworkType.ALL,
       visible: true,
       configured: false
     };
@@ -252,7 +285,7 @@ Polymer({
    * @private
    */
   getDeviceStatesCallback_: function(states) {
-    /** @type {!DeviceStateObject} */ var newStates = {};
+    var newStates = /** @type {!DeviceStateObject} */({});
     states.forEach(function(state) { newStates[state.Type] = state; });
     this.deviceStates = newStates;
   },
@@ -267,8 +300,10 @@ Polymer({
     // Clear any current networks.
     this.networkIds_ = {};
 
-    // Get the first (active) state for each type.
+    // Track the first (active) state for each type.
     var foundTypes = {};
+
+    // Complete list of states by type.
     /** @type {!NetworkStateListObject} */ var networkStateLists = {
       Ethernet: [],
       WiFi: [],
@@ -276,6 +311,7 @@ Polymer({
       WiMAX: [],
       VPN: []
     };
+
     states.forEach(function(state) {
       var type = state.Type;
       if (!foundTypes[type]) {
@@ -285,12 +321,13 @@ Polymer({
       networkStateLists[type].push(state);
     }, this);
 
-    // Set any types not found to a default value or null.
+    // Set any types with a deviceState and no network to a default state,
+    // and any types not found to undefined.
     NETWORK_TYPES.forEach(function(type) {
       if (!foundTypes[type]) {
-        /** @type {CrOnc.NetworkStateProperties} */ var defaultState = null;
+        var defaultState = undefined;
         if (this.deviceStates[type])
-          defaultState = { GUID: '', Type: type };
+          defaultState = {GUID: '', Type: type};
         this.updateNetworkState_(type, defaultState);
       }
     }, this);
@@ -299,30 +336,18 @@ Polymer({
 
     // Create a VPN entry in deviceStates if there are any VPN networks.
     if (networkStateLists.VPN && networkStateLists.VPN.length > 0) {
-      var vpn = { Type: 'VPN', State: 'Enabled' };
+      var vpn = {Type: CrOnc.Type.VPN, State: 'Enabled'};
       this.set('deviceStates.VPN', vpn);
     }
   },
 
   /**
-   * networkingPrivate.getState callback.
-   * @param {!CrOnc.NetworkStateProperties} state The network state properties.
-   * @private
-   */
-  getStateCallback_: function(state) {
-    var id = state.GUID;
-    if (!this.networkIds_[id])
-      return;
-    this.updateNetworkState_(state.Type, state);
-  },
-
-  /**
-   * Sets 'networkStates[type]' which will update the network-list-item
+   * Sets 'networkStates[type]' which will update the cr-network-list-item
    * associated with 'type'.
    * @param {string} type The network type.
-   * @param {?CrOnc.NetworkStateProperties} state The state properties for the
-   *     network to associate with |type|. May be null if there are no networks
-   *     matching |type|.
+   * @param {!CrOnc.NetworkStateProperties|undefined} state The state properties
+   *     for the network to associate with |type|. May be undefined if there are
+   *     no networks matching |type|.
    * @private
    */
   updateNetworkState_: function(type, state) {

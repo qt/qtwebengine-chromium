@@ -22,7 +22,6 @@
 #include "wtf/RefPtr.h"
 #include "wtf/StdLibExtras.h"
 #include "wtf/Vector.h"
-#include "wtf/testing/WTFTestHelpers.h"
 #include <gtest/gtest.h>
 
 namespace blink {
@@ -39,7 +38,7 @@ protected:
 private:
     void SetUp() override;
 
-    HTMLDocument* m_document;
+    RefPtrWillBePersistent<HTMLDocument> m_document;
     OwnPtr<DummyPageHolder> m_dummyPageHolder;
 };
 
@@ -60,7 +59,7 @@ void ComposedTreeTraversalTest::setupSampleHTML(const char* mainHTML, const char
     RefPtrWillBeRawPtr<Element> body = document().body();
     body->setInnerHTML(String::fromUTF8(mainHTML), ASSERT_NO_EXCEPTION);
     RefPtrWillBeRawPtr<Element> shadowHost = toElement(NodeTraversal::childAt(*body, index));
-    RefPtrWillBeRawPtr<ShadowRoot> shadowRoot = shadowHost->createShadowRoot(ASSERT_NO_EXCEPTION);
+    RefPtrWillBeRawPtr<ShadowRoot> shadowRoot = shadowHost->createShadowRootInternal(ShadowRootType::OpenByDefault, ASSERT_NO_EXCEPTION);
     shadowRoot->setInnerHTML(String::fromUTF8(shadowHTML), ASSERT_NO_EXCEPTION);
     body->updateDistribution();
 }
@@ -100,7 +99,7 @@ TEST_F(ComposedTreeTraversalTest, childAt)
     RefPtrWillBeRawPtr<Element> m01 = m0->querySelector("#m01", ASSERT_NO_EXCEPTION);
 
     RefPtrWillBeRawPtr<Element> shadowHost = m0;
-    RefPtrWillBeRawPtr<ShadowRoot> shadowRoot = shadowHost->shadowRoot();
+    RefPtrWillBeRawPtr<ShadowRoot> shadowRoot = shadowHost->openShadowRoot();
     RefPtrWillBeRawPtr<Element> s00 = shadowRoot->querySelector("#s00", ASSERT_NO_EXCEPTION);
     RefPtrWillBeRawPtr<Element> s02 = shadowRoot->querySelector("#s02", ASSERT_NO_EXCEPTION);
     RefPtrWillBeRawPtr<Element> s03 = shadowRoot->querySelector("#s03", ASSERT_NO_EXCEPTION);
@@ -182,7 +181,7 @@ TEST_F(ComposedTreeTraversalTest, commonAncestor)
     RefPtrWillBeRawPtr<Element> m20 = body->querySelector("#m20", ASSERT_NO_EXCEPTION);
     RefPtrWillBeRawPtr<Element> m21 = body->querySelector("#m21", ASSERT_NO_EXCEPTION);
 
-    RefPtrWillBeRawPtr<ShadowRoot> shadowRoot = m1->shadowRoot();
+    RefPtrWillBeRawPtr<ShadowRoot> shadowRoot = m1->openShadowRoot();
     RefPtrWillBeRawPtr<Element> s10 = shadowRoot->querySelector("#s10", ASSERT_NO_EXCEPTION);
     RefPtrWillBeRawPtr<Element> s11 = shadowRoot->querySelector("#s11", ASSERT_NO_EXCEPTION);
     RefPtrWillBeRawPtr<Element> s12 = shadowRoot->querySelector("#s12", ASSERT_NO_EXCEPTION);
@@ -248,7 +247,7 @@ TEST_F(ComposedTreeTraversalTest, nextSkippingChildren)
     RefPtrWillBeRawPtr<Element> m10 = body->querySelector("#m10", ASSERT_NO_EXCEPTION);
     RefPtrWillBeRawPtr<Element> m11 = body->querySelector("#m11", ASSERT_NO_EXCEPTION);
 
-    RefPtrWillBeRawPtr<ShadowRoot> shadowRoot = m1->shadowRoot();
+    RefPtrWillBeRawPtr<ShadowRoot> shadowRoot = m1->openShadowRoot();
     RefPtrWillBeRawPtr<Element> s11 = shadowRoot->querySelector("#s11", ASSERT_NO_EXCEPTION);
     RefPtrWillBeRawPtr<Element> s12 = shadowRoot->querySelector("#s12", ASSERT_NO_EXCEPTION);
     RefPtrWillBeRawPtr<Element> s120 = shadowRoot->querySelector("#s120", ASSERT_NO_EXCEPTION);
@@ -305,7 +304,7 @@ TEST_F(ComposedTreeTraversalTest, lastWithin)
 
     RefPtrWillBeRawPtr<Element> m10 = body->querySelector("#m10", ASSERT_NO_EXCEPTION);
 
-    RefPtrWillBeRawPtr<ShadowRoot> shadowRoot = m1->shadowRoot();
+    RefPtrWillBeRawPtr<ShadowRoot> shadowRoot = m1->openShadowRoot();
     RefPtrWillBeRawPtr<Element> s11 = shadowRoot->querySelector("#s11", ASSERT_NO_EXCEPTION);
     RefPtrWillBeRawPtr<Element> s12 = shadowRoot->querySelector("#s12", ASSERT_NO_EXCEPTION);
 
@@ -323,6 +322,54 @@ TEST_F(ComposedTreeTraversalTest, lastWithin)
 
     EXPECT_EQ(m10->firstChild(), ComposedTreeTraversal::lastWithin(*s12));
     EXPECT_EQ(*m10->firstChild(), ComposedTreeTraversal::lastWithinOrSelf(*s12));
+}
+
+TEST_F(ComposedTreeTraversalTest, previousPostOrder)
+{
+    const char* mainHTML =
+        "<div id='m0'>m0</div>"
+        "<div id='m1'>"
+            "<span id='m10'>m10</span>"
+            "<span id='m11'>m11</span>"
+        "</div>"
+        "<div id='m2'>m2</div>";
+    const char* shadowHTML =
+        "<content select='#m11'></content>"
+        "<a id='s11'>s11</a>"
+        "<a id='s12'>"
+            "<b id='s120'>s120</b>"
+            "<content select='#m10'></content>"
+        "</a>";
+    setupSampleHTML(mainHTML, shadowHTML, 1);
+
+    RefPtrWillBeRawPtr<Element> body = document().body();
+    RefPtrWillBeRawPtr<Element> m0 = body->querySelector("#m0", ASSERT_NO_EXCEPTION);
+    RefPtrWillBeRawPtr<Element> m1 = body->querySelector("#m1", ASSERT_NO_EXCEPTION);
+    RefPtrWillBeRawPtr<Element> m2 = body->querySelector("#m2", ASSERT_NO_EXCEPTION);
+
+    RefPtrWillBeRawPtr<Element> m10 = body->querySelector("#m10", ASSERT_NO_EXCEPTION);
+    RefPtrWillBeRawPtr<Element> m11 = body->querySelector("#m11", ASSERT_NO_EXCEPTION);
+
+    RefPtrWillBeRawPtr<ShadowRoot> shadowRoot = m1->openShadowRoot();
+    RefPtrWillBeRawPtr<Element> s11 = shadowRoot->querySelector("#s11", ASSERT_NO_EXCEPTION);
+    RefPtrWillBeRawPtr<Element> s12 = shadowRoot->querySelector("#s12", ASSERT_NO_EXCEPTION);
+    RefPtrWillBeRawPtr<Element> s120 = shadowRoot->querySelector("#s120", ASSERT_NO_EXCEPTION);
+
+    EXPECT_EQ(*m0->firstChild(), ComposedTreeTraversal::previousPostOrder(*m0));
+    EXPECT_EQ(*s12, ComposedTreeTraversal::previousPostOrder(*m1));
+    EXPECT_EQ(*m10->firstChild(), ComposedTreeTraversal::previousPostOrder(*m10));
+    EXPECT_EQ(*s120, ComposedTreeTraversal::previousPostOrder(*m10->firstChild()));
+    EXPECT_EQ(*s120, ComposedTreeTraversal::previousPostOrder(*m10->firstChild(), s12.get()));
+    EXPECT_EQ(*m11->firstChild(), ComposedTreeTraversal::previousPostOrder(*m11));
+    EXPECT_EQ(*m0, ComposedTreeTraversal::previousPostOrder(*m11->firstChild()));
+    EXPECT_EQ(nullptr, ComposedTreeTraversal::previousPostOrder(*m11->firstChild(), m11.get()));
+    EXPECT_EQ(*m2->firstChild(), ComposedTreeTraversal::previousPostOrder(*m2));
+
+    EXPECT_EQ(*s11->firstChild(), ComposedTreeTraversal::previousPostOrder(*s11));
+    EXPECT_EQ(*m10, ComposedTreeTraversal::previousPostOrder(*s12));
+    EXPECT_EQ(*s120->firstChild(), ComposedTreeTraversal::previousPostOrder(*s120));
+    EXPECT_EQ(*s11, ComposedTreeTraversal::previousPostOrder(*s120->firstChild()));
+    EXPECT_EQ(nullptr, ComposedTreeTraversal::previousPostOrder(*s120->firstChild(), s12.get()));
 }
 
 } // namespace blink

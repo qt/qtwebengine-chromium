@@ -11,6 +11,7 @@
 import("//build/config/crypto.gni")
 import("//build/config/linux/pkg_config.gni")
 import("build/webrtc.gni")
+import("//third_party/protobuf/proto_library.gni")
 
 # Contains the defines and includes in common.gypi that are duplicated both as
 # target_defaults and direct_dependent_settings.
@@ -22,9 +23,9 @@ config("common_inherited_config") {
   if (build_with_chromium) {
     defines = [ "WEBRTC_CHROMIUM_BUILD" ]
     include_dirs = [
-      # overrides must be included first as that is the mechanism for
+      # The overrides must be included first as that is the mechanism for
       # selecting the override headers in Chromium.
-      "overrides",
+      "../webrtc_overrides",
 
       # Allow includes to be prefixed with webrtc/ in case it is not an
       # immediate subdirectory of the top-level.
@@ -152,10 +153,7 @@ config("common_config") {
     }
   }
 
-  # TODO(kjellander): Handle warnings on Windows where WebRTC differ from the
-  # default warnings set in build/config/compiler/BUILD.gn.
-
-  if (is_android && is_clang) {
+  if (is_android && !is_clang) {
     # The Android NDK doesn"t provide optimized versions of these
     # functions. Ensure they are disabled for all compilers.
     cflags += [
@@ -171,17 +169,19 @@ source_set("webrtc") {
   sources = [
     "call.h",
     "config.h",
-    "experiments.h",
     "frame_callback.h",
     "transport.h",
   ]
 
+  defines = []
   configs += [ ":common_config" ]
   public_configs = [ ":common_inherited_config" ]
 
   deps = [
+    "audio",
     ":webrtc_common",
     "base:rtc_base",
+    "call",
     "common_audio",
     "common_video",
     "modules/audio_coding",
@@ -206,6 +206,11 @@ source_set("webrtc") {
       "modules/video_capture",
       "modules/video_render",
     ]
+  }
+
+  if (rtc_enable_protobuf) {
+    defines += [ "ENABLE_RTC_EVENT_LOG" ]
+    deps += [ ":rtc_event_log_proto" ]
   }
 }
 
@@ -239,4 +244,38 @@ source_set("gtest_prod") {
   sources = [
     "test/testsupport/gtest_prod_util.h",
   ]
+}
+
+if (rtc_enable_protobuf) {
+  proto_library("rtc_event_log_proto") {
+    sources = [
+      "call/rtc_event_log.proto",
+    ]
+    proto_out_dir = "webrtc/call"
+  }
+}
+
+source_set("rtc_event_log") {
+  sources = [
+    "call/rtc_event_log.cc",
+    "call/rtc_event_log.h",
+  ]
+
+  defines = []
+  configs += [ ":common_config" ]
+  public_configs = [ ":common_inherited_config" ]
+
+  deps = [
+    ":webrtc_common",
+  ]
+
+  if (rtc_enable_protobuf) {
+    defines += [ "ENABLE_RTC_EVENT_LOG" ]
+    deps += [ ":rtc_event_log_proto" ]
+  }
+  if (is_clang && !is_nacl) {
+    # Suppress warnings from Chrome's Clang plugins.
+    # See http://code.google.com/p/webrtc/issues/detail?id=163 for details.
+    configs -= [ "//build/config/clang:find_bad_constructs" ]
+  }
 }

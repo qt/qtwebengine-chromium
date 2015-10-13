@@ -86,11 +86,21 @@ class CONTENT_EXPORT WebContentsAndroid
                           jobject obj,
                           jstring script,
                           jobject callback);
+  void EvaluateJavaScriptForTests(JNIEnv* env,
+                                  jobject obj,
+                                  jstring script,
+                                  jobject callback);
 
   void AddMessageToDevToolsConsole(JNIEnv* env,
                                    jobject jobj,
                                    jint level,
                                    jstring message);
+
+  void SendMessageToFrame(JNIEnv* env,
+                          jobject obj,
+                          jstring frame_name,
+                          jstring message,
+                          jstring target_origin);
 
   jboolean HasAccessedInitialDocument(JNIEnv* env, jobject jobj);
 
@@ -104,6 +114,10 @@ class CONTENT_EXPORT WebContentsAndroid
 
   void ResumeMediaSession(JNIEnv* env, jobject obj);
   void SuspendMediaSession(JNIEnv* env, jobject obj);
+  void StopMediaSession(JNIEnv* env, jobject obj);
+
+  base::android::ScopedJavaLocalRef<jstring> GetEncoding(JNIEnv* env,
+                                                         jobject obj) const;
 
  private:
   RenderWidgetHostViewAndroid* GetRenderWidgetHostViewAndroid();

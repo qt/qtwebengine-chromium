@@ -21,7 +21,6 @@
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/trace_event/trace_event.h"
-#include "content/browser/appcache/view_appcache_internals_job.h"
 #include "content/browser/fileapi/chrome_blob_storage_context.h"
 #include "content/browser/histogram_internals_request_job.h"
 #include "content/browser/net/view_blob_internals_job_factory.h"
@@ -50,10 +49,8 @@ namespace content {
 
 namespace {
 
-// TODO(tsepez) remove unsafe-eval when bidichecker_packaged.js fixed.
 const char kChromeURLContentSecurityPolicyHeaderBase[] =
-    "Content-Security-Policy: script-src chrome://resources "
-    "'self' 'unsafe-eval'; ";
+    "Content-Security-Policy: script-src chrome://resources 'self'";
 
 const char kChromeURLXFrameOptionsHeader[] = "X-Frame-Options: DENY";
 
@@ -111,8 +108,7 @@ std::string GetOriginHeaderValue(const net::URLRequest* request) {
 // chrome-internal resource requests asynchronously.
 // It hands off URL requests to ChromeURLDataManager, which asynchronously
 // calls back once the data is available.
-class URLRequestChromeJob : public net::URLRequestJob,
-                            public base::SupportsWeakPtr<URLRequestChromeJob> {
+class URLRequestChromeJob : public net::URLRequestJob {
  public:
   // |is_incognito| set when job is generated from an incognito profile.
   URLRequestChromeJob(net::URLRequest* request,
@@ -134,6 +130,9 @@ class URLRequestChromeJob : public net::URLRequestJob,
   // Called by ChromeURLDataManager to notify us that the data blob is ready
   // for us.
   void DataAvailable(base::RefCountedMemory* bytes);
+
+  // Returns a weak pointer to the job.
+  base::WeakPtr<URLRequestChromeJob> AsWeakPtr();
 
   void set_mime_type(const std::string& mime_type) {
     mime_type_ = mime_type;
@@ -186,6 +185,9 @@ class URLRequestChromeJob : public net::URLRequestJob,
       int render_process_id,
       const GURL& url,
       const base::WeakPtr<URLRequestChromeJob>& job);
+
+  // Specific resources require unsafe-eval in the Content Security Policy.
+  bool RequiresUnsafeEval() const;
 
   // Do the actual copy from data_ (the data we're serving) into |buf|.
   // Separate from ReadRawData so we can handle async I/O.
@@ -267,13 +269,16 @@ void URLRequestChromeJob::Start() {
       BrowserThread::UI,
       FROM_HERE,
       base::Bind(&URLRequestChromeJob::CheckStoragePartitionMatches,
-                 render_process_id, request_->url(), AsWeakPtr()));
+                 render_process_id, request_->url(),
+                 weak_factory_.GetWeakPtr()));
   TRACE_EVENT_ASYNC_BEGIN1("browser", "DataManager:Request", this, "URL",
       request_->url().possibly_invalid_spec());
 }
 
 void URLRequestChromeJob::Kill() {
+  weak_factory_.InvalidateWeakPtrs();
   backend_->RemoveRequest(this);
+  URLRequestJob::Kill();
 }
 
 bool URLRequestChromeJob::GetMimeType(std::string* mime_type) const {
@@ -297,6 +302,7 @@ void URLRequestChromeJob::GetResponseInfo(net::HttpResponseInfo* info) {
   // response headers.
   if (add_content_security_policy_) {
     std::string base = kChromeURLContentSecurityPolicyHeaderBase;
+    base.append(RequiresUnsafeEval() ? " 'unsafe-eval'; " : "; ");
     base.append(content_security_policy_object_source_);
     base.append(content_security_policy_frame_source_);
     info->headers->AddHeader(base);
@@ -347,6 +353,10 @@ void URLRequestChromeJob::DataAvailable(base::RefCountedMemory* bytes) {
     NotifyDone(net::URLRequestStatus(net::URLRequestStatus::FAILED,
                                      net::ERR_FAILED));
   }
+}
+
+base::WeakPtr<URLRequestChromeJob> URLRequestChromeJob::AsWeakPtr() {
+  return weak_factory_.GetWeakPtr();
 }
 
 bool URLRequestChromeJob::ReadRawData(net::IOBuffer* buf, int buf_size,
@@ -427,6 +437,12 @@ void URLRequestChromeJob::StartAsync(bool allowed) {
   }
 }
 
+// TODO(tsepez,mfoltz): Refine this method when tests have been fixed to not use
+// eval()/new Function().  http://crbug.com/525224
+bool URLRequestChromeJob::RequiresUnsafeEval() const {
+  return true;
+}
+
 namespace {
 
 // Gets mime type for data that is available from |source| by |path|.
@@ -470,13 +486,6 @@ class ChromeProtocolHandler
     if (ViewHttpCacheJobFactory::IsSupportedURL(request->url()))
       return ViewHttpCacheJobFactory::CreateJobForRequest(request,
                                                           network_delegate);
-
-    // Next check for chrome://appcache-internals/, which uses its own job type.
-    if (request->url().SchemeIs(kChromeUIScheme) &&
-        request->url().host() == kChromeUIAppCacheInternalsHost) {
-      return ViewAppCacheInternalsJobFactory::CreateJobForRequest(
-          request, network_delegate, appcache_service_);
-    }
 
     // Next check for chrome://blob-internals/, which uses its own job type.
     if (ViewBlobInternalsJobFactory::IsSupportedURL(request->url())) {
@@ -539,15 +548,15 @@ URLDataManagerBackend::~URLDataManagerBackend() {
 }
 
 // static
-net::URLRequestJobFactory::ProtocolHandler*
+scoped_ptr<net::URLRequestJobFactory::ProtocolHandler>
 URLDataManagerBackend::CreateProtocolHandler(
     content::ResourceContext* resource_context,
     bool is_incognito,
     AppCacheServiceImpl* appcache_service,
     ChromeBlobStorageContext* blob_storage_context) {
   DCHECK(resource_context);
-  return new ChromeProtocolHandler(
-      resource_context, is_incognito, appcache_service, blob_storage_context);
+  return make_scoped_ptr(new ChromeProtocolHandler(
+      resource_context, is_incognito, appcache_service, blob_storage_context));
 }
 
 void URLDataManagerBackend::AddDataSource(

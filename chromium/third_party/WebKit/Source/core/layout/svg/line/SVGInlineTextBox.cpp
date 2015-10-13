@@ -22,14 +22,15 @@
 #include "config.h"
 #include "core/layout/svg/line/SVGInlineTextBox.h"
 
-#include "core/dom/DocumentMarkerController.h"
-#include "core/dom/RenderedDocumentMarker.h"
 #include "core/editing/Editor.h"
+#include "core/editing/markers/DocumentMarkerController.h"
+#include "core/editing/markers/RenderedDocumentMarker.h"
 #include "core/frame/LocalFrame.h"
 #include "core/layout/HitTestResult.h"
 #include "core/layout/LayoutInline.h"
 #include "core/layout/LayoutTheme.h"
 #include "core/layout/PointerEventsHitRules.h"
+#include "core/layout/api/LineLayoutSVGInlineText.h"
 #include "core/layout/line/InlineFlowBox.h"
 #include "core/layout/svg/LayoutSVGInlineText.h"
 #include "core/paint/SVGInlineTextBoxPainter.h"
@@ -77,12 +78,12 @@ int SVGInlineTextBox::offsetForPosition(LayoutUnit, bool) const
 
 int SVGInlineTextBox::offsetForPositionInFragment(const SVGTextFragment& fragment, LayoutUnit position, bool includePartialGlyphs) const
 {
-    LayoutSVGInlineText& textLayoutObject = toLayoutSVGInlineText(this->layoutObject());
+    LineLayoutSVGInlineText lineLayoutItem = LineLayoutSVGInlineText(this->lineLayoutItem());
 
-    float scalingFactor = textLayoutObject.scalingFactor();
+    float scalingFactor = lineLayoutItem.scalingFactor();
     ASSERT(scalingFactor);
 
-    const ComputedStyle& style = textLayoutObject.styleRef();
+    const ComputedStyle& style = lineLayoutItem.styleRef();
 
     TextRun textRun = constructTextRun(style, fragment);
 
@@ -93,7 +94,7 @@ int SVGInlineTextBox::offsetForPositionInFragment(const SVGTextFragment& fragmen
     if (!fragmentTransform.isIdentity())
         textRun.setHorizontalGlyphStretch(narrowPrecisionToFloat(fragmentTransform.xScale()));
 
-    return fragment.characterOffset - start() + textLayoutObject.scaledFont().offsetForPosition(textRun, position * scalingFactor, includePartialGlyphs);
+    return fragment.characterOffset - start() + lineLayoutItem.scaledFont().offsetForPosition(textRun, position * scalingFactor, includePartialGlyphs);
 }
 
 LayoutUnit SVGInlineTextBox::positionForOffset(int) const
@@ -103,16 +104,16 @@ LayoutUnit SVGInlineTextBox::positionForOffset(int) const
     return 0;
 }
 
-FloatRect SVGInlineTextBox::selectionRectForTextFragment(const SVGTextFragment& fragment, int startPosition, int endPosition, const ComputedStyle& style)
+FloatRect SVGInlineTextBox::selectionRectForTextFragment(const SVGTextFragment& fragment, int startPosition, int endPosition, const ComputedStyle& style) const
 {
     ASSERT(startPosition < endPosition);
 
-    LayoutSVGInlineText& textLayoutObject = toLayoutSVGInlineText(this->layoutObject());
+    LineLayoutSVGInlineText lineLayoutItem = LineLayoutSVGInlineText(this->lineLayoutItem());
 
-    float scalingFactor = textLayoutObject.scalingFactor();
+    float scalingFactor = lineLayoutItem.scalingFactor();
     ASSERT(scalingFactor);
 
-    const Font& scaledFont = textLayoutObject.scaledFont();
+    const Font& scaledFont = lineLayoutItem.scaledFont();
     const FontMetrics& scaledFontMetrics = scaledFont.fontMetrics();
     FloatPoint textOrigin(fragment.x, fragment.y);
     if (scalingFactor != 1)
@@ -128,7 +129,7 @@ FloatRect SVGInlineTextBox::selectionRectForTextFragment(const SVGTextFragment& 
     return selectionRect;
 }
 
-LayoutRect SVGInlineTextBox::localSelectionRect(int startPosition, int endPosition)
+LayoutRect SVGInlineTextBox::localSelectionRect(int startPosition, int endPosition) const
 {
     int boxStart = start();
     startPosition = std::max(startPosition - boxStart, 0);
@@ -162,18 +163,18 @@ LayoutRect SVGInlineTextBox::localSelectionRect(int startPosition, int endPositi
     return LayoutRect(enclosingIntRect(selectionRect));
 }
 
-void SVGInlineTextBox::paint(const PaintInfo& paintInfo, const LayoutPoint& paintOffset, LayoutUnit, LayoutUnit)
+void SVGInlineTextBox::paint(const PaintInfo& paintInfo, const LayoutPoint& paintOffset, LayoutUnit, LayoutUnit) const
 {
     SVGInlineTextBoxPainter(*this).paint(paintInfo, paintOffset);
 }
 
 TextRun SVGInlineTextBox::constructTextRun(const ComputedStyle& style, const SVGTextFragment& fragment) const
 {
-    LayoutText* text = &layoutObject();
+    LineLayoutText text = lineLayoutItem();
 
     // FIXME(crbug.com/264211): This should not be necessary but can occur if we
     //                          layout during layout. Remove this when 264211 is fixed.
-    RELEASE_ASSERT(!text->needsLayout());
+    RELEASE_ASSERT(!text.needsLayout());
 
     TextRun run(static_cast<const LChar*>(nullptr) // characters, will be set below if non-zero.
         , 0 // length, will be set below if non-zero.
@@ -184,17 +185,17 @@ TextRun SVGInlineTextBox::constructTextRun(const ComputedStyle& style, const SVG
         , dirOverride() || style.rtlOrdering() == VisualOrder /* directionalOverride */);
 
     if (fragment.length) {
-        if (text->is8Bit())
-            run.setText(text->characters8() + fragment.characterOffset, fragment.length);
+        if (text.is8Bit())
+            run.setText(text.characters8() + fragment.characterOffset, fragment.length);
         else
-            run.setText(text->characters16() + fragment.characterOffset, fragment.length);
+            run.setText(text.characters16() + fragment.characterOffset, fragment.length);
     }
 
     // We handle letter & word spacing ourselves.
     run.disableSpacing();
 
     // Propagate the maximum length of the characters buffer to the TextRun, even when we're only processing a substring.
-    run.setCharactersLength(text->textLength() - fragment.characterOffset);
+    run.setCharactersLength(text.textLength() - fragment.characterOffset);
     ASSERT(run.charactersLength() >= run.length());
     return run;
 }
@@ -214,12 +215,12 @@ bool SVGInlineTextBox::mapStartEndPositionsIntoFragmentCoordinates(const SVGText
     return startPosition < endPosition;
 }
 
-void SVGInlineTextBox::paintDocumentMarker(GraphicsContext*, const LayoutPoint&, DocumentMarker*, const ComputedStyle&, const Font&, bool)
+void SVGInlineTextBox::paintDocumentMarker(GraphicsContext*, const LayoutPoint&, DocumentMarker*, const ComputedStyle&, const Font&, bool) const
 {
     // SVG does not have support for generic document markers (e.g., spellchecking, etc).
 }
 
-void SVGInlineTextBox::paintTextMatchMarker(GraphicsContext* context, const LayoutPoint& point, DocumentMarker* marker, const ComputedStyle& style, const Font& font)
+void SVGInlineTextBox::paintTextMatchMarker(GraphicsContext* context, const LayoutPoint& point, DocumentMarker* marker, const ComputedStyle& style, const Font& font) const
 {
     SVGInlineTextBoxPainter(*this).paintTextMatchMarker(context, point, marker, style, font);
 }
@@ -228,12 +229,12 @@ LayoutRect SVGInlineTextBox::calculateBoundaries() const
 {
     LayoutRect textRect;
 
-    LayoutSVGInlineText& textLayoutObject = toLayoutSVGInlineText(this->layoutObject());
+    LineLayoutSVGInlineText lineLayoutItem = LineLayoutSVGInlineText(this->lineLayoutItem());
 
-    float scalingFactor = textLayoutObject.scalingFactor();
+    float scalingFactor = lineLayoutItem.scalingFactor();
     ASSERT(scalingFactor);
 
-    LayoutUnit baseline = textLayoutObject.scaledFont().fontMetrics().floatAscent() / scalingFactor;
+    LayoutUnit baseline = lineLayoutItem.scaledFont().fontMetrics().floatAscent() / scalingFactor;
 
     AffineTransform fragmentTransform;
     unsigned textFragmentsSize = m_textFragments.size();

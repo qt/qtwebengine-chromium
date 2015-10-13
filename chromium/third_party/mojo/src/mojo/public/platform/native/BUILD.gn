@@ -57,27 +57,16 @@ mojo_sdk_source_set("system_impl_private_tests") {
     "//testing/gtest",
   ]
 
-  mojo_sdk_deps = [ "mojo/public/c/system" ]
+  mojo_sdk_deps = [
+    "mojo/public/c/system",
+    "mojo/public/cpp/environment:standalone",
+  ]
 }
 
 mojo_sdk_source_set("gles2") {
   sources = [
-    "gles2_impl_chromium_copy_texture_thunks.cc",
-    "gles2_impl_chromium_copy_texture_thunks.h",
-    "gles2_impl_chromium_image_thunks.cc",
-    "gles2_impl_chromium_image_thunks.h",
-    "gles2_impl_chromium_miscellaneous_thunks.cc",
-    "gles2_impl_chromium_miscellaneous_thunks.h",
-    "gles2_impl_chromium_pixel_transfer_buffer_object_thunks.cc",
-    "gles2_impl_chromium_pixel_transfer_buffer_object_thunks.h",
-    "gles2_impl_chromium_sub_image_thunks.cc",
-    "gles2_impl_chromium_sub_image_thunks.h",
-    "gles2_impl_chromium_sync_point_thunks.cc",
-    "gles2_impl_chromium_sync_point_thunks.h",
-    "gles2_impl_chromium_texture_mailbox_thunks.cc",
-    "gles2_impl_chromium_texture_mailbox_thunks.h",
-    "gles2_impl_occlusion_query_ext_thunks.cc",
-    "gles2_impl_occlusion_query_ext_thunks.h",
+    "gles2_impl_chromium_extension_thunks.cc",
+    "gles2_impl_chromium_extension_thunks.h",
     "gles2_impl_thunks.cc",
     "gles2_impl_thunks.h",
     "gles2_thunks.cc",
@@ -98,4 +87,26 @@ mojo_sdk_source_set("gles2") {
     # TODO(GYP): Make it a run-path dependent library.
     # 'DYLIB_INSTALL_NAME_BASE': '@loader_path',
   }
+}
+
+mojo_sdk_source_set("gpu_thunks") {
+  sources = []
+}
+
+mojo_sdk_source_set("mgl_thunks") {
+  sources = [
+    "mgl_thunks.c",
+    "mgl_thunks.h",
+  ]
+
+  mojo_sdk_deps = [ "mojo/public/c/gpu:MGL" ]
+}
+
+mojo_sdk_source_set("mgl_onscreen_thunks") {
+  sources = [
+    "mgl_onscreen_thunks.c",
+    "mgl_onscreen_thunks.h",
+  ]
+
+  mojo_sdk_deps = [ "mojo/public/c/gpu:MGL_onscreen" ]
 }

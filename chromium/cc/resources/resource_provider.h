@@ -17,6 +17,8 @@
 #include "base/memory/linked_ptr.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/threading/thread_checker.h"
+#include "base/trace_event/memory_allocator_dump.h"
+#include "base/trace_event/memory_dump_provider.h"
 #include "cc/base/cc_export.h"
 #include "cc/base/resource_id.h"
 #include "cc/output/context_provider.h"
@@ -33,6 +35,7 @@
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "ui/gfx/geometry/size.h"
+#include "ui/gfx/gpu_memory_buffer.h"
 
 class GrContext;
 
@@ -44,7 +47,6 @@ class GLES2Interface;
 }
 
 namespace gfx {
-class GpuMemoryBuffer;
 class Rect;
 class Vector2d;
 }
@@ -57,7 +59,8 @@ class SharedBitmapManager;
 
 // This class is not thread-safe and can only be called from the thread it was
 // created on (in practice, the impl thread).
-class CC_EXPORT ResourceProvider {
+class CC_EXPORT ResourceProvider
+    : public base::trace_event::MemoryDumpProvider {
  private:
   struct Resource;
 
@@ -83,25 +86,21 @@ class CC_EXPORT ResourceProvider {
       gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager,
       BlockingTaskRunner* blocking_main_thread_task_runner,
       int highp_threshold_min,
-      bool use_rgba_4444_texture_format,
       size_t id_allocation_chunk_size,
-      bool use_persistent_map_for_gpu_memory_buffers);
-  virtual ~ResourceProvider();
+      const std::vector<unsigned>& use_image_texture_targets);
+  ~ResourceProvider() override;
 
   void DidLoseOutputSurface() { lost_output_surface_ = true; }
 
   int max_texture_size() const { return max_texture_size_; }
-  ResourceFormat memory_efficient_texture_format() const {
-    return use_rgba_4444_texture_format_ ? RGBA_4444 : best_texture_format_;
-  }
   ResourceFormat best_texture_format() const { return best_texture_format_; }
   ResourceFormat best_render_buffer_format() const {
     return best_render_buffer_format_;
   }
   ResourceFormat yuv_resource_format() const { return yuv_resource_format_; }
   bool use_sync_query() const { return use_sync_query_; }
-  bool use_persistent_map_for_gpu_memory_buffers() const {
-    return use_persistent_map_for_gpu_memory_buffers_;
+  gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager() {
+    return gpu_memory_buffer_manager_;
   }
   size_t num_resources() const { return resources_.size(); }
 
@@ -423,14 +422,7 @@ class CC_EXPORT ResourceProvider {
   // Indicates if we can currently lock this resource for write.
   bool CanLockForWrite(ResourceId id);
 
-  // Copy |rect| pixels from source to destination.
-  void CopyResource(ResourceId source_id,
-                    ResourceId dest_id,
-                    const gfx::Rect& rect);
-
   void WaitSyncPointIfNeeded(ResourceId id);
-
-  void WaitReadLockIfNeeded(ResourceId id);
 
   static GLint GetActiveTextureUnit(gpu::gles2::GLES2Interface* gl);
 
@@ -438,15 +430,22 @@ class CC_EXPORT ResourceProvider {
 
   void ValidateResource(ResourceId id) const;
 
+  GLenum GetImageTextureTarget(ResourceFormat format);
+
+  // base::trace_event::MemoryDumpProvider implementation.
+  bool OnMemoryDump(const base::trace_event::MemoryDumpArgs& args,
+                    base::trace_event::ProcessMemoryDump* pmd) override;
+
+  int tracing_id() const { return tracing_id_; }
+
  protected:
   ResourceProvider(OutputSurface* output_surface,
                    SharedBitmapManager* shared_bitmap_manager,
                    gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager,
                    BlockingTaskRunner* blocking_main_thread_task_runner,
                    int highp_threshold_min,
-                   bool use_rgba_4444_texture_format,
                    size_t id_allocation_chunk_size,
-                   bool use_persistent_map_for_gpu_memory_buffers);
+                   const std::vector<unsigned>& use_image_texture_targets);
   void Initialize();
 
  private:
@@ -493,8 +492,6 @@ class CC_EXPORT ResourceProvider {
     bool locked_for_write : 1;
     bool lost : 1;
     bool marked_for_deletion : 1;
-    bool pending_set_pixels : 1;
-    bool set_pixels_completion_forced : 1;
     bool allocated : 1;
     bool read_lock_fences_enabled : 1;
     bool has_shared_bitmap_id : 1;
@@ -594,74 +591,20 @@ class CC_EXPORT ResourceProvider {
   base::ThreadChecker thread_checker_;
 
   scoped_refptr<Fence> current_read_lock_fence_;
-  bool use_rgba_4444_texture_format_;
 
   const size_t id_allocation_chunk_size_;
   scoped_ptr<IdAllocator> texture_id_allocator_;
   scoped_ptr<IdAllocator> buffer_id_allocator_;
 
   bool use_sync_query_;
-  bool use_persistent_map_for_gpu_memory_buffers_;
-  // Fence used for CopyResource if CHROMIUM_sync_query is not supported.
-  scoped_refptr<SynchronousFence> synchronous_fence_;
+  std::vector<unsigned> use_image_texture_targets_;
+
+  // A process-unique ID used for disambiguating memory dumps from different
+  // resource providers.
+  int tracing_id_;
 
   DISALLOW_COPY_AND_ASSIGN(ResourceProvider);
 };
-
-// TODO(epenner): Move these format conversions to resource_format.h
-// once that builds on mac (npapi.h currently #includes OpenGL.h).
-inline int BitsPerPixel(ResourceFormat format) {
-  switch (format) {
-    case BGRA_8888:
-    case RGBA_8888:
-      return 32;
-    case RGBA_4444:
-    case RGB_565:
-      return 16;
-    case ALPHA_8:
-    case LUMINANCE_8:
-    case RED_8:
-      return 8;
-    case ETC1:
-      return 4;
-  }
-  NOTREACHED();
-  return 0;
-}
-
-inline GLenum GLDataType(ResourceFormat format) {
-  DCHECK_LE(format, RESOURCE_FORMAT_MAX);
-  static const unsigned format_gl_data_type[RESOURCE_FORMAT_MAX + 1] = {
-      GL_UNSIGNED_BYTE,           // RGBA_8888
-      GL_UNSIGNED_SHORT_4_4_4_4,  // RGBA_4444
-      GL_UNSIGNED_BYTE,           // BGRA_8888
-      GL_UNSIGNED_BYTE,           // ALPHA_8
-      GL_UNSIGNED_BYTE,           // LUMINANCE_8
-      GL_UNSIGNED_SHORT_5_6_5,    // RGB_565,
-      GL_UNSIGNED_BYTE,           // ETC1
-      GL_UNSIGNED_BYTE            // RED_8
-  };
-  return format_gl_data_type[format];
-}
-
-inline GLenum GLDataFormat(ResourceFormat format) {
-  DCHECK_LE(format, RESOURCE_FORMAT_MAX);
-  static const unsigned format_gl_data_format[RESOURCE_FORMAT_MAX + 1] = {
-      GL_RGBA,           // RGBA_8888
-      GL_RGBA,           // RGBA_4444
-      GL_BGRA_EXT,       // BGRA_8888
-      GL_ALPHA,          // ALPHA_8
-      GL_LUMINANCE,      // LUMINANCE_8
-      GL_RGB,            // RGB_565
-      GL_ETC1_RGB8_OES,  // ETC1
-      GL_RED_EXT         // RED_8
-  };
-  return format_gl_data_format[format];
-}
-
-inline GLenum GLInternalFormat(ResourceFormat format) {
-  return GLDataFormat(format);
-}
 
 }  // namespace cc
 

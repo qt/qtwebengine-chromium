@@ -63,12 +63,11 @@ void CompositorLock::CancelLock() {
   compositor_ = NULL;
 }
 
-Compositor::Compositor(gfx::AcceleratedWidget widget,
-                       ui::ContextFactory* context_factory,
+Compositor::Compositor(ui::ContextFactory* context_factory,
                        scoped_refptr<base::SingleThreadTaskRunner> task_runner)
     : context_factory_(context_factory),
       root_layer_(NULL),
-      widget_(widget),
+      widget_(gfx::kNullAcceleratedWidget),
       surface_id_allocator_(context_factory->CreateSurfaceIdAllocator()),
       task_runner_(task_runner),
       vsync_manager_(new CompositorVSyncManager()),
@@ -85,20 +84,34 @@ Compositor::Compositor(gfx::AcceleratedWidget widget,
 
   cc::LayerTreeSettings settings;
 
-  // When impl-side painting is enabled, this will ensure PictureLayers always
-  // can have LCD text, to match the previous behaviour with ContentLayers,
-  // where LCD-not-allowed notifications were ignored.
+  // This will ensure PictureLayers always can have LCD text, to match the
+  // previous behaviour with ContentLayers, where LCD-not-allowed notifications
+  // were ignored.
   settings.layers_always_allowed_lcd_text = true;
+  // Use occlusion to allow more overlapping windows to take less memory.
+  settings.use_occlusion_for_tile_prioritization = true;
   settings.renderer_settings.refresh_rate =
       context_factory_->DoesCreateTestContexts() ? kTestRefreshRate
                                                  : kDefaultRefreshRate;
   settings.main_frame_before_activation_enabled = false;
-  settings.renderer_settings.disable_gpu_vsync =
-      command_line->HasSwitch(switches::kDisableGpuVsync);
+  if (command_line->HasSwitch(switches::kDisableGpuVsync)) {
+    std::string display_vsync_string =
+        command_line->GetSwitchValueASCII(switches::kDisableGpuVsync);
+    if (display_vsync_string == "gpu") {
+      settings.renderer_settings.disable_display_vsync = true;
+    } else if (display_vsync_string == "beginframe") {
+      settings.wait_for_beginframe_interval = false;
+    } else {
+      settings.renderer_settings.disable_display_vsync = true;
+      settings.wait_for_beginframe_interval = false;
+    }
+  }
   settings.renderer_settings.partial_swap_enabled =
       !command_line->HasSwitch(cc::switches::kUIDisablePartialSwap);
 #if defined(OS_WIN)
   settings.renderer_settings.finish_rendering_on_resize = true;
+#elif defined(OS_MACOSX)
+  settings.renderer_settings.delay_releasing_overlay_resources = true;
 #endif
 
   // These flags should be mirrored by renderer versions in content/renderer/.
@@ -122,30 +135,27 @@ Compositor::Compositor(gfx::AcceleratedWidget widget,
   settings.initial_debug_state.SetRecordRenderingStats(
       command_line->HasSwitch(cc::switches::kEnableGpuBenchmarking));
 
-  settings.use_display_lists = true;
-
   settings.use_zero_copy = IsUIZeroCopyEnabled();
-  settings.use_one_copy = IsUIOneCopyEnabled();
 
-  // TODO(reveman): We currently assume that the compositor will use BGRA_8888
-  // if it's able to, and RGBA_8888 otherwise. Since we don't know what it will
-  // use we hardcode BGRA_8888 here for now. We should instead
-  // move decisions about GpuMemoryBuffer format to the browser embedder so we
-  // know it here, and pass that decision to the compositor for each usage.
-  // crbug.com/490362
-  gfx::GpuMemoryBuffer::Format format = gfx::GpuMemoryBuffer::BGRA_8888;
+  settings.renderer_settings.use_rgba_4444_textures =
+      command_line->HasSwitch(switches::kUIEnableRGBA4444Textures);
 
   // Use PERSISTENT_MAP memory buffers to support partial tile raster for
   // software raster into GpuMemoryBuffers.
-  gfx::GpuMemoryBuffer::Usage usage = gfx::GpuMemoryBuffer::PERSISTENT_MAP;
+  gfx::BufferUsage usage = gfx::BufferUsage::PERSISTENT_MAP;
   settings.use_persistent_map_for_gpu_memory_buffers = true;
 
-  settings.use_image_texture_target =
-      context_factory_->GetImageTextureTarget(format, usage);
+  for (size_t format = 0;
+      format < static_cast<size_t>(gfx::BufferFormat::LAST) + 1; format++) {
+    DCHECK_GT(settings.use_image_texture_targets.size(), format);
+    settings.use_image_texture_targets[format] =
+        context_factory_->GetImageTextureTarget(
+            static_cast<gfx::BufferFormat>(format), usage);
+  }
 
-  // Note: gathering of pixel refs is only needed when using multiple
-  // raster threads.
-  settings.gather_pixel_refs = false;
+  // Note: Only enable image decode tasks if we have more than one worker
+  // thread.
+  settings.image_decode_tasks_enabled = false;
 
   settings.use_compositor_animation_timelines =
       command_line->HasSwitch(switches::kUIEnableCompositorAnimationTimelines);
@@ -165,7 +175,6 @@ Compositor::Compositor(gfx::AcceleratedWidget widget,
                       base::TimeTicks::Now() - before_create);
   host_->SetRootLayer(root_web_layer_);
   host_->set_surface_id_namespace(surface_id_allocator_->id_namespace());
-  host_->SetLayerTreeHostClientReady();
 }
 
 Compositor::~Compositor() {
@@ -285,6 +294,14 @@ void Compositor::SetAuthoritativeVSyncInterval(
   }
 
   vsync_manager_->SetAuthoritativeVSyncInterval(interval);
+}
+
+void Compositor::SetAcceleratedWidgetAndStartCompositor(
+    gfx::AcceleratedWidget widget) {
+  // This function should only get called once.
+  DCHECK_EQ(gfx::kNullAcceleratedWidget, widget_);
+  widget_ = widget;
+  host_->SetLayerTreeHostClientReady();
 }
 
 scoped_refptr<CompositorVSyncManager> Compositor::vsync_manager() const {

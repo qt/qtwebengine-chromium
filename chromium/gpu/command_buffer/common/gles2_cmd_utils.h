@@ -127,6 +127,8 @@ class GLES2_UTILS_EXPORT GLES2Util {
 
   static size_t GetGLTypeSizeForTexturesAndBuffers(uint32_t type);
 
+  static size_t GetGLTypeSizeForPathCoordType(uint32_t type);
+
   static uint32_t GLErrorToErrorBit(uint32_t gl_error);
 
   static uint32_t GLErrorBitToGLError(uint32_t error_bit);
@@ -135,9 +137,10 @@ class GLES2_UTILS_EXPORT GLES2Util {
 
   static size_t GLTargetToFaceIndex(uint32_t target);
 
-  static uint32_t GetPreferredGLReadPixelsFormat(uint32_t internal_format);
+  static uint32_t GetGLReadPixelsImplementationFormat(
+      uint32_t internal_format);
 
-  static uint32_t GetPreferredGLReadPixelsType(
+  static uint32_t GetGLReadPixelsImplementationType(
       uint32_t internal_format, uint32_t texture_type);
 
   // Returns a bitmask for the channels the given format supports.
@@ -184,6 +187,10 @@ class GLES2_UTILS_EXPORT GLES2Util {
 
   static uint32_t MapBufferTargetToBindingEnum(uint32_t target);
 
+  static bool IsUnsignedIntegerFormat(uint32_t internal_format);
+  static bool IsSignedIntegerFormat(uint32_t internal_format);
+  static bool IsIntegerFormat(uint32_t internal_format);
+
   #include "../common/gles2_cmd_utils_autogen.h"
 
  private:
@@ -195,6 +202,13 @@ class GLES2_UTILS_EXPORT GLES2Util {
 
   int num_compressed_texture_formats_;
   int num_shader_binary_formats_;
+};
+
+enum ContextType {
+  CONTEXT_TYPE_WEBGL1,
+  CONTEXT_TYPE_WEBGL2,
+  CONTEXT_TYPE_OPENGLES2,
+  CONTEXT_TYPE_OPENGLES3
 };
 
 struct GLES2_UTILS_EXPORT ContextCreationAttribHelper {
@@ -216,8 +230,7 @@ struct GLES2_UTILS_EXPORT ContextCreationAttribHelper {
   bool bind_generates_resource;
   bool fail_if_major_perf_caveat;
   bool lose_context_when_out_of_memory;
-  // 0 if not a WebGL context.
-  unsigned webgl_version;
+  ContextType context_type;
 };
 
 }  // namespace gles2

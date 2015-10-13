@@ -42,9 +42,9 @@ namespace blink {
 
 class CSSAnimations;
 
-using AnimationCountedSet = WillBeHeapHashCountedSet<RawPtrWillBeWeakMember<Animation>>;
+using AnimationCountedSet = HeapHashCountedSet<WeakMember<Animation>>;
 
-class ElementAnimations : public NoBaseWillBeGarbageCollectedFinalized<ElementAnimations> {
+class ElementAnimations : public GarbageCollectedFinalized<ElementAnimations> {
     WTF_MAKE_NONCOPYABLE(ElementAnimations);
 public:
     ElementAnimations();
@@ -75,8 +75,8 @@ public:
     void clearBaseComputedStyle();
 
 #if !ENABLE(OILPAN)
-    void addEffect(KeyframeEffect* effect) { m_effects.append(effect); }
-    void notifyEffectDestroyed(KeyframeEffect* effect) { m_effects.remove(m_effects.find(effect)); }
+    void addEffect(KeyframeEffect* effect) { m_effects.add(effect); }
+    void dispose();
 #endif
 
     DECLARE_TRACE();
@@ -91,9 +91,9 @@ private:
     RefPtr<ComputedStyle> m_baseComputedStyle;
 
 #if !ENABLE(OILPAN)
-    // FIXME: Oilpan: This is to avoid a reference cycle that keeps Elements alive
-    // and won't be needed once the Node hierarchy becomes traceable.
-    Vector<KeyframeEffect*> m_effects;
+    // TODO(oilpan): This is to avoid a reference cycle that keeps Elements
+    // alive and won't be needed once the Node hierarchy becomes traceable.
+    HeapHashSet<WeakMember<KeyframeEffect>> m_effects;
 #endif
 
     // CSSAnimations and DeferredLegacyStyleInterpolation checks if a style change is due to animation.

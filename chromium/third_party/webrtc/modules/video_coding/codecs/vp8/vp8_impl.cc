@@ -23,7 +23,6 @@
 #include "webrtc/common.h"
 #include "webrtc/common_types.h"
 #include "webrtc/common_video/libyuv/include/webrtc_libyuv.h"
-#include "webrtc/experiments.h"
 #include "webrtc/modules/interface/module_common_types.h"
 #include "webrtc/modules/video_coding/codecs/interface/video_codec_interface.h"
 #include "webrtc/modules/video_coding/codecs/vp8/include/vp8_common_types.h"
@@ -580,7 +579,11 @@ int VP8EncoderImpl::InitEncode(const VideoCodec* inst,
   }
 
   rps_.Init();
-  quality_scaler_.Init(codec_.qpMax / QualityScaler::kDefaultLowQpDenominator);
+  // Disable both high-QP limits and framedropping. Both are handled by libvpx
+  // internally.
+  const int kDisabledBadQpThreshold = 64;
+  quality_scaler_.Init(codec_.qpMax / QualityScaler::kDefaultLowQpDenominator,
+                       kDisabledBadQpThreshold, false);
   quality_scaler_.ReportFramerate(codec_.maxFramerate);
 
   return InitAndSetControlSettings();
@@ -661,7 +664,9 @@ int VP8EncoderImpl::InitAndSetControlSettings() {
                       denoiser_state : kDenoiserOff);
   }
   for (size_t i = 0; i < encoders_.size(); ++i) {
-    vpx_codec_control(&(encoders_[i]), VP8E_SET_STATIC_THRESHOLD, 1);
+    // Allow more screen content to be detected as static.
+    vpx_codec_control(&(encoders_[i]), VP8E_SET_STATIC_THRESHOLD,
+                      codec_.mode == kScreensharing ? 300 : 1);
     vpx_codec_control(&(encoders_[i]), VP8E_SET_CPUUSED, cpu_speed_[i]);
     vpx_codec_control(&(encoders_[i]), VP8E_SET_TOKEN_PARTITIONS,
                       static_cast<vp8e_token_partitions>(token_partitions_));
@@ -709,6 +714,8 @@ int VP8EncoderImpl::Encode(const VideoFrame& frame,
   const bool use_quality_scaler = encoders_.size() == 1 &&
                                   configurations_[0].rc_dropframe_thresh > 0 &&
                                   codec_.codecSpecific.VP8.automaticResizeOn;
+  if (use_quality_scaler)
+    quality_scaler_.OnEncodeFrame(frame);
   const VideoFrame& input_image =
       use_quality_scaler ? quality_scaler_.GetScaledFrame(frame) : frame;
 
@@ -723,8 +730,8 @@ int VP8EncoderImpl::Encode(const VideoFrame& frame,
   // |raw_images_[0]|, the resolution of these frames must match. Note that
   // |input_image| might be scaled from |frame|. In that case, the resolution of
   // |raw_images_[0]| should have been updated in UpdateCodecFrameSize.
-  DCHECK_EQ(input_image.width(), static_cast<int>(raw_images_[0].d_w));
-  DCHECK_EQ(input_image.height(), static_cast<int>(raw_images_[0].d_h));
+  RTC_DCHECK_EQ(input_image.width(), static_cast<int>(raw_images_[0].d_w));
+  RTC_DCHECK_EQ(input_image.height(), static_cast<int>(raw_images_[0].d_h));
 
   // Image in vpx_image_t format.
   // Input image is const. VP8's raw image is not defined as const.
@@ -889,6 +896,11 @@ int VP8EncoderImpl::Encode(const VideoFrame& frame,
 int VP8EncoderImpl::UpdateCodecFrameSize(const VideoFrame& input_image) {
   codec_.width = input_image.width();
   codec_.height = input_image.height();
+  if (codec_.numberOfSimulcastStreams <= 1) {
+    // For now scaling is only used for single-layer streams.
+    codec_.simulcastStream[0].width = input_image.width();
+    codec_.simulcastStream[0].height = input_image.height();
+  }
   // Update the cpu_speed setting for resolution change.
   vpx_codec_control(&(encoders_[0]),
                     VP8E_SET_CPUUSED,

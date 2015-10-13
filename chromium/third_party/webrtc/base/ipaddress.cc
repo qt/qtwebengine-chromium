@@ -54,6 +54,10 @@ uint32 IPAddress::v4AddressAsHostOrderInteger() const {
   }
 }
 
+bool IPAddress::IsNil() const {
+  return IPIsUnspec(*this);
+}
+
 size_t IPAddress::Size() const {
   switch (family_) {
     case AF_INET:
@@ -494,4 +498,13 @@ int IPAddressPrecedence(const IPAddress& ip) {
   return 0;
 }
 
-}  // Namespace talk base
+IPAddress GetLoopbackIP(int family) {
+  if (family == AF_INET) {
+    return rtc::IPAddress(INADDR_LOOPBACK);
+  }
+  if (family == AF_INET6) {
+    return rtc::IPAddress(in6addr_loopback);
+  }
+  return rtc::IPAddress();
+}
+}  // Namespace rtc

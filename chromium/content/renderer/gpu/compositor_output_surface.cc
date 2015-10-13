@@ -50,28 +50,15 @@ CompositorOutputSurface::CompositorOutputSurface(
       weak_ptrs_(this) {
   DCHECK(output_surface_filter_.get());
   DCHECK(frame_swap_message_queue_.get());
-  DetachFromThread();
   capabilities_.max_frames_pending = 1;
   message_sender_ = RenderThreadImpl::current()->sync_message_filter();
   DCHECK(message_sender_.get());
 }
 
-CompositorOutputSurface::~CompositorOutputSurface() {
-  DCHECK(CalledOnValidThread());
-  if (!HasClient())
-    return;
-  UpdateSmoothnessTakesPriority(false);
-  if (output_surface_proxy_.get())
-    output_surface_proxy_->ClearOutputSurface();
-  output_surface_filter_->RemoveHandlerOnCompositorThread(
-                              routing_id_,
-                              output_surface_filter_handler_);
-}
+CompositorOutputSurface::~CompositorOutputSurface() {}
 
 bool CompositorOutputSurface::BindToClient(
     cc::OutputSurfaceClient* client) {
-  DCHECK(CalledOnValidThread());
-
   if (!cc::OutputSurface::BindToClient(client))
     return false;
 
@@ -94,10 +81,20 @@ bool CompositorOutputSurface::BindToClient(
   return true;
 }
 
+void CompositorOutputSurface::DetachFromClient() {
+  if (!HasClient())
+    return;
+  UpdateSmoothnessTakesPriority(false);
+  if (output_surface_proxy_.get())
+    output_surface_proxy_->ClearOutputSurface();
+  output_surface_filter_->RemoveHandlerOnCompositorThread(
+      routing_id_, output_surface_filter_handler_);
+  cc::OutputSurface::DetachFromClient();
+}
+
 void CompositorOutputSurface::ShortcutSwapAck(
     uint32 output_surface_id,
-    scoped_ptr<cc::GLFrameData> gl_frame_data,
-    scoped_ptr<cc::SoftwareFrameData> software_frame_data) {
+    scoped_ptr<cc::GLFrameData> gl_frame_data) {
   if (!layout_test_previous_frame_ack_) {
     layout_test_previous_frame_ack_.reset(new cc::CompositorFrameAck);
     layout_test_previous_frame_ack_->gl_frame_data.reset(new cc::GLFrameData);
@@ -106,8 +103,6 @@ void CompositorOutputSurface::ShortcutSwapAck(
   OnSwapAck(output_surface_id, *layout_test_previous_frame_ack_);
 
   layout_test_previous_frame_ack_->gl_frame_data = gl_frame_data.Pass();
-  layout_test_previous_frame_ack_->last_software_frame_id =
-      software_frame_data ? software_frame_data->id : 0;
 }
 
 void CompositorOutputSurface::SwapBuffers(cc::CompositorFrame* frame) {
@@ -124,12 +119,9 @@ void CompositorOutputSurface::SwapBuffers(cc::CompositorFrame* frame) {
     // block needs to be removed.
     DCHECK(!frame->delegated_frame_data);
 
-    base::Closure closure =
-        base::Bind(&CompositorOutputSurface::ShortcutSwapAck,
-                   weak_ptrs_.GetWeakPtr(),
-                   output_surface_id_,
-                   base::Passed(&frame->gl_frame_data),
-                   base::Passed(&frame->software_frame_data));
+    base::Closure closure = base::Bind(
+        &CompositorOutputSurface::ShortcutSwapAck, weak_ptrs_.GetWeakPtr(),
+        output_surface_id_, base::Passed(&frame->gl_frame_data));
 
     if (context_provider()) {
       gpu::gles2::GLES2Interface* context = context_provider()->ContextGL();
@@ -162,7 +154,7 @@ void CompositorOutputSurface::SwapBuffers(cc::CompositorFrame* frame) {
 }
 
 void CompositorOutputSurface::OnMessageReceived(const IPC::Message& message) {
-  DCHECK(CalledOnValidThread());
+  DCHECK(client_thread_checker_.CalledOnValidThread());
   if (!HasClient())
     return;
   IPC_BEGIN_MESSAGE_MAP(CompositorOutputSurface, message)
@@ -176,7 +168,7 @@ void CompositorOutputSurface::OnMessageReceived(const IPC::Message& message) {
 void CompositorOutputSurface::OnUpdateVSyncParametersFromBrowser(
     base::TimeTicks timebase,
     base::TimeDelta interval) {
-  DCHECK(CalledOnValidThread());
+  DCHECK(client_thread_checker_.CalledOnValidThread());
   CommitVSyncParameters(timebase, interval);
 }
 
@@ -207,12 +199,11 @@ bool CompositorOutputSurface::Send(IPC::Message* message) {
 #if defined(OS_ANDROID)
 namespace {
 void SetThreadPriorityToIdle() {
-  base::PlatformThread::SetThreadPriority(base::PlatformThread::CurrentHandle(),
-                                          base::ThreadPriority::BACKGROUND);
+  base::PlatformThread::SetCurrentThreadPriority(
+      base::ThreadPriority::BACKGROUND);
 }
 void SetThreadPriorityToDefault() {
-  base::PlatformThread::SetThreadPriority(base::PlatformThread::CurrentHandle(),
-                                          base::ThreadPriority::NORMAL);
+  base::PlatformThread::SetCurrentThreadPriority(base::ThreadPriority::NORMAL);
 }
 }  // namespace
 #endif

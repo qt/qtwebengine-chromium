@@ -6,8 +6,11 @@
 #define PresentationAvailability_h
 
 #include "core/dom/ActiveDOMObject.h"
-#include "core/dom/DocumentVisibilityObserver.h"
 #include "core/events/EventTarget.h"
+#include "core/page/PageLifecycleObserver.h"
+#include "modules/ModulesExport.h"
+#include "platform/weborigin/KURL.h"
+#include "public/platform/WebURL.h"
 #include "public/platform/modules/presentation/WebPresentationAvailabilityObserver.h"
 
 namespace blink {
@@ -15,28 +18,30 @@ namespace blink {
 class ExecutionContext;
 class ScriptPromiseResolver;
 
-// Expose whether there is a presentation display available. The object will be
-// initialized with a default value passed via ::take() and will then subscribe
-// to receive callbacks if the status were to change. The object will only
-// listen to changes when required.
-class PresentationAvailability final
+// Expose whether there is a presentation display available for |url|. The
+// object will be initialized with a default value passed via ::take() and will
+// then subscribe to receive callbacks if the status for |url| were to
+// change. The object will only listen to changes when required.
+class MODULES_EXPORT PresentationAvailability final
     : public RefCountedGarbageCollectedEventTargetWithInlineData<PresentationAvailability>
     , public ActiveDOMObject
-    , public DocumentVisibilityObserver
+    , public PageLifecycleObserver
     , public WebPresentationAvailabilityObserver {
     REFCOUNTED_GARBAGE_COLLECTED_EVENT_TARGET(PresentationAvailability);
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(PresentationAvailability);
     DEFINE_WRAPPERTYPEINFO();
 public:
-    static PresentationAvailability* take(ScriptPromiseResolver*, bool);
+    static PresentationAvailability* take(ScriptPromiseResolver*, const KURL&, bool);
     ~PresentationAvailability() override;
 
     // EventTarget implementation.
     const AtomicString& interfaceName() const override;
     ExecutionContext* executionContext() const override;
+    bool addEventListener(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener>, bool capture) override;
 
     // WebPresentationAvailabilityObserver implementation.
     void availabilityChanged(bool) override;
+    const WebURL url() const override;
 
     // ActiveDOMObject implementation.
     bool hasPendingActivity() const override;
@@ -44,8 +49,8 @@ public:
     void resume() override;
     void stop() override;
 
-    // DocumentVisibilityObserver implementation.
-    void didChangeVisibilityState(PageVisibilityState) override;
+    // PageLifecycleObserver implementation.
+    void pageVisibilityChanged() override;
 
     bool value() const;
 
@@ -64,11 +69,12 @@ private:
         Inactive,
     };
 
-    PresentationAvailability(ExecutionContext*, bool);
+    PresentationAvailability(ExecutionContext*, const KURL&, bool);
 
     void setState(State);
     void updateListening();
 
+    const KURL m_url;
     bool m_value;
     State m_state;
 };

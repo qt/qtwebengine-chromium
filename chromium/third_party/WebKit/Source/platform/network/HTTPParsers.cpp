@@ -115,7 +115,33 @@ bool isValidHTTPHeaderValue(const String& name)
     return name.containsOnlyLatin1() && !name.contains('\r') && !name.contains('\n') && !name.contains(static_cast<UChar>('\0'));
 }
 
-// See RFC 2616, Section 2.2.
+// See RFC 7230, Section 3.2.
+// Checks whether |value| matches field-content in RFC 7230.
+// link: http://tools.ietf.org/html/rfc7230#section-3.2
+bool isValidHTTPFieldContentRFC7230(const String& value)
+{
+    if (value.isEmpty())
+        return false;
+
+    UChar firstCharacter = value[0];
+    if (firstCharacter == ' ' || firstCharacter == '\t')
+        return false;
+
+    UChar lastCharacter = value[value.length() - 1];
+    if (lastCharacter == ' ' || lastCharacter == '\t')
+        return false;
+
+    for (unsigned i = 0; i < value.length(); ++i) {
+        UChar c = value[i];
+        // TODO(mkwst): Extract this character class to a central location, https://crbug.com/527324.
+        if (c == 0x7F || c > 0xFF || (c < 0x20 && c != '\t'))
+            return false;
+    }
+
+    return true;
+}
+
+// See RFC 7230, Section 3.2.6.
 bool isValidHTTPToken(const String& characters)
 {
     if (characters.isEmpty())
@@ -753,7 +779,7 @@ static inline String trimToNextSeparator(const String& str)
     return str.substring(0, str.find(isCacheHeaderSeparator));
 }
 
-static void parseCacheHeader(const String& header, Vector<pair<String, String>>& result)
+static void parseCacheHeader(const String& header, Vector<std::pair<String, String>>& result)
 {
     const String safeHeader = header.removeCharacters(isControlCharacter);
     unsigned max = safeHeader.length();
@@ -771,7 +797,7 @@ static void parseCacheHeader(const String& header, Vector<pair<String, String>>&
                 size_t nextDoubleQuotePosition = value.find('"', 1);
                 if (nextDoubleQuotePosition != kNotFound) {
                     // Store the value as a quoted string without quotes
-                    result.append(pair<String, String>(directive, value.substring(1, nextDoubleQuotePosition - 1).stripWhiteSpace()));
+                    result.append(std::pair<String, String>(directive, value.substring(1, nextDoubleQuotePosition - 1).stripWhiteSpace()));
                     pos += (safeHeader.find('"', pos) - pos) + nextDoubleQuotePosition + 1;
                     // Move past next comma, if there is one
                     size_t nextCommaPosition2 = safeHeader.find(',', pos);
@@ -781,7 +807,7 @@ static void parseCacheHeader(const String& header, Vector<pair<String, String>>&
                         return; // Parse error if there is anything left with no comma
                 } else {
                     // Parse error; just use the rest as the value
-                    result.append(pair<String, String>(directive, trimToNextSeparator(value.substring(1, value.length() - 1).stripWhiteSpace())));
+                    result.append(std::pair<String, String>(directive, trimToNextSeparator(value.substring(1, value.length() - 1).stripWhiteSpace())));
                     return;
                 }
             } else {
@@ -789,21 +815,21 @@ static void parseCacheHeader(const String& header, Vector<pair<String, String>>&
                 size_t nextCommaPosition2 = value.find(',');
                 if (nextCommaPosition2 != kNotFound) {
                     // The value is delimited by the next comma
-                    result.append(pair<String, String>(directive, trimToNextSeparator(value.substring(0, nextCommaPosition2).stripWhiteSpace())));
+                    result.append(std::pair<String, String>(directive, trimToNextSeparator(value.substring(0, nextCommaPosition2).stripWhiteSpace())));
                     pos += (safeHeader.find(',', pos) - pos) + 1;
                 } else {
                     // The rest is the value; no change to value needed
-                    result.append(pair<String, String>(directive, trimToNextSeparator(value)));
+                    result.append(std::pair<String, String>(directive, trimToNextSeparator(value)));
                     return;
                 }
             }
         } else if (nextCommaPosition != kNotFound && (nextCommaPosition < nextEqualSignPosition || nextEqualSignPosition == kNotFound)) {
             // Add directive to map with empty string as value
-            result.append(pair<String, String>(trimToNextSeparator(safeHeader.substring(pos, nextCommaPosition - pos).stripWhiteSpace()), ""));
+            result.append(std::pair<String, String>(trimToNextSeparator(safeHeader.substring(pos, nextCommaPosition - pos).stripWhiteSpace()), ""));
             pos += nextCommaPosition - pos + 1;
         } else {
             // Add last directive to map with empty string as value
-            result.append(pair<String, String>(trimToNextSeparator(safeHeader.substring(pos, max - pos).stripWhiteSpace()), ""));
+            result.append(std::pair<String, String>(trimToNextSeparator(safeHeader.substring(pos, max - pos).stripWhiteSpace()), ""));
             return;
         }
     }
@@ -823,7 +849,7 @@ CacheControlHeader parseCacheControlDirectives(const AtomicString& cacheControlV
     DEFINE_STATIC_LOCAL(const AtomicString, staleWhileRevalidateDirective, ("stale-while-revalidate", AtomicString::ConstructFromLiteral));
 
     if (!cacheControlValue.isEmpty()) {
-        Vector<pair<String, String>> directives;
+        Vector<std::pair<String, String>> directives;
         parseCacheHeader(cacheControlValue, directives);
 
         size_t directivesSize = directives.size();

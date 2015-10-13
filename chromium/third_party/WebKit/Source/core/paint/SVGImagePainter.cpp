@@ -36,31 +36,16 @@ void SVGImagePainter::paint(const PaintInfo& paintInfo)
     TransformRecorder transformRecorder(*paintInfoBeforeFiltering.context, m_layoutSVGImage, m_layoutSVGImage.localToParentTransform());
     {
         SVGPaintContext paintContext(m_layoutSVGImage, paintInfoBeforeFiltering);
-        if (paintContext.applyClipMaskAndFilterIfNecessary() && !LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(*paintContext.paintInfo().context, m_layoutSVGImage, paintContext.paintInfo().phase)) {
-            LayoutObjectDrawingRecorder recorder(*paintContext.paintInfo().context, m_layoutSVGImage, paintContext.paintInfo().phase, boundingBox);
-            // There's no need to cache a buffered SkPicture with slimming
-            // paint because it's automatically done in the display list.
-            if (m_layoutSVGImage.style()->svgStyle().bufferedRendering() != BR_STATIC || RuntimeEnabledFeatures::slimmingPaintEnabled()) {
-                paintForeground(paintContext.paintInfo());
-            } else {
-                RefPtr<const SkPicture>& bufferedForeground = m_layoutSVGImage.bufferedForeground();
-                if (!bufferedForeground) {
-                    paintContext.paintInfo().context->beginRecording(m_layoutSVGImage.objectBoundingBox());
-                    paintForeground(paintContext.paintInfo());
-                    bufferedForeground = paintContext.paintInfo().context->endRecording();
-                }
-
-                paintContext.paintInfo().context->drawPicture(bufferedForeground.get());
-            }
+        if (paintContext.applyClipMaskAndFilterIfNecessary() && !LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(*paintContext.paintInfo().context, m_layoutSVGImage, paintContext.paintInfo().phase, LayoutPoint())) {
+            LayoutObjectDrawingRecorder recorder(*paintContext.paintInfo().context, m_layoutSVGImage, paintContext.paintInfo().phase, boundingBox, LayoutPoint());
+            paintForeground(paintContext.paintInfo());
         }
     }
 
     if (m_layoutSVGImage.style()->outlineWidth()) {
         PaintInfo outlinePaintInfo(paintInfoBeforeFiltering);
         outlinePaintInfo.phase = PaintPhaseSelfOutline;
-        LayoutRect layoutBoundingBox(boundingBox);
-        LayoutRect visualOverflowRect = ObjectPainter::outlineBounds(layoutBoundingBox, m_layoutSVGImage.styleRef());
-        ObjectPainter(m_layoutSVGImage).paintOutline(outlinePaintInfo, layoutBoundingBox, visualOverflowRect);
+        ObjectPainter(m_layoutSVGImage).paintOutline(outlinePaintInfo, LayoutPoint(boundingBox.location()));
     }
 }
 
@@ -74,8 +59,7 @@ void SVGImagePainter::paintForeground(const PaintInfo& paintInfo)
     imageElement->preserveAspectRatio()->currentValue()->transformRect(destRect, srcRect);
 
     InterpolationQuality interpolationQuality = InterpolationDefault;
-    if (m_layoutSVGImage.style()->svgStyle().bufferedRendering() != BR_STATIC || RuntimeEnabledFeatures::slimmingPaintEnabled())
-        interpolationQuality = ImageQualityController::imageQualityController()->chooseInterpolationQuality(paintInfo.context, &m_layoutSVGImage, image.get(), image.get(), LayoutSize(destRect.size()));
+    interpolationQuality = ImageQualityController::imageQualityController()->chooseInterpolationQuality(paintInfo.context, &m_layoutSVGImage, image.get(), image.get(), LayoutSize(destRect.size()));
 
     InterpolationQuality previousInterpolationQuality = paintInfo.context->imageInterpolationQuality();
     paintInfo.context->setImageInterpolationQuality(interpolationQuality);

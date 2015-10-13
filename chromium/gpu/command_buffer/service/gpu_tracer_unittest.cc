@@ -76,13 +76,7 @@ class GPUTracerTester : public GPUTracer {
     return new MockOutputter();
   }
 
-  void PostTask() override {
-    // Process synchronously.
-    Process();
-  }
-
   unsigned char tracing_enabled_;
-
   scoped_refptr<Outputter> set_outputter_;
 };
 
@@ -227,7 +221,7 @@ class BaseGpuTraceTest : public BaseGpuTest {
 
   void DoTraceTest(bool tracing_service, bool tracing_device) {
     // Expected results
-    const GpuTracerSource tracer_source = kTraceGroupMarker;
+    const GpuTracerSource tracer_source = kTraceCHROMIUM;
     const std::string category_name("trace_category");
     const std::string trace_name("trace_test");
     const int64 offset_time = 3231;
@@ -426,7 +420,6 @@ class BaseGpuTracerTest : public BaseGpuTest {
       std::string source_trace_name = trace_name + num_char;
 
       const bool valid_timer = gpu_timing_client_->IsAvailable();
-
       const GpuTracerSource source = static_cast<GpuTracerSource>(i);
       ExpectOutputterEndMocks(outputter_ref_.get(), source, source_category,
                               source_trace_name, expect_start_time + i,
@@ -438,6 +431,7 @@ class BaseGpuTracerTest : public BaseGpuTest {
       ASSERT_TRUE(tracer.End(source));
     }
     ASSERT_TRUE(tracer.EndDecoding());
+    tracer.ProcessTraces();
     outputter_ref_ = NULL;
   }
 
@@ -513,6 +507,7 @@ class BaseGpuTracerTest : public BaseGpuTest {
         (5 * base::Time::kNanosecondsPerMicrosecond));
     g_fakeCPUTime = expect_start_time + 5;
     ASSERT_TRUE(tracer.EndDecoding());
+    tracer.ProcessTraces();
   }
 
   void DoDisjointTest() {
@@ -573,6 +568,7 @@ class BaseGpuTracerTest : public BaseGpuTest {
 
     ASSERT_TRUE(tracer.End(source));
     ASSERT_TRUE(tracer.EndDecoding());
+    tracer.ProcessTraces();
 
     outputter_ref_ = NULL;
   }
@@ -629,6 +625,7 @@ class BaseGpuTracerTest : public BaseGpuTest {
 
     ASSERT_TRUE(tracer.End(source));
     ASSERT_TRUE(tracer.EndDecoding());
+    tracer.ProcessTraces();
   }
 };
 
@@ -766,11 +763,11 @@ TEST_F(GPUTracerTest, TraceDuringDecodeTest) {
   const std::string trace_name("trace_test");
 
   EXPECT_FALSE(
-      tracer_tester_->Begin(category_name, trace_name, kTraceGroupMarker));
+      tracer_tester_->Begin(category_name, trace_name, kTraceCHROMIUM));
 
   ASSERT_TRUE(tracer_tester_->BeginDecoding());
   EXPECT_TRUE(
-      tracer_tester_->Begin(category_name, trace_name, kTraceGroupMarker));
+      tracer_tester_->Begin(category_name, trace_name, kTraceCHROMIUM));
   ASSERT_TRUE(tracer_tester_->EndDecoding());
 }
 

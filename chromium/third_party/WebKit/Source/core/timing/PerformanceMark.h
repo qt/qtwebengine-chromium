@@ -40,8 +40,6 @@ public:
         return new PerformanceMark(name, startTime);
     }
 
-    virtual bool isMark() override { return true; }
-
     DEFINE_INLINE_VIRTUAL_TRACE()
     {
         PerformanceEntry::trace(visitor);
@@ -51,7 +49,7 @@ private:
     PerformanceMark(const String& name, double startTime)
         : PerformanceEntry(name, "mark", startTime, startTime) { }
 
-    virtual ~PerformanceMark() { }
+    ~PerformanceMark() override { }
 };
 
 } // namespace blink

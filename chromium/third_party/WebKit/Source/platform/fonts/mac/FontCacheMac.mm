@@ -39,6 +39,7 @@
 #include "platform/fonts/SimpleFontData.h"
 #include "platform/fonts/mac/FontFamilyMatcherMac.h"
 #include "public/platform/Platform.h"
+#include "public/platform/WebTaskRunner.h"
 #include "public/platform/WebTraceLocation.h"
 #include <wtf/Functional.h>
 #include <wtf/MainThread.h>
@@ -56,7 +57,7 @@ namespace blink {
 static void invalidateFontCache()
 {
     if (!isMainThread()) {
-        Platform::current()->mainThread()->postTask(FROM_HERE, bind(&invalidateFontCache));
+        Platform::current()->mainThread()->taskRunner()->postTask(FROM_HERE, bind(&invalidateFontCache));
         return;
     }
     FontCache::fontCache()->invalidate();
@@ -80,22 +81,6 @@ static bool useHinting()
 void FontCache::platformInit()
 {
     CFNotificationCenterAddObserver(CFNotificationCenterGetLocalCenter(), this, fontCacheRegisteredFontsChangedNotificationCallback, kCTFontManagerRegisteredFontsChangedNotification, 0, CFNotificationSuspensionBehaviorDeliverImmediately);
-}
-
-static int toAppKitFontWeight(FontWeight fontWeight)
-{
-    static int appKitFontWeights[] = {
-        2,  // FontWeight100
-        3,  // FontWeight200
-        4,  // FontWeight300
-        5,  // FontWeight400
-        6,  // FontWeight500
-        8,  // FontWeight600
-        9,  // FontWeight700
-        10, // FontWeight800
-        12, // FontWeight900
-    };
-    return appKitFontWeights[fontWeight];
 }
 
 static inline bool isAppKitFontWeightBold(NSInteger appKitFontWeight)
@@ -203,10 +188,9 @@ PassRefPtr<SimpleFontData> FontCache::getLastResortFallbackFont(const FontDescri
 FontPlatformData* FontCache::createFontPlatformData(const FontDescription& fontDescription, const FontFaceCreationParams& creationParams, float fontSize)
 {
     NSFontTraitMask traits = fontDescription.style() ? NSFontItalicTrait : 0;
-    NSInteger weight = toAppKitFontWeight(fontDescription.weight());
     float size = fontSize;
 
-    NSFont *nsFont = MatchNSFontFamily(creationParams.family(),traits, weight, size);
+    NSFont* nsFont = MatchNSFontFamily(creationParams.family(), traits, fontDescription.weight(), size);
     if (!nsFont)
         return 0;
 
@@ -217,7 +201,8 @@ FontPlatformData* FontCache::createFontPlatformData(const FontDescription& fontD
     NSInteger actualWeight = [fontManager weightOfFont:nsFont];
 
     NSFont *platformFont = useHinting() ? [nsFont screenFont] : [nsFont printerFont];
-    bool syntheticBold = (isAppKitFontWeightBold(weight) && !isAppKitFontWeightBold(actualWeight)) || fontDescription.isSyntheticBold();
+    NSInteger appKitWeight = toAppKitFontWeight(fontDescription.weight());
+    bool syntheticBold = (isAppKitFontWeightBold(appKitWeight) && !isAppKitFontWeightBold(actualWeight)) || fontDescription.isSyntheticBold();
     bool syntheticItalic = ((traits & NSFontItalicTrait) && !(actualTraits & NSFontItalicTrait)) || fontDescription.isSyntheticItalic();
 
     // FontPlatformData::typeface() is null in the case of Chromium out-of-process font loading failing.

@@ -10,6 +10,7 @@
 #include <stack>
 
 #include "base/basictypes.h"
+#include "base/gtest_prod_util.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/time/time.h"
@@ -37,14 +38,6 @@ class CONTENT_EXPORT IndexedDBTransaction
                  // to be written.
     FINISHED,    // Either aborted or committed.
   };
-
-  IndexedDBTransaction(
-      int64 id,
-      scoped_refptr<IndexedDBDatabaseCallbacks> callbacks,
-      const std::set<int64>& object_store_ids,
-      blink::WebIDBTransactionMode,
-      IndexedDBDatabase* db,
-      IndexedDBBackingStore::Transaction* backing_store_transaction);
 
   virtual void Abort();
   leveldb::Status Commit();
@@ -88,18 +81,34 @@ class CONTENT_EXPORT IndexedDBTransaction
 
   const Diagnostics& diagnostics() const { return diagnostics_; }
 
+ protected:
+  // Test classes may derive, but most creation should be done via
+  // IndexedDBClassFactory.
+  IndexedDBTransaction(
+      int64 id,
+      scoped_refptr<IndexedDBDatabaseCallbacks> callbacks,
+      const std::set<int64>& object_store_ids,
+      blink::WebIDBTransactionMode mode,
+      IndexedDBDatabase* db,
+      IndexedDBBackingStore::Transaction* backing_store_transaction);
+  virtual ~IndexedDBTransaction();
+
+  // May be overridden in tests.
+  virtual base::TimeDelta GetInactivityTimeout() const;
+
  private:
   friend class BlobWriteCallbackImpl;
+  friend class IndexedDBClassFactory;
+  friend class base::RefCounted<IndexedDBTransaction>;
 
   FRIEND_TEST_ALL_PREFIXES(IndexedDBTransactionTestMode, AbortPreemptive);
-  FRIEND_TEST_ALL_PREFIXES(IndexedDBTransactionTest, Timeout);
+  FRIEND_TEST_ALL_PREFIXES(IndexedDBTransactionTestMode, AbortTasks);
+  FRIEND_TEST_ALL_PREFIXES(IndexedDBTransactionTest, NoTimeoutReadOnly);
   FRIEND_TEST_ALL_PREFIXES(IndexedDBTransactionTest,
                            SchedulePreemptiveTask);
   FRIEND_TEST_ALL_PREFIXES(IndexedDBTransactionTestMode,
                            ScheduleNormalTask);
-
-  friend class base::RefCounted<IndexedDBTransaction>;
-  virtual ~IndexedDBTransaction();
+  FRIEND_TEST_ALL_PREFIXES(IndexedDBTransactionTest, Timeout);
 
   void RunTasksIfStarted();
 
@@ -167,7 +176,7 @@ class CONTENT_EXPORT IndexedDBTransaction
   // This timer is started after requests have been processed. If no subsequent
   // requests are processed before the timer fires, assume the script is
   // unresponsive and abort to unblock the transaction queue.
-  base::OneShotTimer<IndexedDBTransaction> timeout_timer_;
+  base::OneShotTimer timeout_timer_;
 
   Diagnostics diagnostics_;
 };

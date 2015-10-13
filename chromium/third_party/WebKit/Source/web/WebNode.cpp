@@ -36,8 +36,9 @@
 #include "core/dom/Element.h"
 #include "core/dom/Node.h"
 #include "core/dom/NodeList.h"
+#include "core/dom/StaticNodeList.h"
 #include "core/dom/TagCollection.h"
-#include "core/editing/markup.h"
+#include "core/editing/serializers/Serialization.h"
 #include "core/events/Event.h"
 #include "core/html/HTMLCollection.h"
 #include "core/html/HTMLElement.h"
@@ -130,19 +131,9 @@ bool WebNode::lessThan(const WebNode& n) const
     return m_private.get() < n.m_private.get();
 }
 
-WebNode::NodeType WebNode::nodeType() const
-{
-    return static_cast<NodeType>(m_private->nodeType());
-}
-
 WebNode WebNode::parentNode() const
 {
     return WebNode(const_cast<ContainerNode*>(m_private->parentNode()));
-}
-
-WebString WebNode::nodeName() const
-{
-    return m_private->nodeName();
 }
 
 WebString WebNode::nodeValue() const
@@ -185,11 +176,6 @@ WebNodeList WebNode::childNodes()
     return WebNodeList(m_private->childNodes());
 }
 
-WebString WebNode::createMarkup() const
-{
-    return blink::createMarkup(m_private.get());
-}
-
 bool WebNode::isLink() const
 {
     return m_private->isLink();
@@ -198,6 +184,11 @@ bool WebNode::isLink() const
 bool WebNode::isTextNode() const
 {
     return m_private->isTextNode();
+}
+
+bool WebNode::isCommentNode() const
+{
+    return m_private->nodeType() == Node::COMMENT_NODE;
 }
 
 bool WebNode::isFocusable() const
@@ -223,6 +214,11 @@ bool WebNode::isElementNode() const
     return m_private->isElementNode();
 }
 
+bool WebNode::isDocumentNode() const
+{
+    return m_private->isDocumentNode();
+}
+
 void WebNode::dispatchEvent(const WebDOMEvent& event)
 {
     if (!event.isNull())
@@ -241,37 +237,50 @@ WebElementCollection WebNode::getElementsByHTMLTagName(const WebString& tag) con
     return WebElementCollection();
 }
 
-WebElement WebNode::querySelector(const WebString& tag, WebExceptionCode& ec) const
+WebElement WebNode::querySelector(const WebString& selector, WebExceptionCode& ec) const
 {
+    if (!m_private->isContainerNode())
+        return WebElement();
     TrackExceptionState exceptionState;
-    WebElement element;
-    if (m_private->isContainerNode())
-        element = toContainerNode(m_private.get())->querySelector(tag, exceptionState);
+    WebElement element = toContainerNode(m_private.get())->querySelector(selector, exceptionState);
     ec = exceptionState.code();
     return element;
+}
+
+WebElement WebNode::querySelector(const WebString& selector) const
+{
+    WebExceptionCode ec = 0;
+    WebElement element = querySelector(selector, ec);
+    ASSERT(!ec);
+    return element;
+}
+
+void WebNode::querySelectorAll(const WebString& selector, WebVector<WebElement>& results, WebExceptionCode& ec) const
+{
+    if (!m_private->isContainerNode())
+        return;
+    TrackExceptionState exceptionState;
+    RefPtrWillBeRawPtr<StaticElementList> elements = toContainerNode(m_private.get())->querySelectorAll(selector, exceptionState);
+    ec = exceptionState.code();
+    if (exceptionState.hadException())
+        return;
+    Vector<WebElement> temp;
+    temp.reserveCapacity(elements->length());
+    for (unsigned i = 0; i < elements->length(); ++i)
+        temp.append(WebElement(elements->item(i)));
+    results.assign(temp);
+}
+
+void WebNode::querySelectorAll(const WebString& selector, WebVector<WebElement>& results) const
+{
+    WebExceptionCode ec = 0;
+    querySelectorAll(selector, results, ec);
+    ASSERT(!ec);
 }
 
 bool WebNode::focused() const
 {
     return m_private->focused();
-}
-
-bool WebNode::remove()
-{
-    TrackExceptionState exceptionState;
-    m_private->remove(exceptionState);
-    return !exceptionState.hadException();
-}
-
-bool WebNode::hasNonEmptyBoundingBox() const
-{
-    m_private->document().updateLayoutIgnorePendingStylesheets();
-    return m_private->hasNonEmptyBoundingBox();
-}
-
-bool WebNode::containsIncludingShadowDOM(const WebNode& other) const
-{
-    return m_private->containsIncludingShadowDOM(other.m_private.get());
 }
 
 WebPluginContainer* WebNode::pluginContainer() const

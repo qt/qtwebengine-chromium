@@ -86,7 +86,7 @@ class RtcpObserver : public RtcpRttStats {
  private:
   CallStats* owner_;
 
-  DISALLOW_COPY_AND_ASSIGN(RtcpObserver);
+  RTC_DISALLOW_COPY_AND_ASSIGN(RtcpObserver);
 };
 
 CallStats::CallStats()
@@ -123,7 +123,7 @@ int32_t CallStats::Process() {
   if (max_rtt_ms_ > 0) {
     for (std::list<CallStatsObserver*>::iterator it = observers_.begin();
          it != observers_.end(); ++it) {
-      (*it)->OnRttUpdate(max_rtt_ms_);
+      (*it)->OnRttUpdate(avg_rtt_ms_, max_rtt_ms_);
     }
   }
   return 0;

@@ -9,7 +9,6 @@
 
 #include "base/compiler_specific.h"
 #include "base/containers/scoped_ptr_hash_map.h"
-#include "base/memory/scoped_vector.h"
 #include "base/memory/singleton.h"
 #include "base/observer_list.h"
 #include "content/public/browser/notification_observer.h"
@@ -101,7 +100,7 @@ class CONTENT_EXPORT SharedWorkerServiceImpl
   class SharedWorkerPendingInstance;
   class SharedWorkerReserver;
 
-  friend struct DefaultSingletonTraits<SharedWorkerServiceImpl>;
+  friend struct base::DefaultSingletonTraits<SharedWorkerServiceImpl>;
   friend class SharedWorkerServiceImplTest;
 
   typedef void (*UpdateWorkerDependencyFunc)(const std::vector<int>&,

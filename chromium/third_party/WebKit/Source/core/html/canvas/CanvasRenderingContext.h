@@ -34,6 +34,8 @@
 #include "wtf/Noncopyable.h"
 #include "wtf/text/StringHash.h"
 
+class SkCanvas;
+
 namespace blink { class WebLayer; }
 
 namespace blink {
@@ -99,13 +101,14 @@ public:
 
     // Canvas2D-specific interface
     virtual bool is2d() const { return false; }
-    virtual void restoreCanvasMatrixClipStack() { }
+    virtual void restoreCanvasMatrixClipStack(SkCanvas*) const { }
     virtual void reset() { }
     virtual void clearRect(float x, float y, float width, float height) { }
     virtual void didSetSurfaceSize() { }
     virtual void setShouldAntialias(bool) { }
     virtual unsigned hitRegionsCount() const { return 0; }
     virtual void setFont(const String&) { }
+    virtual void styleDidChange(const ComputedStyle* oldStyle, const ComputedStyle& newStyle) { }
 
     // WebGL-specific interface
     virtual bool is3d() const { return false; }

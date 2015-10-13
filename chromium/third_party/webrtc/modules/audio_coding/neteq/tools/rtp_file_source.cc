@@ -28,7 +28,7 @@ namespace test {
 
 RtpFileSource* RtpFileSource::Create(const std::string& file_name) {
   RtpFileSource* source = new RtpFileSource();
-  CHECK(source->OpenFile(file_name));
+  RTC_CHECK(source->OpenFile(file_name));
   return source;
 }
 
@@ -47,7 +47,7 @@ Packet* RtpFileSource::NextPacket() {
     if (!rtp_reader_->NextPacket(&temp_packet)) {
       return NULL;
     }
-    if (temp_packet.length == 0) {
+    if (temp_packet.original_length == 0) {
       // May be an RTCP packet.
       // Read the next one.
       continue;

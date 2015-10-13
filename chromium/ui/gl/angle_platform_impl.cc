@@ -29,6 +29,18 @@ const unsigned char* ANGLEPlatformImpl::getTraceCategoryEnabledFlag(
   return TRACE_EVENT_API_GET_CATEGORY_GROUP_ENABLED(category_group);
 }
 
+void ANGLEPlatformImpl::logError(const char* errorMessage) {
+  LOG(ERROR) << errorMessage;
+}
+
+void ANGLEPlatformImpl::logWarning(const char* warningMessage) {
+  LOG(WARNING) << warningMessage;
+}
+
+void ANGLEPlatformImpl::logInfo(const char* infoMessage) {
+  LOG(INFO) << infoMessage;
+}
+
 angle::Platform::TraceEventHandle ANGLEPlatformImpl::addTraceEvent(
     char phase,
     const unsigned char* category_group_enabled,
@@ -44,7 +56,7 @@ angle::Platform::TraceEventHandle ANGLEPlatformImpl::addTraceEvent(
       base::TraceTicks() + base::TimeDelta::FromSecondsD(timestamp);
   base::trace_event::TraceEventHandle handle =
       TRACE_EVENT_API_ADD_TRACE_EVENT_WITH_THREAD_ID_AND_TIMESTAMP(
-          phase, category_group_enabled, name, id,
+          phase, category_group_enabled, name, id, trace_event_internal::kNoId,
           base::PlatformThread::CurrentId(), timestamp_tt, num_args, arg_names,
           arg_types, arg_values, nullptr, flags);
   angle::Platform::TraceEventHandle result;

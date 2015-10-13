@@ -211,8 +211,6 @@ public:
     // node that is of the type CDATA_SECTION_NODE, TEXT_NODE or COMMENT_NODE has changed its value.
     virtual void childrenChanged(const ChildrenChange&);
 
-    void disconnectDescendantFrames();
-
     DECLARE_VIRTUAL_TRACE();
 
 protected:
@@ -257,7 +255,7 @@ private:
     bool hasRestyleFlagInternal(DynamicRestyleFlags) const;
     bool hasRestyleFlagsInternal() const;
 
-    inline bool checkAcceptChildGuaranteedNodeTypes(const Node& newChild, ExceptionState&) const;
+    inline bool checkAcceptChildGuaranteedNodeTypes(const Node& newChild, const Node* oldChild, ExceptionState&) const;
     inline bool checkAcceptChild(const Node* newChild, const Node* oldChild, ExceptionState&) const;
     inline bool checkParserAcceptChild(const Node& newChild) const;
     inline bool containsConsideringHostElements(const Node&) const;

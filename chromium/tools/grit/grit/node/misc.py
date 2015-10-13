@@ -333,9 +333,15 @@ class GritNode(base.Node):
                              structure.StructureNode, variant.SkeletonNode)):
           input_path = node.GetInputPath()
           if input_path is not None:
-            input_files.add(input_path)
+            input_files.add(self.ToRealPath(input_path))
+
+          # If it's a flattened node, grab inlined resources too.
+          if node.name == 'structure' and node.attrs['flattenhtml'] == 'true':
+            node.RunPreSubstitutionGatherer()
+            input_files.update(node.GetHtmlResourceFilenames())
+
     self.SetOutputLanguage(old_output_language)
-    return sorted(map(self.ToRealPath, input_files))
+    return sorted(input_files)
 
   def GetFirstIdsFile(self):
     """Returns a usable path to the first_ids file, if set, otherwise

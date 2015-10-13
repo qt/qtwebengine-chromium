@@ -17,7 +17,6 @@
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace net {
-
 namespace test {
 
 std::string HexDumpWithMarks(const unsigned char* data, int length,
@@ -49,8 +48,9 @@ std::string HexDumpWithMarks(const unsigned char* data, int length,
     }
     hex = hex + "  ";
 
-    for (const unsigned char *p = row; p < row + 4 && p < row + length; ++p)
+    for (const unsigned char* p = row; p < row + 4 && p < row + length; ++p) {
       hex += (*p >= 0x20 && *p <= 0x7f) ? (*p) : '.';
+    }
 
     hex = hex + '\n';
   }
@@ -130,6 +130,11 @@ void SetFrameLength(SpdyFrame* frame,
   }
 }
 
+bool CompareSpdyHeaderBlocks(const SpdyHeaderBlock& a,
+                             const SpdyHeaderBlock& b) {
+  return a.size() == b.size() && std::equal(a.begin(), a.end(), b.begin());
+}
+
 std::string a2b_hex(const char* hex_data) {
   std::vector<uint8> output;
   std::string result;
@@ -169,5 +174,4 @@ void AddPin(TransportSecurityState* state,
 }
 
 }  // namespace test
-
 }  // namespace net

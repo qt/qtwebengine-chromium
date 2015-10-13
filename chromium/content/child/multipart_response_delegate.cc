@@ -42,7 +42,7 @@ class HeaderCopier : public WebHTTPHeaderVisitor {
   HeaderCopier(WebURLResponse* response)
       : response_(response) {
   }
-  virtual void visitHeader(const WebString& name, const WebString& value) {
+  void visitHeader(const WebString& name, const WebString& value) override {
     const std::string& name_utf8 = name.utf8();
     for (size_t i = 0; i < arraysize(kReplaceHeaders); ++i) {
       if (base::LowerCaseEqualsASCII(name_utf8, kReplaceHeaders[i]))
@@ -71,7 +71,7 @@ MultipartResponseDelegate::MultipartResponseDelegate(
       stop_sending_(false),
       has_sent_first_response_(false) {
   // Some servers report a boundary prefixed with "--".  See bug 5786.
-  if (base::StartsWithASCII(boundary, "--", true)) {
+  if (base::StartsWith(boundary, "--", base::CompareCase::SENSITIVE)) {
     boundary_.assign(boundary);
   } else {
     boundary_.append(boundary);

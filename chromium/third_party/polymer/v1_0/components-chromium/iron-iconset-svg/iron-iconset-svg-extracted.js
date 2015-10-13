@@ -11,7 +11,7 @@
    *
    * Example:
    *
-   *     <iron-iconset-svg id="my-svg-icons" iconSize="24">
+   *     <iron-iconset-svg name="my-svg-icons" size="24">
    *       <svg>
    *         <defs>
    *           <g id="shape">
@@ -123,6 +123,9 @@
      */
     _nameChanged: function() {
       new Polymer.IronMeta({type: 'iconset', key: this.name, value: this});
+      this.async(function() {
+        this.fire('iron-iconset-added', this, {node: window});
+      });
     },
 
     /**

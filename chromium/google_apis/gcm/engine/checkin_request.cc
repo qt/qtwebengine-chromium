@@ -5,8 +5,9 @@
 #include "google_apis/gcm/engine/checkin_request.h"
 
 #include "base/bind.h"
-#include "base/message_loop/message_loop.h"
+#include "base/location.h"
 #include "base/metrics/histogram.h"
+#include "base/thread_task_runner_handle.h"
 #include "google_apis/gcm/monitoring/gcm_stats_recorder.h"
 #include "google_apis/gcm/protocol/checkin.pb.h"
 #include "net/base/load_flags.h"
@@ -154,28 +155,20 @@ void CheckinRequest::Start() {
   url_fetcher_->Start();
 }
 
-void CheckinRequest::RetryWithBackoff(bool update_backoff) {
-  if (update_backoff) {
-    backoff_entry_.InformOfRequest(false);
-    url_fetcher_.reset();
-  }
+void CheckinRequest::RetryWithBackoff() {
+  backoff_entry_.InformOfRequest(false);
+  url_fetcher_.reset();
 
-  if (backoff_entry_.ShouldRejectRequest()) {
-    DVLOG(1) << "Delay GCM checkin for: "
-             << backoff_entry_.GetTimeUntilRelease().InMilliseconds()
-             << " milliseconds.";
-    recorder_->RecordCheckinDelayedDueToBackoff(
-        backoff_entry_.GetTimeUntilRelease().InMilliseconds());
-    base::MessageLoop::current()->PostDelayedTask(
-        FROM_HERE,
-        base::Bind(&CheckinRequest::RetryWithBackoff,
-                   weak_ptr_factory_.GetWeakPtr(),
-                   false),
-        backoff_entry_.GetTimeUntilRelease());
-    return;
-  }
-
-  Start();
+  DVLOG(1) << "Delay GCM checkin for: "
+           << backoff_entry_.GetTimeUntilRelease().InMilliseconds()
+           << " milliseconds.";
+  recorder_->RecordCheckinDelayedDueToBackoff(
+      backoff_entry_.GetTimeUntilRelease().InMilliseconds());
+  DCHECK(!weak_ptr_factory_.HasWeakPtrs());
+  base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
+      FROM_HERE,
+      base::Bind(&CheckinRequest::Start, weak_ptr_factory_.GetWeakPtr()),
+      backoff_entry_.GetTimeUntilRelease());
 }
 
 void CheckinRequest::OnURLFetchComplete(const net::URLFetcher* source) {
@@ -184,7 +177,7 @@ void CheckinRequest::OnURLFetchComplete(const net::URLFetcher* source) {
   if (!source->GetStatus().is_success()) {
     LOG(ERROR) << "Failed to get checkin response. Fetcher failed. Retrying.";
     RecordCheckinStatusAndReportUMA(URL_FETCHING_FAILED, recorder_, true);
-    RetryWithBackoff(true);
+    RetryWithBackoff();
     return;
   }
 
@@ -211,7 +204,7 @@ void CheckinRequest::OnURLFetchComplete(const net::URLFetcher* source) {
     CheckinRequestStatus status = response_status != net::HTTP_OK ?
         HTTP_NOT_OK : RESPONSE_PARSING_FAILED;
     RecordCheckinStatusAndReportUMA(status, recorder_, true);
-    RetryWithBackoff(true);
+    RetryWithBackoff();
     return;
   }
 
@@ -221,7 +214,7 @@ void CheckinRequest::OnURLFetchComplete(const net::URLFetcher* source) {
       response_proto.security_token() == 0) {
     LOG(ERROR) << "Android ID or security token is 0. Retrying.";
     RecordCheckinStatusAndReportUMA(ZERO_ID_OR_TOKEN, recorder_, true);
-    RetryWithBackoff(true);
+    RetryWithBackoff();
     return;
   }
 

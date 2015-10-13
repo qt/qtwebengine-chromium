@@ -5,7 +5,7 @@
 #include "media/base/stream_parser_buffer.h"
 
 #include "base/logging.h"
-#include "media/base/buffers.h"
+#include "media/base/timestamp_constants.h"
 
 namespace media {
 
@@ -114,6 +114,24 @@ int StreamParserBuffer::GetSpliceBufferConfigId(size_t index) const {
   return index < splice_buffers().size()
       ? splice_buffers_[index]->GetConfigId()
       : GetConfigId();
+}
+
+const char* StreamParserBuffer::GetTypeName() const {
+  switch (type()) {
+    case DemuxerStream::AUDIO:
+      return "audio";
+    case DemuxerStream::VIDEO:
+      return "video";
+    case DemuxerStream::TEXT:
+      return "text";
+    case DemuxerStream::UNKNOWN:
+      return "unknown";
+    case DemuxerStream::NUM_TYPES:
+      // Fall-through to NOTREACHED().
+      break;
+  }
+  NOTREACHED();
+  return "";
 }
 
 void StreamParserBuffer::ConvertToSpliceBuffer(

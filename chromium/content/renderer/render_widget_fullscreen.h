@@ -15,15 +15,16 @@ class CompositorDependencies;
 // TODO(boliu): Override non-supported methods with no-op? eg setWindowRect().
 class RenderWidgetFullscreen : public RenderWidget {
  public:
-  virtual void show(blink::WebNavigationPolicy);
+  void show(blink::WebNavigationPolicy) override;
 
  protected:
-  RenderWidgetFullscreen(const blink::WebScreenInfo& screen_info);
+  RenderWidgetFullscreen(CompositorDependencies* compositor_deps,
+                         const blink::WebScreenInfo& screen_info);
   ~RenderWidgetFullscreen() override;
 
   virtual blink::WebWidget* CreateWebWidget();
 
-  bool Init(int32 opener_id, CompositorDependencies* compositor_deps);
+  bool Init(int32 opener_id);
 };
 
 }  // namespace content

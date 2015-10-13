@@ -34,7 +34,7 @@
     readonly attribute short            button;
     readonly attribute unsigned short   buttons;
     readonly attribute EventTarget?     relatedTarget;
-    // TODO(philipj): boolean getModifierState(DOMString keyArg);
+    boolean getModifierState(DOMString keyArg);
 
     // https://w3c.github.io/uievents/#idl-interface-MouseEvent-initializers
     // TODO(philipj): None of the initMouseEvent() arguments should be optional.
@@ -78,7 +78,4 @@
     [DeprecateAs=PrefixedMouseEventMovementY, ImplementedAs=movementY] readonly attribute long webkitMovementY;
     [Measure] readonly attribute long layerX;
     [Measure] readonly attribute long layerY;
-
-    // FIXME: dataTransfer belongs on the DragEvent interface. crbug.com/498504
-    readonly attribute DataTransfer dataTransfer;
 };

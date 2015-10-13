@@ -4,6 +4,8 @@
 
 #include "ui/ozone/platform/drm/gpu/drm_buffer.h"
 
+#include <drm_fourcc.h>
+
 #include "base/logging.h"
 #include "ui/ozone/platform/drm/gpu/drm_device.h"
 
@@ -26,6 +28,26 @@ uint8_t GetColorDepth(SkColorType type) {
       return 12;
     case kN32_SkColorType:
       return 24;
+    default:
+      NOTREACHED();
+      return 0;
+  }
+}
+
+// We always ignore Alpha.
+uint32_t GetFourCCCodeForSkColorType(SkColorType type) {
+  switch (type) {
+    case kUnknown_SkColorType:
+    case kAlpha_8_SkColorType:
+      return 0;
+    case kIndex_8_SkColorType:
+      return DRM_FORMAT_C8;
+    case kRGB_565_SkColorType:
+      return DRM_FORMAT_RGB565;
+    case kARGB_4444_SkColorType:
+      return DRM_FORMAT_XRGB4444;
+    case kN32_SkColorType:
+      return DRM_FORMAT_XRGB8888;
     default:
       NOTREACHED();
       return 0;
@@ -64,12 +86,15 @@ bool DrmBuffer::Initialize(const SkImageInfo& info,
     return false;
   }
 
-  if (should_register_framebuffer &&
-      !drm_->AddFramebuffer(
-          info.width(), info.height(), GetColorDepth(info.colorType()),
-          info.bytesPerPixel() << 3, stride_, handle_, &framebuffer_)) {
-    PLOG(ERROR) << "DrmBuffer: AddFramebuffer: handle " << handle_;
-    return false;
+  if (should_register_framebuffer) {
+    if (!drm_->AddFramebuffer(
+            info.width(), info.height(), GetColorDepth(info.colorType()),
+            info.bytesPerPixel() << 3, stride_, handle_, &framebuffer_)) {
+      PLOG(ERROR) << "DrmBuffer: AddFramebuffer: handle " << handle_;
+      return false;
+    }
+
+    fb_pixel_format_ = GetFourCCCodeForSkColorType(info.colorType());
   }
 
   surface_ =
@@ -90,6 +115,10 @@ uint32_t DrmBuffer::GetFramebufferId() const {
   return framebuffer_;
 }
 
+uint32_t DrmBuffer::GetFramebufferPixelFormat() const {
+  return fb_pixel_format_;
+}
+
 uint32_t DrmBuffer::GetHandle() const {
   return handle_;
 }
@@ -106,6 +135,7 @@ DrmBufferGenerator::~DrmBufferGenerator() {
 
 scoped_refptr<ScanoutBuffer> DrmBufferGenerator::Create(
     const scoped_refptr<DrmDevice>& drm,
+    gfx::BufferFormat format,
     const gfx::Size& size) {
   scoped_refptr<DrmBuffer> buffer(new DrmBuffer(drm));
   SkImageInfo info = SkImageInfo::MakeN32Premul(size.width(), size.height());

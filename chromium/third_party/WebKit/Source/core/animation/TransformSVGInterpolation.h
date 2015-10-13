@@ -7,10 +7,12 @@
 
 #include "core/animation/SVGInterpolation.h"
 #include "core/svg/SVGTransformList.h"
+#include "wtf/Allocator.h"
 
 namespace blink {
 
 class TransformSVGInterpolation {
+    STATIC_ONLY(TransformSVGInterpolation);
 public:
     typedef SVGTransformList ListType;
     typedef SVGTransformType NonInterpolableType;
@@ -22,7 +24,7 @@ public:
         return SVGTransformList::create();
     }
 
-    static PassOwnPtrWillBeRawPtr<InterpolableValue> toInterpolableValue(SVGTransform*, const SVGAnimatedPropertyBase*, SVGTransformType*);
+    static PassOwnPtr<InterpolableValue> toInterpolableValue(SVGTransform*, const SVGAnimatedPropertyBase*, SVGTransformType*);
 
     static PassRefPtrWillBeRawPtr<SVGTransform> fromInterpolableValue(const InterpolableValue&, SVGTransformType, const SVGElement*);
 };

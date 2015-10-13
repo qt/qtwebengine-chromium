@@ -14,6 +14,7 @@
 #include "base/thread_task_runner_handle.h"
 #include "base/threading/simple_thread.h"
 #include "base/threading/thread.h"
+#include "cc/base/histograms.h"
 #include "cc/output/compositor_frame.h"
 #include "cc/output/output_surface.h"
 #include "cc/raster/task_graph_runner.h"
@@ -63,6 +64,7 @@
 #elif defined(USE_X11)
 #include "content/browser/compositor/software_output_device_x11.h"
 #elif defined(OS_MACOSX)
+#include "content/browser/compositor/browser_compositor_overlay_candidate_validator_mac.h"
 #include "content/browser/compositor/software_output_device_mac.h"
 #endif
 
@@ -105,6 +107,7 @@ GpuProcessTransportFactory::GpuProcessTransportFactory()
       task_graph_runner_(new cc::TaskGraphRunner),
       callback_factory_(this) {
   ui::Layer::InitializeUILayerSettings();
+  cc::SetClientNameForMetrics("Browser");
 
   if (UseSurfacesEnabled())
     surface_manager_ = make_scoped_ptr(new cc::SurfaceManager);
@@ -172,6 +175,9 @@ CreateOverlayCandidateValidator(gfx::AcceleratedWidget widget) {
         new BrowserCompositorOverlayCandidateValidatorOzone(
             widget, overlay_candidates.Pass()));
   }
+#elif defined(OS_MACOSX)
+  return make_scoped_ptr(
+      new BrowserCompositorOverlayCandidateValidatorMac(widget));
 #endif
   return scoped_ptr<BrowserCompositorOverlayCandidateValidator>();
 }
@@ -237,6 +243,16 @@ void GpuProcessTransportFactory::EstablishedGpuChannel(
 
   scoped_refptr<ContextProviderCommandBuffer> context_provider;
   if (create_gpu_output_surface) {
+    // Try to reuse existing worker context provider.
+    bool shared_worker_context_provider_lost = false;
+    if (shared_worker_context_provider_) {
+      // Note: If context is lost, we delete reference after releasing the lock.
+      base::AutoLock lock(*shared_worker_context_provider_->GetLock());
+      if (shared_worker_context_provider_->ContextGL()
+              ->GetGraphicsResetStatusKHR() != GL_NO_ERROR) {
+        shared_worker_context_provider_lost = true;
+      }
+    }
     scoped_refptr<GpuChannelHost> gpu_channel_host =
         BrowserGpuChannelHostFactory::instance()->GetGpuChannel();
     if (gpu_channel_host.get()) {
@@ -246,12 +262,27 @@ void GpuProcessTransportFactory::EstablishedGpuChannel(
           BROWSER_COMPOSITOR_ONSCREEN_CONTEXT);
       if (context_provider && !context_provider->BindToCurrentThread())
         context_provider = nullptr;
+      if (!shared_worker_context_provider_ ||
+          shared_worker_context_provider_lost) {
+        shared_worker_context_provider_ = ContextProviderCommandBuffer::Create(
+            GpuProcessTransportFactory::CreateContextCommon(gpu_channel_host,
+                                                            0),
+            BROWSER_WORKER_CONTEXT);
+        if (shared_worker_context_provider_ &&
+            !shared_worker_context_provider_->BindToCurrentThread())
+          shared_worker_context_provider_ = nullptr;
+        if (shared_worker_context_provider_)
+          shared_worker_context_provider_->SetupLock();
+      }
     }
 
-    UMA_HISTOGRAM_BOOLEAN("Aura.CreatedGpuBrowserCompositor",
-                          !!context_provider.get());
+    bool created_gpu_browser_compositor =
+        !!context_provider && !!shared_worker_context_provider_;
 
-    if (!context_provider) {
+    UMA_HISTOGRAM_BOOLEAN("Aura.CreatedGpuBrowserCompositor",
+                          created_gpu_browser_compositor);
+
+    if (!created_gpu_browser_compositor) {
       // Try again.
       CauseForGpuLaunch cause =
           CAUSE_FOR_GPU_LAUNCH_WEBGRAPHICSCONTEXT3DCOMMANDBUFFERIMPL_INITIALIZE;
@@ -270,26 +301,35 @@ void GpuProcessTransportFactory::EstablishedGpuChannel(
         compositor->vsync_manager()));
   } else {
     DCHECK(context_provider);
+    ContextProvider::Capabilities capabilities =
+        context_provider->ContextCapabilities();
     if (!data->surface_id) {
       surface = make_scoped_ptr(new OffscreenBrowserCompositorOutputSurface(
-          context_provider, compositor->vsync_manager(),
+          context_provider, shared_worker_context_provider_,
+          compositor->vsync_manager(),
           scoped_ptr<BrowserCompositorOverlayCandidateValidator>()));
-    } else
-#if defined(USE_OZONE)
-        if (ui::OzonePlatform::GetInstance()
-                ->GetOverlayManager()
-                ->CanShowPrimaryPlaneAsOverlay()) {
+    } else if (capabilities.gpu.surfaceless) {
+      GLenum target = GL_TEXTURE_2D;
+      GLenum format = GL_RGB;
+#if defined(OS_MACOSX)
+      target = GL_TEXTURE_RECTANGLE_ARB;
+      format = GL_BGRA_EXT;
+#endif
       surface =
           make_scoped_ptr(new GpuSurfacelessBrowserCompositorOutputSurface(
-              context_provider, data->surface_id, compositor->vsync_manager(),
-              CreateOverlayCandidateValidator(compositor->widget()), GL_RGB,
-              BrowserGpuMemoryBufferManager::current()));
-    } else
+              context_provider, shared_worker_context_provider_,
+              data->surface_id, compositor->vsync_manager(),
+              CreateOverlayCandidateValidator(compositor->widget()), target,
+              format, BrowserGpuMemoryBufferManager::current()));
+    } else {
+      scoped_ptr<BrowserCompositorOverlayCandidateValidator> validator;
+#if !defined(OS_MACOSX)
+      // Overlays are only supported on surfaceless output surfaces on Mac.
+      validator = CreateOverlayCandidateValidator(compositor->widget());
 #endif
-    {
       surface = make_scoped_ptr(new GpuBrowserCompositorOutputSurface(
-          context_provider, compositor->vsync_manager(),
-          CreateOverlayCandidateValidator(compositor->widget())));
+          context_provider, shared_worker_context_provider_,
+          compositor->vsync_manager(), validator.Pass()));
     }
   }
 
@@ -318,7 +358,8 @@ void GpuProcessTransportFactory::EstablishedGpuChannel(
 
   scoped_ptr<cc::SurfaceDisplayOutputSurface> output_surface(
       new cc::SurfaceDisplayOutputSurface(
-          manager, compositor->surface_id_allocator(), context_provider));
+          manager, compositor->surface_id_allocator(), context_provider,
+          shared_worker_context_provider_));
   display_client->set_surface_output_surface(output_surface.get());
   output_surface->set_display_client(display_client.get());
   display_client->display()->Resize(compositor->size());
@@ -385,8 +426,8 @@ void GpuProcessTransportFactory::RemoveCompositor(ui::Compositor* compositor) {
 bool GpuProcessTransportFactory::DoesCreateTestContexts() { return false; }
 
 uint32 GpuProcessTransportFactory::GetImageTextureTarget(
-    gfx::GpuMemoryBuffer::Format format,
-    gfx::GpuMemoryBuffer::Usage usage) {
+    gfx::BufferFormat format,
+    gfx::BufferUsage usage) {
   return BrowserGpuMemoryBufferManager::GetImageTextureTarget(format, usage);
 }
 
@@ -405,14 +446,6 @@ cc::TaskGraphRunner* GpuProcessTransportFactory::GetTaskGraphRunner() {
 
 ui::ContextFactory* GpuProcessTransportFactory::GetContextFactory() {
   return this;
-}
-
-gfx::GLSurfaceHandle GpuProcessTransportFactory::GetSharedSurfaceHandle() {
-  gfx::GLSurfaceHandle handle = gfx::GLSurfaceHandle(
-      gfx::kNullPluginWindow, gfx::NULL_TRANSPORT);
-  handle.parent_client_id =
-      BrowserGpuChannelHostFactory::instance()->GetGpuChannelId();
-  return handle;
 }
 
 scoped_ptr<cc::SurfaceIdAllocator>
@@ -529,8 +562,17 @@ GpuProcessTransportFactory::CreatePerCompositorData(
     data->surface_id = 0;
   } else {
     data->surface_id = tracker->AddSurfaceForNativeWidget(widget);
+#if defined(OS_MACOSX) || defined(OS_ANDROID)
+    // On Mac and Android, we can't pass the AcceleratedWidget, which is
+    // process-local, so instead we pass the surface_id, so that we can look up
+    // the AcceleratedWidget on the GPU side or when we receive
+    // GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params.
+    gfx::PluginWindowHandle handle = data->surface_id;
+#else
+    gfx::PluginWindowHandle handle = widget;
+#endif
     tracker->SetSurfaceHandle(data->surface_id,
-                              gfx::GLSurfaceHandle(widget, gfx::NATIVE_DIRECT));
+                              gfx::GLSurfaceHandle(handle, gfx::NATIVE_DIRECT));
   }
 
   per_compositor_data_[compositor] = data;

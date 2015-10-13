@@ -63,24 +63,24 @@ InlineFlowBox* LayoutSVGInline::createInlineFlowBox()
 
 FloatRect LayoutSVGInline::objectBoundingBox() const
 {
-    if (const LayoutObject* object = LayoutSVGText::locateLayoutSVGTextAncestor(this))
-        return object->objectBoundingBox();
+    if (const LayoutSVGText* textRoot = LayoutSVGText::locateLayoutSVGTextAncestor(this))
+        return textRoot->objectBoundingBox();
 
     return FloatRect();
 }
 
 FloatRect LayoutSVGInline::strokeBoundingBox() const
 {
-    if (const LayoutObject* object = LayoutSVGText::locateLayoutSVGTextAncestor(this))
-        return object->strokeBoundingBox();
+    if (const LayoutSVGText* textRoot = LayoutSVGText::locateLayoutSVGTextAncestor(this))
+        return textRoot->strokeBoundingBox();
 
     return FloatRect();
 }
 
 FloatRect LayoutSVGInline::paintInvalidationRectInLocalCoordinates() const
 {
-    if (const LayoutObject* object = LayoutSVGText::locateLayoutSVGTextAncestor(this))
-        return object->paintInvalidationRectInLocalCoordinates();
+    if (const LayoutSVGText* textRoot = LayoutSVGText::locateLayoutSVGTextAncestor(this))
+        return textRoot->paintInvalidationRectInLocalCoordinates();
 
     return FloatRect();
 }
@@ -102,11 +102,11 @@ const LayoutObject* LayoutSVGInline::pushMappingToContainer(const LayoutBoxModel
 
 void LayoutSVGInline::absoluteQuads(Vector<FloatQuad>& quads, bool* wasFixed) const
 {
-    const LayoutObject* object = LayoutSVGText::locateLayoutSVGTextAncestor(this);
-    if (!object)
+    const LayoutSVGText* textRoot = LayoutSVGText::locateLayoutSVGTextAncestor(this);
+    if (!textRoot)
         return;
 
-    FloatRect textBoundingBox = object->strokeBoundingBox();
+    FloatRect textBoundingBox = textRoot->strokeBoundingBox();
     for (InlineFlowBox* box = firstLineBox(); box; box = box->nextLineBox())
         quads.append(localToAbsoluteQuad(FloatRect(textBoundingBox.x() + box->x().toFloat(), textBoundingBox.y() + box->y().toFloat(), box->logicalWidth().toFloat(), box->logicalHeight().toFloat()), false, wasFixed));
 }
@@ -148,6 +148,25 @@ void LayoutSVGInline::removeChild(LayoutObject* child)
     textLayoutObject->subtreeChildWillBeRemoved(child, affectedAttributes);
     LayoutInline::removeChild(child);
     textLayoutObject->subtreeChildWasRemoved(affectedAttributes);
+}
+
+void LayoutSVGInline::invalidateTreeIfNeeded(PaintInvalidationState& paintInvalidationState)
+{
+    ASSERT(!needsLayout());
+
+    if (!shouldCheckForPaintInvalidation(paintInvalidationState))
+        return;
+
+    PaintInvalidationReason reason = invalidatePaintIfNeeded(paintInvalidationState, paintInvalidationState.paintInvalidationContainer());
+    clearPaintInvalidationState(paintInvalidationState);
+
+    if (reason == PaintInvalidationDelayedFull)
+        paintInvalidationState.pushDelayedPaintInvalidationTarget(*this);
+
+    PaintInvalidationState childTreeWalkState(paintInvalidationState, *this, paintInvalidationState.paintInvalidationContainer());
+    if (reason == PaintInvalidationSVGResourceChange)
+        childTreeWalkState.setForceSubtreeInvalidationWithinContainer();
+    invalidatePaintOfSubtreesIfNeeded(childTreeWalkState);
 }
 
 }

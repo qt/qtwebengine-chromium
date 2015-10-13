@@ -10,14 +10,15 @@
 #include "base/containers/hash_tables.h"
 #include "base/memory/scoped_ptr.h"
 #include "build/build_config.h"
+#include "content/browser/accessibility/ax_tree_id_registry.h"
 #include "content/common/content_export.h"
+#include "content/public/browser/ax_event_notification_details.h"
 #include "third_party/WebKit/public/web/WebAXEnums.h"
 #include "ui/accessibility/ax_node_data.h"
 #include "ui/accessibility/ax_serializable_tree.h"
 #include "ui/accessibility/ax_tree_update.h"
 #include "ui/gfx/native_widget_types.h"
 
-struct AccessibilityHostMsg_EventParams;
 struct AccessibilityHostMsg_LocationChangeParams;
 
 namespace content {
@@ -25,13 +26,16 @@ class BrowserAccessibility;
 class BrowserAccessibilityManager;
 #if defined(OS_ANDROID)
 class BrowserAccessibilityManagerAndroid;
-#endif
-#if defined(OS_WIN)
+#elif defined(OS_WIN)
 class BrowserAccessibilityManagerWin;
+#elif defined(OS_LINUX) && !defined(OS_CHROMEOS) && defined(USE_X11)
+class BrowserAccessibilityManagerAuraLinux;
 #endif
 
+using SimpleAXTreeUpdate = ui::AXTreeUpdate<ui::AXNodeData>;
+
 // For testing.
-CONTENT_EXPORT ui::AXTreeUpdate MakeAXTreeUpdate(
+CONTENT_EXPORT SimpleAXTreeUpdate MakeAXTreeUpdate(
     const ui::AXNodeData& node,
     const ui::AXNodeData& node2 = ui::AXNodeData(),
     const ui::AXNodeData& node3 = ui::AXNodeData(),
@@ -75,11 +79,6 @@ class CONTENT_EXPORT BrowserAccessibilityDelegate {
   virtual void AccessibilityFatalError() = 0;
   virtual gfx::AcceleratedWidget AccessibilityGetAcceleratedWidget() = 0;
   virtual gfx::NativeViewAccessible AccessibilityGetNativeViewAccessible() = 0;
-  virtual BrowserAccessibilityManager* AccessibilityGetChildFrame(
-      int accessibility_node_id) = 0;
-  virtual void AccessibilityGetAllChildFrames(
-      std::vector<BrowserAccessibilityManager*>* child_frames) = 0;
-  virtual BrowserAccessibility* AccessibilityGetParentFrame() = 0;
 };
 
 class CONTENT_EXPORT BrowserAccessibilityFactory {
@@ -117,15 +116,18 @@ class CONTENT_EXPORT BrowserAccessibilityManager : public ui::AXTreeDelegate {
   // Creates the platform-specific BrowserAccessibilityManager, but
   // with no parent window pointer. Only useful for unit tests.
   static BrowserAccessibilityManager* Create(
-      const ui::AXTreeUpdate& initial_tree,
+      const SimpleAXTreeUpdate& initial_tree,
       BrowserAccessibilityDelegate* delegate,
       BrowserAccessibilityFactory* factory = new BrowserAccessibilityFactory());
 
+  static BrowserAccessibilityManager* FromID(
+      AXTreeIDRegistry::AXTreeID ax_tree_id);
+
   ~BrowserAccessibilityManager() override;
 
-  void Initialize(const ui::AXTreeUpdate& initial_tree);
+  void Initialize(const SimpleAXTreeUpdate& initial_tree);
 
-  static ui::AXTreeUpdate GetEmptyDocument();
+  static SimpleAXTreeUpdate GetEmptyDocument();
 
   virtual void NotifyAccessibilityEvent(
       ui::AXEvent event_type, BrowserAccessibility* node) { }
@@ -139,6 +141,9 @@ class CONTENT_EXPORT BrowserAccessibilityManager : public ui::AXTreeDelegate {
   // Return a pointer to the object corresponding to the given id,
   // does not make a new reference.
   BrowserAccessibility* GetFromID(int32 id);
+
+  // If this tree has a parent tree, return the parent node in that tree.
+  BrowserAccessibility* GetParentNodeFromParentTree();
 
   // Called to notify the accessibility manager that its associated native
   // view got focused.
@@ -200,7 +205,7 @@ class CONTENT_EXPORT BrowserAccessibilityManager : public ui::AXTreeDelegate {
 
   // Called when the renderer process has notified us of about tree changes.
   void OnAccessibilityEvents(
-      const std::vector<AccessibilityHostMsg_EventParams>& params);
+      const std::vector<AXEventNotificationDetails>& details);
 
   // Called when the renderer process updates the location of accessibility
   // objects.
@@ -229,7 +234,12 @@ class CONTENT_EXPORT BrowserAccessibilityManager : public ui::AXTreeDelegate {
   BrowserAccessibilityManagerAndroid* ToBrowserAccessibilityManagerAndroid();
 #endif
 
-  // Return the object that has focus, if it's a descandant of the
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS) && defined(USE_X11)
+  BrowserAccessibilityManagerAuraLinux*
+      ToBrowserAccessibilityManagerAuraLinux();
+#endif
+
+  // Return the object that has focus, if it's a descendant of the
   // given root (inclusive). Does not make a new reference.
   virtual BrowserAccessibility* GetFocus(BrowserAccessibility* root);
 
@@ -242,8 +252,11 @@ class CONTENT_EXPORT BrowserAccessibilityManager : public ui::AXTreeDelegate {
   virtual bool UseRootScrollOffsetsWhenComputingBounds();
 
   // Walk the tree.
-  BrowserAccessibility* NextInTreeOrder(BrowserAccessibility* node);
-  BrowserAccessibility* PreviousInTreeOrder(BrowserAccessibility* node);
+  BrowserAccessibility* NextInTreeOrder(BrowserAccessibility* node) const;
+  BrowserAccessibility* PreviousInTreeOrder(BrowserAccessibility* node) const;
+  BrowserAccessibility* NextTextOnlyObject(BrowserAccessibility* node) const;
+  BrowserAccessibility* PreviousTextOnlyObject(
+      BrowserAccessibility* node) const;
 
   // AXTreeDelegate implementation.
   void OnNodeWillBeDeleted(ui::AXTree* tree, ui::AXNode* node) override;
@@ -266,7 +279,7 @@ class CONTENT_EXPORT BrowserAccessibilityManager : public ui::AXTreeDelegate {
   BrowserAccessibilityDelegate* GetDelegateFromRootManager();
 
   // Get a snapshot of the current tree as an AXTreeUpdate.
-  ui::AXTreeUpdate SnapshotAXTreeForTesting();
+  SimpleAXTreeUpdate SnapshotAXTreeForTesting();
 
  protected:
   BrowserAccessibilityManager(
@@ -274,7 +287,7 @@ class CONTENT_EXPORT BrowserAccessibilityManager : public ui::AXTreeDelegate {
       BrowserAccessibilityFactory* factory);
 
   BrowserAccessibilityManager(
-      const ui::AXTreeUpdate& initial_tree,
+      const SimpleAXTreeUpdate& initial_tree,
       BrowserAccessibilityDelegate* delegate,
       BrowserAccessibilityFactory* factory);
 
@@ -324,6 +337,14 @@ class CONTENT_EXPORT BrowserAccessibilityManager : public ui::AXTreeDelegate {
   OnScreenKeyboardState osk_state_;
 
   BrowserAccessibilityFindInPageInfo find_in_page_info_;
+
+  // The global ID of this accessibility tree.
+  AXTreeIDRegistry::AXTreeID ax_tree_id_;
+
+  // If this tree has a parent tree, this is the cached ID of the parent
+  // node within that parent tree. It's computed as needed and cached for
+  // speed so that it can be accessed quickly if it hasn't changed.
+  int parent_node_id_from_parent_tree_;
 
   DISALLOW_COPY_AND_ASSIGN(BrowserAccessibilityManager);
 };

@@ -82,8 +82,10 @@
  * OTHERWISE.
  */
 
-#include <stdio.h>
+#include <openssl/ssl.h>
+
 #include "internal.h"
+
 
 const char *SSL_state_string_long(const SSL *s) {
   const char *str;
@@ -334,37 +336,6 @@ const char *SSL_state_string_long(const SSL *s) {
       str = "SSLv3 read certificate verify B";
       break;
 
-    /* SSLv2/v3 compatibility states */
-    /* client */
-    case SSL23_ST_CW_CLNT_HELLO_A:
-      str = "SSLv2/v3 write client hello A";
-      break;
-
-    case SSL23_ST_CW_CLNT_HELLO_B:
-      str = "SSLv2/v3 write client hello B";
-      break;
-
-    case SSL23_ST_CR_SRVR_HELLO_A:
-      str = "SSLv2/v3 read server hello A";
-      break;
-
-    case SSL23_ST_CR_SRVR_HELLO_B:
-      str = "SSLv2/v3 read server hello B";
-      break;
-
-    /* server */
-    case SSL23_ST_SR_CLNT_HELLO:
-      str = "SSLv2/v3 read client hello";
-      break;
-
-    case SSL23_ST_SR_V2_CLNT_HELLO:
-      str = "SSLv2/v3 read v2 client hello";
-      break;
-
-    case SSL23_ST_SR_SWITCH_VERSION:
-      str = "SSLv2/v3 switch version";
-      break;
-
     /* DTLS */
     case DTLS1_ST_CR_HELLO_VERIFY_REQUEST_A:
       str = "DTLS1 read hello verify request A";
@@ -376,30 +347,6 @@ const char *SSL_state_string_long(const SSL *s) {
 
     default:
       str = "unknown state";
-      break;
-  }
-
-  return str;
-}
-
-const char *SSL_rstate_string_long(const SSL *s) {
-  const char *str;
-
-  switch (s->rstate) {
-    case SSL_ST_READ_HEADER:
-      str = "read header";
-      break;
-
-    case SSL_ST_READ_BODY:
-      str = "read body";
-      break;
-
-    case SSL_ST_READ_DONE:
-      str = "read done";
-      break;
-
-    default:
-      str = "unknown";
       break;
   }
 
@@ -633,37 +580,6 @@ const char *SSL_state_string(const SSL *s) {
 
     case SSL3_ST_SR_CERT_VRFY_B:
       str = "3RCV_B";
-      break;
-
-    /* SSLv2/v3 compatibility states */
-    /* client */
-    case SSL23_ST_CW_CLNT_HELLO_A:
-      str = "23WCHA";
-      break;
-
-    case SSL23_ST_CW_CLNT_HELLO_B:
-      str = "23WCHB";
-      break;
-
-    case SSL23_ST_CR_SRVR_HELLO_A:
-      str = "23RSHA";
-      break;
-
-    case SSL23_ST_CR_SRVR_HELLO_B:
-      str = "23RSHA";
-      break;
-
-    /* server */
-    case SSL23_ST_SR_CLNT_HELLO:
-      str = "23RCH_";
-      break;
-
-    case SSL23_ST_SR_V2_CLNT_HELLO:
-      str = "23R2CH";
-      break;
-
-    case SSL23_ST_SR_SWITCH_VERSION:
-      str = "23RSW_";
       break;
 
     /* DTLS */
@@ -959,30 +875,6 @@ const char *SSL_alert_desc_string_long(int value) {
 
     case TLS1_AD_UNKNOWN_PSK_IDENTITY:
       str = "unknown PSK identity";
-      break;
-
-    default:
-      str = "unknown";
-      break;
-  }
-
-  return str;
-}
-
-const char *SSL_rstate_string(const SSL *s) {
-  const char *str;
-
-  switch (s->rstate) {
-    case SSL_ST_READ_HEADER:
-      str = "RH";
-      break;
-
-    case SSL_ST_READ_BODY:
-      str = "RB";
-      break;
-
-    case SSL_ST_READ_DONE:
-      str = "RD";
       break;
 
     default:

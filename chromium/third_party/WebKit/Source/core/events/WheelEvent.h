@@ -51,6 +51,8 @@ public:
         return adoptRefWillBeNoop(new WheelEvent);
     }
 
+    static PassRefPtrWillBeRawPtr<WheelEvent> create(const PlatformWheelEvent& platformEvent, PassRefPtrWillBeRawPtr<AbstractView>);
+
     static PassRefPtrWillBeRawPtr<WheelEvent> create(const AtomicString& type, const WheelEventInit& initializer)
     {
         return adoptRefWillBeNoop(new WheelEvent(type, initializer));
@@ -59,10 +61,10 @@ public:
     static PassRefPtrWillBeRawPtr<WheelEvent> create(const FloatPoint& wheelTicks,
         const FloatPoint& rawDelta, unsigned deltaMode, PassRefPtrWillBeRawPtr<AbstractView> view,
         const IntPoint& screenLocation, const IntPoint& windowLocation,
-        bool ctrlKey, bool altKey, bool shiftKey, bool metaKey, unsigned short buttons, bool canScroll, bool hasPreciseScrollingDeltas, RailsMode railsMode)
+        bool ctrlKey, bool altKey, bool shiftKey, bool metaKey, unsigned short buttons, bool canScroll, int resendingPluginId, bool hasPreciseScrollingDeltas, RailsMode railsMode)
     {
         return adoptRefWillBeNoop(new WheelEvent(wheelTicks, rawDelta, deltaMode, view,
-            screenLocation, windowLocation, ctrlKey, altKey, shiftKey, metaKey, buttons, canScroll, hasPreciseScrollingDeltas, railsMode));
+            screenLocation, windowLocation, ctrlKey, altKey, shiftKey, metaKey, buttons, canScroll, resendingPluginId, hasPreciseScrollingDeltas, railsMode));
     }
 
     double deltaX() const { return m_deltaX; } // Positive when scrolling right.
@@ -75,12 +77,15 @@ public:
     float ticksX() const { return static_cast<float>(m_wheelDelta.x()) / TickMultiplier; }
     float ticksY() const { return static_cast<float>(m_wheelDelta.y()) / TickMultiplier; }
     bool canScroll() const { return m_canScroll; }
+    int resendingPluginId() const { return m_resendingPluginId; }
     bool hasPreciseScrollingDeltas() const { return m_hasPreciseScrollingDeltas; }
     RailsMode railsMode() const { return m_railsMode; }
 
-    virtual const AtomicString& interfaceName() const override;
-    virtual bool isMouseEvent() const override;
-    virtual bool isWheelEvent() const override;
+    const AtomicString& interfaceName() const override;
+    bool isMouseEvent() const override;
+    bool isWheelEvent() const override;
+
+    PassRefPtrWillBeRawPtr<EventDispatchMediator> createMediator() override;
 
     DECLARE_VIRTUAL_TRACE();
 
@@ -89,7 +94,7 @@ private:
     WheelEvent(const AtomicString&, const WheelEventInit&);
     WheelEvent(const FloatPoint& wheelTicks, const FloatPoint& rawDelta,
         unsigned, PassRefPtrWillBeRawPtr<AbstractView>, const IntPoint& screenLocation, const IntPoint& windowLocation,
-        bool ctrlKey, bool altKey, bool shiftKey, bool metaKey, unsigned short buttons, bool canScroll, bool hasPreciseScrollingDeltas, RailsMode);
+        bool ctrlKey, bool altKey, bool shiftKey, bool metaKey, unsigned short buttons, bool canScroll, int resendingPluginId, bool hasPreciseScrollingDeltas, RailsMode);
 
     IntPoint m_wheelDelta;
     double m_deltaX;
@@ -97,6 +102,7 @@ private:
     double m_deltaZ;
     unsigned m_deltaMode;
     bool m_canScroll;
+    int m_resendingPluginId;
     bool m_hasPreciseScrollingDeltas;
     RailsMode m_railsMode;
 };
@@ -105,11 +111,12 @@ DEFINE_EVENT_TYPE_CASTS(WheelEvent);
 
 class WheelEventDispatchMediator final : public EventDispatchMediator {
 public:
-    static PassRefPtrWillBeRawPtr<WheelEventDispatchMediator> create(const PlatformWheelEvent&, PassRefPtrWillBeRawPtr<AbstractView>);
+    static PassRefPtrWillBeRawPtr<WheelEventDispatchMediator> create(PassRefPtrWillBeRawPtr<WheelEvent>);
+
 private:
-    WheelEventDispatchMediator(const PlatformWheelEvent&, PassRefPtrWillBeRawPtr<AbstractView>);
+    explicit WheelEventDispatchMediator(PassRefPtrWillBeRawPtr<WheelEvent>);
     WheelEvent& event() const;
-    virtual bool dispatchEvent(EventDispatcher&) const override;
+    bool dispatchEvent(EventDispatcher&) const override;
 };
 
 } // namespace blink

@@ -6,31 +6,45 @@
 
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/scoped_vector.h"
 #include "base/stl_util.h"
 #include "content/browser/gpu/browser_gpu_memory_buffer_manager.h"
-#include "content/common/gpu/client/gpu_memory_buffer_impl.h"
 #include "content/public/browser/browser_thread.h"
+#include "ui/gfx/buffer_format_util.h"
 
 namespace content {
 
 const int VideoCaptureBufferPool::kInvalidId = -1;
 
-// A simple holder of a memory-backed buffer and accesors to it.
+// A simple holder of a memory-backed buffer and accessors to it.
 class SimpleBufferHandle final : public VideoCaptureBufferPool::BufferHandle {
  public:
-  SimpleBufferHandle(void* data, size_t size, base::SharedMemoryHandle handle)
+  SimpleBufferHandle(void* data,
+                     size_t mapped_size,
+                     base::SharedMemoryHandle handle)
       : data_(data),
-        size_(size)
+        mapped_size_(mapped_size)
 #if defined(OS_POSIX)
-        , handle_(handle)
+        ,
+        handle_(handle)
 #endif
   {
   }
   ~SimpleBufferHandle() override {}
 
-  size_t size() const override { return size_; }
-  void* data() override { return data_; }
-  ClientBuffer AsClientBuffer() override { return nullptr; }
+  gfx::Size dimensions() const override {
+    NOTREACHED();
+    return gfx::Size();
+  }
+  size_t mapped_size() const override { return mapped_size_; }
+  void* data(int plane) override {
+    DCHECK_EQ(plane, 0);
+    return data_;
+  }
+  ClientBuffer AsClientBuffer(int plane) override {
+    NOTREACHED();
+    return nullptr;
+  }
 #if defined(OS_POSIX)
   base::FileDescriptor AsPlatformFile() override {
 #if defined(OS_MACOSX)
@@ -43,46 +57,54 @@ class SimpleBufferHandle final : public VideoCaptureBufferPool::BufferHandle {
 
  private:
   void* const data_;
-  const size_t size_;
+  const size_t mapped_size_;
 #if defined(OS_POSIX)
   const base::SharedMemoryHandle handle_;
 #endif
 };
 
-// A holder of a GpuMemoryBuffer-backed buffer, Map()ed on ctor and Unmap()ed on
-// dtor. Holds a weak reference to its GpuMemoryBuffer.
-// TODO(mcasas) Map()ed on ctor, or on first use?
-class GpuMemoryBufferBufferHandle
-    final : public VideoCaptureBufferPool::BufferHandle {
+// A holder of a GpuMemoryBuffer-backed buffer. Holds weak references to
+// GpuMemoryBuffer-backed buffers and provides accessors to their data.
+class GpuMemoryBufferBufferHandle final
+    : public VideoCaptureBufferPool::BufferHandle {
  public:
-  GpuMemoryBufferBufferHandle(gfx::GpuMemoryBuffer* gmb, size_t size)
-      : gmb_(gmb),
-        data_(new void* [GpuMemoryBufferImpl::
-                             NumberOfPlanesForGpuMemoryBufferFormat(
-                                 gmb_->GetFormat())]),
-        size_(size) {
-    DCHECK(gmb && !gmb_->IsMapped());
-    gmb_->Map(data_.get());
+  GpuMemoryBufferBufferHandle(std::vector<void*>* data,
+                              const gfx::Size& dimensions,
+                              ScopedVector<gfx::GpuMemoryBuffer>* gmbs)
+      : data_(data), dimensions_(dimensions), gmbs_(gmbs) {
+#ifndef NDEBUG
+    DCHECK_EQ(data->size(), gmbs->size());
+    for (const auto& gmb : *gmbs)
+      DCHECK(gmb && gmb->IsMapped());
+    for (const auto& data_ptr : *data)
+      DCHECK(data_ptr);
+#endif
   }
-  ~GpuMemoryBufferBufferHandle() override { gmb_->Unmap(); }
+  ~GpuMemoryBufferBufferHandle() override {}
 
-  size_t size() const override { return size_; }
-  void* data() override { return data_[0]; }
-  ClientBuffer AsClientBuffer() override { return gmb_->AsClientBuffer(); }
+  gfx::Size dimensions() const override { return dimensions_; }
+  size_t mapped_size() const override { return dimensions_.GetArea(); }
+  void* data(int plane) override {
+    DCHECK_GE(plane, media::VideoFrame::kYPlane);
+    DCHECK_LT(plane, static_cast<int>(data_->size()));
+    return data_->at(plane);
+  }
+  ClientBuffer AsClientBuffer(int plane) override {
+    DCHECK_GE(plane, media::VideoFrame::kYPlane);
+    DCHECK_LT(plane, static_cast<int>(gmbs_->size()));
+    return (*gmbs_)[plane]->AsClientBuffer();
+  }
 #if defined(OS_POSIX)
   base::FileDescriptor AsPlatformFile() override {
-#if defined(OS_MACOSX)
-    return gmb_->GetHandle().handle.GetFileDescriptor();
-#else
-    return gmb_->GetHandle().handle;
-#endif  // defined(OS_MACOSX)
+    NOTREACHED();
+    return base::FileDescriptor();
   }
 #endif
 
  private:
-  gfx::GpuMemoryBuffer* const gmb_;
-  scoped_ptr<void*[]> data_;
-  const size_t size_;
+  std::vector<void*>* data_;
+  const gfx::Size dimensions_;
+  ScopedVector<gfx::GpuMemoryBuffer>* const gmbs_;
 };
 
 // Tracker specifics for SharedMemory.
@@ -93,24 +115,28 @@ class VideoCaptureBufferPool::SharedMemTracker final : public Tracker {
             media::VideoPixelStorage storage_type,
             const gfx::Size& dimensions) override;
 
-  size_t mapped_size() const override { return shared_memory_.mapped_size(); }
-
   scoped_ptr<BufferHandle> GetBufferHandle() override {
     return make_scoped_ptr(new SimpleBufferHandle(
-        shared_memory_.memory(), mapped_size(), shared_memory_.handle()));
+        shared_memory_.memory(), mapped_size_, shared_memory_.handle()));
   }
-
   bool ShareToProcess(base::ProcessHandle process_handle,
                       base::SharedMemoryHandle* new_handle) override {
     return shared_memory_.ShareToProcess(process_handle, new_handle);
+  }
+  bool ShareToProcess2(int plane,
+                       base::ProcessHandle process_handle,
+                       gfx::GpuMemoryBufferHandle* new_handle) override {
+    NOTREACHED();
+    return false;
   }
 
  private:
   // The memory created to be shared with renderer processes.
   base::SharedMemory shared_memory_;
+  size_t mapped_size_;
 };
 
-// Tracker specifics for GpuMemoryBuffer. Owns one GpuMemoryBuffer and its
+// Tracker specifics for GpuMemoryBuffer. Owns GpuMemoryBuffers and its
 // associated pixel dimensions.
 class VideoCaptureBufferPool::GpuMemoryBufferTracker final : public Tracker {
  public:
@@ -120,24 +146,27 @@ class VideoCaptureBufferPool::GpuMemoryBufferTracker final : public Tracker {
             const gfx::Size& dimensions) override;
   ~GpuMemoryBufferTracker() override;
 
-  size_t mapped_size() const override { return packed_size_; }
   scoped_ptr<BufferHandle> GetBufferHandle() override {
     return make_scoped_ptr(new GpuMemoryBufferBufferHandle(
-        gpu_memory_buffer_.get(), packed_size_));
+        &data_, dimensions_, &gpu_memory_buffers_));
   }
-
   bool ShareToProcess(base::ProcessHandle process_handle,
                       base::SharedMemoryHandle* new_handle) override {
-    return true;
+    NOTREACHED();
+    return false;
   }
+  bool ShareToProcess2(int plane,
+                       base::ProcessHandle process_handle,
+                       gfx::GpuMemoryBufferHandle* new_handle) override;
 
  private:
-  size_t packed_size_;
-  scoped_ptr<gfx::GpuMemoryBuffer> gpu_memory_buffer_;
+  std::vector<void*> data_;
+  gfx::Size dimensions_;
+  // Owned references to GpuMemoryBuffers.
+  ScopedVector<gfx::GpuMemoryBuffer> gpu_memory_buffers_;
 };
 
-VideoCaptureBufferPool::SharedMemTracker::SharedMemTracker() : Tracker() {
-}
+VideoCaptureBufferPool::SharedMemTracker::SharedMemTracker() : Tracker() {}
 
 bool VideoCaptureBufferPool::SharedMemTracker::Init(
     media::VideoPixelFormat format,
@@ -148,21 +177,23 @@ bool VideoCaptureBufferPool::SharedMemTracker::Init(
   set_storage_type(storage_type);
   // |dimensions| can be 0x0 for trackers that do not require memory backing.
   set_pixel_count(dimensions.GetArea());
-  const size_t byte_count =
+  mapped_size_ =
       media::VideoCaptureFormat(dimensions, 0.0f, format, storage_type)
           .ImageAllocationSize();
-  if (!byte_count)
+  if (!mapped_size_)
     return true;
-  return shared_memory_.CreateAndMapAnonymous(byte_count);
+  return shared_memory_.CreateAndMapAnonymous(mapped_size_);
 }
 
 VideoCaptureBufferPool::GpuMemoryBufferTracker::GpuMemoryBufferTracker()
-    : Tracker(), packed_size_(0u), gpu_memory_buffer_(nullptr) {
+    : Tracker() {
 }
 
 VideoCaptureBufferPool::GpuMemoryBufferTracker::~GpuMemoryBufferTracker() {
-  if (gpu_memory_buffer_->IsMapped())
-    gpu_memory_buffer_->Unmap();
+  for (const auto& gmb : gpu_memory_buffers_) {
+    if (gmb->IsMapped())
+      gmb->Unmap();
+  }
 }
 
 bool VideoCaptureBufferPool::GpuMemoryBufferTracker::Init(
@@ -173,27 +204,72 @@ bool VideoCaptureBufferPool::GpuMemoryBufferTracker::Init(
   // BrowserGpuMemoryBufferManager::current() may not be accessed on IO Thread.
   DCHECK(!BrowserThread::CurrentlyOn(BrowserThread::IO));
   DCHECK(BrowserGpuMemoryBufferManager::current());
+  // This class is only expected to be called with I420 buffer requests at this
+  // point.
+  DCHECK_EQ(format, media::PIXEL_FORMAT_I420);
   set_pixel_format(format);
   set_storage_type(storage_type);
   set_pixel_count(dimensions.GetArea());
   // |dimensions| can be 0x0 for trackers that do not require memory backing.
   if (dimensions.GetArea() == 0u)
     return true;
-  gpu_memory_buffer_ =
-      BrowserGpuMemoryBufferManager::current()->AllocateGpuMemoryBuffer(
-          dimensions,
-          gfx::GpuMemoryBuffer::BGRA_8888,
-          gfx::GpuMemoryBuffer::MAP);
-  DLOG_IF(ERROR, !gpu_memory_buffer_.get()) << "Allocating GpuMemoryBuffer";
-  if (!gpu_memory_buffer_.get())
-    return false;
-  int plane_sizes;
-  gpu_memory_buffer_->GetStride(&plane_sizes);
-  packed_size_ = plane_sizes * dimensions.height();
+  dimensions_ = dimensions;
+
+  const media::VideoPixelFormat video_format = media::PIXEL_FORMAT_I420;
+  const size_t num_planes = media::VideoFrame::NumPlanes(video_format);
+  for (size_t i = 0; i < num_planes; ++i) {
+    const gfx::Size& size =
+        media::VideoFrame::PlaneSize(video_format, i, dimensions);
+    gpu_memory_buffers_.push_back(
+        BrowserGpuMemoryBufferManager::current()->AllocateGpuMemoryBuffer(
+            size,
+            gfx::BufferFormat::R_8,
+            gfx::BufferUsage::MAP));
+
+    DLOG_IF(ERROR, !gpu_memory_buffers_[i]) << "Allocating GpuMemoryBuffer";
+    if (!gpu_memory_buffers_[i])
+      return false;
+
+    void* temp_data = nullptr;
+    gpu_memory_buffers_[i]->Map(&temp_data);
+    DCHECK(temp_data);
+    data_.push_back(temp_data);
+  }
   return true;
 }
 
-//static
+bool VideoCaptureBufferPool::GpuMemoryBufferTracker::ShareToProcess2(
+    int plane,
+    base::ProcessHandle process_handle,
+    gfx::GpuMemoryBufferHandle* new_handle) {
+  DCHECK_LE(plane, static_cast<int>(gpu_memory_buffers_.size()));
+
+   const auto& current_gmb_handle = gpu_memory_buffers_[plane]->GetHandle();
+   switch (current_gmb_handle.type) {
+     case gfx::EMPTY_BUFFER:
+       NOTREACHED();
+       return false;
+     case gfx::SHARED_MEMORY_BUFFER: {
+       DCHECK(base::SharedMemory::IsHandleValid(current_gmb_handle.handle));
+       base::SharedMemory shared_memory(
+           base::SharedMemory::DuplicateHandle(current_gmb_handle.handle),
+           false);
+       shared_memory.ShareToProcess(process_handle, &new_handle->handle);
+       DCHECK(base::SharedMemory::IsHandleValid(new_handle->handle));
+       new_handle->type = gfx::SHARED_MEMORY_BUFFER;
+       return true;
+     }
+     case gfx::IO_SURFACE_BUFFER:
+     case gfx::SURFACE_TEXTURE_BUFFER:
+     case gfx::OZONE_NATIVE_PIXMAP:
+       *new_handle = current_gmb_handle;
+       return true;
+   }
+   NOTREACHED();
+   return true;
+ }
+
+// static
 scoped_ptr<VideoCaptureBufferPool::Tracker>
 VideoCaptureBufferPool::Tracker::CreateTracker(bool use_gmb) {
   if (!use_gmb)
@@ -214,24 +290,39 @@ VideoCaptureBufferPool::~VideoCaptureBufferPool() {
   STLDeleteValues(&trackers_);
 }
 
-base::SharedMemoryHandle VideoCaptureBufferPool::ShareToProcess(
+bool VideoCaptureBufferPool::ShareToProcess(
     int buffer_id,
     base::ProcessHandle process_handle,
-    size_t* memory_size) {
+    base::SharedMemoryHandle* new_handle) {
   base::AutoLock lock(lock_);
 
   Tracker* tracker = GetTracker(buffer_id);
   if (!tracker) {
     NOTREACHED() << "Invalid buffer_id.";
-    return base::SharedMemory::NULLHandle();
+    return false;
   }
-  base::SharedMemoryHandle remote_handle;
-  if (tracker->ShareToProcess(process_handle, &remote_handle)) {
-    *memory_size = tracker->mapped_size();
-    return remote_handle;
+  if (tracker->ShareToProcess(process_handle, new_handle))
+    return true;
+  DPLOG(ERROR) << "Error mapping memory";
+  return false;
+}
+
+bool VideoCaptureBufferPool::ShareToProcess2(
+    int buffer_id,
+    int plane,
+    base::ProcessHandle process_handle,
+    gfx::GpuMemoryBufferHandle* new_handle) {
+  base::AutoLock lock(lock_);
+
+  Tracker* tracker = GetTracker(buffer_id);
+  if (!tracker) {
+    NOTREACHED() << "Invalid buffer_id.";
+    return false;
   }
-  DPLOG(ERROR) << "Error mapping Shared Memory";
-  return base::SharedMemoryHandle();
+  if (tracker->ShareToProcess2(plane, process_handle, new_handle))
+    return true;
+  DPLOG(ERROR) << "Error mapping memory";
+  return false;
 }
 
 scoped_ptr<VideoCaptureBufferPool::BufferHandle>
@@ -248,10 +339,11 @@ VideoCaptureBufferPool::GetBufferHandle(int buffer_id) {
   return tracker->GetBufferHandle();
 }
 
-int VideoCaptureBufferPool::ReserveForProducer(media::VideoPixelFormat format,
-                                               media::VideoPixelStorage storage,
-                                               const gfx::Size& dimensions,
-                                               int* buffer_id_to_drop) {
+int VideoCaptureBufferPool::ReserveForProducer(
+    media::VideoPixelFormat format,
+    media::VideoPixelStorage storage,
+    const gfx::Size& dimensions,
+    int* buffer_id_to_drop) {
   base::AutoLock lock(lock_);
   return ReserveForProducerInternal(format, storage, dimensions,
                                     buffer_id_to_drop);

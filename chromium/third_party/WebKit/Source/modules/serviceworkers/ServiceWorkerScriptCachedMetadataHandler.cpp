@@ -23,6 +23,12 @@ ServiceWorkerScriptCachedMetadataHandler::~ServiceWorkerScriptCachedMetadataHand
 {
 }
 
+DEFINE_TRACE(ServiceWorkerScriptCachedMetadataHandler)
+{
+    visitor->trace(m_workerGlobalScope);
+    CachedMetadataHandler::trace(visitor);
+}
+
 void ServiceWorkerScriptCachedMetadataHandler::setCachedMetadata(unsigned dataTypeID, const char* data, size_t size, CacheType type)
 {
     if (type != SendToPlatform)

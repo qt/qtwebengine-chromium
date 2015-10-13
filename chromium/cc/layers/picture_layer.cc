@@ -8,7 +8,6 @@
 #include "cc/layers/content_layer_client.h"
 #include "cc/layers/picture_layer_impl.h"
 #include "cc/playback/display_list_recording_source.h"
-#include "cc/playback/picture_pile.h"
 #include "cc/trees/layer_tree_host.h"
 #include "cc/trees/layer_tree_impl.h"
 #include "third_party/skia/include/core/SkPictureRecorder.h"
@@ -89,19 +88,15 @@ void PictureLayer::SetLayerTreeHost(LayerTreeHost* host) {
   if (!host)
     return;
 
-  const LayerTreeSettings& settings = layer_tree_host()->settings();
-  if (!recording_source_) {
-    if (settings.use_display_lists) {
-      recording_source_.reset(
-          new DisplayListRecordingSource(settings.default_tile_grid_size));
-    } else {
-      recording_source_.reset(new PicturePile(settings.minimum_contents_scale,
-                                              settings.default_tile_grid_size));
-    }
-  }
+  if (!recording_source_)
+    recording_source_.reset(new DisplayListRecordingSource);
   recording_source_->SetSlowdownRasterScaleFactor(
       host->debug_state().slow_down_raster_scale_factor);
-  recording_source_->SetGatherPixelRefs(settings.gather_pixel_refs);
+  // If we need to enable image decode tasks, then we have to generate the
+  // discardable images metadata.
+  const LayerTreeSettings& settings = layer_tree_host()->settings();
+  recording_source_->SetGenerateDiscardableImagesMetadata(
+      settings.image_decode_tasks_enabled);
 }
 
 void PictureLayer::SetNeedsDisplayRect(const gfx::Rect& layer_rect) {
@@ -181,33 +176,16 @@ skia::RefPtr<SkPicture> PictureLayer::GetPicture() const {
     return skia::RefPtr<SkPicture>();
 
   gfx::Size layer_size = bounds();
-  const LayerTreeSettings& settings = layer_tree_host()->settings();
+  scoped_ptr<RecordingSource> recording_source(new DisplayListRecordingSource);
+  Region recording_invalidation;
+  recording_source->UpdateAndExpandInvalidation(
+      client_, &recording_invalidation, layer_size, gfx::Rect(layer_size),
+      update_source_frame_number_, RecordingSource::RECORD_NORMALLY);
 
-  if (settings.use_display_lists) {
-    scoped_ptr<RecordingSource> recording_source;
-    recording_source.reset(
-        new DisplayListRecordingSource(settings.default_tile_grid_size));
-    Region recording_invalidation;
-    recording_source->UpdateAndExpandInvalidation(
-        client_, &recording_invalidation, layer_size, gfx::Rect(layer_size),
-        update_source_frame_number_, RecordingSource::RECORD_NORMALLY);
+  scoped_refptr<RasterSource> raster_source =
+      recording_source->CreateRasterSource(false);
 
-    scoped_refptr<RasterSource> raster_source =
-        recording_source->CreateRasterSource(false);
-
-    return raster_source->GetFlattenedPicture();
-  }
-
-  int width = layer_size.width();
-  int height = layer_size.height();
-
-  SkPictureRecorder recorder;
-  SkCanvas* canvas = recorder.beginRecording(width, height, nullptr, 0);
-  client_->PaintContents(canvas, gfx::Rect(width, height),
-                         ContentLayerClient::PAINTING_BEHAVIOR_NORMAL);
-  skia::RefPtr<SkPicture> picture =
-      skia::AdoptRef(recorder.endRecordingAsPicture());
-  return picture;
+  return raster_source->GetFlattenedPicture();
 }
 
 bool PictureLayer::IsSuitableForGpuRasterization() const {

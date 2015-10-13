@@ -35,7 +35,9 @@
 // would allow the WorkerPerformance interface to be merged into this.
 // TODO(philipj): None of the optional DOMString arguments in this interface
 // should have a default value.
-interface Performance : EventTarget {
+[
+  GarbageCollected
+] interface Performance : EventTarget {
     DOMHighResTimeStamp now();
 
     // Performance Timeline
@@ -47,19 +49,19 @@ interface Performance : EventTarget {
 
     // Resource Timing
     // https://w3c.github.io/resource-timing/#extensions-performance-interface
-    // TODO(philipj): Unprefix these APIs.
-    [MeasureAs=PrefixedPerformanceClearResourceTimings] void webkitClearResourceTimings();
-    [MeasureAs=PrefixedPerformanceSetResourceTimingBufferSize] void webkitSetResourceTimingBufferSize(unsigned long maxSize);
-    attribute EventHandler onwebkitresourcetimingbufferfull;
+    void clearResourceTimings();
+    void setResourceTimingBufferSize(unsigned long maxSize);
+    attribute EventHandler onresourcetimingbufferfull;
+
+    // TODO(ksakamoto): Remove these prefixed APIs.
+    [DeprecateAs=PrefixedPerformanceClearResourceTimings, ImplementedAs=clearResourceTimings] void webkitClearResourceTimings();
+    [DeprecateAs=PrefixedPerformanceSetResourceTimingBufferSize, ImplementedAs=setResourceTimingBufferSize] void webkitSetResourceTimingBufferSize(unsigned long maxSize);
+    [DeprecateAs=PrefixedPerformanceResourceTimingBufferFull] attribute EventHandler onwebkitresourcetimingbufferfull;
 
     // Navigation Timing
-    // http://www.w3.org/TR/navigation-timing/#sec-window.performance-attribute
-    // TODO(philipj): The Navigation Timing Rec. defines the (not partial)
-    // Performance interface, while https://w3c.github.io/navigation-timing/ has
-    // changed the interface in an incompatible way:
-    // https://github.com/w3c/navigation-timing/issues/22
-    [Measure] readonly attribute PerformanceTiming timing;
-    [Measure] readonly attribute PerformanceNavigation navigation;
+    // https://w3c.github.io/navigation-timing/#extensions-to-the-performance-interface
+    [SameObject, Measure] readonly attribute PerformanceTiming timing;
+    [SameObject, Measure] readonly attribute PerformanceNavigation navigation;
 
     // User Timing
     // https://w3c.github.io/user-timing/#extensions-performance-interface

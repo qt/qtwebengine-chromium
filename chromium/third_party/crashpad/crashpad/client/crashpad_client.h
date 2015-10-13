@@ -25,6 +25,8 @@
 
 #if defined(OS_MACOSX)
 #include "base/mac/scoped_mach_port.h"
+#elif defined(OS_WIN)
+#include <windows.h>
 #endif
 
 namespace crashpad {
@@ -87,6 +89,13 @@ class CrashpadClient {
   //!
   //! \return `true` on success and `false` on failure.
   bool SetHandler(const std::string& ipc_port);
+
+  //! \brief Requests that the handler capture a dump even though there hasn't
+  //!     been a crash.
+  //!
+  //! \param[in] context A `CONTEXT`, generally captured by CaptureContext() or
+  //!     similar.
+  static void DumpWithoutCrash(const CONTEXT& context);
 #endif
 
   //! \brief Configures the process to direct its crashes to a Crashpad handler.
@@ -112,6 +121,30 @@ class CrashpadClient {
   //!
   //! \return `true` on success, `false` on failure with a message logged.
   bool UseHandler();
+
+#if defined(OS_MACOSX) || DOXYGEN
+  //! \brief Configures the process to direct its crashes to the default handler
+  //!     for the operating system.
+  //!
+  //! On OS X, this sets the task’s exception port as in UseHandler(), but the
+  //! exception handler used is obtained from SystemCrashReporterHandler(). If
+  //! the system’s crash reporter handler cannot be determined, the task’s
+  //! exception ports for crash-type exceptions are cleared.
+  //!
+  //! Use of this function is strongly discouraged.
+  //!
+  //! \warning After a successful call to this function, Crashpad will no longer
+  //!     monitor the process for crashes until a subsequent call to
+  //!     UseHandler().
+  //!
+  //! \note This is provided as a static function to allow it to be used in
+  //!     situations where a CrashpadClient object is not otherwise available.
+  //!     This may be useful when a child process inherits its parent’s Crashpad
+  //!     handler, but wants to sever this tie.
+  //!
+  //! \return `true` on success, `false` on failure with a message logged.
+  static bool UseSystemDefaultHandler();
+#endif
 
  private:
 #if defined(OS_MACOSX)

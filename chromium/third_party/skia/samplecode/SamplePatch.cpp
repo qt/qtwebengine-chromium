@@ -42,7 +42,7 @@ static SkShader* make_shader1(const SkIPoint& size) {
     SkPoint pts[] = { { 0, 0, },
                       { SkIntToScalar(size.fX), SkIntToScalar(size.fY) } };
     SkColor colors[] = { SK_ColorRED, SK_ColorGREEN, SK_ColorBLUE, SK_ColorRED };
-    return SkGradientShader::CreateLinear(pts, colors, NULL,
+    return SkGradientShader::CreateLinear(pts, colors, nullptr,
                     SK_ARRAY_COUNT(colors), SkShader::kMirror_TileMode);
 }
 
@@ -74,7 +74,7 @@ static void eval_patch_edge(const SkPoint cubic[], SkPoint samples[], int segs) 
     samples[0] = cubic[0];
     for (int i = 1; i < segs; i++) {
         t += dt;
-        SkEvalCubicAt(cubic, t, &samples[i], NULL, NULL);
+        SkEvalCubicAt(cubic, t, &samples[i], nullptr, nullptr);
     }
 }
 
@@ -199,9 +199,9 @@ void Patch::draw(SkCanvas* canvas, const SkPaint& paint, int nu, int nv,
         }
         t += dt;
         canvas->drawVertices(SkCanvas::kTriangleStrip_VertexMode, stripCount,
-                             strip, doTextures ? tex : NULL,
-                             doColors ? colors : NULL, NULL,
-                             NULL, 0, paint);
+                             strip, doTextures ? tex : nullptr,
+                             doColors ? colors : nullptr, nullptr,
+                             nullptr, 0, paint);
     }
 }
 
@@ -262,7 +262,7 @@ public:
 
 protected:
     // overrides from SkEventSink
-    virtual bool onQuery(SkEvent* evt)  {
+    bool onQuery(SkEvent* evt)  override {
         if (SampleCode::TitleQ(*evt)) {
             SampleCode::TitleR(evt, "Patch");
             return true;
@@ -270,7 +270,7 @@ protected:
         return this->INHERITED::onQuery(evt);
     }
 
-    virtual void onDrawContent(SkCanvas* canvas) {
+    void onDrawContent(SkCanvas* canvas) override {
         const int nu = 10;
         const int nv = 10;
 
@@ -294,7 +294,7 @@ protected:
         patch.setPatch(fPts);
         drawpatches(canvas, paint, nu, nv, &patch);
 
-        paint.setShader(NULL);
+        paint.setShader(nullptr);
         paint.setAntiAlias(true);
         paint.setStrokeWidth(SkIntToScalar(5));
         canvas->drawPoints(SkCanvas::kPoints_PointMode, SK_ARRAY_COUNT(fPts), fPts, paint);
@@ -334,8 +334,7 @@ protected:
         return SkPoint::Length(pt.fX - x, pt.fY - y) < SkIntToScalar(5);
     }
 
-    virtual SkView::Click* onFindClickHandler(SkScalar x, SkScalar y,
-                                              unsigned modi) override {
+    SkView::Click* onFindClickHandler(SkScalar x, SkScalar y, unsigned modi) override {
         x -= DX;
         y -= DY;
         for (size_t i = 0; i < SK_ARRAY_COUNT(fPts); i++) {
@@ -346,9 +345,9 @@ protected:
         return this->INHERITED::onFindClickHandler(x, y, modi);
     }
 
-    virtual bool onClick(Click* click) {
+    bool onClick(Click* click) override {
         fPts[((PtClick*)click)->fIndex].set(click->fCurr.fX - DX, click->fCurr.fY - DY);
-        this->inval(NULL);
+        this->inval(nullptr);
         return true;
     }
 

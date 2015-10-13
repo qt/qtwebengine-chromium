@@ -3341,6 +3341,7 @@ static int unixWrite(
   }
 #endif
 
+#if !SQLITE_MMAP_READ_ONLY
 #if SQLITE_MAX_MMAP_SIZE>0
   /* Deal with as much of this write request as possible by transfering
   ** data from the memory mapping using memcpy().  */
@@ -3356,6 +3357,7 @@ static int unixWrite(
       offset += nCopy;
     }
   }
+#endif
 #endif
 
   while( amt>0 && (wrote = seekAndWrite(pFile, offset, pBuf, amt))>0 ){
@@ -4743,7 +4745,9 @@ static void unixRemapfile(
   assert( pFd->mmapSizeActual>=pFd->mmapSize );
   assert( MAP_FAILED!=0 );
 
+#if !SQLITE_MMAP_READ_ONLY
   if( (pFd->ctrlFlags & UNIXFILE_RDONLY)==0 ) flags |= PROT_WRITE;
+#endif
 
   if( pOrig ){
 #if HAVE_MREMAP
@@ -5623,10 +5627,12 @@ static int findCreateFileMode(
 /*
 ** Initializes a unixFile structure with zeros.
 */
+CHROMIUM_SQLITE_API
 void chromium_sqlite3_initialize_unix_sqlite3_file(sqlite3_file* file) {
   memset(file, 0, sizeof(unixFile));
 }
 
+CHROMIUM_SQLITE_API
 int chromium_sqlite3_fill_in_unix_sqlite3_file(sqlite3_vfs* vfs,
                                                int fd,
                                                int dirfd,
@@ -5645,6 +5651,7 @@ int chromium_sqlite3_fill_in_unix_sqlite3_file(sqlite3_vfs* vfs,
 ** If a reusable file descriptor is not found, and a new UnixUnusedFd cannot
 ** be allocated, SQLITE_NOMEM is returned. Otherwise, SQLITE_OK is returned.
 */
+CHROMIUM_SQLITE_API
 int chromium_sqlite3_get_reusable_file_handle(sqlite3_file* file,
                                               const char* fileName,
                                               int flags,
@@ -5669,6 +5676,7 @@ int chromium_sqlite3_get_reusable_file_handle(sqlite3_file* file,
 /*
 ** Marks 'fd' as the unused file descriptor for 'pFile'.
 */
+CHROMIUM_SQLITE_API
 void chromium_sqlite3_update_reusable_file_handle(sqlite3_file* file,
                                                   int fd,
                                                   int flags) {
@@ -5682,6 +5690,7 @@ void chromium_sqlite3_update_reusable_file_handle(sqlite3_file* file,
 /*
 ** Destroys pFile's field that keeps track of the unused file descriptor.
 */
+CHROMIUM_SQLITE_API
 void chromium_sqlite3_destroy_reusable_file_handle(sqlite3_file* file) {
   unixFile* unixSQLite3File = (unixFile*)file;
   sqlite3_free(unixSQLite3File->pUnused);

@@ -54,6 +54,8 @@ public:
     DECLARE_TRACE();
     void contextWillBeDestroyed() { m_backend.clear(); }
 
+    v8::Local<v8::Object> associateWithWrapper(v8::Isolate*, const WrapperTypeInfo*, v8::Local<v8::Object> wrapper) override WARN_UNUSED_RETURN;
+
     // Implement the IDL
     const String& direction() const;
     ScriptValue key(ScriptState*);
@@ -77,7 +79,6 @@ public:
     void close();
     void setValueReady(IDBKey*, IDBKey* primaryKey, PassRefPtr<IDBValue>);
     IDBKey* idbPrimaryKey() const { return m_primaryKey; }
-    IDBRequest* request() const { return m_request.get(); }
     virtual bool isKeyCursor() const { return true; }
     virtual bool isCursorWithValue() const { return false; }
 
@@ -92,10 +93,10 @@ private:
     const WebIDBCursorDirection m_direction;
     Member<IDBAny> m_source;
     Member<IDBTransaction> m_transaction;
-    bool m_gotValue;
-    bool m_keyDirty;
-    bool m_primaryKeyDirty;
-    bool m_valueDirty;
+    bool m_gotValue = false;
+    bool m_keyDirty = true;
+    bool m_primaryKeyDirty = true;
+    bool m_valueDirty = true;
     Member<IDBKey> m_key;
     Member<IDBKey> m_primaryKey;
     RefPtr<IDBValue> m_value;

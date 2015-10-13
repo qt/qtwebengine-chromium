@@ -351,6 +351,16 @@ bool BinaryValue::Equals(const Value* other) const {
 
 ///////////////////// DictionaryValue ////////////////////
 
+// static
+scoped_ptr<DictionaryValue> DictionaryValue::From(scoped_ptr<Value> value) {
+  DictionaryValue* out;
+  if (value && value->GetAsDictionary(&out)) {
+    ignore_result(value.release());
+    return make_scoped_ptr(out);
+  }
+  return nullptr;
+}
+
 DictionaryValue::DictionaryValue()
     : Value(TYPE_DICTIONARY) {
 }
@@ -491,8 +501,9 @@ bool DictionaryValue::Get(StringPiece path,
        delimiter_position != std::string::npos;
        delimiter_position = current_path.find('.')) {
     const DictionaryValue* child_dictionary = NULL;
-    if (!current_dictionary->GetDictionary(
-            current_path.substr(0, delimiter_position), &child_dictionary)) {
+    if (!current_dictionary->GetDictionaryWithoutPathExpansion(
+            current_path.substr(0, delimiter_position).as_string(),
+            &child_dictionary)) {
       return false;
     }
 
@@ -868,6 +879,16 @@ bool DictionaryValue::Equals(const Value* other) const {
 }
 
 ///////////////////// ListValue ////////////////////
+
+// static
+scoped_ptr<ListValue> ListValue::From(scoped_ptr<Value> value) {
+  ListValue* out;
+  if (value && value->GetAsList(&out)) {
+    ignore_result(value.release());
+    return make_scoped_ptr(out);
+  }
+  return nullptr;
+}
 
 ListValue::ListValue() : Value(TYPE_LIST) {
 }

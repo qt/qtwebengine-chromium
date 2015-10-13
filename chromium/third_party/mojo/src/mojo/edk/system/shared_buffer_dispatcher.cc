@@ -2,18 +2,18 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "mojo/edk/system/shared_buffer_dispatcher.h"
+#include "third_party/mojo/src/mojo/edk/system/shared_buffer_dispatcher.h"
 
 #include <limits>
 
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
-#include "mojo/edk/embedder/platform_support.h"
-#include "mojo/edk/system/channel.h"
-#include "mojo/edk/system/configuration.h"
-#include "mojo/edk/system/memory.h"
-#include "mojo/edk/system/options_validation.h"
 #include "mojo/public/c/system/macros.h"
+#include "third_party/mojo/src/mojo/edk/embedder/platform_support.h"
+#include "third_party/mojo/src/mojo/edk/system/channel.h"
+#include "third_party/mojo/src/mojo/edk/system/configuration.h"
+#include "third_party/mojo/src/mojo/edk/system/memory.h"
+#include "third_party/mojo/src/mojo/edk/system/options_validation.h"
 
 namespace mojo {
 namespace system {
@@ -177,14 +177,14 @@ MojoResult SharedBufferDispatcher::ValidateDuplicateOptions(
 }
 
 void SharedBufferDispatcher::CloseImplNoLock() {
-  lock().AssertAcquired();
+  mutex().AssertHeld();
   DCHECK(shared_buffer_);
   shared_buffer_ = nullptr;
 }
 
 scoped_refptr<Dispatcher>
 SharedBufferDispatcher::CreateEquivalentDispatcherAndCloseImplNoLock() {
-  lock().AssertAcquired();
+  mutex().AssertHeld();
   DCHECK(shared_buffer_);
   return CreateInternal(shared_buffer_.Pass());
 }
@@ -192,7 +192,7 @@ SharedBufferDispatcher::CreateEquivalentDispatcherAndCloseImplNoLock() {
 MojoResult SharedBufferDispatcher::DuplicateBufferHandleImplNoLock(
     UserPointer<const MojoDuplicateBufferHandleOptions> options,
     scoped_refptr<Dispatcher>* new_dispatcher) {
-  lock().AssertAcquired();
+  mutex().AssertHeld();
 
   MojoDuplicateBufferHandleOptions validated_options;
   MojoResult result = ValidateDuplicateOptions(options, &validated_options);
@@ -209,7 +209,7 @@ MojoResult SharedBufferDispatcher::MapBufferImplNoLock(
     uint64_t num_bytes,
     MojoMapBufferFlags flags,
     scoped_ptr<embedder::PlatformSharedBufferMapping>* mapping) {
-  lock().AssertAcquired();
+  mutex().AssertHeld();
   DCHECK(shared_buffer_);
 
   if (offset > static_cast<uint64_t>(std::numeric_limits<size_t>::max()))

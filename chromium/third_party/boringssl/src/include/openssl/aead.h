@@ -153,6 +153,8 @@ OPENSSL_EXPORT const EVP_AEAD *EVP_aead_aes_256_cbc_sha384_tls(void);
 OPENSSL_EXPORT const EVP_AEAD *EVP_aead_des_ede3_cbc_sha1_tls(void);
 OPENSSL_EXPORT const EVP_AEAD *EVP_aead_des_ede3_cbc_sha1_tls_implicit_iv(void);
 
+OPENSSL_EXPORT const EVP_AEAD *EVP_aead_null_sha1_tls(void);
+
 
 /* SSLv3-specific AEAD algorithms.
  *
@@ -167,6 +169,7 @@ OPENSSL_EXPORT const EVP_AEAD *EVP_aead_rc4_sha1_ssl3(void);
 OPENSSL_EXPORT const EVP_AEAD *EVP_aead_aes_128_cbc_sha1_ssl3(void);
 OPENSSL_EXPORT const EVP_AEAD *EVP_aead_aes_256_cbc_sha1_ssl3(void);
 OPENSSL_EXPORT const EVP_AEAD *EVP_aead_des_ede3_cbc_sha1_ssl3(void);
+OPENSSL_EXPORT const EVP_AEAD *EVP_aead_null_sha1_ssl3(void);
 
 
 /* Utility functions. */
@@ -222,6 +225,12 @@ enum evp_aead_direction_t {
   evp_aead_open,
   evp_aead_seal,
 };
+
+/* EVP_AEAD_CTX_zero sets an uninitialized |ctx| to the zero state. It must be
+ * initialized with |EVP_AEAD_CTX_init| before use. It is safe, but not
+ * necessary, to call |EVP_AEAD_CTX_cleanup| in this state. This may be used for
+ * more uniform cleanup of |EVP_AEAD_CTX|. */
+OPENSSL_EXPORT void EVP_AEAD_CTX_zero(EVP_AEAD_CTX *ctx);
 
 /* EVP_AEAD_CTX_init initializes |ctx| for the given AEAD algorithm. The |impl|
  * argument is ignored and should be NULL. Authentication tags may be truncated

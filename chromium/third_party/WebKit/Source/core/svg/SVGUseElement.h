@@ -34,8 +34,9 @@ namespace blink {
 typedef EventSender<SVGUseElement> SVGUseEventSender;
 
 class SVGUseElement final : public SVGGraphicsElement,
-                            public SVGURIReference,
-                            public DocumentResourceClient {
+    public SVGURIReference,
+    public DocumentResourceClient {
+
     DEFINE_WRAPPERTYPEINFO();
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(SVGUseElement);
 public:
@@ -63,6 +64,8 @@ public:
 private:
     explicit SVGUseElement(Document&);
 
+    FloatRect getBBox() override;
+
     bool isPresentationAttribute(const QualifiedName&) const override;
     void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) override;
     bool isPresentationAttributeWithSVGDOM(const QualifiedName&) const override;
@@ -76,16 +79,17 @@ private:
 
     LayoutObject* createLayoutObject(const ComputedStyle&) override;
 
-    void clearResourceReferences();
-    void buildShadowAndInstanceTree(SVGElement* target);
-
     void scheduleShadowTreeRecreation();
+    void cancelShadowTreeRecreation();
     bool haveLoadedRequiredResources() override { return !isStructurallyExternal() || m_haveFiredLoadEvent; }
 
     bool selfHasRelativeLengths() const override;
 
     // Instance tree handling
+    void buildShadowAndInstanceTree(SVGElement* target);
+    void clearInstanceRoot();
     bool buildShadowTree(SVGElement* target, SVGElement* targetInstance, bool foundUse);
+    void clearShadowTree();
     bool hasCycleUseReferencing(SVGUseElement*, ContainerNode* targetInstance, SVGElement*& newTarget);
     bool expandUseElementsInShadowTree(SVGElement*);
     void expandSymbolElementsInShadowTree(SVGElement*);
@@ -94,9 +98,9 @@ private:
 
     void invalidateDependentShadowTrees();
 
-    bool resourceIsStillLoading();
+    bool resourceIsStillLoading() const;
     Document* externalDocument() const;
-    bool instanceTreeIsLoading(SVGElement*);
+    bool instanceTreeIsLoading(const SVGElement*);
     void notifyFinished(Resource*) override;
     TreeScope* referencedScope() const;
     void setDocumentResource(ResourcePtr<DocumentResource>);

@@ -168,13 +168,6 @@ if (enable_image_loader_extension) {
   ]
 }
 
-if (enable_remoting) {
-  grit_defines += [
-    "-D",
-    "remoting",
-  ]
-}
-
 if (is_android) {
   grit_defines += [
     "-t",
@@ -195,10 +188,6 @@ if (is_ios) {
   grit_defines += [
     "-t",
     "ios",
-
-    # iOS uses a whitelist to filter resources.
-    "-w",
-    rebase_path("//build/ios/grit_whitelist.txt", root_build_dir),
   ]
 }
 
@@ -257,8 +246,6 @@ if (enable_google_now) {
   ]
 }
 
-# Note: use_concatenated_impulse_responses is omitted. It is never used and
-# should probably be removed from GYP build.
 if (enable_webrtc) {
   grit_defines += [
     "-D",
@@ -299,6 +286,12 @@ if (mac_views_browser) {
   grit_defines += [
     "-D",
     "mac_views_browser",
+  ]
+}
+if (enable_topchrome_md) {
+  grit_defines += [
+    "-D",
+    "enable_topchrome_md",
   ]
 }
 

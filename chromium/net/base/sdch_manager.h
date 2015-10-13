@@ -18,7 +18,6 @@
 #include <string>
 #include <vector>
 
-#include "base/gtest_prod_util.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/observer_list.h"
@@ -97,11 +96,6 @@ class NET_EXPORT SdchManager {
 
   // Record stats on various errors.
   static void SdchErrorRecovery(SdchProblemCode problem);
-
-  // Enables or disables SDCH compression.
-  static void EnableSdchSupport(bool enabled);
-
-  static bool sdch_enabled() { return g_sdch_enabled_; }
 
   // Briefly prevent further advertising of SDCH on this domain (if SDCH is
   // enabled). After enough calls to IsInSupportedDomain() the blacklisting

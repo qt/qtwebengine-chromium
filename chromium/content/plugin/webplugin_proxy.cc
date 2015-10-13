@@ -8,8 +8,6 @@
 
 #include "base/bind.h"
 #include "base/lazy_instance.h"
-#include "base/memory/shared_memory.h"
-#include "build/build_config.h"
 #include "content/child/npapi/npobject_proxy.h"
 #include "content/child/npapi/npobject_util.h"
 #include "content/child/npapi/webplugin_delegate_impl.h"
@@ -280,7 +278,7 @@ void WebPluginProxy::HandleURLRequest(const char* url,
                                       int notify_id,
                                       bool popups_allowed,
                                       bool notify_redirects) {
- if (!target && (0 == base::strcasecmp(method, "GET"))) {
+  if (!target && base::EqualsCaseInsensitiveASCII(method, "GET")) {
     // Please refer to https://bugzilla.mozilla.org/show_bug.cgi?id=366082
     // for more details on this.
     if (delegate_->GetQuirks() &
@@ -420,14 +418,11 @@ void WebPluginProxy::CreateCanvasFromHandle(
     const TransportDIB::Handle& dib_handle,
     const gfx::Rect& window_rect,
     skia::RefPtr<skia::PlatformCanvas>* canvas) {
-  *canvas = skia::AdoptRef(
-      skia::CreatePlatformCanvas(window_rect.width(),
-                                 window_rect.height(),
-                                 true,
-                                 dib_handle,
-                                 skia::RETURN_NULL_ON_FAILURE));
+  *canvas = skia::AdoptRef(skia::CreatePlatformCanvas(
+      window_rect.width(), window_rect.height(), true, dib_handle.GetHandle(),
+      skia::RETURN_NULL_ON_FAILURE));
   // The canvas does not own the section so we need to close it now.
-  CloseHandle(dib_handle);
+  dib_handle.Close();
 }
 
 void WebPluginProxy::SetWindowlessBuffers(

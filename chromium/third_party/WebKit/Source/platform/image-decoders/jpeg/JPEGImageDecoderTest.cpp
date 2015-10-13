@@ -32,13 +32,12 @@
 #include "platform/image-decoders/jpeg/JPEGImageDecoder.h"
 
 #include "platform/SharedBuffer.h"
-#include "public/platform/Platform.h"
+#include "platform/image-decoders/ImageAnimation.h"
+#include "platform/image-decoders/ImageDecoderTestHelpers.h"
 #include "public/platform/WebData.h"
 #include "public/platform/WebSize.h"
-#include "public/platform/WebUnitTestSupport.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
-#include "wtf/StringHasher.h"
 #include <gtest/gtest.h>
 
 namespace blink {
@@ -47,17 +46,14 @@ static const size_t LargeEnoughSize = 1000 * 1000;
 
 namespace {
 
-PassRefPtr<SharedBuffer> readFile(const char* fileName)
+PassOwnPtr<ImageDecoder> createDecoder(size_t maxDecodedBytes)
 {
-    String filePath = Platform::current()->unitTestSupport()->webKitRootDir();
-    filePath.append(fileName);
-
-    return Platform::current()->unitTestSupport()->readFromFile(filePath);
+    return adoptPtr(new JPEGImageDecoder(ImageDecoder::AlphaNotPremultiplied, ImageDecoder::GammaAndColorProfileApplied, maxDecodedBytes));
 }
 
-PassOwnPtr<JPEGImageDecoder> createDecoder(size_t maxDecodedBytes)
+PassOwnPtr<ImageDecoder> createDecoder()
 {
-    return adoptPtr(new JPEGImageDecoder(ImageSource::AlphaNotPremultiplied, ImageSource::GammaAndColorProfileApplied, maxDecodedBytes));
+    return createDecoder(ImageDecoder::noDecodedImageByteLimit);
 }
 
 } // anonymous namespace
@@ -65,9 +61,9 @@ PassOwnPtr<JPEGImageDecoder> createDecoder(size_t maxDecodedBytes)
 void downsample(size_t maxDecodedBytes, unsigned* outputWidth, unsigned* outputHeight, const char* imageFilePath)
 {
     RefPtr<SharedBuffer> data = readFile(imageFilePath);
-    ASSERT_TRUE(data.get());
+    ASSERT_TRUE(data);
 
-    OwnPtr<JPEGImageDecoder> decoder = createDecoder(maxDecodedBytes);
+    OwnPtr<ImageDecoder> decoder = createDecoder(maxDecodedBytes);
     decoder->setData(data.get(), true);
 
     ImageFrame* frame = decoder->frameBufferAtIndex(0);
@@ -80,9 +76,9 @@ void downsample(size_t maxDecodedBytes, unsigned* outputWidth, unsigned* outputH
 void readYUV(size_t maxDecodedBytes, unsigned* outputYWidth, unsigned* outputYHeight, unsigned* outputUVWidth, unsigned* outputUVHeight, const char* imageFilePath)
 {
     RefPtr<SharedBuffer> data = readFile(imageFilePath);
-    ASSERT_TRUE(data.get());
+    ASSERT_TRUE(data);
 
-    OwnPtr<JPEGImageDecoder> decoder = createDecoder(maxDecodedBytes);
+    OwnPtr<ImageDecoder> decoder = createDecoder(maxDecodedBytes);
     decoder->setData(data.get(), true);
 
     OwnPtr<ImagePlanes> imagePlanes = adoptPtr(new ImagePlanes());
@@ -109,7 +105,7 @@ void readYUV(size_t maxDecodedBytes, unsigned* outputYWidth, unsigned* outputYHe
 // Tests failure on a too big image.
 TEST(JPEGImageDecoderTest, tooBig)
 {
-    OwnPtr<JPEGImageDecoder> decoder = createDecoder(100);
+    OwnPtr<ImageDecoder> decoder = createDecoder(100);
     EXPECT_FALSE(decoder->setSize(10000, 10000));
     EXPECT_TRUE(decoder->failed());
 }
@@ -224,15 +220,68 @@ TEST(JPEGImageDecoderTest, yuv)
     // Make sure we revert to RGBA decoding when we're about to downscale,
     // which can occur on memory-constrained android devices.
     RefPtr<SharedBuffer> data = readFile(jpegFile);
-    ASSERT_TRUE(data.get());
+    ASSERT_TRUE(data);
 
-    OwnPtr<JPEGImageDecoder> decoder = createDecoder(230 * 230 * 4);
+    OwnPtr<ImageDecoder> decoder = createDecoder(230 * 230 * 4);
     decoder->setData(data.get(), true);
 
     OwnPtr<ImagePlanes> imagePlanes = adoptPtr(new ImagePlanes());
     decoder->setImagePlanes(imagePlanes.release());
     ASSERT_TRUE(decoder->isSizeAvailable());
     ASSERT_FALSE(decoder->canDecodeToYUV());
+}
+
+TEST(JPEGImageDecoderTest, byteByByte)
+{
+    testByteByByteDecode(&createDecoder, "/LayoutTests/fast/images/resources/lenna.jpg", 1u, cAnimationNone);
+    // Progressive image
+    testByteByByteDecode(&createDecoder, "/LayoutTests/fast/images/resources/flowchart.jpg", 1u, cAnimationNone);
+    // Image with restart markers
+    testByteByByteDecode(&createDecoder, "/LayoutTests/fast/images/resources/red-at-12-oclock-with-color-profile.jpg", 1u, cAnimationNone);
+}
+
+static unsigned createDecodingBaseline(SharedBuffer* data)
+{
+    OwnPtr<ImageDecoder> decoder = createDecoder();
+    decoder->setData(data, true);
+    ImageFrame* frame = decoder->frameBufferAtIndex(0);
+    return hashBitmap(frame->bitmap());
+}
+
+// This test verifies that calling SharedBuffer::mergeSegmentsIntoBuffer() does
+// not break JPEG decoding at a critical point: in between a call to decode the
+// size (when JPEGImageDecoder stops while it may still have input data to
+// read) and a call to do a full decode.
+TEST(JPEGImageDecoderTest, mergeBuffer)
+{
+    const char* jpegFile = "/LayoutTests/fast/images/resources/lenna.jpg";
+    RefPtr<SharedBuffer> data = readFile(jpegFile);
+    ASSERT_TRUE(data);
+
+    const unsigned hash = createDecodingBaseline(data.get());
+
+    // In order to do any verification, this test needs to move the data owned
+    // by the SharedBuffer. A way to guarantee that is to create a new one, and
+    // then append a string of characters greater than kSegmentSize. This
+    // results in writing the data into a segment, skipping the internal
+    // contiguous buffer.
+    RefPtr<SharedBuffer> segmentedData = SharedBuffer::create();
+    segmentedData->append(data->data(), data->size());
+
+    OwnPtr<ImageDecoder> decoder = createDecoder();
+    decoder->setData(segmentedData.get(), true);
+
+    ASSERT_TRUE(decoder->isSizeAvailable());
+
+    // This will call SharedBuffer::mergeSegmentsIntoBuffer, copying all
+    // segments into the contiguous buffer. If JPEGImageDecoder was pointing to
+    // data in a segment, its pointer would no longer be valid.
+    segmentedData->data();
+
+    ImageFrame* frame = decoder->frameBufferAtIndex(0);
+    ASSERT_FALSE(decoder->failed());
+    EXPECT_EQ(frame->status(), ImageFrame::FrameComplete);
+    EXPECT_EQ(hashBitmap(frame->bitmap()), hash);
 }
 
 } // namespace blink

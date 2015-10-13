@@ -50,7 +50,8 @@ class ServiceWorkerRegisterJob : public ServiceWorkerRegisterJobBase {
   CONTENT_EXPORT ServiceWorkerRegisterJob(
       base::WeakPtr<ServiceWorkerContextCore> context,
       ServiceWorkerRegistration* registration,
-      bool force_bypass_cache);
+      bool force_bypass_cache,
+      bool skip_script_comparison);
   ~ServiceWorkerRegisterJob() override;
 
   // Registers a callback to be called when the promise would resolve (whether
@@ -69,11 +70,6 @@ class ServiceWorkerRegisterJob : public ServiceWorkerRegisterJobBase {
   void DoomInstallingWorker();
 
  private:
-  FRIEND_TEST_ALL_PREFIXES(ServiceWorkerProviderHostWaitingVersionTest,
-                           AssociateInstallingVersionToDocuments);
-  FRIEND_TEST_ALL_PREFIXES(ServiceWorkerProviderHostWaitingVersionTest,
-                           DisassociateVersionFromDocuments);
-
   enum Phase {
     INITIAL,
     START,
@@ -105,6 +101,7 @@ class ServiceWorkerRegisterJob : public ServiceWorkerRegisterJobBase {
 
   void SetPhase(Phase phase);
 
+  void StartImpl();
   void ContinueWithRegistration(
       ServiceWorkerStatusCode status,
       const scoped_refptr<ServiceWorkerRegistration>& registration);
@@ -150,6 +147,7 @@ class ServiceWorkerRegisterJob : public ServiceWorkerRegisterJobBase {
   bool is_promise_resolved_;
   bool should_uninstall_on_failure_;
   bool force_bypass_cache_;
+  bool skip_script_comparison_;
   ServiceWorkerStatusCode promise_resolved_status_;
   std::string promise_resolved_status_message_;
   scoped_refptr<ServiceWorkerRegistration> promise_resolved_registration_;

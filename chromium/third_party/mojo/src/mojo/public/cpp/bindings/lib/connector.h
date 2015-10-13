@@ -7,7 +7,6 @@
 
 #include "mojo/public/c/environment/async_waiter.h"
 #include "mojo/public/cpp/bindings/callback.h"
-#include "mojo/public/cpp/bindings/lib/message_queue.h"
 #include "mojo/public/cpp/bindings/message.h"
 #include "mojo/public/cpp/environment/environment.h"
 #include "mojo/public/cpp/system/core.h"
@@ -72,6 +71,10 @@ class Connector : public MessageReceiver {
   // been delivered, |false| otherwise.
   bool WaitForIncomingMessage(MojoDeadline deadline);
 
+  // See Binding for details of pause/resume.
+  void PauseIncomingMethodCallProcessing();
+  void ResumeIncomingMethodCallProcessing();
+
   // MessageReceiver implementation:
   bool Accept(Message* message) override;
 
@@ -104,6 +107,8 @@ class Connector : public MessageReceiver {
   bool error_;
   bool drop_writes_;
   bool enforce_errors_from_incoming_receiver_;
+
+  bool paused_;
 
   // If non-null, this will be set to true when the Connector is destroyed.  We
   // use this flag to allow for the Connector to be destroyed as a side-effect

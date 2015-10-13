@@ -345,7 +345,7 @@ int X509_STORE_add_cert(X509_STORE *ctx, X509 *x)
 	obj=(X509_OBJECT *)OPENSSL_malloc(sizeof(X509_OBJECT));
 	if (obj == NULL)
 		{
-		OPENSSL_PUT_ERROR(X509, X509_STORE_add_cert, ERR_R_MALLOC_FAILURE);
+		OPENSSL_PUT_ERROR(X509, ERR_R_MALLOC_FAILURE);
 		return 0;
 		}
 	obj->type=X509_LU_X509;
@@ -359,7 +359,7 @@ int X509_STORE_add_cert(X509_STORE *ctx, X509 *x)
 		{
 		X509_OBJECT_free_contents(obj);
 		OPENSSL_free(obj);
-		OPENSSL_PUT_ERROR(X509, X509_STORE_add_cert, X509_R_CERT_ALREADY_IN_HASH_TABLE);
+		OPENSSL_PUT_ERROR(X509, X509_R_CERT_ALREADY_IN_HASH_TABLE);
 		ret=0;
 		} 
 	else sk_X509_OBJECT_push(ctx->objs, obj);
@@ -378,7 +378,7 @@ int X509_STORE_add_crl(X509_STORE *ctx, X509_CRL *x)
 	obj=(X509_OBJECT *)OPENSSL_malloc(sizeof(X509_OBJECT));
 	if (obj == NULL)
 		{
-		OPENSSL_PUT_ERROR(X509, X509_STORE_add_crl, ERR_R_MALLOC_FAILURE);
+		OPENSSL_PUT_ERROR(X509, ERR_R_MALLOC_FAILURE);
 		return 0;
 		}
 	obj->type=X509_LU_CRL;
@@ -392,7 +392,7 @@ int X509_STORE_add_crl(X509_STORE *ctx, X509_CRL *x)
 		{
 		X509_OBJECT_free_contents(obj);
 		OPENSSL_free(obj);
-		OPENSSL_PUT_ERROR(X509, X509_STORE_add_crl, X509_R_CERT_ALREADY_IN_HASH_TABLE);
+		OPENSSL_PUT_ERROR(X509, X509_R_CERT_ALREADY_IN_HASH_TABLE);
 		ret=0;
 		}
 	else sk_X509_OBJECT_push(ctx->objs, obj);
@@ -410,7 +410,7 @@ void X509_OBJECT_up_ref_count(X509_OBJECT *a)
 		X509_up_ref(a->data.x509);
 		break;
 	case X509_LU_CRL:
-		CRYPTO_refcount_inc(&a->data.crl->references);
+		X509_CRL_up_ref(a->data.crl);
 		break;
 		}
 	}
@@ -572,7 +572,7 @@ STACK_OF(X509_CRL)* X509_STORE_get1_crls(X509_STORE_CTX *ctx, X509_NAME *nm)
 		{
 		obj = sk_X509_OBJECT_value(ctx->ctx->objs, idx);
 		x = obj->data.crl;
-		CRYPTO_refcount_inc(&x->references);
+		X509_CRL_up_ref(x);
 		if (!sk_X509_CRL_push(sk, x))
 			{
 			CRYPTO_MUTEX_unlock(&ctx->ctx->objs_lock);
@@ -641,7 +641,7 @@ int X509_STORE_CTX_get1_issuer(X509 **issuer, X509_STORE_CTX *ctx, X509 *x)
 		if (ok == X509_LU_RETRY)
 			{
 			X509_OBJECT_free_contents(&obj);
-			OPENSSL_PUT_ERROR(X509, X509_STORE_CTX_get1_issuer, X509_R_SHOULD_RETRY);
+			OPENSSL_PUT_ERROR(X509, X509_R_SHOULD_RETRY);
 			return -1;
 			}
 		else if (ok != X509_LU_FAIL)

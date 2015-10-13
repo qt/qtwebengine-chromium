@@ -20,13 +20,23 @@
 
 #include <vector>
 
+#include "build/build_config.h"
 #include "util/misc/initialization_state_dcheck.h"
 #include "util/win/address_types.h"
 #include "util/win/process_info.h"
 
 namespace crashpad {
 
-//! \brief Accesses information about another process, identified by a HANDLE.
+//! \brief State of process being read by ProcessReaderWin.
+enum class ProcessSuspensionState : bool {
+  //! \brief The process has not been suspended.
+  kRunning,
+
+  //! \brief The process is suspended.
+  kSuspended,
+};
+
+//! \brief Accesses information about another process, identified by a `HANDLE`.
 class ProcessReaderWin {
  public:
   //! \brief Contains information about a thread that belongs to a process.
@@ -34,9 +44,15 @@ class ProcessReaderWin {
     Thread();
     ~Thread() {}
 
-    CONTEXT context;
+    union {
+      CONTEXT native;
+#if defined(ARCH_CPU_64_BITS)
+      WOW64_CONTEXT wow64;
+#endif
+    } context;
     uint64_t id;
-    WinVMAddress teb;
+    WinVMAddress teb_address;
+    WinVMSize teb_size;
     WinVMAddress stack_region_address;
     WinVMSize stack_region_size;
     uint32_t suspend_count;
@@ -50,21 +66,42 @@ class ProcessReaderWin {
   //! \brief Initializes this object. This method must be called before any
   //!     other.
   //!
-  //! \param[in] process Process handle, must have PROCESS_QUERY_INFORMATION,
-  //!     PROCESS_VM_READ, and PROCESS_DUP_HANDLE access.
+  //! \param[in] process Process handle, must have `PROCESS_QUERY_INFORMATION`,
+  //!     `PROCESS_VM_READ`, and `PROCESS_DUP_HANDLE` access.
+  //! \param[in] suspension_state Whether \a process has already been suspended
+  //!     by the caller. Typically, this will be
+  //!     ProcessSuspensionState::kSuspended, except for testing uses and where
+  //!     the reader is reading itself.
   //!
   //! \return `true` on success, indicating that this object will respond
   //!     validly to further method calls. `false` on failure. On failure, no
   //!     further method calls should be made.
-  bool Initialize(HANDLE process);
+  //!
+  //! \sa ScopedProcessSuspend
+  bool Initialize(HANDLE process, ProcessSuspensionState suspension_state);
 
   //! \return `true` if the target task is a 64-bit process.
   bool Is64Bit() const { return process_info_.Is64Bit(); }
 
-  pid_t ProcessID() const { return process_info_.ProcessID(); }
-  pid_t ParentProcessID() const { return process_info_.ParentProcessID(); }
+  //! \brief Attempts to read \a num_bytes bytes from the target process
+  //!     starting at address \a at into \a into.
+  //!
+  //! \return `true` if the entire region could be read, or `false` with an
+  //!     error logged.
+  //!
+  //! \sa ReadAvailableMemory
+  bool ReadMemory(WinVMAddress at, WinVMSize num_bytes, void* into) const;
 
-  bool ReadMemory(WinVMAddress at, WinVMSize num_bytes, void* into);
+  //! \brief Attempts to read \a num_bytes bytes from the target process
+  //!     starting at address \a at into \a into. If some of the specified range
+  //!     is not accessible, reads up to the first inaccessible byte.
+  //!
+  //! \return The actual number of bytes read.
+  //!
+  //! \sa ReadMemory
+  WinVMSize ReadAvailableMemory(WinVMAddress at,
+                                WinVMSize num_bytes,
+                                void* into) const;
 
   //! \brief Determines the target process' start time.
   //!
@@ -91,11 +128,18 @@ class ProcessReaderWin {
   //!     `0`) corresponds to the main executable.
   const std::vector<ProcessInfo::Module>& Modules();
 
+  //! \return A ProcessInfo object for the process being read.
+  const ProcessInfo& GetProcessInfo() const;
+
  private:
+  template <class Traits>
+  void ReadThreadData(bool is_64_reading_32);
+
   HANDLE process_;
   ProcessInfo process_info_;
   std::vector<Thread> threads_;
   std::vector<ProcessInfo::Module> modules_;
+  ProcessSuspensionState suspension_state_;
   bool initialized_threads_;
   InitializationStateDcheck initialized_;
 

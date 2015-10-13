@@ -7,7 +7,7 @@
 
 #include "core/dom/ContainerNode.h"
 #include "core/dom/Node.h"
-#include "core/editing/htmlediting.h"
+#include "core/editing/EditingUtilities.h"
 #include "core/layout/LayoutBox.h"
 #include "core/layout/LayoutObject.h"
 
@@ -88,7 +88,7 @@ void FullyClippedStateStackAlgorithm<Strategy>::setUpFullyClippedStack(Node* nod
     ASSERT(size() == 1 + depthCrossingShadowBoundaries<Strategy>(*node));
 }
 
-template class FullyClippedStateStackAlgorithm<EditingStrategy>;
-template class FullyClippedStateStackAlgorithm<EditingInComposedTreeStrategy>;
+template class CORE_TEMPLATE_EXPORT FullyClippedStateStackAlgorithm<EditingStrategy>;
+template class CORE_TEMPLATE_EXPORT FullyClippedStateStackAlgorithm<EditingInComposedTreeStrategy>;
 
 } // namespace blink

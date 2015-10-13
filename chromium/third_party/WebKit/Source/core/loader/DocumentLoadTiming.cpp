@@ -26,13 +26,15 @@
 #include "config.h"
 #include "core/loader/DocumentLoadTiming.h"
 
+#include "core/loader/DocumentLoader.h"
 #include "platform/TraceEvent.h"
 #include "platform/weborigin/SecurityOrigin.h"
+#include "wtf/RawPtr.h"
 #include "wtf/RefPtr.h"
 
 namespace blink {
 
-DocumentLoadTiming::DocumentLoadTiming()
+DocumentLoadTiming::DocumentLoadTiming(DocumentLoader& documentLoader)
     : m_referenceMonotonicTime(0.0)
     , m_referenceWallTime(0.0)
     , m_navigationStart(0.0)
@@ -47,19 +49,31 @@ DocumentLoadTiming::DocumentLoadTiming()
     , m_loadEventEnd(0.0)
     , m_hasCrossOriginRedirect(false)
     , m_hasSameOriginAsPreviousDocument(false)
+    , m_documentLoader(documentLoader)
 {
+}
+
+DEFINE_TRACE(DocumentLoadTiming)
+{
+    visitor->trace(m_documentLoader);
+}
+
+void DocumentLoadTiming::notifyDocumentTimingChanged()
+{
+    if (m_documentLoader)
+        m_documentLoader->didChangePerformanceTiming();
 }
 
 double DocumentLoadTiming::monotonicTimeToZeroBasedDocumentTime(double monotonicTime) const
 {
-    if (!monotonicTime)
+    if (!monotonicTime || !m_referenceMonotonicTime)
         return 0.0;
     return monotonicTime - m_referenceMonotonicTime;
 }
 
 double DocumentLoadTiming::monotonicTimeToPseudoWallTime(double monotonicTime) const
 {
-    if (!monotonicTime)
+    if (!monotonicTime || !m_referenceMonotonicTime)
         return 0.0;
     return m_referenceWallTime + monotonicTime - m_referenceMonotonicTime;
 }
@@ -78,6 +92,7 @@ void DocumentLoadTiming::markNavigationStart()
 
     m_navigationStart = m_referenceMonotonicTime = monotonicallyIncreasingTime();
     m_referenceWallTime = currentTime();
+    notifyDocumentTimingChanged();
 }
 
 void DocumentLoadTiming::setNavigationStart(double navigationStart)
@@ -92,6 +107,7 @@ void DocumentLoadTiming::setNavigationStart(double navigationStart)
     // as well.
     m_referenceWallTime = monotonicTimeToPseudoWallTime(navigationStart);
     m_referenceMonotonicTime = navigationStart;
+    notifyDocumentTimingChanged();
 }
 
 void DocumentLoadTiming::addRedirect(const KURL& redirectingUrl, const KURL& redirectedUrl)
@@ -112,48 +128,56 @@ void DocumentLoadTiming::markUnloadEventStart()
 {
     TRACE_EVENT_MARK("blink.user_timing", "unloadEventStart");
     m_unloadEventStart = monotonicallyIncreasingTime();
+    notifyDocumentTimingChanged();
 }
 
 void DocumentLoadTiming::markUnloadEventEnd()
 {
     TRACE_EVENT_MARK("blink.user_timing", "unloadEventEnd");
     m_unloadEventEnd = monotonicallyIncreasingTime();
+    notifyDocumentTimingChanged();
 }
 
 void DocumentLoadTiming::markFetchStart()
 {
     TRACE_EVENT_MARK("blink.user_timing", "fetchStart");
     m_fetchStart = monotonicallyIncreasingTime();
+    notifyDocumentTimingChanged();
 }
 
 void DocumentLoadTiming::setResponseEnd(double responseEnd)
 {
     TRACE_EVENT_MARK_WITH_TIMESTAMP("blink.user_timing", "responseEnd", responseEnd);
     m_responseEnd = responseEnd;
+    notifyDocumentTimingChanged();
 }
 
 void DocumentLoadTiming::markLoadEventStart()
 {
     TRACE_EVENT_MARK("blink.user_timing", "loadEventStart");
     m_loadEventStart = monotonicallyIncreasingTime();
+    notifyDocumentTimingChanged();
 }
 
 void DocumentLoadTiming::markLoadEventEnd()
 {
     TRACE_EVENT_MARK("blink.user_timing", "loadEventEnd");
     m_loadEventEnd = monotonicallyIncreasingTime();
+    notifyDocumentTimingChanged();
 }
 
 void DocumentLoadTiming::setRedirectStart(double redirectStart)
 {
     TRACE_EVENT_MARK_WITH_TIMESTAMP("blink.user_timing", "redirectStart", redirectStart);
     m_redirectStart = m_fetchStart;
+    notifyDocumentTimingChanged();
 }
 
 void DocumentLoadTiming::markRedirectEnd()
 {
     TRACE_EVENT_MARK("blink.user_timing", "redirectEnd");
     m_redirectEnd = monotonicallyIncreasingTime();
+    notifyDocumentTimingChanged();
 }
 
 } // namespace blink

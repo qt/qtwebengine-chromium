@@ -51,13 +51,11 @@ public:
 
     unsigned sourceFrame() const;
 
-    virtual bool isComposite() override { return true; }
-
     DECLARE_VIRTUAL_TRACE();
 
 private:
     PerformanceCompositeTiming(Document* requestingDocument, unsigned sourceFrame, double startTime);
-    virtual ~PerformanceCompositeTiming();
+    ~PerformanceCompositeTiming() override;
 
     unsigned m_sourceFrame;
     RefPtrWillBeMember<Document> m_requestingDocument;

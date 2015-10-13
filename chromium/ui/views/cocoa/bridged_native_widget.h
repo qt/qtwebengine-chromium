@@ -27,6 +27,9 @@ class InputMethod;
 }
 
 namespace views {
+namespace test {
+class BridgedNativeWidgetTestApi;
+}
 
 class CocoaMouseCapture;
 class NativeWidgetMac;
@@ -169,9 +172,11 @@ class VIEWS_EXPORT BridgedNativeWidget
   bool window_visible() { return window_visible_; }
 
   // Overridden from ui::internal::InputMethodDelegate:
-  bool DispatchKeyEventPostIME(const ui::KeyEvent& key) override;
+  ui::EventDispatchDetails DispatchKeyEventPostIME(ui::KeyEvent* key) override;
 
  private:
+  friend class test::BridgedNativeWidgetTestApi;
+
   // Closes all child windows. BridgedNativeWidget children will be destroyed.
   void RemoveOrDestroyChildren();
 
@@ -195,6 +200,14 @@ class VIEWS_EXPORT BridgedNativeWidget
   // Size the layer to match the client area bounds, taking into account display
   // scale factor.
   void UpdateLayerProperties();
+
+  // Immediately return if there is a composited frame matching |size_in_dip|.
+  // Otherwise, asks ui::WindowResizeHelperMac to run tasks until a matching
+  // frame is ready, or a timeout occurs.
+  void MaybeWaitForFrame(const gfx::Size& size_in_dip);
+
+  // Show the window using -[NSApp beginSheet:..], modal for the parent window.
+  void ShowAsModalSheet();
 
   // Sets mouseDownCanMoveWindow on |bridged_view_| and triggers the NSWindow to
   // update its draggable region.
@@ -223,6 +236,8 @@ class VIEWS_EXPORT BridgedNativeWidget
   // Overridden from ui::AcceleratedWidgetMac:
   NSView* AcceleratedWidgetGetNSView() const override;
   bool AcceleratedWidgetShouldIgnoreBackpressure() const override;
+  void AcceleratedWidgetGetVSyncParameters(
+      base::TimeTicks* timebase, base::TimeDelta* interval) const override;
   void AcceleratedWidgetSwapCompleted(
       const std::vector<ui::LatencyInfo>& latency_info) override;
   void AcceleratedWidgetHitError() override;
@@ -270,6 +285,10 @@ class VIEWS_EXPORT BridgedNativeWidget
   // If true, the window is either visible, or wants to be visible but is
   // currently hidden due to having a hidden parent.
   bool wants_to_be_visible_;
+
+  // If true, the window has been made visible or changed shape and the window
+  // shadow needs to be invalidated when a frame is received for the new shape.
+  bool invalidate_shadow_on_frame_swap_ = false;
 
   DISALLOW_COPY_AND_ASSIGN(BridgedNativeWidget);
 };

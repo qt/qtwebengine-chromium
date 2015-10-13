@@ -19,12 +19,12 @@ protected:
     ImageQualityController* controller() { return m_controller; }
 
 private:
-    virtual void SetUp() override
+    void SetUp() override
     {
         m_controller = ImageQualityController::imageQualityController();
         RenderingTest::SetUp();
     }
-    virtual void TearDown() override
+    void TearDown() override
     {
     }
     ImageQualityController* m_controller;
@@ -55,6 +55,7 @@ public:
     IntSize size() const override { return IntSize(); }
     void destroyDecodedData(bool) override { }
     void draw(SkCanvas*, const SkPaint&, const FloatRect& dstRect, const FloatRect& srcRect, RespectImageOrientationEnum, ImageClampingMode) override { }
+    PassRefPtr<SkImage> imageForCurrentFrame() override { return nullptr; }
 };
 
 TEST_F(ImageQualityControllerTest, ImageMaybeAnimated)
@@ -75,6 +76,7 @@ public:
     void draw(SkCanvas*, const SkPaint&, const FloatRect& dstRect, const FloatRect& srcRect, RespectImageOrientationEnum, ImageClampingMode) override { }
 
     bool isBitmapImage() const override { return true; }
+    PassRefPtr<SkImage> imageForCurrentFrame() override { return nullptr; }
 };
 
 TEST_F(ImageQualityControllerTest, LowQualityFilterForContrast)
@@ -95,6 +97,7 @@ public:
     void draw(SkCanvas*, const SkPaint&, const FloatRect& dstRect, const FloatRect& srcRect, RespectImageOrientationEnum, ImageClampingMode) override { }
 
     bool isBitmapImage() const override { return true; }
+    PassRefPtr<SkImage> imageForCurrentFrame() override { return nullptr; }
 };
 
 TEST_F(ImageQualityControllerTest, MediumQualityFilterForUnscaledImage)

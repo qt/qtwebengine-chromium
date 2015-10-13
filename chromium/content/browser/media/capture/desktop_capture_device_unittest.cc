@@ -459,7 +459,8 @@ TEST_F(DesktopCaptureDeviceTest, UnpackedFrame) {
   capture_params.requested_format.frame_size.SetSize(kTestFrameWidth1,
                                                      kTestFrameHeight1);
   capture_params.requested_format.frame_rate = kFrameRate;
-  capture_params.requested_format.pixel_format = media::PIXEL_FORMAT_I420;
+  capture_params.requested_format.pixel_format =
+      media::PIXEL_FORMAT_I420;
 
   capture_device_->AllocateAndStart(capture_params, client.Pass());
 

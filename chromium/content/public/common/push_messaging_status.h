@@ -49,13 +49,16 @@ enum PushRegistrationStatus {
   // but we tell JS that permission was denied to not reveal incognito.
   PUSH_REGISTRATION_STATUS_INCOGNITO_PERMISSION_DENIED = 10,
 
+  // Registration failed because the public key could not be retrieved.
+  PUSH_REGISTRATION_STATUS_PUBLIC_KEY_UNAVAILABLE = 11,
+
   // NOTE: Do not renumber these as that would confuse interpretation of
   // previously logged data. When making changes, also update the enum list
   // in tools/metrics/histograms/histograms.xml to keep it in sync, and
   // update PUSH_REGISTRATION_STATUS_LAST below.
 
   PUSH_REGISTRATION_STATUS_LAST =
-      PUSH_REGISTRATION_STATUS_INCOGNITO_PERMISSION_DENIED
+      PUSH_REGISTRATION_STATUS_PUBLIC_KEY_UNAVAILABLE
 };
 
 // Push unregistration success/error codes for internal use & reporting in UMA.
@@ -112,13 +115,16 @@ enum PushGetRegistrationStatus {
   // incognito, but we tell JS registration not found to not reveal incognito.
   PUSH_GETREGISTRATION_STATUS_INCOGNITO_REGISTRATION_NOT_FOUND = 4,
 
+  // Registration failed because the public key could not be retrieved.
+  PUSH_GETREGISTRATION_STATUS_PUBLIC_KEY_UNAVAILABLE = 5,
+
   // NOTE: Do not renumber these as that would confuse interpretation of
   // previously logged data. When making changes, also update the enum list
   // in tools/metrics/histograms/histograms.xml to keep it in sync, and
   // update PUSH_GETREGISTRATION_STATUS_LAST below.
 
   PUSH_GETREGISTRATION_STATUS_LAST =
-      PUSH_GETREGISTRATION_STATUS_INCOGNITO_REGISTRATION_NOT_FOUND
+      PUSH_GETREGISTRATION_STATUS_PUBLIC_KEY_UNAVAILABLE
 };
 
 // Push message event success/error codes for internal use & reporting in UMA.

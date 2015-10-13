@@ -61,7 +61,7 @@ public:
     virtual void getTickmarks(Vector<IntRect>&) const = 0;
     virtual bool isScrollableAreaActive() const = 0;
 
-    virtual IntPoint convertFromContainingWindow(const IntPoint& windowPoint) = 0;
+    virtual IntPoint convertFromContainingWindow(const IntPoint& windowPoint) const = 0;
 
     virtual bool isCustomScrollbar() const = 0;
     virtual ScrollbarOrientation orientation() const = 0;
@@ -78,6 +78,7 @@ public:
     virtual ScrollbarPart hoveredPart() const = 0;
 
     virtual void styleChanged() = 0;
+    virtual void visibilityChanged() = 0;
 
     virtual bool enabled() const = 0;
     virtual void setEnabled(bool) = 0;

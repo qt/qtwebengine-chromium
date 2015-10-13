@@ -298,6 +298,9 @@ WebInspector.DeferredTempFile.prototype = {
 
     _writeNextChunk: function()
     {
+        // File was deleted while create or write was in-flight.
+        if (!this._tempFile)
+            return;
         var chunk = this._chunks.shift();
         this._isWriting = true;
         this._tempFile.write(/** @type {!Array.<string>} */(chunk.strings), this._didWriteChunk.bind(this, chunk.callback));
@@ -382,6 +385,7 @@ WebInspector.DeferredTempFile.prototype = {
         }
         if (this._tempFile)
             this._tempFile.remove();
+        this._tempFile = null;
     }
 }
 

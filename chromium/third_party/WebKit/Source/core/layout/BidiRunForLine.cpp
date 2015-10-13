@@ -21,9 +21,6 @@
  *
  */
 
-#ifndef BidiRunForLine_h
-#define BidiRunForLine_h
-
 #include "config.h"
 #include "core/layout/BidiRunForLine.h"
 
@@ -81,7 +78,7 @@ static LayoutObject* firstLayoutObjectForDirectionalityDetermination(
 }
 
 TextDirection determinePlaintextDirectionality(LayoutObject* root,
-    LayoutObject* current = 0, unsigned pos = 0)
+    LayoutObject* current, unsigned pos)
 {
     LayoutObject* firstLayoutObject = firstLayoutObjectForDirectionalityDetermination(root, current);
     InlineIterator iter(LineLayoutItem(root), LineLayoutItem(firstLayoutObject), firstLayoutObject == current ? pos : 0);
@@ -137,11 +134,25 @@ void constructBidiRunsForLine(InlineBidiResolver& topResolver,
     // of the resolver owning the runs.
     ASSERT(&topResolver.runs() == &bidiRuns);
     ASSERT(topResolver.position() != endOfLine);
-    LayoutObject* currentRoot = topResolver.position().root();
+    const LayoutObject* currentRoot = topResolver.position().root();
     topResolver.createBidiRunsForLine(endOfLine, override,
         previousLineBrokeCleanly);
+    struct BidiRunsWithRoot {
+        const LayoutObject* root;
+        Vector<BidiRun*> isolatedRuns;
+    };
+    Vector<BidiRunsWithRoot> isolatedRunsStack;
 
-    while (!topResolver.isolatedRuns().isEmpty()) {
+    while (true) {
+        if (topResolver.isolatedRuns().isEmpty()) {
+            if (isolatedRunsStack.isEmpty())
+                break;
+            topResolver.isolatedRuns().appendVector(isolatedRunsStack.last().isolatedRuns);
+            ASSERT(!topResolver.isolatedRuns().isEmpty());
+            currentRoot = isolatedRunsStack.last().root;
+            isolatedRunsStack.removeLast();
+        }
+
         // It does not matter which order we resolve the runs as long as we
         // resolve them all.
         BidiRun* isolatedRun = topResolver.isolatedRuns().last();
@@ -157,7 +168,8 @@ void constructBidiRunsForLine(InlineBidiResolver& topResolver,
         // but that would be a layering violation for BidiResolver (which knows
         // nothing about LayoutObject).
         LayoutInline* isolatedInline = toLayoutInline(
-            highestContainingIsolateWithinRoot(LineLayoutItem(startObj), LineLayoutItem(currentRoot)));
+            highestContainingIsolateWithinRoot(LineLayoutItem(startObj),
+                LineLayoutItem(const_cast<LayoutObject*>(currentRoot))));
         ASSERT(isolatedInline);
 
         InlineBidiResolver isolatedResolver;
@@ -199,17 +211,16 @@ void constructBidiRunsForLine(InlineBidiResolver& topResolver,
         if (isolatedResolver.runs().runCount())
             bidiRuns.replaceRunWithRuns(isolatedRun, isolatedResolver.runs());
 
-        // If we encountered any nested isolate runs, just move them
-        // to the top resolver's list for later processing.
+        // If we encountered any nested isolate runs, save them for later
+        // processing.
         if (!isolatedResolver.isolatedRuns().isEmpty()) {
-            topResolver.isolatedRuns().appendVector(
+            isolatedRunsStack.resize(isolatedRunsStack.size() + 1);
+            isolatedRunsStack.last().isolatedRuns.appendVector(
                 isolatedResolver.isolatedRuns());
-            currentRoot = isolatedInline;
+            isolatedRunsStack.last().root = isolatedInline;
             restoreIsolatedMidpointStates(topResolver, isolatedResolver);
         }
     }
 }
 
 } // namespace blink
-
-#endif // BidiRunForLine_h

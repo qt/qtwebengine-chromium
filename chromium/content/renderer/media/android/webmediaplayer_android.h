@@ -28,6 +28,7 @@
 #include "media/base/demuxer_stream.h"
 #include "media/base/media_keys.h"
 #include "media/base/time_delta_interpolator.h"
+#include "media/blink/webmediaplayer_params.h"
 #include "media/blink/webmediaplayer_util.h"
 #include "media/cdm/proxy_decryptor.h"
 #include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
@@ -46,6 +47,7 @@ class WebContentDecryptionModule;
 class WebContentDecryptionModuleResult;
 class WebFrame;
 class WebMediaPlayerClient;
+class WebMediaPlayerEncryptedMediaClient;
 class WebURL;
 }
 
@@ -89,17 +91,16 @@ class WebMediaPlayerAndroid : public blink::WebMediaPlayer,
   WebMediaPlayerAndroid(
       blink::WebFrame* frame,
       blink::WebMediaPlayerClient* client,
+      blink::WebMediaPlayerEncryptedMediaClient* encrypted_client,
       base::WeakPtr<media::WebMediaPlayerDelegate> delegate,
       RendererMediaPlayerManager* player_manager,
       media::CdmFactory* cdm_factory,
-      media::MediaPermission* media_permission,
-      blink::WebContentDecryptionModule* initial_cdm,
       scoped_refptr<StreamTextureFactory> factory,
-      const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
-      media::MediaLog* media_log);
+      const media::WebMediaPlayerParams& params);
   virtual ~WebMediaPlayerAndroid();
 
   // blink::WebMediaPlayer implementation.
+  virtual bool supportsOverlayFullscreenVideo();
   virtual void enterFullscreen();
 
   // Resource loading.
@@ -336,10 +337,18 @@ class WebMediaPlayerAndroid : public blink::WebMediaPlayer,
       bool success);
 
   bool IsHLSStream() const;
+  // Report whether the loaded url, after following redirects, points to a HLS
+  // playlist, and record the origin of the player.
+  void ReportHLSMetrics() const;
+
+  // Called after |defer_load_cb_| has decided to allow the load. If
+  // |defer_load_cb_| is null this is called immediately.
+  void DoLoad(LoadType load_type, const blink::WebURL& url, CORSMode cors_mode);
 
   blink::WebFrame* const frame_;
 
   blink::WebMediaPlayerClient* const client_;
+  blink::WebMediaPlayerEncryptedMediaClient* const encrypted_client_;
 
   // |delegate_| is used to notify the browser process of the player status, so
   // that the browser process can control screen locks.
@@ -347,6 +356,10 @@ class WebMediaPlayerAndroid : public blink::WebMediaPlayer,
   // lock. So this is only used for media source. Will apply this to regular
   // media tag once http://crbug.com/247892 is fixed.
   base::WeakPtr<media::WebMediaPlayerDelegate> delegate_;
+
+  // Callback responsible for determining if loading of media should be deferred
+  // for external reasons; called during load().
+  media::WebMediaPlayerParams::DeferLoadCB defer_load_cb_;
 
   // Save the list of buffered time ranges.
   blink::WebTimeRanges buffered_;
@@ -432,7 +445,7 @@ class WebMediaPlayerAndroid : public blink::WebMediaPlayer,
   // Whether the video size info is available.
   bool has_size_info_;
 
-  const scoped_refptr<base::SingleThreadTaskRunner> compositor_loop_;
+  const scoped_refptr<base::SingleThreadTaskRunner> compositor_task_runner_;
 
   // Object for allocating stream textures.
   scoped_refptr<StreamTextureFactory> stream_texture_factory_;

@@ -34,11 +34,13 @@
 
 #include "core/CoreExport.h"
 #include "core/dom/IconURL.h"
+#include "wtf/Allocator.h"
 #include "wtf/text/WTFString.h"
 
 namespace blink {
 
 class CORE_EXPORT LinkRelAttribute {
+    DISALLOW_ALLOCATION();
 public:
     explicit LinkRelAttribute(const String& = "");
 
@@ -54,7 +56,6 @@ public:
     bool isLinkNext() const { return m_isLinkNext; }
     bool isImport() const { return m_isImport; }
     bool isManifest() const { return m_isManifest; }
-    bool isDefaultPresentation() const { return m_isDefaultPresentation; }
 
 private:
     IconType m_iconType;
@@ -69,10 +70,8 @@ private:
     bool m_isLinkNext : 1;
     bool m_isImport : 1;
     bool m_isManifest : 1;
-    bool m_isDefaultPresentation : 1;
 };
 
 }
 
 #endif
-

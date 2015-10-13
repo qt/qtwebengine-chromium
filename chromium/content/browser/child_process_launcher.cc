@@ -26,15 +26,15 @@
 #include "content/common/sandbox_win.h"
 #include "content/public/common/sandbox_init.h"
 #elif defined(OS_MACOSX)
-#include "content/browser/bootstrap_sandbox_mac.h"
+#include "content/browser/bootstrap_sandbox_manager_mac.h"
 #include "content/browser/browser_io_surface_manager_mac.h"
 #include "content/browser/mach_broker_mac.h"
 #include "sandbox/mac/bootstrap_sandbox.h"
+#include "sandbox/mac/pre_exec_delegate.h"
 #elif defined(OS_ANDROID)
 #include "base/android/jni_android.h"
 #include "content/browser/android/child_process_launcher_android.h"
 #elif defined(OS_POSIX)
-#include "base/memory/shared_memory.h"
 #include "base/memory/singleton.h"
 #include "content/browser/renderer_host/render_sandbox_host_linux.h"
 #include "content/browser/zygote_host/zygote_host_impl_linux.h"
@@ -92,7 +92,7 @@ void OnChildProcessStartedAndroid(const NotifyCallback& callback,
   } else {
     BrowserThread::PostTask(
         client_thread_id, FROM_HERE, callback_on_client_thread);
- }
+  }
 }
 #endif
 
@@ -243,26 +243,30 @@ void LaunchOnLauncherThread(const NotifyCallback& callback,
     // Make sure the IOSurfaceManager service is running.
     BrowserIOSurfaceManager::GetInstance()->EnsureRunning();
 
-    const int bootstrap_sandbox_policy = delegate->GetSandboxType();
-    if (ShouldEnableBootstrapSandbox() &&
-        bootstrap_sandbox_policy != SANDBOX_TYPE_INVALID) {
-      options.replacement_bootstrap_name =
-          GetBootstrapSandbox()->server_bootstrap_name();
-      GetBootstrapSandbox()->PrepareToForkWithPolicy(
-          bootstrap_sandbox_policy);
+    const SandboxType sandbox_type = delegate->GetSandboxType();
+    scoped_ptr<sandbox::PreExecDelegate> pre_exec_delegate;
+    if (BootstrapSandboxManager::ShouldEnable()) {
+      BootstrapSandboxManager* sandbox_manager =
+          BootstrapSandboxManager::GetInstance();
+      if (sandbox_manager->EnabledForSandbox(sandbox_type)) {
+        pre_exec_delegate =
+            sandbox_manager->sandbox()->NewClient(sandbox_type).Pass();
+      }
     }
+    options.pre_exec_delegate = pre_exec_delegate.get();
 #endif  // defined(OS_MACOSX)
 
     process = base::LaunchProcess(*cmd_line, options);
 
 #if defined(OS_MACOSX)
-    if (ShouldEnableBootstrapSandbox() &&
-        bootstrap_sandbox_policy != SANDBOX_TYPE_INVALID) {
-      GetBootstrapSandbox()->FinishedFork(process.Handle());
-    }
-
-    if (process.IsValid())
+    if (process.IsValid()) {
       broker->AddPlaceholderForPid(process.Pid(), child_process_id);
+    } else {
+      if (pre_exec_delegate) {
+        BootstrapSandboxManager::GetInstance()->sandbox()->RevokeToken(
+            pre_exec_delegate->sandbox_token());
+      }
+    }
 
     // After updating the broker, release the lock and let the child's
     // messasge be processed on the broker's thread.
@@ -309,15 +313,9 @@ void TerminateOnLauncherThread(bool zygote, base::Process process) {
 void SetProcessBackgroundedOnLauncherThread(base::Process process,
                                             bool background) {
   DCHECK_CURRENTLY_ON(BrowserThread::PROCESS_LAUNCHER);
-#if defined(OS_MACOSX)
-  MachBroker* broker = MachBroker::GetInstance();
-  mach_port_t task_port = broker->TaskForPid(process.Pid());
-  if (task_port != TASK_NULL) {
-    process.SetProcessBackgrounded(task_port, background);
+  if (process.CanBackgroundProcesses()) {
+    process.SetProcessBackgrounded(background);
   }
-#else
-  process.SetProcessBackgrounded(background);
-#endif  // defined(OS_MACOSX)
 #if defined(OS_ANDROID)
   SetChildProcessInForeground(process.Handle(), !background);
 #endif
@@ -372,6 +370,9 @@ void ChildProcessLauncher::Launch(
       cmd_line->GetSwitchValueASCII(switches::kProcessType);
   CHECK(process_type == switches::kGpuProcess ||
         process_type == switches::kRendererProcess ||
+#if defined(ENABLE_PLUGINS)
+        process_type == switches::kPpapiPluginProcess ||
+#endif
         process_type == switches::kUtilityProcess)
       << "Unsupported process type: " << process_type;
 
@@ -497,6 +498,7 @@ void ChildProcessLauncher::Notify(
     tracked_objects::ScopedTracker tracking_profile3(
         FROM_HERE_WITH_EXPLICIT_FUNCTION(
             "465841 ChildProcessLauncher::Context::Notify::ProcessFailed"));
+    termination_status_ = base::TERMINATION_STATUS_LAUNCH_FAILED;
     client_->OnProcessLaunchFailed();
   }
 }

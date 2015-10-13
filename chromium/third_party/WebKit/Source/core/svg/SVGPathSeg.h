@@ -24,6 +24,7 @@
 #include "bindings/core/v8/ScriptWrappable.h"
 #include "platform/geometry/FloatPoint.h"
 #include "platform/heap/Handle.h"
+#include "wtf/Allocator.h"
 #include "wtf/RefCounted.h"
 #include "wtf/text/WTFString.h"
 
@@ -73,6 +74,7 @@ static inline bool isAbsolutePathSegType(const SVGPathSegType type)
 }
 
 struct PathSegmentData {
+    STACK_ALLOCATED();
     PathSegmentData()
         : command(PathSegUnknown)
         , arcSweep(false)
@@ -161,7 +163,8 @@ protected:
 
 private:
     RawPtrWillBeMember<SVGPropertyBase> m_ownerList;
-    RawPtrWillBeMember<SVGElement> m_contextElement;
+    GC_PLUGIN_IGNORE("528275")
+    SVGElement* m_contextElement;
 };
 
 class SVGPathSegSingleCoordinate : public SVGPathSeg {

@@ -62,8 +62,6 @@ public:
 
     virtual void setIsActive() { }
 
-    virtual ScrollResult handleWheelEvent(const PlatformWheelEvent&);
-
 #if OS(MACOSX)
     virtual void handleWheelEventPhase(PlatformWheelEventPhase) { }
 #endif
@@ -99,6 +97,7 @@ public:
 
     virtual void notifyContentAreaScrolled(const FloatSize&) { }
 
+    virtual bool setScrollbarsVisibleForTesting(bool) { return false; }
 protected:
     explicit ScrollAnimator(ScrollableArea*);
 

@@ -13,45 +13,60 @@ namespace blink {
 
 PassOwnPtr<WebThreadSupportingGC> WebThreadSupportingGC::create(const char* name)
 {
-#if ENABLE(ASSERT)
-    WTF::willCreateThread();
-#endif
-    return adoptPtr(new WebThreadSupportingGC(name));
+    return adoptPtr(new WebThreadSupportingGC(name, nullptr));
 }
 
-WebThreadSupportingGC::WebThreadSupportingGC(const char* name)
-    : m_thread(adoptPtr(Platform::current()->createThread(name)))
+PassOwnPtr<WebThreadSupportingGC> WebThreadSupportingGC::createForThread(WebThread* thread)
 {
+    return adoptPtr(new WebThreadSupportingGC(nullptr, thread));
+}
+
+WebThreadSupportingGC::WebThreadSupportingGC(const char* name, WebThread* thread)
+    : m_thread(thread)
+{
+#if ENABLE(ASSERT)
+    ASSERT(!name || !thread);
+    // We call this regardless of whether an existing thread is given or not,
+    // as it means that blink is going to run with more than one thread.
+    WTF::willCreateThread();
+#endif
+    if (!m_thread) {
+        // If |thread| is not given, create a new one and own it.
+        m_owningThread = adoptPtr(Platform::current()->createThread(name));
+        m_thread = m_owningThread.get();
+    }
 }
 
 WebThreadSupportingGC::~WebThreadSupportingGC()
 {
-    if (ThreadState::current()) {
+    if (ThreadState::current() && m_owningThread) {
         // WebThread's destructor blocks until all the tasks are processed.
         SafePointScope scope(ThreadState::HeapPointersOnStack);
-        m_thread.clear();
+        m_owningThread.clear();
     }
 }
 
 void WebThreadSupportingGC::initialize()
 {
     m_pendingGCRunner = adoptPtr(new PendingGCRunner);
-    m_messageLoopInterruptor = adoptPtr(new MessageLoopInterruptor(&platformThread()));
-    platformThread().addTaskObserver(m_pendingGCRunner.get());
+    m_thread->addTaskObserver(m_pendingGCRunner.get());
     ThreadState::attach();
-    ThreadState::current()->addInterruptor(m_messageLoopInterruptor.get());
+    OwnPtr<MessageLoopInterruptor> interruptor = adoptPtr(new MessageLoopInterruptor(m_thread->taskRunner()));
+    ThreadState::current()->addInterruptor(interruptor.release());
 }
 
 void WebThreadSupportingGC::shutdown()
 {
     // Ensure no posted tasks will run from this point on.
-    platformThread().removeTaskObserver(m_pendingGCRunner.get());
-    platformThread().scheduler()->shutdown();
+    m_thread->removeTaskObserver(m_pendingGCRunner.get());
 
-    ThreadState::current()->removeInterruptor(m_messageLoopInterruptor.get());
+    // Shutdown the thread (via its scheduler) only when the thread is created
+    // and is owned by this instance.
+    if (m_owningThread)
+        m_owningThread->scheduler()->shutdown();
+
     ThreadState::detach();
     m_pendingGCRunner = nullptr;
-    m_messageLoopInterruptor = nullptr;
 }
 
 } // namespace blink

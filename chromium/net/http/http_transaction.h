@@ -5,6 +5,8 @@
 #ifndef NET_HTTP_HTTP_TRANSACTION_H_
 #define NET_HTTP_HTTP_TRANSACTION_H_
 
+#include <stdint.h>
+
 #include "net/base/completion_callback.h"
 #include "net/base/load_states.h"
 #include "net/base/net_export.h"
@@ -122,7 +124,10 @@ class NET_EXPORT_PRIVATE HttpTransaction {
   virtual bool GetFullRequestHeaders(HttpRequestHeaders* headers) const = 0;
 
   // Get the number of bytes received from network.
-  virtual int64 GetTotalReceivedBytes() const = 0;
+  virtual int64_t GetTotalReceivedBytes() const = 0;
+
+  // Get the number of bytes sent over the network.
+  virtual int64_t GetTotalSentBytes() const = 0;
 
   // Called to tell the transaction that we have successfully reached the end
   // of the stream. This is equivalent to performing an extra Read() at the end
@@ -154,6 +159,12 @@ class NET_EXPORT_PRIVATE HttpTransaction {
   // does not modify |load_timing_info| if there's no timing information to
   // provide.
   virtual bool GetLoadTimingInfo(LoadTimingInfo* load_timing_info) const = 0;
+
+  // Gets the remote endpoint of the socket that the transaction's underlying
+  // stream is using or did use, if any. Returns true and fills in |endpoint|
+  // if it is available; returns false and leaves |endpoint| unchanged if it is
+  // unavailable.
+  virtual bool GetRemoteEndpoint(IPEndPoint* endpoint) const = 0;
 
   // Called when the priority of the parent job changes.
   virtual void SetPriority(RequestPriority priority) = 0;

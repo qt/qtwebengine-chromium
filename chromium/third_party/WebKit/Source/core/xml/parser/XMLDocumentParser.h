@@ -97,6 +97,7 @@ public:
     static bool supportsXMLVersion(const String&);
 
     class PendingCallback {
+        WTF_MAKE_FAST_ALLOCATED(PendingCallback);
     public:
         virtual ~PendingCallback() { }
         virtual void call(XMLDocumentParser*) = 0;
@@ -149,8 +150,8 @@ private:
 
     void insertErrorMessageBlock();
 
-    void enterText();
-    void exitText();
+    void createLeafTextNodeIfNeeded();
+    bool updateLeafTextNode();
 
     void doWrite(const String&);
     void doEnd();

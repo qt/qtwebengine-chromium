@@ -19,9 +19,9 @@
 
 #include <limits>
 
-#include "base/basictypes.h"
 #include "base/logging.h"
 #include "util/misc/clock.h"
+#include "util/misc/implicit_cast.h"
 
 namespace crashpad {
 

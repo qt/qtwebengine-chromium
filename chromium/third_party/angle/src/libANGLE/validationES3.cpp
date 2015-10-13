@@ -131,6 +131,15 @@ ES3FormatCombinationSet BuildES3FormatSet()
     InsertES3FormatCombo(&set, GL_ALPHA,              GL_ALPHA,           GL_UNSIGNED_BYTE                 );
     InsertES3FormatCombo(&set, GL_SRGB_ALPHA_EXT,     GL_SRGB_ALPHA_EXT,  GL_UNSIGNED_BYTE                 );
     InsertES3FormatCombo(&set, GL_SRGB_EXT,           GL_SRGB_EXT,        GL_UNSIGNED_BYTE                 );
+    InsertES3FormatCombo(&set, GL_RG,                 GL_RG,              GL_UNSIGNED_BYTE                 );
+    InsertES3FormatCombo(&set, GL_RG,                 GL_RG,              GL_FLOAT                         );
+    InsertES3FormatCombo(&set, GL_RG,                 GL_RG,              GL_HALF_FLOAT                    );
+    InsertES3FormatCombo(&set, GL_RG,                 GL_RG,              GL_HALF_FLOAT_OES                );
+    InsertES3FormatCombo(&set, GL_RED,                GL_RED,             GL_UNSIGNED_BYTE                 );
+    InsertES3FormatCombo(&set, GL_RED,                GL_RED,             GL_FLOAT                         );
+    InsertES3FormatCombo(&set, GL_RED,                GL_RED,             GL_HALF_FLOAT                    );
+    InsertES3FormatCombo(&set, GL_RED,                GL_RED,             GL_HALF_FLOAT_OES                );
+    InsertES3FormatCombo(&set, GL_DEPTH_STENCIL,      GL_DEPTH_STENCIL,   GL_UNSIGNED_INT_24_8             );
 
     // Depth stencil formats
     InsertES3FormatCombo(&set, GL_DEPTH_COMPONENT16,  GL_DEPTH_COMPONENT, GL_UNSIGNED_SHORT                );
@@ -354,7 +363,7 @@ bool ValidateES3TexImageParameters(Context *context, GLenum target, GLint level,
       case GL_TEXTURE_2D_ARRAY:
         if (static_cast<GLuint>(width) > (caps.max2DTextureSize >> level) ||
             static_cast<GLuint>(height) > (caps.max2DTextureSize >> level) ||
-            static_cast<GLuint>(depth) > (caps.maxArrayTextureLayers >> level))
+            static_cast<GLuint>(depth) > caps.maxArrayTextureLayers)
         {
             context->recordError(Error(GL_INVALID_VALUE));
             return false;
@@ -373,7 +382,7 @@ bool ValidateES3TexImageParameters(Context *context, GLenum target, GLint level,
         return false;
     }
 
-    if (texture->isImmutable() && !isSubImage)
+    if (texture->getImmutableFormat() && !isSubImage)
     {
         context->recordError(Error(GL_INVALID_OPERATION));
         return false;
@@ -857,7 +866,13 @@ bool ValidateES3TexStorageParameters(Context *context, GLenum target, GLsizei le
         return false;
     }
 
-    if (levels > gl::log2(std::max(std::max(width, height), depth)) + 1)
+    GLsizei maxDim = std::max(width, height);
+    if (target != GL_TEXTURE_2D_ARRAY)
+    {
+        maxDim = std::max(maxDim, depth);
+    }
+
+    if (levels > gl::log2(maxDim) + 1)
     {
         context->recordError(Error(GL_INVALID_OPERATION));
         return false;
@@ -930,7 +945,7 @@ bool ValidateES3TexStorageParameters(Context *context, GLenum target, GLsizei le
         return false;
     }
 
-    if (texture->isImmutable())
+    if (texture->getImmutableFormat())
     {
         context->recordError(Error(GL_INVALID_OPERATION));
         return false;
@@ -1240,4 +1255,47 @@ bool ValidateReadBuffer(Context *context, GLenum src)
     return true;
 }
 
+bool ValidateCompressedTexImage3D(Context *context,
+                                  GLenum target,
+                                  GLint level,
+                                  GLenum internalformat,
+                                  GLsizei width,
+                                  GLsizei height,
+                                  GLsizei depth,
+                                  GLint border,
+                                  GLsizei imageSize,
+                                  const GLvoid *data)
+{
+    if (context->getClientVersion() < 3)
+    {
+        context->recordError(Error(GL_INVALID_OPERATION));
+        return false;
+    }
+
+    const InternalFormat &formatInfo = GetInternalFormatInfo(internalformat);
+    if (imageSize < 0 ||
+        static_cast<GLuint>(imageSize) !=
+            formatInfo.computeBlockSize(GL_UNSIGNED_BYTE, width, height))
+    {
+        context->recordError(Error(GL_INVALID_VALUE));
+        return false;
+    }
+
+    // 3D texture target validation
+    if (target != GL_TEXTURE_3D && target != GL_TEXTURE_2D_ARRAY)
+    {
+        context->recordError(
+            Error(GL_INVALID_ENUM, "Must specify a valid 3D texture destination target"));
+        return false;
+    }
+
+    // validateES3TexImageFormat sets the error code if there is an error
+    if (!ValidateES3TexImageParameters(context, target, level, internalformat, true, false, 0, 0, 0,
+                                       width, height, depth, border, GL_NONE, GL_NONE, data))
+    {
+        return false;
+    }
+
+    return true;
+}
 }

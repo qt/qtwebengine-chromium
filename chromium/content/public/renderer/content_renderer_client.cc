@@ -7,7 +7,6 @@
 #include "content/public/renderer/media_stream_renderer_factory.h"
 #include "media/base/renderer_factory.h"
 #include "third_party/WebKit/public/platform/modules/app_banner/WebAppBannerClient.h"
-#include "third_party/WebKit/public/web/WebPluginPlaceholder.h"
 
 namespace content {
 
@@ -16,14 +15,6 @@ SkBitmap* ContentRendererClient::GetSadPluginBitmap() {
 }
 
 SkBitmap* ContentRendererClient::GetSadWebViewBitmap() {
-  return nullptr;
-}
-
-scoped_ptr<blink::WebPluginPlaceholder>
-ContentRendererClient::CreatePluginPlaceholder(
-    RenderFrame* render_frame,
-    blink::WebLocalFrame* frame,
-    const blink::WebPluginParams& params) {
   return nullptr;
 }
 
@@ -51,8 +42,10 @@ bool ContentRendererClient::ShouldSuppressErrorPage(RenderFrame* render_frame,
   return false;
 }
 
-void ContentRendererClient::DeferMediaLoad(RenderFrame* render_frame,
-                                           const base::Closure& closure) {
+void ContentRendererClient::DeferMediaLoad(
+    RenderFrame* render_frame,
+    bool has_played_media_before,
+    const base::Closure& closure) {
   closure.Run();
 }
 
@@ -95,6 +88,10 @@ blink::WebSpeechSynthesizer* ContentRendererClient::OverrideSpeechSynthesizer(
 
 bool ContentRendererClient::RunIdleHandlerWhenWidgetsHidden() {
   return true;
+}
+
+bool ContentRendererClient::AllowTimerSuspensionWhenProcessBackgrounded() {
+  return false;
 }
 
 bool ContentRendererClient::AllowPopup() {
@@ -226,6 +223,10 @@ std::string ContentRendererClient::GetUserAgentOverrideForURL(const GURL& url) {
 scoped_ptr<blink::WebAppBannerClient>
 ContentRendererClient::CreateAppBannerClient(RenderFrame* render_frame) {
   return nullptr;
+}
+
+bool ContentRendererClient::ShouldEnforceWebRTCRoutingPreferences() {
+  return true;
 }
 
 }  // namespace content

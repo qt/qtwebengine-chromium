@@ -93,6 +93,7 @@ public:
     bool shapeOutsideDataEquivalent(const StyleRareNonInheritedData&) const;
     bool clipPathDataEquivalent(const StyleRareNonInheritedData&) const;
     bool hasFilters() const;
+    bool hasBackdropFilters() const;
     bool hasOpacity() const { return opacity < 1; }
 
     float opacity; // Whether or not we're transparent.
@@ -115,12 +116,13 @@ public:
     DataRef<StyleWillChangeData> m_willChange; // CSS Will Change
 
     DataRef<StyleFilterData> m_filter; // Filter operations (url, sepia, blur, etc.)
+    DataRef<StyleFilterData> m_backdropFilter; // Backdrop filter operations (url, sepia, blur, etc.)
 
     DataRef<StyleGridData> m_grid;
     DataRef<StyleGridItemData> m_gridItem;
     DataRef<StyleScrollSnapData> m_scrollSnap;
 
-    OwnPtr<ContentData> m_content;
+    OwnPtrWillBePersistent<ContentData> m_content;
     OwnPtr<CounterDirectiveMap> m_counterDirectives;
     OwnPtr<CSSAnimationData> m_animations;
     OwnPtr<CSSTransitionData> m_transitions;
@@ -129,7 +131,7 @@ public:
 
     RefPtr<StyleReflection> m_boxReflect;
 
-    RefPtr<ShapeValue> m_shapeOutside;
+    RefPtrWillBePersistent<ShapeValue> m_shapeOutside;
     RefPtr<ClipPathOperation> m_clipPath;
 
     FillLayer m_mask;
@@ -173,9 +175,11 @@ public:
     unsigned m_hasCurrentOpacityAnimation : 1;
     unsigned m_hasCurrentTransformAnimation : 1;
     unsigned m_hasCurrentFilterAnimation : 1;
+    unsigned m_hasCurrentBackdropFilterAnimation : 1;
     unsigned m_runningOpacityAnimationOnCompositor : 1;
     unsigned m_runningTransformAnimationOnCompositor : 1;
     unsigned m_runningFilterAnimationOnCompositor : 1;
+    unsigned m_runningBackdropFilterAnimationOnCompositor : 1;
 
     unsigned m_effectiveBlendMode: 5; // EBlendMode
 
@@ -189,8 +193,6 @@ public:
     // value (that can only be specified using CSSOM scroll APIs) so 2 bits are needed.
     unsigned m_scrollBehavior: 2;
 
-    unsigned m_scrollBlocksOn: 3; // WebScrollBlocksOn
-
     unsigned m_scrollSnapType: 2; // ScrollSnapType
 
     // Plugins require accelerated compositing for reasons external to blink.
@@ -203,6 +205,10 @@ public:
     unsigned m_hasInlineTransform : 1;
     unsigned m_resize : 2; // EResize
     unsigned m_hasCompositorProxy : 1;
+
+    // Style adjustment for appearance is disabled when certain properties are set.
+    unsigned m_hasAuthorBackground : 1; // Whether there is a author-defined background.
+    unsigned m_hasAuthorBorder : 1; // Whether there is a author-defined border.
 
 private:
     StyleRareNonInheritedData();

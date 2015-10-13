@@ -8,7 +8,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/timer/timer.h"
-#include "media/capture/screen_capture_device_core.h"
+#include "media/capture/content/screen_capture_device_core.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_observer.h"
 #include "ui/base/cursor/cursors_aura.h"
@@ -44,7 +44,7 @@ class AuraWindowCaptureMachine
   void OnWindowBoundsChanged(aura::Window* window,
                              const gfx::Rect& old_bounds,
                              const gfx::Rect& new_bounds) override;
-  void OnWindowDestroyed(aura::Window* window) override;
+  void OnWindowDestroying(aura::Window* window) override;
   void OnWindowAddedToRootWindow(aura::Window* window) override;
   void OnWindowRemovingFromRootWindow(aura::Window* window,
                                       aura::Window* new_root) override;

@@ -44,17 +44,22 @@ namespace blink {
 // Delay time in second for start autoscroll if pointer is in border edge of scrollable element.
 static double autoscrollDelay = 0.2;
 
-PassOwnPtr<AutoscrollController> AutoscrollController::create(Page& page)
+PassOwnPtrWillBeRawPtr<AutoscrollController> AutoscrollController::create(Page& page)
 {
-    return adoptPtr(new AutoscrollController(page));
+    return adoptPtrWillBeNoop(new AutoscrollController(page));
 }
 
 AutoscrollController::AutoscrollController(Page& page)
-    : m_page(page)
+    : m_page(&page)
     , m_autoscrollLayoutObject(nullptr)
     , m_autoscrollType(NoAutoscroll)
     , m_dragAndDropAutoscrollStartTime(0)
 {
+}
+
+DEFINE_TRACE(AutoscrollController)
+{
+    visitor->trace(m_page);
 }
 
 bool AutoscrollController::autoscrollInProgress() const
@@ -183,6 +188,11 @@ void AutoscrollController::handleMouseReleaseForPanScrolling(LocalFrame* frame, 
     case AutoscrollForPanCanStop:
         stopAutoscroll();
         break;
+    case AutoscrollForDragAndDrop:
+    case AutoscrollForSelection:
+    case NoAutoscroll:
+        // Nothing to do.
+        break;
     }
 }
 
@@ -249,12 +259,12 @@ void AutoscrollController::animate(double)
 #endif
     }
     if (m_autoscrollType != NoAutoscroll)
-        m_page.chromeClient().scheduleAnimation();
+        m_page->chromeClient().scheduleAnimation();
 }
 
 void AutoscrollController::startAutoscroll()
 {
-    m_page.chromeClient().scheduleAnimation();
+    m_page->chromeClient().scheduleAnimation();
 }
 
 #if OS(WIN)
@@ -284,12 +294,13 @@ void AutoscrollController::updatePanScrollState(FrameView* view, const IntPoint&
             view->setCursor(southWestPanningCursor());
         else
             view->setCursor(southPanningCursor());
-    } else if (east)
+    } else if (east) {
         view->setCursor(eastPanningCursor());
-    else if (west)
+    } else if (west) {
         view->setCursor(westPanningCursor());
-    else
+    } else {
         view->setCursor(middlePanningCursor());
+    }
 }
 #endif
 

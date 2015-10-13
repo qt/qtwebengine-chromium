@@ -53,7 +53,6 @@ component("accessibility") {
     "ax_tree_serializer.cc",
     "ax_tree_serializer.h",
     "ax_tree_source.h",
-    "ax_tree_update.cc",
     "ax_tree_update.h",
     "ax_view_state.cc",
     "ax_view_state.h",
@@ -81,7 +80,7 @@ component("accessibility") {
     public_deps += [ "//third_party/iaccessible2" ]
   }
 
-  if (use_aura && !is_chromeos && is_linux && use_x11) {
+  if (use_atk) {
     sources += [
       "platform/atk_util_auralinux.cc",
       "platform/atk_util_auralinux.h",
@@ -124,6 +123,15 @@ source_set("test_support") {
 
   deps = [
     ":accessibility",
+  ]
+}
+
+# TODO(GYP): Delete this after we've converted everything to GN.
+# The _run targets exist only for compatibility w/ GYP.
+group("accessibility_unittests_run") {
+  testonly = true
+  deps = [
+    ":accessibility_unittests",
   ]
 }
 

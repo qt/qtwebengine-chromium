@@ -17,8 +17,9 @@ namespace cc {
 SurfaceDisplayOutputSurface::SurfaceDisplayOutputSurface(
     SurfaceManager* surface_manager,
     SurfaceIdAllocator* allocator,
-    const scoped_refptr<ContextProvider>& context_provider)
-    : OutputSurface(context_provider),
+    const scoped_refptr<ContextProvider>& context_provider,
+    const scoped_refptr<ContextProvider>& worker_context_provider)
+    : OutputSurface(context_provider, worker_context_provider),
       display_client_(NULL),
       factory_(surface_manager, this),
       allocator_(allocator) {
@@ -63,7 +64,7 @@ void SurfaceDisplayOutputSurface::SwapBuffers(CompositorFrame* frame) {
 
   scoped_ptr<CompositorFrame> frame_copy(new CompositorFrame());
   frame->AssignTo(frame_copy.get());
-  factory_.SubmitFrame(
+  factory_.SubmitCompositorFrame(
       surface_id_, frame_copy.Pass(),
       base::Bind(&SurfaceDisplayOutputSurface::SwapBuffersComplete,
                  base::Unretained(this)));
@@ -80,7 +81,8 @@ bool SurfaceDisplayOutputSurface::BindToClient(OutputSurfaceClient* client) {
 
 void SurfaceDisplayOutputSurface::ForceReclaimResources() {
   if (!surface_id_.is_null())
-    factory_.SubmitFrame(surface_id_, nullptr, SurfaceFactory::DrawCallback());
+    factory_.SubmitCompositorFrame(surface_id_, nullptr,
+                                   SurfaceFactory::DrawCallback());
 }
 
 void SurfaceDisplayOutputSurface::ReturnResources(

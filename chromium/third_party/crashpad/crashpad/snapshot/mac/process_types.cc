@@ -86,6 +86,7 @@ inline void Assign<uuid_t, uuid_t>(uuid_t* destination, const uuid_t& source) {
   namespace crashpad {                                                     \
   namespace process_types {                                                \
                                                                            \
+  /* static */                                                             \
   size_t struct_name::ExpectedSize(ProcessReader* process_reader) {        \
     if (!process_reader->Is64Bit()) {                                      \
       return internal::struct_name<internal::Traits32>::Size();            \
@@ -94,6 +95,7 @@ inline void Assign<uuid_t, uuid_t>(uuid_t* destination, const uuid_t& source) {
     }                                                                      \
   }                                                                        \
                                                                            \
+  /* static */                                                             \
   bool struct_name::ReadInto(ProcessReader* process_reader,                \
                              mach_vm_address_t address,                    \
                              struct_name* generic) {                       \
@@ -106,6 +108,7 @@ inline void Assign<uuid_t, uuid_t>(uuid_t* destination, const uuid_t& source) {
     }                                                                      \
   }                                                                        \
                                                                            \
+  /* static */                                                             \
   template <typename T>                                                    \
   bool struct_name::ReadIntoInternal(ProcessReader* process_reader,        \
                                      mach_vm_address_t address,            \
@@ -129,6 +132,8 @@ inline void Assign<uuid_t, uuid_t>(uuid_t* destination, const uuid_t& source) {
 #define PROCESS_TYPE_STRUCT_MEMBER(member_type, member_name, ...) \
     Assign(&generic->member_name, member_name);
 
+#define PROCESS_TYPE_STRUCT_VERSIONED(struct_name, version_field)
+
 #define PROCESS_TYPE_STRUCT_END(struct_name) \
   }                                          \
   }  /* namespace internal */                \
@@ -139,6 +144,7 @@ inline void Assign<uuid_t, uuid_t>(uuid_t* destination, const uuid_t& source) {
 
 #undef PROCESS_TYPE_STRUCT_BEGIN
 #undef PROCESS_TYPE_STRUCT_MEMBER
+#undef PROCESS_TYPE_STRUCT_VERSIONED
 #undef PROCESS_TYPE_STRUCT_END
 #undef PROCESS_TYPE_STRUCT_IMPLEMENT
 
@@ -155,6 +161,7 @@ inline void Assign<uuid_t, uuid_t>(uuid_t* destination, const uuid_t& source) {
   namespace process_types {                                           \
   namespace internal {                                                \
                                                                       \
+  /* static */                                                        \
   template <typename Traits>                                          \
   bool struct_name<Traits>::ReadInto(ProcessReader* process_reader,   \
                                      mach_vm_address_t address,       \
@@ -168,12 +175,15 @@ inline void Assign<uuid_t, uuid_t>(uuid_t* destination, const uuid_t& source) {
 
 #define PROCESS_TYPE_STRUCT_MEMBER(member_type, member_name, ...)
 
+#define PROCESS_TYPE_STRUCT_VERSIONED(struct_name, version_field)
+
 #define PROCESS_TYPE_STRUCT_END(struct_name)
 
 #include "snapshot/mac/process_types/all.proctype"
 
 #undef PROCESS_TYPE_STRUCT_BEGIN
 #undef PROCESS_TYPE_STRUCT_MEMBER
+#undef PROCESS_TYPE_STRUCT_VERSIONED
 #undef PROCESS_TYPE_STRUCT_END
 #undef PROCESS_TYPE_STRUCT_IMPLEMENT_INTERNAL_READ_INTO
 
@@ -189,16 +199,19 @@ inline void Assign<uuid_t, uuid_t>(uuid_t* destination, const uuid_t& source) {
   namespace process_types {                                                   \
   namespace internal {                                                        \
                                                                               \
+  /* static */                                                                \
   template <typename Traits>                                                  \
   bool struct_name<Traits>::ReadArrayInto(ProcessReader* process_reader,      \
                                           mach_vm_address_t address,          \
                                           size_t count,                       \
                                           struct_name<Traits>* specific) {    \
     return process_reader->Memory()->Read(                                    \
-        address, sizeof(struct_name<Traits> [count]), specific);              \
+        address, sizeof(struct_name<Traits>[count]), specific);               \
   }                                                                           \
+                                                                              \
   }  /* namespace internal */                                                 \
                                                                               \
+  /* static */                                                                \
   bool struct_name::ReadArrayInto(ProcessReader* process_reader,              \
                                   mach_vm_address_t address,                  \
                                   size_t count,                               \
@@ -215,6 +228,7 @@ inline void Assign<uuid_t, uuid_t>(uuid_t* destination, const uuid_t& source) {
     return true;                                                              \
   }                                                                           \
                                                                               \
+  /* static */                                                                \
   template <typename T>                                                       \
   bool struct_name::ReadArrayIntoInternal(ProcessReader* process_reader,      \
                                           mach_vm_address_t address,          \
@@ -234,11 +248,57 @@ inline void Assign<uuid_t, uuid_t>(uuid_t* destination, const uuid_t& source) {
 
 #define PROCESS_TYPE_STRUCT_MEMBER(member_type, member_name, ...)
 
+#define PROCESS_TYPE_STRUCT_VERSIONED(struct_name, version_field)
+
 #define PROCESS_TYPE_STRUCT_END(struct_name)
 
 #include "snapshot/mac/process_types/all.proctype"
 
 #undef PROCESS_TYPE_STRUCT_BEGIN
 #undef PROCESS_TYPE_STRUCT_MEMBER
+#undef PROCESS_TYPE_STRUCT_VERSIONED
 #undef PROCESS_TYPE_STRUCT_END
 #undef PROCESS_TYPE_STRUCT_IMPLEMENT_ARRAY
+
+// Implement the generic crashpad::process_types::struct_name
+// ExpectedSizeForVersion(), which delegates to the templatized
+// ExpectedSizeForVersion(), which returns the expected size of a versioned
+// structure given a version parameter. This is only implemented for structures
+// that use PROCESS_TYPE_STRUCT_VERSIONED(), and implementations of the internal
+// templatized functions must be provided in
+// snapshot/mac/process_types/custom.cc.
+#define PROCESS_TYPE_STRUCT_IMPLEMENT_VERSIONED 1
+
+#define PROCESS_TYPE_STRUCT_BEGIN(struct_name)
+
+#define PROCESS_TYPE_STRUCT_MEMBER(member_type, member_name, ...)
+
+#define PROCESS_TYPE_STRUCT_VERSIONED(struct_name, version_field) \
+  namespace crashpad {                                            \
+  namespace process_types {                                       \
+                                                                  \
+  /* static */                                                    \
+  size_t struct_name::ExpectedSizeForVersion(                     \
+      ProcessReader* process_reader,                              \
+      decltype(struct_name::version_field) version) {             \
+    if (!process_reader->Is64Bit()) {                             \
+      return internal::struct_name<                               \
+          internal::Traits32>::ExpectedSizeForVersion(version);   \
+    } else {                                                      \
+      return internal::struct_name<                               \
+          internal::Traits64>::ExpectedSizeForVersion(version);   \
+    }                                                             \
+  }                                                               \
+                                                                  \
+  }  /* namespace process_types */                                \
+  }  /* namespace crashpad */
+
+#define PROCESS_TYPE_STRUCT_END(struct_name)
+
+#include "snapshot/mac/process_types/all.proctype"
+
+#undef PROCESS_TYPE_STRUCT_BEGIN
+#undef PROCESS_TYPE_STRUCT_MEMBER
+#undef PROCESS_TYPE_STRUCT_VERSIONED
+#undef PROCESS_TYPE_STRUCT_END
+#undef PROCESS_TYPE_STRUCT_IMPLEMENT_VERSIONED

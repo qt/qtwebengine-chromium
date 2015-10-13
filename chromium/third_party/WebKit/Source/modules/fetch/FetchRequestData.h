@@ -8,8 +8,9 @@
 #include "platform/heap/Handle.h"
 #include "platform/weborigin/KURL.h"
 #include "platform/weborigin/Referrer.h"
-#include "public/platform/WebServiceWorkerRequest.h"
+#include "platform/weborigin/ReferrerPolicy.h"
 #include "public/platform/WebURLRequest.h"
+#include "public/platform/modules/serviceworker/WebServiceWorkerRequest.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/text/AtomicString.h"
@@ -28,34 +29,6 @@ class FetchRequestData final : public GarbageCollectedFinalized<FetchRequestData
 public:
     enum Tainting { BasicTainting, CORSTainting, OpaqueTainting };
 
-    class Referrer final {
-    public:
-        Referrer() : m_type(ClientReferrer) { }
-        bool isNoReferrer() const { return m_type == NoReferrer; }
-        bool isClient() const { return m_type == ClientReferrer; }
-        bool isURL() const { return m_type == URLReferrer; }
-        void setNoReferrer()
-        {
-            m_referrer = blink::Referrer();
-            m_type = NoReferrer;
-        }
-        void setClient()
-        {
-            m_referrer = blink::Referrer();
-            m_type = ClientReferrer;
-        }
-        void setURL(const blink::Referrer& referrer)
-        {
-            m_referrer = referrer;
-            m_type = URLReferrer;
-        }
-        blink::Referrer referrer() const { return m_referrer; }
-    private:
-        enum Type { NoReferrer, ClientReferrer, URLReferrer };
-        Type m_type;
-        blink::Referrer m_referrer;
-    };
-
     static FetchRequestData* create();
     static FetchRequestData* create(ExecutionContext*, const WebServiceWorkerRequest&);
     // Call Request::refreshBody() after calling clone() or pass().
@@ -64,7 +37,7 @@ public:
     ~FetchRequestData();
 
     void setMethod(AtomicString method) { m_method = method; }
-    const AtomicString method() const { return m_method; }
+    const AtomicString& method() const { return m_method; }
     void setURL(const KURL& url) { m_url = url; }
     const KURL& url() const { return m_url; }
     bool unsafeRequestFlag() const { return m_unsafeRequestFlag; }
@@ -76,11 +49,17 @@ public:
     bool sameOriginDataURLFlag() { return m_sameOriginDataURLFlag; }
     void setSameOriginDataURLFlag(bool flag) { m_sameOriginDataURLFlag = flag; }
     const Referrer& referrer() const { return m_referrer; }
-    Referrer* mutableReferrer() { return &m_referrer; }
+    void setReferrer(const Referrer& r) { m_referrer = r; }
+    const AtomicString& referrerString() const { return m_referrer.referrer; }
+    void setReferrerString(const AtomicString& s) { m_referrer.referrer = s; }
+    ReferrerPolicy referrerPolicy() const { return m_referrer.referrerPolicy; }
+    void setReferrerPolicy(ReferrerPolicy p) { m_referrer.referrerPolicy = p; }
     void setMode(WebURLRequest::FetchRequestMode mode) { m_mode = mode; }
     WebURLRequest::FetchRequestMode mode() const { return m_mode; }
     void setCredentials(WebURLRequest::FetchCredentialsMode credentials) { m_credentials = credentials; }
     WebURLRequest::FetchCredentialsMode credentials() const { return m_credentials; }
+    void setRedirect(WebURLRequest::FetchRedirectMode redirect) { m_redirect = redirect; }
+    WebURLRequest::FetchRedirectMode redirect() const { return m_redirect; }
     void setResponseTainting(Tainting tainting) { m_responseTainting = tainting; }
     Tainting tainting() const { return m_responseTainting; }
     FetchHeaderList* headerList() const { return m_headerList.get(); }
@@ -90,11 +69,19 @@ public:
     void setBuffer(BodyStreamBuffer* buffer) { m_buffer = buffer; }
     String mimeType() const { return m_mimeType; }
     void setMIMEType(const String& type) { m_mimeType = type; }
+    String integrity() const { return m_integrity; }
+    void setIntegrity(const String& integrity) { m_integrity = integrity; }
+
+    // We use these strings instead of "no-referrer" and "client" in the spec.
+    static AtomicString noReferrerString() { return AtomicString(); }
+    static AtomicString clientReferrerString() { return AtomicString("about:client", AtomicString::ConstructFromLiteral); }
 
     DECLARE_TRACE();
 
 private:
     FetchRequestData();
+
+    FetchRequestData* cloneExceptBody();
 
     AtomicString m_method;
     KURL m_url;
@@ -105,17 +92,21 @@ private:
     RefPtr<SecurityOrigin> m_origin;
     // FIXME: Support m_forceOriginHeaderFlag;
     bool m_sameOriginDataURLFlag;
+    // |m_referrer| consists of referrer string and referrer policy.
+    // We use |noReferrerString()| and |clientReferrerString()| as
+    // "no-referrer" and "client" strings in the spec.
     Referrer m_referrer;
     // FIXME: Support m_authenticationFlag;
     // FIXME: Support m_synchronousFlag;
     WebURLRequest::FetchRequestMode m_mode;
     WebURLRequest::FetchCredentialsMode m_credentials;
+    WebURLRequest::FetchRedirectMode m_redirect;
     // FIXME: Support m_useURLCredentialsFlag;
-    // FIXME: Support m_manualRedirectFlag;
     // FIXME: Support m_redirectCount;
     Tainting m_responseTainting;
     Member<BodyStreamBuffer> m_buffer;
     String m_mimeType;
+    String m_integrity;
 };
 
 } // namespace blink

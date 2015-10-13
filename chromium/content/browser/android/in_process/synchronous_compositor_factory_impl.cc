@@ -9,17 +9,23 @@
 #include "base/sys_info.h"
 #include "base/thread_task_runner_handle.h"
 #include "content/browser/android/in_process/context_provider_in_process.h"
+#include "content/browser/android/in_process/synchronous_compositor_context_provider.h"
 #include "content/browser/android/in_process/synchronous_compositor_external_begin_frame_source.h"
 #include "content/browser/android/in_process/synchronous_compositor_impl.h"
 #include "content/browser/android/in_process/synchronous_compositor_output_surface.h"
 #include "content/browser/gpu/browser_gpu_memory_buffer_manager.h"
+#include "content/common/gpu/client/gpu_channel_host.h"
+#include "content/common/gpu/client/webgraphicscontext3d_command_buffer_impl.h"
+#include "content/gpu/in_process_gpu_thread.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/gpu_data_manager.h"
+#include "content/public/common/content_switches.h"
 #include "content/renderer/gpu/frame_swap_message_queue.h"
+#include "content/renderer/render_thread_impl.h"
 #include "gpu/blink/webgraphicscontext3d_in_process_command_buffer_impl.h"
 #include "gpu/command_buffer/client/gl_in_process_context.h"
+#include "gpu/command_buffer/client/gles2_interface.h"
 #include "gpu/command_buffer/common/gles2_cmd_utils.h"
-#include "gpu/command_buffer/service/gpu_switches.h"
 #include "ui/gl/android/surface_texture.h"
 #include "ui/gl/gl_surface.h"
 #include "ui/gl/gl_surface_stub.h"
@@ -75,6 +81,24 @@ ContextHolder CreateContextHolder(
   return holder;
 }
 
+scoped_ptr<WebGraphicsContext3DCommandBufferImpl> CreateContext3D(
+    int surface_id,
+    const blink::WebGraphicsContext3D::Attributes& attributes,
+    const content::WebGraphicsContext3DCommandBufferImpl::SharedMemoryLimits&
+        mem_limits) {
+  DCHECK(RenderThreadImpl::current());
+  CauseForGpuLaunch cause =
+      CAUSE_FOR_GPU_LAUNCH_WEBGRAPHICSCONTEXT3DCOMMANDBUFFERIMPL_INITIALIZE;
+  scoped_refptr<GpuChannelHost> gpu_channel_host(
+      RenderThreadImpl::current()->EstablishGpuChannelSync(cause));
+  CHECK(gpu_channel_host.get());
+
+  bool lose_context_when_out_of_memory = true;
+  return make_scoped_ptr(new WebGraphicsContext3DCommandBufferImpl(
+      surface_id, GURL(), gpu_channel_host.get(), attributes,
+      lose_context_when_out_of_memory, mem_limits, NULL));
+}
+
 }  // namespace
 
 class SynchronousCompositorFactoryImpl::VideoContextProvider
@@ -122,11 +146,14 @@ class SynchronousCompositorFactoryImpl::VideoContextProvider
   DISALLOW_COPY_AND_ASSIGN(VideoContextProvider);
 };
 
-
 SynchronousCompositorFactoryImpl::SynchronousCompositorFactoryImpl()
-    : record_full_layer_(true),
+    : use_ipc_command_buffer_(false),
       num_hardware_compositors_(0) {
-  SynchronousCompositorFactory::SetInstance(this);
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kSingleProcess)) {
+    // TODO(boliu): Figure out how to deal with this more nicely.
+    SynchronousCompositorFactory::SetInstance(this);
+  }
 }
 
 SynchronousCompositorFactoryImpl::~SynchronousCompositorFactoryImpl() {}
@@ -136,20 +163,19 @@ SynchronousCompositorFactoryImpl::GetCompositorTaskRunner() {
   return BrowserThread::GetMessageLoopProxyForThread(BrowserThread::UI);
 }
 
-bool
-SynchronousCompositorFactoryImpl::RecordFullLayer() {
-  return record_full_layer_;
-}
-
 scoped_ptr<cc::OutputSurface>
 SynchronousCompositorFactoryImpl::CreateOutputSurface(
     int routing_id,
     scoped_refptr<content::FrameSwapMessageQueue> frame_swap_message_queue) {
+  // TODO(piman): we still need to create a View command buffer until
+  // crbug.com/526196 is fixed. The surface_id doesn't matter, it just needs to
+  // be !0.
+  const int32 kDummySurfaceId = 1;
   scoped_refptr<cc::ContextProvider> onscreen_context =
-      CreateContextProviderForCompositor();
+      CreateContextProviderForCompositor(kDummySurfaceId,
+                                         RENDER_COMPOSITOR_CONTEXT);
   scoped_refptr<cc::ContextProvider> worker_context =
-      CreateContextProviderForCompositor();
-
+      GetSharedWorkerContextProvider();
   return make_scoped_ptr(new SynchronousCompositorOutputSurface(
       onscreen_context, worker_context, routing_id, frame_swap_message_queue));
 }
@@ -166,32 +192,112 @@ SynchronousCompositorFactoryImpl::CreateExternalBeginFrameSource(
              new SynchronousCompositorExternalBeginFrameSource(routing_id));
 }
 
+bool SynchronousCompositorFactoryImpl::OverrideWithFactory() {
+  return !use_ipc_command_buffer_;
+}
+
 scoped_refptr<ContextProviderWebContext>
 SynchronousCompositorFactoryImpl::CreateOffscreenContextProvider(
     const blink::WebGraphicsContext3D::Attributes& attributes,
     const std::string& debug_name) {
-  ContextHolder holder = CreateContextHolder(
-      attributes, nullptr, gpu::GLInProcessContextSharedMemoryLimits(), true);
+  DCHECK(!use_ipc_command_buffer_);
+  ContextHolder holder =
+      CreateContextHolder(attributes, GpuThreadService(),
+                          gpu::GLInProcessContextSharedMemoryLimits(), true);
   return ContextProviderInProcess::Create(holder.command_buffer.Pass(),
                                           debug_name);
 }
 
 scoped_refptr<cc::ContextProvider>
-SynchronousCompositorFactoryImpl::CreateContextProviderForCompositor() {
-  blink::WebGraphicsContext3D::Attributes attributes = GetDefaultAttribs();
-  gpu::GLInProcessContextSharedMemoryLimits mem_limits;
+SynchronousCompositorFactoryImpl::CreateContextProviderForCompositor(
+    int surface_id,
+    CommandBufferContextType type) {
   // This is half of what RenderWidget uses because synchronous compositor
-  // pipeline is only one frame deep.
-  if (base::SysInfo::IsLowEndDevice()) {
-    // But twice of half here because 16bit texture is not supported.
-    mem_limits.mapped_memory_reclaim_limit = 2 * 1024 * 1024;
-  } else {
-    mem_limits.mapped_memory_reclaim_limit = 6 * 1024 * 1024;
+  // pipeline is only one frame deep. But twice of half for low end here
+  // because 16bit texture is not supported.
+  // TODO(reveman): This limit is based on the usage required by async
+  // uploads. Determine what a good limit is now that async uploads are
+  // no longer used.
+  unsigned int mapped_memory_reclaim_limit =
+      (base::SysInfo::IsLowEndDevice() ? 2 : 6) * 1024 * 1024;
+  blink::WebGraphicsContext3D::Attributes attributes = GetDefaultAttribs();
+
+  if (use_ipc_command_buffer_) {
+    WebGraphicsContext3DCommandBufferImpl::SharedMemoryLimits mem_limits;
+    mem_limits.mapped_memory_reclaim_limit = mapped_memory_reclaim_limit;
+    scoped_ptr<WebGraphicsContext3DCommandBufferImpl> context =
+        CreateContext3D(surface_id, GetDefaultAttribs(), mem_limits);
+    return make_scoped_refptr(
+        new SynchronousCompositorContextProvider(context.Pass(), type));
   }
+
+  gpu::GLInProcessContextSharedMemoryLimits mem_limits;
+  mem_limits.mapped_memory_reclaim_limit = mapped_memory_reclaim_limit;
   ContextHolder holder =
-      CreateContextHolder(attributes, nullptr, mem_limits, true);
+      CreateContextHolder(attributes, GpuThreadService(), mem_limits, true);
   return ContextProviderInProcess::Create(holder.command_buffer.Pass(),
                                           "Child-Compositor");
+}
+
+scoped_refptr<cc::ContextProvider>
+SynchronousCompositorFactoryImpl::GetSharedWorkerContextProvider() {
+  // TODO(reveman): This limit is based on the usage required by async
+  // uploads. Determine what a good limit is now that async uploads are
+  // no longer used.
+  unsigned int mapped_memory_reclaim_limit =
+      (base::SysInfo::IsLowEndDevice() ? 2 : 6) * 1024 * 1024;
+
+  if (use_ipc_command_buffer_) {
+    bool shared_worker_context_lost = false;
+    if (shared_worker_context_) {
+      // Note: If context is lost, we delete reference after releasing the lock.
+      base::AutoLock lock(*shared_worker_context_->GetLock());
+      if (shared_worker_context_->ContextGL()->GetGraphicsResetStatusKHR() !=
+          GL_NO_ERROR) {
+        shared_worker_context_lost = true;
+      }
+    }
+    if (!shared_worker_context_ || shared_worker_context_lost) {
+      WebGraphicsContext3DCommandBufferImpl::SharedMemoryLimits mem_limits;
+      mem_limits.mapped_memory_reclaim_limit = mapped_memory_reclaim_limit;
+      scoped_ptr<WebGraphicsContext3DCommandBufferImpl> context =
+          CreateContext3D(0, GetDefaultAttribs(), mem_limits);
+      shared_worker_context_ =
+          make_scoped_refptr(new SynchronousCompositorContextProvider(
+              context.Pass(), RENDER_WORKER_CONTEXT));
+      if (!shared_worker_context_->BindToCurrentThread())
+        shared_worker_context_ = nullptr;
+      if (shared_worker_context_)
+        shared_worker_context_->SetupLock();
+    }
+
+    return shared_worker_context_;
+  }
+
+  bool in_process_shared_worker_context_lost = false;
+  if (in_process_shared_worker_context_) {
+    // Note: If context is lost, we delete reference after releasing the lock.
+    base::AutoLock lock(*in_process_shared_worker_context_->GetLock());
+    if (in_process_shared_worker_context_->ContextGL()
+            ->GetGraphicsResetStatusKHR() != GL_NO_ERROR) {
+      in_process_shared_worker_context_lost = true;
+    }
+  }
+  if (!in_process_shared_worker_context_ ||
+      in_process_shared_worker_context_lost) {
+    gpu::GLInProcessContextSharedMemoryLimits mem_limits;
+    mem_limits.mapped_memory_reclaim_limit = mapped_memory_reclaim_limit;
+    ContextHolder holder = CreateContextHolder(
+        GetDefaultAttribs(), GpuThreadService(), mem_limits, true);
+    in_process_shared_worker_context_ = ContextProviderInProcess::Create(
+        holder.command_buffer.Pass(), "Child-Worker");
+    if (!in_process_shared_worker_context_->BindToCurrentThread())
+      in_process_shared_worker_context_ = nullptr;
+    if (in_process_shared_worker_context_)
+      in_process_shared_worker_context_->SetupLock();
+  }
+
+  return in_process_shared_worker_context_;
 }
 
 scoped_refptr<StreamTextureFactory>
@@ -208,13 +314,15 @@ SynchronousCompositorFactoryImpl::CreateStreamTextureFactory(int frame_id) {
 WebGraphicsContext3DInProcessCommandBufferImpl*
 SynchronousCompositorFactoryImpl::CreateOffscreenGraphicsContext3D(
     const blink::WebGraphicsContext3D::Attributes& attributes) {
-  ContextHolder holder = CreateContextHolder(
-                         attributes, nullptr,
-                         gpu::GLInProcessContextSharedMemoryLimits(), true);
+  DCHECK(!use_ipc_command_buffer_);
+  ContextHolder holder =
+      CreateContextHolder(attributes, GpuThreadService(),
+                          gpu::GLInProcessContextSharedMemoryLimits(), true);
   return holder.command_buffer.release();
 }
 
 gpu::GPUInfo SynchronousCompositorFactoryImpl::GetGPUInfo() const {
+  DCHECK(!use_ipc_command_buffer_);
   return content::GpuDataManager::GetInstance()->GetGPUInfo();
 }
 
@@ -263,14 +371,14 @@ SynchronousCompositorFactoryImpl::TryCreateStreamTextureFactory() {
   }
 
   if (!video_context_provider_.get()) {
-    DCHECK(service_.get());
+    DCHECK(android_view_service_.get());
 
     blink::WebGraphicsContext3D::Attributes attributes = GetDefaultAttribs();
     attributes.shareResources = false;
-    // This needs to run in on-screen |service_| context due to SurfaceTexture
-    // limitations.
+    // This needs to run in on-screen |android_view_service_| context due to
+    // SurfaceTexture limitations.
     ContextHolder holder =
-        CreateContextHolder(attributes, service_,
+        CreateContextHolder(attributes, android_view_service_,
                             gpu::GLInProcessContextSharedMemoryLimits(), false);
     video_context_provider_ = new VideoContextProvider(
         ContextProviderInProcess::Create(holder.command_buffer.Pass(),
@@ -282,13 +390,30 @@ SynchronousCompositorFactoryImpl::TryCreateStreamTextureFactory() {
 
 void SynchronousCompositorFactoryImpl::SetDeferredGpuService(
     scoped_refptr<gpu::InProcessCommandBuffer::Service> service) {
-  DCHECK(!service_.get());
-  service_ = service;
+  DCHECK(!android_view_service_.get());
+  android_view_service_ = service;
 }
 
-void SynchronousCompositorFactoryImpl::SetRecordFullDocument(
-    bool record_full_document) {
-  record_full_layer_ = record_full_document;
+base::Thread* SynchronousCompositorFactoryImpl::CreateInProcessGpuThread(
+    const InProcessChildThreadParams& params) {
+  DCHECK(android_view_service_.get());
+  return new InProcessGpuThread(params,
+                                android_view_service_->sync_point_manager());
+}
+
+scoped_refptr<gpu::InProcessCommandBuffer::Service>
+SynchronousCompositorFactoryImpl::GpuThreadService() {
+  DCHECK(android_view_service_.get());
+  // Create thread lazily on first use.
+  if (!gpu_thread_service_.get()) {
+    gpu_thread_service_ = new gpu::GpuInProcessThread(
+        android_view_service_->sync_point_manager());
+  }
+  return gpu_thread_service_;
+}
+
+void SynchronousCompositorFactoryImpl::SetUseIpcCommandBuffer() {
+  use_ipc_command_buffer_ = true;
 }
 
 }  // namespace content

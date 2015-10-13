@@ -15,22 +15,6 @@
       <!-- KEEP THESE IN ALPHABETICAL ORDER!  DO NOT ADD TO RANDOM PLACES JUST
            BECAUSE YOUR RESOURCES ARE FUNCTIONALLY RELATED OR FALL UNDER THE
            SAME CONDITIONALS. -->
-      <if expr="enable_app_list">
-        <structure type="chrome_scaled_image" name="IDR_APP_LIST_ITEM_PROGRESS_BACKGROUND" file="common/app_list_progress_bar_background.png" />
-        <structure type="chrome_scaled_image" name="IDR_APP_LIST_ITEM_PROGRESS_LEFT" file="common/app_list_progress_bar_left.png" />
-        <structure type="chrome_scaled_image" name="IDR_APP_LIST_ITEM_PROGRESS_CENTER" file="common/app_list_progress_bar_center.png" />
-        <structure type="chrome_scaled_image" name="IDR_APP_LIST_ITEM_PROGRESS_RIGHT" file="common/app_list_progress_bar_right.png" />
-        <structure type="chrome_scaled_image" name="IDR_APP_LIST_TOOLS_HOVER" file="common/app_list_tools_hover.png" />
-        <structure type="chrome_scaled_image" name="IDR_APP_LIST_TOOLS_NORMAL" file="common/app_list_tools_normal.png" />
-        <structure type="chrome_scaled_image" name="IDR_APP_LIST_TOOLS_PRESSED" file="common/app_list_tools_pressed.png" />
-        <structure type="chrome_scaled_image" name="IDR_APP_LIST_FOLDER_BACK_NORMAL" file="common/app_list_folder_back_normal.png" />
-        <structure type="chrome_scaled_image" name="IDR_APP_LIST_SPEECH_MIC_ON" file="common/app_list_mic_on.png" />
-        <structure type="chrome_scaled_image" name="IDR_APP_LIST_SPEECH_MIC_OFF" file="common/app_list_mic_off.png" />
-        <structure type="chrome_scaled_image" name="IDR_APP_LIST_SPEECH_MIC_RECORDING" file="common/app_list_mic_recording.png" />
-        <if expr="is_win or desktop_linux">
-          <structure type="chrome_scaled_image" name="IDR_APP_LIST_USER_INDICATOR" file="common/app_list_user_indicator.png" />
-        </if>
-      </if>
       <if expr="is_linux and use_aura">
         <structure type="chrome_scaled_image" name="IDR_AURA_CURSOR_BIG_ALIAS" file="common/pointers/alias_big.png" />
         <structure type="chrome_scaled_image" name="IDR_AURA_CURSOR_BIG_CELL" file="common/pointers/cell_big.png" />
@@ -134,7 +118,6 @@
       <structure type="chrome_scaled_image" name="IDR_EASY_UNLOCK_UNLOCKED" file="common/easy_unlock_unlocked.png" />
       <structure type="chrome_scaled_image" name="IDR_EASY_UNLOCK_UNLOCKED_HOVER" file="common/easy_unlock_unlocked_hover.png" />
       <structure type="chrome_scaled_image" name="IDR_EASY_UNLOCK_UNLOCKED_PRESSED" file="common/easy_unlock_unlocked_pressed.png" />
-      <structure type="chrome_scaled_image" name="IDR_ERROR" file="common/error.png" />
       <structure type="chrome_scaled_image" name="IDR_FOLDER_CLOSED" file="common/folder_closed.png" />
       <structure type="chrome_scaled_image" name="IDR_FOLDER_CLOSED_RTL" file="common/folder_closed_rtl.png" />
       <structure type="chrome_scaled_image" name="IDR_MENU_CHECK_CHECKED" file="common/menu_check.png" />
@@ -182,7 +165,6 @@
       <!-- TODO(calamity): The 1x local ntp resources require a proper version.
            See crbug.com/363519. -->
       <structure type="chrome_scaled_image" name="IDR_LOCAL_NTP_IMAGES_LOGO_PNG" file="common/ntp_google_logo.png" />
-      <structure type="chrome_scaled_image" name="IDR_LOCAL_NTP_IMAGES_WHITE_LOGO_PNG" file="common/ntp_white_google_logo.png" />
       <if expr="not is_android and not is_ios">
         <structure type="chrome_scaled_image" name="IDR_NTP_DEFAULT_FAVICON" file="common/ntp_default_favicon.png" />
       </if>
@@ -294,22 +276,6 @@
         <structure type="chrome_scaled_image" name="IDR_TOUCH_DRAG_TIP_MOVE" file="common/drag_tip_move.png" />
         <structure type="chrome_scaled_image" name="IDR_TOUCH_DRAG_TIP_LINK" file="common/drag_tip_link.png" />
         <structure type="chrome_scaled_image" name="IDR_TOUCH_DRAG_TIP_NODROP" file="common/drag_tip_nodrop.png" />
-      </if>
-      <if expr="is_macosx or is_ios">
-        <structure type="chrome_scaled_image" name="IDR_DARK_TRAY_ATTENTION" file="mac/notification_dark_tray_attention.png"/>
-        <structure type="chrome_scaled_image" name="IDR_DARK_TRAY_PRESSED" file="mac/notification_dark_tray_pressed.png"/>
-        <structure type="chrome_scaled_image" name="IDR_DARK_TRAY_DO_NOT_DISTURB_ATTENTION" file="mac/notification_dark_tray_do_not_disturb_attention.png"/>
-        <structure type="chrome_scaled_image" name="IDR_DARK_TRAY_DO_NOT_DISTURB_PRESSED" file="mac/notification_dark_tray_do_not_disturb_pressed.png"/>
-        <structure type="chrome_scaled_image" name="IDR_DARK_TRAY_DO_NOT_DISTURB_EMPTY" file="mac/notification_tray_do_not_disturb_empty.png"/>
-        <structure type="chrome_scaled_image" name="IDR_DARK_TRAY_EMPTY" file="mac/notification_dark_tray_empty.png"/>
-        <structure type="chrome_scaled_image" name="IDR_TRAY_ATTENTION" file="mac/notification_tray_attention.png"/>
-        <structure type="chrome_scaled_image" name="IDR_TRAY_ATTENTION_PRESSED" file="mac/notification_tray_attention_pressed.png"/>
-        <structure type="chrome_scaled_image" name="IDR_TRAY_DO_NOT_DISTURB_ATTENTION" file="mac/notification_tray_do_not_disturb_attention.png"/>
-        <structure type="chrome_scaled_image" name="IDR_TRAY_DO_NOT_DISTURB_ATTENTION_PRESSED" file="mac/notification_tray_do_not_disturb_attention_pressed.png"/>
-        <structure type="chrome_scaled_image" name="IDR_TRAY_DO_NOT_DISTURB_EMPTY" file="mac/notification_tray_do_not_disturb_empty.png"/>
-        <structure type="chrome_scaled_image" name="IDR_TRAY_DO_NOT_DISTURB_EMPTY_PRESSED" file="mac/notification_tray_do_not_disturb_empty_pressed.png"/>
-        <structure type="chrome_scaled_image" name="IDR_TRAY_EMPTY" file="mac/notification_tray_empty.png"/>
-        <structure type="chrome_scaled_image" name="IDR_TRAY_EMPTY_PRESSED" file="mac/notification_tray_empty_pressed.png"/>
       </if>
     </structures>
   </release>

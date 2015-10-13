@@ -40,13 +40,13 @@ bool AnimatableSVGPaint::usesDefaultInterpolationWith(const AnimatableValue* val
         && (visitedLinkPaintType() != SVG_PAINTTYPE_RGBCOLOR || svgPaint->visitedLinkPaintType() != SVG_PAINTTYPE_RGBCOLOR);
 }
 
-PassRefPtrWillBeRawPtr<AnimatableValue> AnimatableSVGPaint::interpolateTo(const AnimatableValue* value, double fraction) const
+PassRefPtr<AnimatableValue> AnimatableSVGPaint::interpolateTo(const AnimatableValue* value, double fraction) const
 {
     if (usesDefaultInterpolationWith(value))
         return defaultInterpolateTo(this, value, fraction);
 
     const AnimatableSVGPaint* svgPaint = toAnimatableSVGPaint(value);
-    RefPtrWillBeRawPtr<AnimatableColor> color = toAnimatableColor(AnimatableValue::interpolate(m_color.get(), svgPaint->m_color.get(), fraction).get());
+    RefPtr<AnimatableColor> color = toAnimatableColor(AnimatableValue::interpolate(m_color.get(), svgPaint->m_color.get(), fraction).get());
     if (fraction < 0.5)
         return create(paintType(), visitedLinkPaintType(), color, uri(), visitedLinkURI());
     return create(svgPaint->paintType(), svgPaint->visitedLinkPaintType(), color, svgPaint->uri(), svgPaint->visitedLinkURI());

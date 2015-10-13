@@ -34,7 +34,7 @@ void EditingTestBase::SetUp()
 
 PassRefPtrWillBeRawPtr<ShadowRoot> EditingTestBase::createShadowRootForElementWithIDAndSetInnerHTML(TreeScope& scope, const char* hostElementID, const char* shadowRootContent)
 {
-    RefPtrWillBeRawPtr<ShadowRoot> shadowRoot = scope.getElementById(AtomicString::fromUTF8(hostElementID))->createShadowRoot(ASSERT_NO_EXCEPTION);
+    RefPtrWillBeRawPtr<ShadowRoot> shadowRoot = scope.getElementById(AtomicString::fromUTF8(hostElementID))->createShadowRootInternal(ShadowRootType::OpenByDefault, ASSERT_NO_EXCEPTION);
     shadowRoot->setInnerHTML(String::fromUTF8(shadowRootContent), ASSERT_NO_EXCEPTION);
     return shadowRoot.release();
 }
@@ -47,23 +47,13 @@ void EditingTestBase::setBodyContent(const char* bodyContent)
 PassRefPtrWillBeRawPtr<ShadowRoot> EditingTestBase::setShadowContent(const char* shadowContent, const char* host)
 {
     RefPtrWillBeRawPtr<ShadowRoot> shadowRoot = createShadowRootForElementWithIDAndSetInnerHTML(document(), host, shadowContent);
-    document().recalcDistribution();
+    document().updateDistribution();
     return shadowRoot.release();
 }
 
 void EditingTestBase::updateLayoutAndStyleForPainting()
 {
     document().view()->updateAllLifecyclePhases();
-}
-
-Position EditingTestBase::positionInDOMTree(Node& anchor, int offset)
-{
-    return Position(&anchor, offset);
-}
-
-PositionInComposedTree EditingTestBase::positionInComposedTree(Node& anchor, int offset)
-{
-    return PositionInComposedTree(&anchor, offset);
 }
 
 } // namespace blink

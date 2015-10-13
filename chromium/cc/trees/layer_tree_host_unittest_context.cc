@@ -33,7 +33,7 @@
 #include "cc/test/fake_scrollbar.h"
 #include "cc/test/fake_video_frame_provider.h"
 #include "cc/test/layer_tree_test.h"
-#include "cc/test/render_pass_test_common.h"
+#include "cc/test/render_pass_test_utils.h"
 #include "cc/test/test_context_provider.h"
 #include "cc/test/test_shared_bitmap_manager.h"
 #include "cc/test/test_web_graphics_context_3d.h"
@@ -382,6 +382,70 @@ class LayerTreeHostClientNotReadyDoesNotCreateOutputSurface
 SINGLE_AND_MULTI_THREAD_TEST_F(
     LayerTreeHostClientNotReadyDoesNotCreateOutputSurface);
 
+// This tests the OutputSurface release logic in the following sequence.
+// SetUp LTH and create and init OutputSurface
+// LTH::SetVisible(false);
+// LTH::ReleaseOutputSurface();
+// ...
+// LTH::SetVisible(true);
+// Create and init new OutputSurface
+class LayerTreeHostClientTakeAwayOutputSurface
+    : public LayerTreeHostContextTest {
+ public:
+  LayerTreeHostClientTakeAwayOutputSurface()
+      : LayerTreeHostContextTest(), setos_counter_(0) {}
+
+  void BeginTest() override { PostSetNeedsCommitToMainThread(); }
+
+  void RequestNewOutputSurface() override {
+    if (layer_tree_host()->visible())
+      CreateAndSetOutputSurface();
+  }
+
+  void CreateAndSetOutputSurface() {
+    scoped_ptr<OutputSurface> surface =
+        LayerTreeHostContextTest::CreateOutputSurface();
+    CHECK(surface);
+    setos_counter_++;
+    layer_tree_host()->SetOutputSurface(surface.Pass());
+  }
+
+  void HideAndReleaseOutputSurface() {
+    EXPECT_TRUE(layer_tree_host()->proxy()->IsMainThread());
+    layer_tree_host()->SetVisible(false);
+    scoped_ptr<OutputSurface> surface =
+        layer_tree_host()->ReleaseOutputSurface();
+    CHECK(surface);
+    MainThreadTaskRunner()->PostTask(
+        FROM_HERE,
+        base::Bind(&LayerTreeHostClientTakeAwayOutputSurface::MakeVisible,
+                   base::Unretained(this)));
+  }
+
+  void DidInitializeOutputSurface() override {
+    EXPECT_TRUE(layer_tree_host()->visible());
+    if (setos_counter_ == 1) {
+      MainThreadTaskRunner()->PostTask(
+          FROM_HERE, base::Bind(&LayerTreeHostClientTakeAwayOutputSurface::
+                                    HideAndReleaseOutputSurface,
+                                base::Unretained(this)));
+    } else {
+      EndTest();
+    }
+  }
+
+  void MakeVisible() {
+    EXPECT_TRUE(layer_tree_host()->proxy()->IsMainThread());
+    layer_tree_host()->SetVisible(true);
+  }
+
+  void AfterTest() override {}
+
+  int setos_counter_;
+};
+
+SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostClientTakeAwayOutputSurface);
+
 class MultipleCompositeDoesNotCreateOutputSurface
     : public LayerTreeHostContextTest {
  public:
@@ -391,7 +455,6 @@ class MultipleCompositeDoesNotCreateOutputSurface
   void InitializeSettings(LayerTreeSettings* settings) override {
     settings->single_thread_proxy_scheduler = false;
     settings->use_zero_copy = true;
-    settings->use_one_copy = false;
   }
 
   void RequestNewOutputSurface() override {
@@ -431,7 +494,6 @@ class FailedCreateDoesNotCreateExtraOutputSurface
   void InitializeSettings(LayerTreeSettings* settings) override {
     settings->single_thread_proxy_scheduler = false;
     settings->use_zero_copy = true;
-    settings->use_one_copy = false;
   }
 
   void RequestNewOutputSurface() override {
@@ -485,7 +547,6 @@ class LayerTreeHostContextTestCommitAfterDelayedOutputSurface
   void InitializeSettings(LayerTreeSettings* settings) override {
     settings->single_thread_proxy_scheduler = false;
     settings->use_zero_copy = true;
-    settings->use_one_copy = false;
   }
 
   void RequestNewOutputSurface() override {
@@ -528,7 +589,6 @@ class LayerTreeHostContextTestAvoidUnnecessaryComposite
   void InitializeSettings(LayerTreeSettings* settings) override {
     settings->single_thread_proxy_scheduler = false;
     settings->use_zero_copy = true;
-    settings->use_one_copy = false;
   }
 
   void RequestNewOutputSurface() override {
@@ -565,7 +625,7 @@ class LayerTreeHostContextTestLostContextSucceedsWithContent
     // Paint non-solid color.
     SkPaint paint;
     paint.setColor(SkColorSetARGB(100, 80, 200, 200));
-    client_.add_draw_rect(gfx::Rect(0, 0, 5, 5), paint);
+    client_.add_draw_rect(gfx::Rect(5, 5), paint);
 
     layer_ = FakePictureLayer::Create(layer_settings(), &client_);
     layer_->SetBounds(gfx::Size(10, 10));
@@ -643,7 +703,7 @@ class LayerTreeHostContextTestLostContextAndEvictTextures
     // Paint non-solid color.
     SkPaint paint;
     paint.setColor(SkColorSetARGB(100, 80, 200, 200));
-    client_.add_draw_rect(gfx::Rect(0, 0, 5, 5), paint);
+    client_.add_draw_rect(gfx::Rect(5, 5), paint);
 
     scoped_refptr<FakePictureLayer> picture_layer =
         FakePictureLayer::Create(layer_settings(), &client_);
@@ -857,7 +917,7 @@ class LayerTreeHostContextTestDontUseLostResources
 
     scoped_ptr<DelegatedFrameData> frame_data(new DelegatedFrameData);
 
-    scoped_ptr<TestRenderPass> pass_for_quad = TestRenderPass::Create();
+    scoped_ptr<RenderPass> pass_for_quad = RenderPass::Create();
     pass_for_quad->SetNew(
         // AppendOneOfEveryQuadType() makes a RenderPass quad with this id.
         RenderPassId(2, 1),
@@ -865,13 +925,14 @@ class LayerTreeHostContextTestDontUseLostResources
         gfx::Rect(0, 0, 10, 10),
         gfx::Transform());
 
-    scoped_ptr<TestRenderPass> pass = TestRenderPass::Create();
+    scoped_ptr<RenderPass> pass = RenderPass::Create();
     pass->SetNew(RenderPassId(1, 1),
                  gfx::Rect(0, 0, 10, 10),
                  gfx::Rect(0, 0, 10, 10),
                  gfx::Transform());
-    pass->AppendOneOfEveryQuadType(child_resource_provider_.get(),
-                                   RenderPassId(2, 1));
+    uint32_t mailbox_sync_point;
+    AddOneOfEveryQuadType(pass.get(), child_resource_provider_.get(),
+                          RenderPassId(2, 1), &mailbox_sync_point);
 
     frame_data->render_pass_list.push_back(pass_for_quad.Pass());
     frame_data->render_pass_list.push_back(pass.Pass());
@@ -950,12 +1011,12 @@ class LayerTreeHostContextTestDontUseLostResources
     color_video_frame_ = VideoFrame::CreateColorFrame(
         gfx::Size(4, 4), 0x80, 0x80, 0x80, base::TimeDelta());
     hw_video_frame_ = VideoFrame::WrapNativeTexture(
-        media::VideoFrame::ARGB,
+        media::PIXEL_FORMAT_ARGB,
         gpu::MailboxHolder(mailbox, GL_TEXTURE_2D, sync_point),
         media::VideoFrame::ReleaseMailboxCB(), gfx::Size(4, 4),
         gfx::Rect(0, 0, 4, 4), gfx::Size(4, 4), base::TimeDelta());
     scaled_hw_video_frame_ = VideoFrame::WrapNativeTexture(
-        media::VideoFrame::ARGB,
+        media::PIXEL_FORMAT_ARGB,
         gpu::MailboxHolder(mailbox, GL_TEXTURE_2D, sync_point),
         media::VideoFrame::ReleaseMailboxCB(), gfx::Size(4, 4),
         gfx::Rect(0, 0, 3, 2), gfx::Size(4, 4), base::TimeDelta());
@@ -1520,67 +1581,6 @@ class UIResourceLostEviction : public UIResourceLostTestSimple {
 };
 
 SINGLE_AND_MULTI_THREAD_TEST_F(UIResourceLostEviction);
-
-class LayerTreeHostContextTestSurfaceCreateCallback
-    : public LayerTreeHostContextTest {
- public:
-  LayerTreeHostContextTestSurfaceCreateCallback()
-      : LayerTreeHostContextTest() {}
-
-  void SetupTree() override {
-    picture_layer_ = FakePictureLayer::Create(layer_settings(), &client_);
-    picture_layer_->SetBounds(gfx::Size(10, 20));
-    layer_tree_host()->SetRootLayer(picture_layer_);
-
-    LayerTreeHostContextTest::SetupTree();
-  }
-
-  void BeginTest() override { PostSetNeedsCommitToMainThread(); }
-
-  void DidCommit() override {
-    switch (layer_tree_host()->source_frame_number()) {
-      case 1:
-        EXPECT_EQ(1u, picture_layer_->output_surface_created_count());
-        layer_tree_host()->SetNeedsCommit();
-        break;
-      case 2:
-        EXPECT_EQ(1u, picture_layer_->output_surface_created_count());
-        layer_tree_host()->SetNeedsCommit();
-        break;
-      case 3:
-        EXPECT_EQ(1u, picture_layer_->output_surface_created_count());
-        break;
-      case 4:
-        EXPECT_EQ(2u, picture_layer_->output_surface_created_count());
-        layer_tree_host()->SetNeedsCommit();
-        break;
-    }
-  }
-
-  void CommitCompleteOnThread(LayerTreeHostImpl* impl) override {
-    LayerTreeHostContextTest::CommitCompleteOnThread(impl);
-    switch (LastCommittedSourceFrameNumber(impl)) {
-      case 0:
-        break;
-      case 1:
-        break;
-      case 2:
-        LoseContext();
-        break;
-      case 3:
-        EndTest();
-        break;
-    }
-  }
-
-  void AfterTest() override {}
-
- protected:
-  FakeContentLayerClient client_;
-  scoped_refptr<FakePictureLayer> picture_layer_;
-};
-
-SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostContextTestSurfaceCreateCallback);
 
 class LayerTreeHostContextTestLoseAfterSendingBeginMainFrame
     : public LayerTreeHostContextTest {

@@ -32,7 +32,6 @@
 #define ScriptFunctionCall_h
 
 #include "bindings/core/v8/ScriptValue.h"
-
 #include "wtf/Vector.h"
 #include "wtf/text/WTFString.h"
 
@@ -40,14 +39,15 @@ namespace blink {
 class ScriptValue;
 
 class ScriptCallArgumentHandler {
+    STACK_ALLOCATED();
 public:
     ScriptCallArgumentHandler(ScriptState* scriptState) : m_scriptState(scriptState) { }
 
+    void appendArgument(v8::Local<v8::Value>);
     void appendArgument(const ScriptValue&);
     void appendArgument(const String&);
     void appendArgument(int);
     void appendArgument(bool);
-    bool appendArgument(const Vector<ScriptValue>&);
     void appendUndefinedArgument();
 
 protected:
@@ -56,11 +56,12 @@ protected:
 };
 
 class ScriptFunctionCall : public ScriptCallArgumentHandler {
+    STACK_ALLOCATED();
 public:
     ScriptFunctionCall(const ScriptValue& thisObject, const String& name);
     ScriptValue call(bool& hadException, bool reportExceptions = true);
     ScriptValue call();
-    v8::Handle<v8::Function> function();
+    v8::Local<v8::Function> function();
     ScriptValue callWithoutExceptionHandling();
 
 protected:

@@ -8,12 +8,16 @@
 #include "base/json/json_writer.h"
 #include "base/values.h"
 #include "content/public/browser/devtools_agent_host.h"
+#include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/common/url_constants.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/content_browser_test.h"
 #include "content/public/test/content_browser_test_utils.h"
 #include "content/public/test/test_navigation_observer.h"
 #include "content/shell/browser/shell.h"
+#include "net/dns/mock_host_resolver.h"
+#include "net/test/embedded_test_server/embedded_test_server.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/compositor/compositor_switches.h"
 #include "ui/gfx/codec/png_codec.h"
@@ -33,6 +37,7 @@ class DevToolsProtocolTest : public ContentBrowserTest,
  public:
   DevToolsProtocolTest()
       : last_sent_id_(0),
+        waiting_for_notifications_count_(0),
         in_dispatch_(false) {
   }
 
@@ -99,6 +104,11 @@ class DevToolsProtocolTest : public ContentBrowserTest,
     }
   }
 
+  void WaitForNotifications(int count) {
+    waiting_for_notifications_count_ = count;
+    RunMessageLoop();
+  }
+
   scoped_ptr<base::DictionaryValue> result_;
   scoped_refptr<DevToolsAgentHost> agent_host_;
   int last_sent_id_;
@@ -109,7 +119,7 @@ class DevToolsProtocolTest : public ContentBrowserTest,
   void DispatchProtocolMessage(DevToolsAgentHost* agent_host,
                                const std::string& message) override {
     scoped_ptr<base::DictionaryValue> root(static_cast<base::DictionaryValue*>(
-        base::JSONReader::DeprecatedRead(message)));
+        base::JSONReader::Read(message).release()));
     int id;
     if (root->GetInteger("id", &id)) {
       result_ids_.push_back(id);
@@ -123,6 +133,11 @@ class DevToolsProtocolTest : public ContentBrowserTest,
       std::string notification;
       EXPECT_TRUE(root->GetString("method", &notification));
       notifications_.push_back(notification);
+      if (waiting_for_notifications_count_) {
+        waiting_for_notifications_count_--;
+        if (!waiting_for_notifications_count_)
+          base::MessageLoop::current()->QuitNow();
+      }
     }
   }
 
@@ -130,6 +145,7 @@ class DevToolsProtocolTest : public ContentBrowserTest,
     EXPECT_TRUE(false);
   }
 
+  int waiting_for_notifications_count_;
   bool in_dispatch_;
 };
 
@@ -337,6 +353,47 @@ IN_PROC_BROWSER_TEST_F(DevToolsProtocolTest, NavigationPreservesMessages) {
       found_frame_notification = true;
   }
   EXPECT_TRUE(found_frame_notification);
+}
+
+IN_PROC_BROWSER_TEST_F(DevToolsProtocolTest, CrossSiteNoDetach) {
+  host_resolver()->AddRule("*", "127.0.0.1");
+  ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
+  content::SetupCrossSiteRedirector(embedded_test_server());
+
+  GURL test_url1 = embedded_test_server()->GetURL(
+      "A.com", "/devtools/navigation.html");
+  NavigateToURLBlockUntilNavigationsComplete(shell(), test_url1, 1);
+  Attach();
+
+  GURL test_url2 = embedded_test_server()->GetURL(
+      "B.com", "/devtools/navigation.html");
+  NavigateToURLBlockUntilNavigationsComplete(shell(), test_url2, 1);
+
+  EXPECT_EQ(0u, notifications_.size());
+}
+
+IN_PROC_BROWSER_TEST_F(DevToolsProtocolTest, ReconnectPreservesState) {
+  ASSERT_TRUE(test_server()->Start());
+  GURL test_url = test_server()->GetURL("files/devtools/navigation.html");
+  NavigateToURLBlockUntilNavigationsComplete(shell(), test_url, 1);
+
+  Shell* second = CreateBrowser();
+  NavigateToURLBlockUntilNavigationsComplete(second, test_url, 1);
+
+  Attach();
+  SendCommand("Runtime.enable", nullptr);
+
+  size_t notification_count = notifications_.size();
+  agent_host_->DisconnectWebContents();
+  agent_host_->ConnectWebContents(second->web_contents());
+  WaitForNotifications(1);
+
+  bool found_notification = false;
+  for (size_t i = notification_count; i < notifications_.size(); ++i) {
+    if (notifications_[i] == "Runtime.executionContextsCleared")
+      found_notification = true;
+  }
+  EXPECT_TRUE(found_notification);
 }
 
 }  // namespace content

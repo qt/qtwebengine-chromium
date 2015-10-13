@@ -10,10 +10,12 @@
 #include "cc/output/compositor_frame_metadata.h"
 #include "cc/output/delegated_frame_data.h"
 #include "cc/output/gl_frame_data.h"
-#include "cc/output/software_frame_data.h"
 
 namespace cc {
 
+// A CompositorFrame struct contains the complete output of a compositor meant
+// for display.
+// TODO(fsamuel): Write more here.
 class CC_EXPORT CompositorFrame {
  public:
   CompositorFrame();
@@ -22,7 +24,6 @@ class CC_EXPORT CompositorFrame {
   CompositorFrameMetadata metadata;
   scoped_ptr<DelegatedFrameData> delegated_frame_data;
   scoped_ptr<GLFrameData> gl_frame_data;
-  scoped_ptr<SoftwareFrameData> software_frame_data;
 
   void AssignTo(CompositorFrame* target);
 

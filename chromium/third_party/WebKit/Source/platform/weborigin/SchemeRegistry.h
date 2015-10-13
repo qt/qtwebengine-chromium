@@ -91,6 +91,10 @@ public:
     static void registerURLSchemeAsAllowingServiceWorkers(const String& scheme);
     static bool shouldTreatURLSchemeAsAllowingServiceWorkers(const String& scheme);
 
+    // HTTP-like schemes that are treated as supporting the Fetch API.
+    static void registerURLSchemeAsSupportingFetchAPI(const String& scheme);
+    static bool shouldTreatURLSchemeAsSupportingFetchAPI(const String& scheme);
+
     // Schemes which override the first-/third-party checks on a Document.
     static void registerURLSchemeAsFirstPartyWhenTopLevel(const String& scheme);
     static bool shouldTreatURLSchemeAsFirstPartyWhenTopLevel(const String& scheme);

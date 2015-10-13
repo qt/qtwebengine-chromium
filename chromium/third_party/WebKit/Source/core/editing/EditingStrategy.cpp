@@ -5,9 +5,25 @@
 #include "config.h"
 #include "core/editing/EditingStrategy.h"
 
-#include "core/editing/htmlediting.h"
+#include "core/editing/EditingUtilities.h"
+#include "core/layout/LayoutObject.h"
 
 namespace blink {
+
+// If a node can contain candidates for VisiblePositions, return the offset of
+// the last candidate, otherwise return the number of children for container
+// nodes and the length for unrendered text nodes.
+template <typename Traversal>
+int EditingAlgorithm<Traversal>::caretMaxOffset(const Node& node)
+{
+    // For rendered text nodes, return the last position that a caret could
+    // occupy.
+    if (node.isTextNode() && node.layoutObject())
+        return node.layoutObject()->caretMaxOffset();
+    // For containers return the number of children. For others do the same as
+    // above.
+    return lastOffsetForEditing(&node);
+}
 
 template <typename Traversal>
 bool EditingAlgorithm<Traversal>::isEmptyNonEditableNodeInEditable(const Node* node)
@@ -45,12 +61,36 @@ int EditingAlgorithm<Traversal>::lastOffsetForEditing(const Node* node)
         return 0;
 
     // editingIgnoresContent uses the same logic in
-    // isEmptyNonEditableNodeInEditable (htmlediting.cpp). We don't understand
-    // why this function returns 1 even when the node doesn't have children.
+    // isEmptyNonEditableNodeInEditable (EditingUtilities.cpp). We don't
+    // understand why this function returns 1 even when the node doesn't have
+    // children.
     return 1;
 }
 
-template class EditingAlgorithm<NodeTraversal>;
-template class EditingAlgorithm<ComposedTreeTraversal>;
+template <typename Strategy>
+Node* EditingAlgorithm<Strategy>::rootUserSelectAllForNode(Node* node)
+{
+    if (!node || !nodeIsUserSelectAll(node))
+        return nullptr;
+    Node* parent = Strategy::parent(*node);
+    if (!parent)
+        return node;
+
+    Node* candidateRoot = node;
+    while (parent) {
+        if (!parent->layoutObject()) {
+            parent = Strategy::parent(*parent);
+            continue;
+        }
+        if (!nodeIsUserSelectAll(parent))
+            break;
+        candidateRoot = parent;
+        parent = Strategy::parent(*candidateRoot);
+    }
+    return candidateRoot;
+}
+
+template class CORE_TEMPLATE_EXPORT EditingAlgorithm<NodeTraversal>;
+template class CORE_TEMPLATE_EXPORT EditingAlgorithm<ComposedTreeTraversal>;
 
 } // namespace blink

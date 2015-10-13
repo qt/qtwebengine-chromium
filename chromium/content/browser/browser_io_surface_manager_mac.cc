@@ -19,7 +19,7 @@ namespace {
 
 // Returns the Mach port name to use when sending or receiving messages. |pid|
 // is the process ID of the service.
-std::string GetMachPortName(pid_t pid) {
+std::string GetMachPortNameByPid(pid_t pid) {
   return base::StringPrintf("%s.iosurfacemgr.%d", base::mac::BaseBundleID(),
                             pid);
 }
@@ -31,8 +31,9 @@ const int kSendReplyTimeoutMs = 100;
 
 // static
 BrowserIOSurfaceManager* BrowserIOSurfaceManager::GetInstance() {
-  return Singleton<BrowserIOSurfaceManager,
-                   LeakySingletonTraits<BrowserIOSurfaceManager>>::get();
+  return base::Singleton<
+      BrowserIOSurfaceManager,
+      base::LeakySingletonTraits<BrowserIOSurfaceManager>>::get();
 }
 
 // static
@@ -42,7 +43,9 @@ base::mac::ScopedMachSendRight BrowserIOSurfaceManager::LookupServicePort(
   // the bootstrap server.
   mach_port_t port;
   kern_return_t kr =
-      bootstrap_look_up(bootstrap_port, GetMachPortName(pid).c_str(), &port);
+      bootstrap_look_up(bootstrap_port,
+                        GetMachPortNameByPid(pid).c_str(),
+                        &port);
   if (kr != KERN_SUCCESS) {
     BOOTSTRAP_LOG(ERROR, kr) << "bootstrap_look_up";
     return base::mac::ScopedMachSendRight();
@@ -51,7 +54,12 @@ base::mac::ScopedMachSendRight BrowserIOSurfaceManager::LookupServicePort(
   return base::mac::ScopedMachSendRight(port);
 }
 
-bool BrowserIOSurfaceManager::RegisterIOSurface(int io_surface_id,
+// static
+std::string BrowserIOSurfaceManager::GetMachPortName() {
+  return GetMachPortNameByPid(getpid());
+}
+
+bool BrowserIOSurfaceManager::RegisterIOSurface(IOSurfaceId io_surface_id,
                                                 int client_id,
                                                 IOSurfaceRef io_surface) {
   base::AutoLock lock(lock_);
@@ -63,7 +71,7 @@ bool BrowserIOSurfaceManager::RegisterIOSurface(int io_surface_id,
   return true;
 }
 
-void BrowserIOSurfaceManager::UnregisterIOSurface(int io_surface_id,
+void BrowserIOSurfaceManager::UnregisterIOSurface(IOSurfaceId io_surface_id,
                                                   int client_id) {
   base::AutoLock lock(lock_);
 
@@ -72,7 +80,8 @@ void BrowserIOSurfaceManager::UnregisterIOSurface(int io_surface_id,
   io_surfaces_.erase(key);
 }
 
-IOSurfaceRef BrowserIOSurfaceManager::AcquireIOSurface(int io_surface_id) {
+IOSurfaceRef BrowserIOSurfaceManager::AcquireIOSurface(
+    IOSurfaceId io_surface_id) {
   base::AutoLock lock(lock_);
 
   IOSurfaceMapKey key(
@@ -80,7 +89,7 @@ IOSurfaceRef BrowserIOSurfaceManager::AcquireIOSurface(int io_surface_id) {
       BrowserGpuChannelHostFactory::instance()->GetGpuChannelId());
   auto it = io_surfaces_.find(key);
   if (it == io_surfaces_.end()) {
-    LOG(ERROR) << "Invalid Id for IOSurface " << io_surface_id;
+    LOG(ERROR) << "Invalid Id for IOSurface " << io_surface_id.id;
     return nullptr;
   }
 
@@ -149,7 +158,7 @@ bool BrowserIOSurfaceManager::Initialize() {
   // Check in with launchd and publish the service name.
   mach_port_t port;
   kern_return_t kr = bootstrap_check_in(
-      bootstrap_port, GetMachPortName(getpid()).c_str(), &port);
+      bootstrap_port, GetMachPortName().c_str(), &port);
   if (kr != KERN_SUCCESS) {
     BOOTSTRAP_LOG(ERROR, kr) << "bootstrap_check_in";
     return false;
@@ -197,10 +206,8 @@ void BrowserIOSurfaceManager::HandleRequest() {
 
   switch (request.msg.header.msgh_id) {
     case IOSurfaceManagerHostMsg_RegisterIOSurface::ID:
-      if (!HandleRegisterIOSurfaceRequest(request.msg.register_io_surface,
-                                          &reply.register_io_surface)) {
-        return;
-      }
+      HandleRegisterIOSurfaceRequest(request.msg.register_io_surface,
+                                     &reply.register_io_surface);
       break;
     case IOSurfaceManagerHostMsg_UnregisterIOSurface::ID:
       HandleUnregisterIOSurfaceRequest(request.msg.unregister_io_surface);
@@ -210,10 +217,8 @@ void BrowserIOSurfaceManager::HandleRequest() {
       // process.
       return;
     case IOSurfaceManagerHostMsg_AcquireIOSurface::ID:
-      if (!HandleAcquireIOSurfaceRequest(request.msg.acquire_io_surface,
-                                         &reply.acquire_io_surface)) {
-        return;
-      }
+      HandleAcquireIOSurfaceRequest(request.msg.acquire_io_surface,
+                                    &reply.acquire_io_surface);
       break;
     default:
       LOG(ERROR) << "Unknown message received!";
@@ -228,10 +233,16 @@ void BrowserIOSurfaceManager::HandleRequest() {
   }
 }
 
-bool BrowserIOSurfaceManager::HandleRegisterIOSurfaceRequest(
+void BrowserIOSurfaceManager::HandleRegisterIOSurfaceRequest(
     const IOSurfaceManagerHostMsg_RegisterIOSurface& request,
     IOSurfaceManagerMsg_RegisterIOSurfaceReply* reply) {
   base::AutoLock lock(lock_);
+
+  reply->header.msgh_bits = MACH_MSGH_BITS_REMOTE(request.header.msgh_bits);
+  reply->header.msgh_remote_port = request.header.msgh_remote_port;
+  reply->header.msgh_size = sizeof(*reply);
+  reply->body.msgh_descriptor_count = 0;
+  reply->result = false;
 
   IOSurfaceManagerToken token;
   static_assert(sizeof(request.token_name) == sizeof(token.name),
@@ -239,18 +250,13 @@ bool BrowserIOSurfaceManager::HandleRegisterIOSurfaceRequest(
   token.SetName(request.token_name);
   if (token.IsZero() || token != gpu_process_token_) {
     LOG(ERROR) << "Illegal message from non-GPU process!";
-    return false;
+    return;
   }
 
-  IOSurfaceMapKey key(request.io_surface_id, request.client_id);
+  IOSurfaceMapKey key(IOSurfaceId(request.io_surface_id), request.client_id);
   io_surfaces_.add(key, make_scoped_ptr(new base::mac::ScopedMachSendRight(
                             request.io_surface_port.name)));
-
-  reply->header.msgh_bits = MACH_MSGH_BITS_REMOTE(request.header.msgh_bits);
-  reply->header.msgh_remote_port = request.header.msgh_remote_port;
-  reply->header.msgh_size = sizeof(*reply);
   reply->result = true;
-  return true;
 }
 
 bool BrowserIOSurfaceManager::HandleUnregisterIOSurfaceRequest(
@@ -266,15 +272,25 @@ bool BrowserIOSurfaceManager::HandleUnregisterIOSurfaceRequest(
     return false;
   }
 
-  IOSurfaceMapKey key(request.io_surface_id, request.client_id);
+  IOSurfaceMapKey key(IOSurfaceId(request.io_surface_id), request.client_id);
   io_surfaces_.erase(key);
   return true;
 }
 
-bool BrowserIOSurfaceManager::HandleAcquireIOSurfaceRequest(
+void BrowserIOSurfaceManager::HandleAcquireIOSurfaceRequest(
     const IOSurfaceManagerHostMsg_AcquireIOSurface& request,
     IOSurfaceManagerMsg_AcquireIOSurfaceReply* reply) {
   base::AutoLock lock(lock_);
+
+  reply->header.msgh_bits =
+      MACH_MSGH_BITS_REMOTE(request.header.msgh_bits) | MACH_MSGH_BITS_COMPLEX;
+  reply->header.msgh_remote_port = request.header.msgh_remote_port;
+  reply->header.msgh_size = sizeof(*reply);
+  reply->body.msgh_descriptor_count = 0;
+  reply->result = false;
+  reply->io_surface_port.name = MACH_PORT_NULL;
+  reply->io_surface_port.disposition = 0;
+  reply->io_surface_port.type = 0;
 
   IOSurfaceManagerToken token;
   static_assert(sizeof(request.token_name) == sizeof(token.name),
@@ -283,26 +299,22 @@ bool BrowserIOSurfaceManager::HandleAcquireIOSurfaceRequest(
   auto child_process_id_it = child_process_ids_.find(token);
   if (child_process_id_it == child_process_ids_.end()) {
     LOG(ERROR) << "Illegal message from non-child process!";
-    return false;
+    return;
   }
 
-  reply->header.msgh_bits =
-      MACH_MSGH_BITS_REMOTE(request.header.msgh_bits) | MACH_MSGH_BITS_COMPLEX;
-  reply->header.msgh_remote_port = request.header.msgh_remote_port;
-  reply->header.msgh_size = sizeof(*reply);
-
-  IOSurfaceMapKey key(request.io_surface_id, child_process_id_it->second);
+  reply->result = true;
+  IOSurfaceMapKey key(IOSurfaceId(request.io_surface_id),
+                      child_process_id_it->second);
   auto it = io_surfaces_.find(key);
   if (it == io_surfaces_.end()) {
     LOG(ERROR) << "Invalid Id for IOSurface " << request.io_surface_id;
-    return true;
+    return;
   }
 
   reply->body.msgh_descriptor_count = 1;
   reply->io_surface_port.name = it->second->get();
   reply->io_surface_port.disposition = MACH_MSG_TYPE_COPY_SEND;
   reply->io_surface_port.type = MACH_MSG_PORT_DESCRIPTOR;
-  return true;
 }
 
 }  // namespace content

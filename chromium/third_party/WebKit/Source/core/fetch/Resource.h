@@ -31,7 +31,9 @@
 #include "platform/network/ResourceLoadPriority.h"
 #include "platform/network/ResourceRequest.h"
 #include "platform/network/ResourceResponse.h"
+#include "platform/scheduler/CancellableTaskFactory.h"
 #include "public/platform/WebDataConsumerHandle.h"
+#include "wtf/Allocator.h"
 #include "wtf/HashCountedSet.h"
 #include "wtf/HashSet.h"
 #include "wtf/OwnPtr.h"
@@ -234,6 +236,7 @@ public:
     Resource* resourceToRevalidate() const { return m_resourceToRevalidate; }
     void setResourceToRevalidate(Resource*);
     bool hasCacheControlNoStoreHeader();
+    bool hasVaryHeader() const;
 
     double currentAge() const;
     double freshnessLifetime();
@@ -306,22 +309,24 @@ protected:
     HashCountedSet<ResourceClient*> m_clients;
     HashCountedSet<ResourceClient*> m_clientsAwaitingCallback;
 
-    class ResourceCallback {
+    class ResourceCallback : public NoBaseWillBeGarbageCollectedFinalized<ResourceCallback> {
     public:
         static ResourceCallback* callbackHandler();
+        DECLARE_TRACE();
         void schedule(Resource*);
         void cancel(Resource*);
         bool isScheduled(Resource*) const;
     private:
         ResourceCallback();
-        void timerFired(Timer<ResourceCallback>*);
-        Timer<ResourceCallback> m_callbackTimer;
-        HashSet<Resource*> m_resourcesWithPendingClients;
+        void runTask();
+        OwnPtr<CancellableTaskFactory> m_callbackTaskFactory;
+        WillBeHeapHashSet<RawPtrWillBeMember<Resource>> m_resourcesWithPendingClients;
     };
 
     bool hasClient(ResourceClient* client) { return m_clients.contains(client) || m_clientsAwaitingCallback.contains(client); }
 
     struct RedirectPair {
+        ALLOW_ONLY_INLINE_ALLOCATION();
     public:
         explicit RedirectPair(const ResourceRequest& request, const ResourceResponse& redirectResponse)
             : m_request(request)
@@ -368,7 +373,7 @@ private:
     String m_fragmentIdentifierForRequest;
 
     RefPtr<CachedMetadata> m_cachedMetadata;
-    OwnPtr<CacheHandler> m_cacheHandler;
+    OwnPtrWillBeMember<CacheHandler> m_cacheHandler;
 
     ResourceError m_error;
 
@@ -419,6 +424,7 @@ private:
 };
 
 class ResourceFactory {
+    STACK_ALLOCATED();
 public:
     virtual Resource* create(const ResourceRequest&, const String&) const = 0;
     Resource::Type type() const { return m_type; }

@@ -7,14 +7,14 @@
 
 #include "core/animation/ElementAnimations.h"
 #include "core/animation/css/CSSAnimatableValueFactory.h"
-#include "core/css/CSSBasicShapes.h"
+#include "core/css/CSSBasicShapeValues.h"
 #include "core/css/CSSImageValue.h"
 #include "core/css/CSSPrimitiveValue.h"
+#include "core/css/CSSQuadValue.h"
 #include "core/css/CSSSVGDocumentValue.h"
 #include "core/css/CSSShadowValue.h"
 #include "core/css/CSSValueList.h"
-#include "core/css/Pair.h"
-#include "core/css/Rect.h"
+#include "core/css/CSSValuePair.h"
 #include "core/css/resolver/StyleResolver.h"
 #include "core/css/resolver/StyleResolverState.h"
 
@@ -23,8 +23,8 @@ namespace blink {
 void DeferredLegacyStyleInterpolation::apply(StyleResolverState& state) const
 {
     if (m_outdated || !state.element()->elementAnimations() || !state.element()->elementAnimations()->isAnimationStyleChange()) {
-        RefPtrWillBeRawPtr<AnimatableValue> startAnimatableValue;
-        RefPtrWillBeRawPtr<AnimatableValue> endAnimatableValue;
+        RefPtr<AnimatableValue> startAnimatableValue;
+        RefPtr<AnimatableValue> endAnimatableValue;
 
         // Snapshot underlying values for neutral keyframes first because non-neutral keyframes will mutate the StyleResolverState.
         if (!m_endCSSValue) {
@@ -48,10 +48,22 @@ bool DeferredLegacyStyleInterpolation::interpolationRequiresStyleResolve(const C
     // FIXME: should not require resolving styles for inherit/initial/unset.
     if (value.isCSSWideKeyword())
         return true;
+    if (value.isBasicShapeCircleValue())
+        return interpolationRequiresStyleResolve(toCSSBasicShapeCircleValue(value));
+    if (value.isBasicShapeEllipseValue())
+        return interpolationRequiresStyleResolve(toCSSBasicShapeEllipseValue(value));
+    if (value.isBasicShapePolygonValue())
+        return interpolationRequiresStyleResolve(toCSSBasicShapePolygonValue(value));
+    if (value.isBasicShapeInsetValue())
+        return interpolationRequiresStyleResolve(toCSSBasicShapeInsetValue(value));
     if (value.isPrimitiveValue())
         return interpolationRequiresStyleResolve(toCSSPrimitiveValue(value));
+    if (value.isQuadValue())
+        return interpolationRequiresStyleResolve(toCSSQuadValue(value));
     if (value.isValueList())
         return interpolationRequiresStyleResolve(toCSSValueList(value));
+    if (value.isValuePair())
+        return interpolationRequiresStyleResolve(toCSSValuePair(value));
     if (value.isImageValue())
         return interpolationRequiresStyleResolve(toCSSImageValue(value));
     if (value.isShadowValue())
@@ -83,28 +95,6 @@ bool DeferredLegacyStyleInterpolation::interpolationRequiresStyleResolve(const C
             || lengthArray[CSSPrimitiveValue::UnitTypeViewportMin] != 0
             || lengthArray[CSSPrimitiveValue::UnitTypeViewportMax] != 0;
     }
-
-    if (Pair* pair = primitiveValue.getPairValue()) {
-        return interpolationRequiresStyleResolve(*pair->first())
-            || interpolationRequiresStyleResolve(*pair->second());
-    }
-
-    if (Rect* rect = primitiveValue.getRectValue()) {
-        return interpolationRequiresStyleResolve(*rect->top())
-            || interpolationRequiresStyleResolve(*rect->right())
-            || interpolationRequiresStyleResolve(*rect->bottom())
-            || interpolationRequiresStyleResolve(*rect->left());
-    }
-
-    if (Quad* quad = primitiveValue.getQuadValue()) {
-        return interpolationRequiresStyleResolve(*quad->top())
-            || interpolationRequiresStyleResolve(*quad->right())
-            || interpolationRequiresStyleResolve(*quad->bottom())
-            || interpolationRequiresStyleResolve(*quad->left());
-    }
-
-    if (primitiveValue.isShape())
-        return interpolationRequiresStyleResolve(*primitiveValue.getShapeValue());
 
     CSSValueID id = primitiveValue.getValueID();
     bool isColor = ((id >= CSSValueAqua && id <= CSSValueTransparent)
@@ -143,18 +133,42 @@ bool DeferredLegacyStyleInterpolation::interpolationRequiresStyleResolve(const C
     return false;
 }
 
-bool DeferredLegacyStyleInterpolation::interpolationRequiresStyleResolve(const CSSBasicShape& shape)
+bool DeferredLegacyStyleInterpolation::interpolationRequiresStyleResolve(const CSSValuePair& pair)
 {
-    // FIXME: Should determine the specific shape, and inspect the members.
+    return interpolationRequiresStyleResolve(pair.first())
+        || interpolationRequiresStyleResolve(pair.second());
+}
+
+bool DeferredLegacyStyleInterpolation::interpolationRequiresStyleResolve(const CSSBasicShapeCircleValue& shape)
+{
+    // FIXME: Should inspect the members.
     return false;
 }
 
-DEFINE_TRACE(DeferredLegacyStyleInterpolation)
+bool DeferredLegacyStyleInterpolation::interpolationRequiresStyleResolve(const CSSBasicShapeEllipseValue& shape)
 {
-    visitor->trace(m_startCSSValue);
-    visitor->trace(m_endCSSValue);
-    visitor->trace(m_innerInterpolation);
-    StyleInterpolation::trace(visitor);
+    // FIXME: Should inspect the members.
+    return false;
+}
+
+bool DeferredLegacyStyleInterpolation::interpolationRequiresStyleResolve(const CSSBasicShapePolygonValue& shape)
+{
+    // FIXME: Should inspect the members.
+    return false;
+}
+
+bool DeferredLegacyStyleInterpolation::interpolationRequiresStyleResolve(const CSSBasicShapeInsetValue& shape)
+{
+    // FIXME: Should inspect the members.
+    return false;
+}
+
+bool DeferredLegacyStyleInterpolation::interpolationRequiresStyleResolve(const CSSQuadValue& quad)
+{
+    return interpolationRequiresStyleResolve(*quad.top())
+        || interpolationRequiresStyleResolve(*quad.right())
+        || interpolationRequiresStyleResolve(*quad.bottom())
+        || interpolationRequiresStyleResolve(*quad.left());
 }
 
 }

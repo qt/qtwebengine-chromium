@@ -74,17 +74,33 @@
         'mac/process_types_test.cc',
         'mac/system_snapshot_mac_test.cc',
         'minidump/process_snapshot_minidump_test.cc',
+        'win/cpu_context_win_test.cc',
+        'win/exception_snapshot_win_test.cc',
         'win/pe_image_annotations_reader_test.cc',
+        'win/pe_image_reader_test.cc',
         'win/process_reader_win_test.cc',
+        'win/process_snapshot_win_test.cc',
         'win/system_snapshot_win_test.cc',
       ],
       'conditions': [
         ['OS=="mac"', {
+          'dependencies': [
+            'crashpad_snapshot_test_module_crashy_initializer',
+            'crashpad_snapshot_test_no_op',
+          ],
           'link_settings': {
             'libraries': [
               '$(SDKROOT)/System/Library/Frameworks/OpenCL.framework',
             ],
           },
+        }],
+        ['OS=="win"', {
+          'dependencies': [
+            'crashpad_snapshot_test_crashing_child',
+            'crashpad_snapshot_test_dump_without_crashing',
+            'crashpad_snapshot_test_image_reader',
+            'crashpad_snapshot_test_image_reader_module',
+          ],
         }],
       ],
     },
@@ -102,5 +118,94 @@
         'crashpad_info_client_options_test_module.cc',
       ],
     },
+  ],
+  'conditions': [
+    ['OS=="mac"', {
+      'targets': [
+        {
+          'target_name': 'crashpad_snapshot_test_module_crashy_initializer',
+          'type': 'loadable_module',
+          'sources': [
+            'mac/mach_o_image_annotations_reader_test_module_crashy_initializer.cc',
+          ],
+        },
+        {
+          'target_name': 'crashpad_snapshot_test_no_op',
+          'type': 'executable',
+          'sources': [
+            'mac/mach_o_image_annotations_reader_test_no_op.cc',
+          ],
+        },
+      ],
+    }],
+    ['OS=="win"', {
+      'targets': [
+        {
+          'target_name': 'crashpad_snapshot_test_crashing_child',
+          'type': 'executable',
+          'dependencies': [
+            '../client/client.gyp:crashpad_client',
+            '../compat/compat.gyp:crashpad_compat',
+            '../third_party/mini_chromium/mini_chromium.gyp:base',
+            '../util/util.gyp:crashpad_util',
+          ],
+          'sources': [
+            'win/crashpad_snapshot_test_crashing_child.cc',
+          ],
+        },
+        {
+          'target_name': 'crashpad_snapshot_test_dump_without_crashing',
+          'type': 'executable',
+          'dependencies': [
+            '../client/client.gyp:crashpad_client',
+            '../compat/compat.gyp:crashpad_compat',
+            '../third_party/mini_chromium/mini_chromium.gyp:base',
+            '../util/util.gyp:crashpad_util',
+          ],
+          'sources': [
+            'win/crashpad_snapshot_test_dump_without_crashing.cc',
+          ],
+        },
+        {
+          'target_name': 'crashpad_snapshot_test_image_reader',
+          'type': 'executable',
+          'dependencies': [
+            '../client/client.gyp:crashpad_client',
+            '../compat/compat.gyp:crashpad_compat',
+            '../third_party/mini_chromium/mini_chromium.gyp:base',
+            '../util/util.gyp:crashpad_util',
+          ],
+          'sources': [
+            'win/crashpad_snapshot_test_image_reader.cc',
+          ],
+        },
+        {
+          'target_name': 'crashpad_snapshot_test_image_reader_module',
+          'type': 'loadable_module',
+          'dependencies': [
+            '../client/client.gyp:crashpad_client',
+            '../third_party/mini_chromium/mini_chromium.gyp:base',
+          ],
+          'sources': [
+            'win/crashpad_snapshot_test_image_reader_module.cc',
+          ],
+          'msvs_settings': {
+            'NoImportLibrary': 'true',
+          },
+        },
+        {
+          'target_name': 'crashpad_snapshot_test_simple_annotations',
+          'type': 'executable',
+          'dependencies': [
+            '../client/client.gyp:crashpad_client',
+            '../compat/compat.gyp:crashpad_compat',
+            '../third_party/mini_chromium/mini_chromium.gyp:base',
+          ],
+          'sources': [
+            'win/crashpad_snapshot_test_simple_annotations.cc',
+          ],
+        },
+      ],
+    }],
   ],
 }

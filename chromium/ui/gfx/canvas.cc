@@ -25,7 +25,7 @@ namespace gfx {
 Canvas::Canvas(const Size& size, float image_scale, bool is_opaque)
     : image_scale_(image_scale),
       canvas_(NULL) {
-  Size pixel_size = ToCeiledSize(ScaleSize(size, image_scale));
+  Size pixel_size = ScaleToCeiledSize(size, image_scale);
   owned_canvas_ = skia::AdoptRef(skia::CreatePlatformCanvas(pixel_size.width(),
                                                             pixel_size.height(),
                                                             is_opaque));
@@ -71,7 +71,7 @@ void Canvas::RecreateBackingCanvas(const Size& size,
                                    float image_scale,
                                    bool is_opaque) {
   image_scale_ = image_scale;
-  Size pixel_size = ToFlooredSize(ScaleSize(size, image_scale));
+  Size pixel_size = ScaleToFlooredSize(size, image_scale);
   owned_canvas_ = skia::AdoptRef(skia::CreatePlatformCanvas(pixel_size.width(),
                                                             pixel_size.height(),
                                                             is_opaque));
@@ -597,7 +597,7 @@ void Canvas::DrawImageIntHelper(const ImageSkia& image,
     // shift.
     SkIRect src_rect = { src_x, src_y, src_x + src_w, src_y + src_h };
     const SkBitmap& bitmap = image_rep.sk_bitmap();
-    canvas_->drawBitmapRect(bitmap, &src_rect, dest_rect, &paint);
+    canvas_->drawBitmapRect(bitmap, src_rect, dest_rect, &paint);
     return;
   }
 

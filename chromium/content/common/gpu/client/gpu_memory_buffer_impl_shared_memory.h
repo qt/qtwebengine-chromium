@@ -14,25 +14,28 @@ class GpuMemoryBufferImplSharedMemory : public GpuMemoryBufferImpl {
  public:
   ~GpuMemoryBufferImplSharedMemory() override;
 
-  static scoped_ptr<GpuMemoryBufferImpl> Create(gfx::GpuMemoryBufferId id,
-                                                const gfx::Size& size,
-                                                Format format);
+  static scoped_ptr<GpuMemoryBufferImpl> Create(
+      gfx::GpuMemoryBufferId id,
+      const gfx::Size& size,
+      gfx::BufferFormat format,
+      const DestructionCallback& callback);
 
   static gfx::GpuMemoryBufferHandle AllocateForChildProcess(
       gfx::GpuMemoryBufferId id,
       const gfx::Size& size,
-      Format format,
+      gfx::BufferFormat format,
       base::ProcessHandle child_process);
 
   static scoped_ptr<GpuMemoryBufferImpl> CreateFromHandle(
       const gfx::GpuMemoryBufferHandle& handle,
       const gfx::Size& size,
-      Format format,
+      gfx::BufferFormat format,
       const DestructionCallback& callback);
 
-  static bool IsFormatSupported(Format format);
-  static bool IsUsageSupported(Usage usage);
-  static bool IsSizeValidForFormat(const gfx::Size& size, Format format);
+  static bool IsFormatSupported(gfx::BufferFormat format);
+  static bool IsUsageSupported(gfx::BufferUsage usage);
+  static bool IsSizeValidForFormat(const gfx::Size& size,
+                                   gfx::BufferFormat format);
 
   // Overridden from gfx::GpuMemoryBuffer:
   bool Map(void** data) override;
@@ -43,7 +46,7 @@ class GpuMemoryBufferImplSharedMemory : public GpuMemoryBufferImpl {
  private:
   GpuMemoryBufferImplSharedMemory(gfx::GpuMemoryBufferId id,
                                   const gfx::Size& size,
-                                  Format format,
+                                  gfx::BufferFormat format,
                                   const DestructionCallback& callback,
                                   scoped_ptr<base::SharedMemory> shared_memory);
 

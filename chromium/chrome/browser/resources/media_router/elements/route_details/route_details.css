@@ -5,7 +5,26 @@
 #close-route-button {
   background-color: white;
   color: rgb(33, 150, 243);
-  text-align: -webkit-right;
+  height: 32px;
+  line-height: 32px;
+  margin: 0;
+  text-align: end;
+  width: 100%;
+}
+
+#close-button {
+  -webkit-margin-start: auto;
+}
+
+#close-button::shadow #icon {
+  height: 15px;
+  width: 15px;
+}
+
+#custom-controller {
+  display: inline-block;
+  height: 160px;
+  width: 100%;
 }
 
 #route-details-header {
@@ -15,17 +34,9 @@
 
 #route-information {
   -webkit-padding-start: 30px;
-  height: 75px;
-  line-height: 1.125em;
-}
-
-#route-status {
-  color: rgb(125, 125, 125);
-  margin: 8px 0;
-}
-
-#route-title {
-  font-weight: bold;
-  margin: 8px 0;
+  background-color: white;
+  font-size: 1.2em;
+  height: 40px;
   overflow: hidden;
+  padding: 20px 30px;
 }

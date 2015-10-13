@@ -236,11 +236,8 @@ int HttpServer::HandleReadResult(HttpConnection* connection, int rv) {
     connection->socket()->GetPeerAddress(&request.peer);
 
     if (request.HasHeaderValue("connection", "upgrade")) {
-      scoped_ptr<WebSocket> websocket(
-          WebSocket::CreateWebSocket(this, connection, request, &pos));
-      if (!websocket)  // Not enough data was received.
-        break;
-      connection->SetWebSocket(websocket.Pass());
+      connection->SetWebSocket(
+          make_scoped_ptr(new WebSocket(this, connection)));
       read_buf->DidConsume(pos);
       delegate_->OnWebSocketRequest(connection->id(), request);
       if (HasClosedConnection(connection))
@@ -412,7 +409,7 @@ bool HttpServer::ParseHeaders(const char* data,
           buffer.clear();
           break;
         case ST_NAME:
-          header_name = base::StringToLowerASCII(buffer);
+          header_name = base::ToLowerASCII(buffer);
           buffer.clear();
           break;
         case ST_VALUE:

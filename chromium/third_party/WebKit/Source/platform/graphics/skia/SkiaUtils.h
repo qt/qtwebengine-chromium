@@ -37,6 +37,7 @@
 #include "platform/geometry/FloatRect.h"
 #include "platform/graphics/Color.h"
 #include "platform/graphics/GraphicsTypes.h"
+#include "platform/graphics/Image.h"
 #include "platform/transforms/AffineTransform.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/effects/SkCornerPathEffect.h"
@@ -61,13 +62,6 @@ SkColor PLATFORM_EXPORT scaleAlpha(SkColor, float);
 // alpha is in the range [0, 256].
 SkColor PLATFORM_EXPORT scaleAlpha(SkColor, int);
 
-inline SkFilterQuality WebCoreInterpolationQualityToSkFilterQuality(InterpolationQuality quality)
-{
-    // FIXME: this reflects existing client mappings, but should probably
-    // be expanded to map higher level interpolations more accurately.
-    return quality != InterpolationNone ? kLow_SkFilterQuality : kNone_SkFilterQuality;
-}
-
 // Skia has problems when passed infinite, etc floats, filter them to 0.
 inline SkScalar WebCoreFloatToSkScalar(float f)
 {
@@ -77,12 +71,6 @@ inline SkScalar WebCoreFloatToSkScalar(float f)
 inline SkScalar WebCoreDoubleToSkScalar(double d)
 {
     return SkDoubleToScalar(std::isfinite(d) ? d : 0);
-}
-
-inline SkRect WebCoreFloatRectToSKRect(const FloatRect& rect)
-{
-    return SkRect::MakeLTRB(SkFloatToScalar(rect.x()), SkFloatToScalar(rect.y()),
-        SkFloatToScalar(rect.maxX()), SkFloatToScalar(rect.maxY()));
 }
 
 inline bool WebCoreFloatNearlyEqual(float a, float b)
@@ -133,6 +121,14 @@ inline SkScalar skBlurRadiusToSigma(SkScalar radius)
 
 template<typename PrimitiveType>
 void drawPlatformFocusRing(const PrimitiveType&, SkCanvas*, SkColor, int width);
+
+// TODO(fmalita): remove in favor of direct SrcRectConstraint use.
+inline SkCanvas::SrcRectConstraint WebCoreClampingModeToSkiaRectConstraint(Image::ImageClampingMode clampMode)
+{
+    return clampMode == Image::ClampImageToSourceRect
+        ? SkCanvas::kStrict_SrcRectConstraint
+        : SkCanvas::kFast_SrcRectConstraint;
+}
 
 } // namespace blink
 

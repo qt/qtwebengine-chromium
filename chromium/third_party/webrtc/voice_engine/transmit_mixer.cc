@@ -10,6 +10,7 @@
 
 #include "webrtc/voice_engine/transmit_mixer.h"
 
+#include "webrtc/base/format_macros.h"
 #include "webrtc/modules/utility/interface/audio_frame_operations.h"
 #include "webrtc/system_wrappers/interface/critical_section_wrapper.h"
 #include "webrtc/system_wrappers/interface/event_wrapper.h"
@@ -311,7 +312,7 @@ void TransmitMixer::GetSendCodecInfo(int* max_sample_rate, int* max_channels) {
 
 int32_t
 TransmitMixer::PrepareDemux(const void* audioSamples,
-                            uint32_t nSamples,
+                            size_t nSamples,
                             uint8_t nChannels,
                             uint32_t samplesPerSec,
                             uint16_t totalDelayMS,
@@ -320,10 +321,11 @@ TransmitMixer::PrepareDemux(const void* audioSamples,
                             bool keyPressed)
 {
     WEBRTC_TRACE(kTraceStream, kTraceVoice, VoEId(_instanceId, -1),
-                 "TransmitMixer::PrepareDemux(nSamples=%u, nChannels=%u,"
-                 "samplesPerSec=%u, totalDelayMS=%u, clockDrift=%d,"
-                 "currentMicLevel=%u)", nSamples, nChannels, samplesPerSec,
-                 totalDelayMS, clockDrift, currentMicLevel);
+                 "TransmitMixer::PrepareDemux(nSamples=%" PRIuS ", "
+                 "nChannels=%u, samplesPerSec=%u, totalDelayMS=%u, "
+                 "clockDrift=%d, currentMicLevel=%u)",
+                 nSamples, nChannels, samplesPerSec, totalDelayMS, clockDrift,
+                 currentMicLevel);
 
     // --- Resample input audio and create/store the initial audio frame
     GenerateAudioFrame(static_cast<const int16_t*>(audioSamples),
@@ -643,9 +645,6 @@ int TransmitMixer::StopPlayingFileAsMicrophone()
 
     if (!_filePlaying)
     {
-        _engineStatisticsPtr->SetLastError(
-            VE_INVALID_OPERATION, kTraceWarning,
-            "StopPlayingFileAsMicrophone() isnot playing");
         return 0;
     }
 
@@ -1128,37 +1127,31 @@ bool TransmitMixer::IsRecordingMic()
 }
 
 void TransmitMixer::GenerateAudioFrame(const int16_t* audio,
-                                       int samples_per_channel,
+                                       size_t samples_per_channel,
                                        int num_channels,
                                        int sample_rate_hz) {
   int codec_rate;
   int num_codec_channels;
   GetSendCodecInfo(&codec_rate, &num_codec_channels);
-  // TODO(ajm): This currently restricts the sample rate to 32 kHz.
-  // See: https://code.google.com/p/webrtc/issues/detail?id=3146
-  // When 48 kHz is supported natively by AudioProcessing, this will have
-  // to be changed to handle 44.1 kHz.
-  int max_sample_rate_hz = kAudioProcMaxNativeSampleRateHz;
-  if (audioproc_->echo_control_mobile()->is_enabled()) {
-    // AECM only supports 8 and 16 kHz.
-    max_sample_rate_hz = 16000;
-  }
-  codec_rate = std::min(codec_rate, max_sample_rate_hz);
   stereo_codec_ = num_codec_channels == 2;
 
-  if (!mono_buffer_.get()) {
-    // Temporary space for DownConvertToCodecFormat.
-    mono_buffer_.reset(new int16_t[kMaxMonoDataSizeSamples]);
+  // We want to process at the lowest rate possible without losing information.
+  // Choose the lowest native rate at least equal to the input and codec rates.
+  const int min_processing_rate = std::min(sample_rate_hz, codec_rate);
+  for (size_t i = 0; i < AudioProcessing::kNumNativeSampleRates; ++i) {
+    _audioFrame.sample_rate_hz_ = AudioProcessing::kNativeSampleRatesHz[i];
+    if (_audioFrame.sample_rate_hz_ >= min_processing_rate) {
+      break;
+    }
   }
-  DownConvertToCodecFormat(audio,
-                           samples_per_channel,
-                           num_channels,
-                           sample_rate_hz,
-                           num_codec_channels,
-                           codec_rate,
-                           mono_buffer_.get(),
-                           &resampler_,
-                           &_audioFrame);
+  if (audioproc_->echo_control_mobile()->is_enabled()) {
+    // AECM only supports 8 and 16 kHz.
+    _audioFrame.sample_rate_hz_ = std::min(
+        _audioFrame.sample_rate_hz_, AudioProcessing::kMaxAECMSampleRateHz);
+  }
+  _audioFrame.num_channels_ = std::min(num_channels, num_codec_channels);
+  RemixAndResample(audio, samples_per_channel, num_channels, sample_rate_hz,
+                   &resampler_, &_audioFrame);
 }
 
 int32_t TransmitMixer::RecordAudioToFile(
@@ -1189,7 +1182,7 @@ int32_t TransmitMixer::MixOrReplaceAudioWithFile(
 {
   rtc::scoped_ptr<int16_t[]> fileBuffer(new int16_t[640]);
 
-    int fileSamples(0);
+    size_t fileSamples(0);
     {
         CriticalSectionScoped cs(&_critSect);
         if (_filePlayerPtr == NULL)

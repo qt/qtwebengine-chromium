@@ -16,6 +16,7 @@
 #include "webrtc/base/scoped_ptr.h"
 #include "webrtc/base/thread_annotations.h"
 #include "webrtc/modules/remote_bitrate_estimator/include/remote_bitrate_estimator.h"
+#include "webrtc/modules/pacing/include/paced_sender.h"
 #include "webrtc/system_wrappers/interface/clock.h"
 #include "webrtc/system_wrappers/interface/critical_section_wrapper.h"
 #include "webrtc/system_wrappers/interface/logging.h"
@@ -88,8 +89,7 @@ bool RemoteBitrateEstimatorAbsSendTime::IsWithinClusterBounds(
 
   RemoteBitrateEstimatorAbsSendTime::RemoteBitrateEstimatorAbsSendTime(
       RemoteBitrateObserver* observer,
-      Clock* clock,
-      uint32_t min_bitrate_bps)
+      Clock* clock)
       : crit_sect_(CriticalSectionWrapper::CreateCriticalSection()),
         observer_(observer),
         clock_(clock),
@@ -98,7 +98,6 @@ bool RemoteBitrateEstimatorAbsSendTime::IsWithinClusterBounds(
         estimator_(OverUseDetectorOptions()),
         detector_(OverUseDetectorOptions()),
         incoming_bitrate_(kBitrateWindowMs, 8000),
-        remote_rate_(min_bitrate_bps),
         last_process_time_(-1),
         process_interval_ms_(kProcessIntervalMs),
         total_propagation_delta_ms_(0),
@@ -268,7 +267,10 @@ void RemoteBitrateEstimatorAbsSendTime::IncomingPacketInfo(
   uint32_t ts_delta = 0;
   int64_t t_delta = 0;
   int size_delta = 0;
-  // For now only try to detect probes while we don't have a valid estimate.
+  // For now only try to detect probes while we don't have a valid estimate, and
+  // make sure the packet was paced. We currently assume that only packets
+  // larger than 200 bytes are paced by the sender.
+  was_paced = was_paced && payload_size > PacedSender::kMinProbePacketSize;
   if (was_paced &&
       (!remote_rate_.ValidEstimate() ||
        now_ms - first_packet_time_ms_ < kInitialProbingIntervalMs)) {
@@ -368,9 +370,10 @@ void RemoteBitrateEstimatorAbsSendTime::UpdateEstimate(int64_t now_ms) {
   }
 }
 
-void RemoteBitrateEstimatorAbsSendTime::OnRttUpdate(int64_t rtt) {
+void RemoteBitrateEstimatorAbsSendTime::OnRttUpdate(int64_t avg_rtt_ms,
+                                                    int64_t max_rtt_ms) {
   CriticalSectionScoped cs(crit_sect_.get());
-  remote_rate_.SetRtt(rtt);
+  remote_rate_.SetRtt(avg_rtt_ms);
 }
 
 void RemoteBitrateEstimatorAbsSendTime::RemoveStream(unsigned int ssrc) {
@@ -431,5 +434,10 @@ void RemoteBitrateEstimatorAbsSendTime::UpdateStats(int propagation_delta_ms,
 
   total_propagation_delta_ms_ =
       std::max(total_propagation_delta_ms_ + propagation_delta_ms, 0);
+}
+
+void RemoteBitrateEstimatorAbsSendTime::SetMinBitrate(int min_bitrate_bps) {
+  CriticalSectionScoped cs(crit_sect_.get());
+  remote_rate_.SetMinBitrate(min_bitrate_bps);
 }
 }  // namespace webrtc

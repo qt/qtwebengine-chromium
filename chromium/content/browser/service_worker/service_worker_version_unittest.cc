@@ -10,8 +10,8 @@
 #include "content/browser/service_worker/service_worker_context_core.h"
 #include "content/browser/service_worker/service_worker_registration.h"
 #include "content/browser/service_worker/service_worker_test_utils.h"
-#include "content/browser/service_worker/service_worker_utils.h"
 #include "content/browser/service_worker/service_worker_version.h"
+#include "content/common/service_worker/service_worker_utils.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -506,6 +506,24 @@ TEST_F(ServiceWorkerVersionTest, IdleTimeout) {
 
   EXPECT_EQ(SERVICE_WORKER_OK, status);
   EXPECT_LT(idle_time, version_->idle_time_);
+}
+
+// Test that the worker stays alive for some time after
+// receiving a push event.
+// TODO(falken): Remove this test once Facebook doesn't rely on the behavior:
+// crbug.com/519993
+TEST_F(ServiceWorkerVersionTest, StayAliveAfterPush) {
+  const base::TimeDelta kTenSeconds = base::TimeDelta::FromSeconds(10);
+  ServiceWorkerStatusCode status = SERVICE_WORKER_ERROR_FAILED;
+  version_->SetStatus(ServiceWorkerVersion::ACTIVATED);
+  version_->DispatchPushEvent(CreateReceiverOnCurrentThread(&status),
+                              std::string());
+  base::RunLoop().RunUntilIdle();
+
+  // Pretend we've been idle for 10 seconds and fire the timeout code.
+  version_->idle_time_ = base::TimeTicks::Now() - kTenSeconds;
+  version_->OnTimeoutTimer();
+  EXPECT_EQ(ServiceWorkerVersion::RUNNING, version_->running_status());
 }
 
 TEST_F(ServiceWorkerVersionTest, SetDevToolsAttached) {

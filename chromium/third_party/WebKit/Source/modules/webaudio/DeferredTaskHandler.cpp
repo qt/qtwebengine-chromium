@@ -26,7 +26,6 @@
 #if ENABLE(WEB_AUDIO)
 #include "modules/webaudio/DeferredTaskHandler.h"
 
-#include "modules/webaudio/AudioContext.h"
 #include "modules/webaudio/AudioNode.h"
 #include "modules/webaudio/AudioNodeOutput.h"
 #include "platform/ThreadSafeFunctional.h"
@@ -59,11 +58,6 @@ bool DeferredTaskHandler::tryLock()
 void DeferredTaskHandler::unlock()
 {
     m_contextGraphMutex.unlock();
-}
-
-bool DeferredTaskHandler::isAudioThread() const
-{
-    return currentThread() == m_audioThread;
 }
 
 #if ENABLE(ASSERT)
@@ -232,7 +226,7 @@ void DeferredTaskHandler::contextWillBeDestroyed()
     // Some handlers might live because of their cross thread tasks.
 }
 
-DeferredTaskHandler::AutoLocker::AutoLocker(AudioContext* context)
+DeferredTaskHandler::AutoLocker::AutoLocker(AbstractAudioContext* context)
     : m_handler(context->deferredTaskHandler())
 {
     m_handler.lock();
@@ -253,7 +247,7 @@ void DeferredTaskHandler::requestToDeleteHandlersOnMainThread()
         return;
     m_deletableOrphanHandlers.appendVector(m_renderingOrphanHandlers);
     m_renderingOrphanHandlers.clear();
-    Platform::current()->mainThread()->postTask(FROM_HERE, threadSafeBind(&DeferredTaskHandler::deleteHandlersOnMainThread, PassRefPtr<DeferredTaskHandler>(this)));
+    Platform::current()->mainThread()->taskRunner()->postTask(FROM_HERE, threadSafeBind(&DeferredTaskHandler::deleteHandlersOnMainThread, PassRefPtr<DeferredTaskHandler>(this)));
 }
 
 void DeferredTaskHandler::deleteHandlersOnMainThread()

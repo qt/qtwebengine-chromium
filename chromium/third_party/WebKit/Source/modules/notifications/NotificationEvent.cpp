@@ -5,14 +5,19 @@
 #include "config.h"
 #include "modules/notifications/NotificationEvent.h"
 
+#include "modules/notifications/NotificationEventInit.h"
+#include "wtf/text/WTFString.h"
+
 namespace blink {
 
 NotificationEvent::NotificationEvent()
+    : m_action(emptyString())
 {
 }
 
 NotificationEvent::NotificationEvent(const AtomicString& type, const NotificationEventInit& initializer)
     : ExtendableEvent(type, initializer)
+    , m_action(initializer.action())
 {
     if (initializer.hasNotification())
         m_notification = initializer.notification();
@@ -20,6 +25,7 @@ NotificationEvent::NotificationEvent(const AtomicString& type, const Notificatio
 
 NotificationEvent::NotificationEvent(const AtomicString& type, const NotificationEventInit& initializer, WaitUntilObserver* observer)
     : ExtendableEvent(type, initializer, observer)
+    , m_action(initializer.action())
 {
     if (initializer.hasNotification())
         m_notification = initializer.notification();

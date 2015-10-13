@@ -16,9 +16,12 @@ class Transform;
 namespace cc {
 
 class ClipTree;
+struct DrawProperties;
 class Layer;
 class LayerImpl;
-class OpacityTree;
+struct RenderSurfaceDrawProperties;
+class RenderSurfaceImpl;
+class EffectTree;
 class TransformTree;
 class PropertyTrees;
 
@@ -34,7 +37,7 @@ ComputeClips(ClipTree* clip_tree, const TransformTree& transform_tree);
 void CC_EXPORT ComputeTransforms(TransformTree* transform_tree);
 
 // Computes screen space opacity for every node in the opacity tree.
-void CC_EXPORT ComputeOpacities(OpacityTree* opacity_tree);
+void CC_EXPORT ComputeOpacities(EffectTree* effect_tree);
 
 // Computes the visible content rect for every layer under |root_layer|. The
 // visible content rect is the clipped content space rect that will be used for
@@ -73,6 +76,18 @@ ComputeVisibleRectsUsingPropertyTrees(LayerImpl* root_layer,
                                       PropertyTrees* property_trees,
                                       LayerImplList* update_layer_list);
 
+void CC_EXPORT ComputeLayerDrawPropertiesUsingPropertyTrees(
+    const LayerImpl* layer,
+    const PropertyTrees* property_trees,
+    bool layers_always_allowed_lcd_text,
+    bool can_use_lcd_text,
+    DrawProperties* draw_properties);
+
+void CC_EXPORT ComputeSurfaceDrawPropertiesUsingPropertyTrees(
+    RenderSurfaceImpl* render_surface,
+    const PropertyTrees* property_trees,
+    RenderSurfaceDrawProperties* draw_properties);
+
 gfx::Transform CC_EXPORT
 DrawTransformFromPropertyTrees(const Layer* layer, const TransformTree& tree);
 
@@ -87,18 +102,6 @@ ScreenSpaceTransformFromPropertyTrees(const Layer* layer,
 gfx::Transform CC_EXPORT
 ScreenSpaceTransformFromPropertyTrees(const LayerImpl* layer,
                                       const TransformTree& tree);
-
-float CC_EXPORT
-DrawOpacityFromPropertyTrees(const Layer* layer, const OpacityTree& tree);
-
-float CC_EXPORT
-DrawOpacityFromPropertyTrees(const LayerImpl* layer, const OpacityTree& tree);
-
-bool CC_EXPORT
-CanUseLcdTextFromPropertyTrees(const LayerImpl* layer,
-                               bool layers_always_allowed_lcd_text,
-                               bool can_use_lcd_text,
-                               PropertyTrees* property_trees);
 
 }  // namespace cc
 

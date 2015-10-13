@@ -32,12 +32,12 @@
 #include "base/threading/thread.h"
 #include "build/build_config.h"
 #include "sandbox/linux/bpf_dsl/bpf_dsl.h"
+#include "sandbox/linux/bpf_dsl/errorcode.h"
 #include "sandbox/linux/bpf_dsl/linux_syscall_ranges.h"
 #include "sandbox/linux/bpf_dsl/policy.h"
 #include "sandbox/linux/bpf_dsl/seccomp_macros.h"
 #include "sandbox/linux/seccomp-bpf/bpf_tests.h"
 #include "sandbox/linux/seccomp-bpf/die.h"
-#include "sandbox/linux/seccomp-bpf/errorcode.h"
 #include "sandbox/linux/seccomp-bpf/sandbox_bpf.h"
 #include "sandbox/linux/seccomp-bpf/syscall.h"
 #include "sandbox/linux/seccomp-bpf/trap.h"
@@ -1267,7 +1267,7 @@ ResultExpr AllBitTestPolicy::EvaluateSyscall(int sysno) const {
         .Case(9, HasAllBits64(0x300000000ULL))
         .Case(10, HasAllBits64(0x100000001ULL))
 #endif
-        .Default(Kill("Invalid test case number"));
+        .Default(Kill());
   }
   return Allow();
 }
@@ -1453,7 +1453,7 @@ ResultExpr AnyBitTestPolicy::EvaluateSyscall(int sysno) const {
         .Case(9, HasAnyBits64(0x300000000ULL))
         .Case(10, HasAnyBits64(0x100000001ULL))
 #endif
-        .Default(Kill("Invalid test case number"));
+        .Default(Kill());
   }
   return Allow();
 }
@@ -1598,7 +1598,7 @@ ResultExpr MaskedEqualTestPolicy::EvaluateSyscall(int sysno) const {
         .Case(1, MaskedEqual64(0x00ff00ff00000000, 0x005500aa00000000))
         .Case(2, MaskedEqual64(0x00ff00ff00ff00ff, 0x005500aa005500aa))
 #endif
-        .Default(Kill("Invalid test case number"));
+        .Default(Kill());
   }
 
   return Allow();

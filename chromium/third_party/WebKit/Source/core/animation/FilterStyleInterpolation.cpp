@@ -33,19 +33,19 @@ PassRefPtrWillBeRawPtr<CSSValueList> extendFilterList(const CSSValueList& shortF
         case CSSValueGrayscale:
         case CSSValueInvert:
         case CSSValueSepia:
-            defaultFunction->append(CSSPrimitiveValue::create(0, CSSPrimitiveValue::CSS_NUMBER));
+            defaultFunction->append(CSSPrimitiveValue::create(0, CSSPrimitiveValue::UnitType::Number));
             break;
         case CSSValueBrightness:
         case CSSValueContrast:
         case CSSValueOpacity:
         case CSSValueSaturate:
-            defaultFunction->append(CSSPrimitiveValue::create(1, CSSPrimitiveValue::CSS_NUMBER));
+            defaultFunction->append(CSSPrimitiveValue::create(1, CSSPrimitiveValue::UnitType::Number));
             break;
         case CSSValueHueRotate:
-            defaultFunction->append(CSSPrimitiveValue::create(0, CSSPrimitiveValue::CSS_DEG));
+            defaultFunction->append(CSSPrimitiveValue::create(0, CSSPrimitiveValue::UnitType::Degrees));
             break;
         case CSSValueBlur:
-            defaultFunction->append(CSSPrimitiveValue::create(0, CSSPrimitiveValue::CSS_PX));
+            defaultFunction->append(CSSPrimitiveValue::create(0, CSSPrimitiveValue::UnitType::Pixels));
             break;
         case CSSValueDropShadow:
             // TODO(ericwilligers): Implement drop shadow interpolation.
@@ -60,7 +60,7 @@ PassRefPtrWillBeRawPtr<CSSValueList> extendFilterList(const CSSValueList& shortF
     return result.release();
 }
 
-PassRefPtrWillBeRawPtr<FilterStyleInterpolation::FilterListStyleInterpolation> maybeCreateFromList(const CSSValueList& startList, const CSSValueList& endList, CSSPropertyID property)
+PassRefPtr<FilterStyleInterpolation::FilterListStyleInterpolation> maybeCreateFromList(const CSSValueList& startList, const CSSValueList& endList, CSSPropertyID property)
 {
     if (startList.length() < endList.length())
         return ListStyleInterpolation<FilterStyleInterpolation>::maybeCreateFromList(*extendFilterList(startList, endList), endList, property);
@@ -69,7 +69,7 @@ PassRefPtrWillBeRawPtr<FilterStyleInterpolation::FilterListStyleInterpolation> m
 
 } // namespace
 
-PassRefPtrWillBeRawPtr<FilterStyleInterpolation::FilterListStyleInterpolation> FilterStyleInterpolation::maybeCreateList(const CSSValue& start, const CSSValue& end, CSSPropertyID property)
+PassRefPtr<FilterStyleInterpolation::FilterListStyleInterpolation> FilterStyleInterpolation::maybeCreateList(const CSSValue& start, const CSSValue& end, CSSPropertyID property)
 {
     if (start.isCSSWideKeyword() || end.isCSSWideKeyword())
         return nullptr;
@@ -97,13 +97,13 @@ bool FilterStyleInterpolation::canCreateFrom(const CSSValue& start, const CSSVal
         && startFunctionType != CSSValueDropShadow;
 }
 
-PassOwnPtrWillBeRawPtr<InterpolableValue> FilterStyleInterpolation::toInterpolableValue(const CSSValue& value, CSSValueID& functionType)
+PassOwnPtr<InterpolableValue> FilterStyleInterpolation::toInterpolableValue(const CSSValue& value, CSSValueID& functionType)
 {
     const CSSFunctionValue& filterValue = toCSSFunctionValue(value);
     functionType = filterValue.functionType();
     size_t length = filterValue.length();
 
-    OwnPtrWillBeRawPtr<InterpolableList> result = InterpolableList::create(length);
+    OwnPtr<InterpolableList> result = InterpolableList::create(length);
     for (size_t i = 0; i < length; ++i) {
         switch (functionType) {
         case CSSValueHueRotate:
@@ -141,15 +141,15 @@ PassRefPtrWillBeRawPtr<CSSFunctionValue> FilterStyleInterpolation::fromInterpola
         case CSSValueInvert:
         case CSSValueOpacity:
         case CSSValueSepia:
-            result->append(CSSPrimitiveValue::create(clampTo<double>(toInterpolableNumber(list.get(i))->value(), 0, 1), CSSPrimitiveValue::CSS_NUMBER));
+            result->append(CSSPrimitiveValue::create(clampTo<double>(toInterpolableNumber(list.get(i))->value(), 0, 1), CSSPrimitiveValue::UnitType::Number));
             break;
         case CSSValueBrightness:
         case CSSValueContrast:
         case CSSValueSaturate:
-            result->append(CSSPrimitiveValue::create(clampTo<double>(toInterpolableNumber(list.get(i))->value(), 0), CSSPrimitiveValue::CSS_NUMBER));
+            result->append(CSSPrimitiveValue::create(clampTo<double>(toInterpolableNumber(list.get(i))->value(), 0), CSSPrimitiveValue::UnitType::Number));
             break;
         case CSSValueHueRotate:
-            result->append(CSSPrimitiveValue::create(toInterpolableNumber(list.get(i))->value(), CSSPrimitiveValue::CSS_DEG));
+            result->append(CSSPrimitiveValue::create(toInterpolableNumber(list.get(i))->value(), CSSPrimitiveValue::UnitType::Degrees));
             break;
         case CSSValueBlur:
             result->append(LengthStyleInterpolation::fromInterpolableValue(*list.get(i), RangeNonNegative));

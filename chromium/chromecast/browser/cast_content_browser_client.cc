@@ -11,6 +11,7 @@
 #include "base/files/scoped_file.h"
 #include "base/i18n/rtl.h"
 #include "base/path_service.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chromecast/base/cast_paths.h"
 #include "chromecast/base/chromecast_switches.h"
 #include "chromecast/browser/cast_browser_context.h"
@@ -20,13 +21,17 @@
 #include "chromecast/browser/cast_quota_permission_context.h"
 #include "chromecast/browser/cast_resource_dispatcher_host_delegate.h"
 #include "chromecast/browser/geolocation/cast_access_token_store.h"
+#include "chromecast/browser/media/cma_media_pipeline_client.h"
 #include "chromecast/browser/media/cma_message_filter_host.h"
+#include "chromecast/browser/service/cast_service_simple.h"
 #include "chromecast/browser/url_request_context_factory.h"
 #include "chromecast/common/global_descriptors.h"
-#include "chromecast/media/cma/backend/media_pipeline_device.h"
-#include "chromecast/media/cma/backend/media_pipeline_device_factory.h"
-#include "components/crash/app/breakpad_linux.h"
-#include "components/crash/browser/crash_handler_host_linux.h"
+#include "chromecast/media/audio/cast_audio_manager_factory.h"
+#include "chromecast/media/base/media_message_loop.h"
+#include "chromecast/public/cast_media_shlib.h"
+#include "chromecast/public/media/media_pipeline_backend.h"
+#include "components/crash/content/app/breakpad_linux.h"
+#include "components/crash/content/browser/crash_handler_host_linux.h"
 #include "components/network_hints/browser/network_hints_message_filter.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/certificate_request_result_type.h"
@@ -44,8 +49,10 @@
 #include "ui/gl/gl_switches.h"
 
 #if defined(OS_ANDROID)
-#include "components/crash/browser/crash_dump_manager_android.h"
+#include "components/crash/content/browser/crash_dump_manager_android.h"
 #include "components/external_video_surface/browser/android/external_video_surface_container_impl.h"
+#else
+#include "chromecast/browser/media/cast_browser_cdm_factory.h"
 #endif  // defined(OS_ANDROID)
 
 namespace chromecast {
@@ -66,44 +73,70 @@ void CastContentBrowserClient::AppendExtraCommandLineSwitches(
     base::CommandLine* command_line) {
 }
 
-std::vector<scoped_refptr<content::BrowserMessageFilter>>
-CastContentBrowserClient::GetBrowserMessageFilters() {
-  return std::vector<scoped_refptr<content::BrowserMessageFilter>>();
+scoped_ptr<CastService> CastContentBrowserClient::CreateCastService(
+    content::BrowserContext* browser_context,
+    PrefService* pref_service,
+    net::URLRequestContextGetter* request_context_getter) {
+  return make_scoped_ptr(new CastServiceSimple(browser_context, pref_service));
 }
 
 scoped_ptr<::media::AudioManagerFactory>
 CastContentBrowserClient::CreateAudioManagerFactory() {
-  // Return nullptr. The factory will not be set, and the statically linked
+#if defined(OS_ANDROID)
+  // Return nullptr. The factory will not be set, and the default
   // implementation of AudioManager will be used.
   return scoped_ptr<::media::AudioManagerFactory>();
+#else
+  return make_scoped_ptr(new media::CastAudioManagerFactory());
+#endif
 }
 
 #if !defined(OS_ANDROID)
-scoped_ptr<media::MediaPipelineDevice>
-CastContentBrowserClient::CreateMediaPipelineDevice(
-    const media::MediaPipelineDeviceParams& params) {
-  scoped_ptr<media::MediaPipelineDeviceFactory> factory =
-      GetMediaPipelineDeviceFactory(params);
-  return make_scoped_ptr(new media::MediaPipelineDevice(factory.Pass()));
+scoped_refptr<media::CmaMediaPipelineClient>
+CastContentBrowserClient::CreateCmaMediaPipelineClient() {
+  return make_scoped_refptr(new media::CmaMediaPipelineClient());
+}
+
+scoped_ptr<::media::BrowserCdmFactory>
+CastContentBrowserClient::CreateBrowserCdmFactory() {
+  return make_scoped_ptr(new media::CastBrowserCdmFactory());
 }
 #endif
 
+void CastContentBrowserClient::ProcessExiting() {
+  // Finalize CastMediaShlib on media thread to ensure it's not accessed
+  // after Finalize.
+  media::MediaMessageLoop::GetTaskRunner()->PostTask(
+      FROM_HERE, base::Bind(&media::CastMediaShlib::Finalize));
+}
+
+void CastContentBrowserClient::SetMetricsClientId(
+    const std::string& client_id) {
+}
+
+void CastContentBrowserClient::RegisterMetricsProviders(
+    ::metrics::MetricsService* metrics_service) {
+}
+
+bool CastContentBrowserClient::EnableRemoteDebuggingImmediately() {
+  return true;
+}
+
 content::BrowserMainParts* CastContentBrowserClient::CreateBrowserMainParts(
     const content::MainFunctionParams& parameters) {
-  return new CastBrowserMainParts(parameters,
-                                  url_request_context_factory_.get(),
-                                  CreateAudioManagerFactory());
+  content::BrowserMainParts* parts = new CastBrowserMainParts(
+      parameters, url_request_context_factory_.get(),
+      CreateAudioManagerFactory());
+  CastBrowserProcess::GetInstance()->SetCastContentBrowserClient(this);
+  return parts;
 }
 
 void CastContentBrowserClient::RenderProcessWillLaunch(
     content::RenderProcessHost* host) {
 #if !defined(OS_ANDROID)
   scoped_refptr<media::CmaMessageFilterHost> cma_message_filter(
-      new media::CmaMessageFilterHost(
-          host->GetID(),
-          base::Bind(
-              &CastContentBrowserClient::CreateMediaPipelineDevice,
-              base::Unretained(this))));
+      new media::CmaMessageFilterHost(host->GetID(),
+                                      CreateCmaMediaPipelineClient()));
   host->AddFilter(cma_message_filter.get());
 #endif  // !defined(OS_ANDROID)
 
@@ -116,11 +149,6 @@ void CastContentBrowserClient::RenderProcessWillLaunch(
                     url_request_context_factory_->GetSystemGetter())),
       base::Bind(&CastContentBrowserClient::AddNetworkHintsMessageFilter,
                  base::Unretained(this), host->GetID()));
-
-  auto extra_filters = GetBrowserMessageFilters();
-  for (auto const& filter : extra_filters) {
-    host->AddFilter(filter.get());
-  }
 }
 
 void CastContentBrowserClient::AddNetworkHintsMessageFilter(
@@ -196,8 +224,8 @@ void CastContentBrowserClient::AppendExtraCommandLineSwitches(
 
     if (browser_command_line->HasSwitch(switches::kEnableCmaMediaPipeline))
       command_line->AppendSwitch(switches::kEnableCmaMediaPipeline);
-    if (browser_command_line->HasSwitch(switches::kEnableLegacyHolePunching))
-      command_line->AppendSwitch(switches::kEnableLegacyHolePunching);
+    if (browser_command_line->HasSwitch(switches::kAllowHiddenMediaPlayback))
+      command_line->AppendSwitch(switches::kAllowHiddenMediaPlayback);
   }
 
 #if defined(OS_LINUX)
@@ -332,6 +360,14 @@ bool CastContentBrowserClient::CanCreateWindow(
     bool* no_javascript_access) {
   *no_javascript_access = true;
   return false;
+}
+
+void CastContentBrowserClient::RegisterUnsandboxedOutOfProcessMojoApplications(
+    std::map<GURL, base::string16>* apps) {
+#if defined(ENABLE_MOJO_MEDIA_IN_UTILITY_PROCESS)
+  apps->insert(std::make_pair(GURL("mojo:media"),
+                              base::UTF8ToUTF16("Media Renderer")));
+#endif
 }
 
 #if defined(OS_ANDROID)

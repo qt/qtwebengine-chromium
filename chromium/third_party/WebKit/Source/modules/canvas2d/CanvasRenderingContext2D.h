@@ -36,6 +36,7 @@
 #include "modules/canvas2d/CanvasPathMethods.h"
 #include "modules/canvas2d/CanvasRenderingContext2DState.h"
 #include "platform/graphics/GraphicsTypes.h"
+#include "public/platform/WebThread.h"
 #include "wtf/Vector.h"
 #include "wtf/text/WTFString.h"
 
@@ -60,7 +61,7 @@ class TextMetrics;
 
 typedef HTMLImageElementOrHTMLVideoElementOrHTMLCanvasElementOrImageBitmap CanvasImageSourceUnion;
 
-class MODULES_EXPORT CanvasRenderingContext2D final : public CanvasRenderingContext, public CanvasPathMethods {
+class MODULES_EXPORT CanvasRenderingContext2D final : public CanvasRenderingContext, public CanvasPathMethods, public WebThread::TaskObserver {
     DEFINE_WRAPPERTYPEINFO();
 public:
     class Factory : public CanvasRenderingContextFactory {
@@ -196,7 +197,7 @@ public:
     void fillText(const String& text, float x, float y, float maxWidth);
     void strokeText(const String& text, float x, float y);
     void strokeText(const String& text, float x, float y, float maxWidth);
-    PassRefPtrWillBeRawPtr<TextMetrics> measureText(const String& text);
+    TextMetrics* measureText(const String& text);
 
     bool imageSmoothingEnabled() const;
     void setImageSmoothingEnabled(bool);
@@ -209,13 +210,19 @@ public:
     void addHitRegion(const HitRegionOptions&, ExceptionState&);
     void removeHitRegion(const String& id);
     void clearHitRegions();
-    HitRegion* hitRegionAtPoint(const LayoutPoint&);
+    HitRegion* hitRegionAtPoint(const FloatPoint&);
     unsigned hitRegionsCount() const override;
 
     void loseContext(LostContextMode) override;
     void didSetSurfaceSize() override;
 
-    void restoreCanvasMatrixClipStack() override;
+    void restoreCanvasMatrixClipStack(SkCanvas*) const override;
+
+    // TaskObserver implementation
+    void didProcessTask() override;
+    void willProcessTask() override { }
+
+    void styleDidChange(const ComputedStyle* oldStyle, const ComputedStyle& newStyle) override;
 
 private:
     friend class CanvasRenderingContext2DAutoRestoreSkCanvas;
@@ -240,12 +247,15 @@ private:
     void unwindStateStack();
     void realizeSaves();
 
+    void pruneLocalFontCache(size_t targetSize);
+    void schedulePruneLocalFontCacheIfNeeded();
+
     bool shouldDrawImageAntialiased(const FloatRect& destRect) const;
 
     template<typename DrawFunc, typename ContainsFunc>
     bool draw(const DrawFunc&, const ContainsFunc&, const SkRect& bounds, CanvasRenderingContext2DState::PaintType, CanvasRenderingContext2DState::ImageType = CanvasRenderingContext2DState::NoImage);
     void drawPathInternal(const Path&, CanvasRenderingContext2DState::PaintType, SkPath::FillType = SkPath::kWinding_FillType);
-    void drawImageInternal(CanvasImageSource*, Image*, const FloatRect& srcRect, const FloatRect& dstRect, const SkPaint*);
+    void drawImageInternal(SkCanvas*, CanvasImageSource*, Image*, const FloatRect& srcRect, const FloatRect& dstRect, const SkPaint*);
     void clipInternal(const Path&, const String& windingRuleString);
 
     bool isPointInPathInternal(const Path&, const float x, const float y, const String& windingRuleString);
@@ -264,12 +274,12 @@ private:
     void inflateStrokeRect(FloatRect&) const;
 
     template<typename DrawFunc>
-    void compositedDraw(const DrawFunc&, CanvasRenderingContext2DState::PaintType, CanvasRenderingContext2DState::ImageType);
+    void compositedDraw(const DrawFunc&, SkCanvas*, CanvasRenderingContext2DState::PaintType, CanvasRenderingContext2DState::ImageType);
 
     void drawFocusIfNeededInternal(const Path&, Element*);
     bool focusRingCallIsValid(const Path&, Element*);
     void drawFocusRing(const Path&);
-    void updateFocusRingElementAccessibility(const Path&, Element*);
+    void updateElementAccessibility(const Path&, Element*);
 
     void validateStateStack();
 
@@ -302,6 +312,10 @@ private:
     Timer<CanvasRenderingContext2D> m_dispatchContextLostEventTimer;
     Timer<CanvasRenderingContext2D> m_dispatchContextRestoredEventTimer;
     Timer<CanvasRenderingContext2D> m_tryRestoreContextEventTimer;
+
+    HashMap<String, Font> m_fontsResolvedUsingCurrentStyle;
+    bool m_pruneLocalFontCacheScheduled;
+    ListHashSet<String> m_fontLRUList;
 };
 
 DEFINE_TYPE_CASTS(CanvasRenderingContext2D, CanvasRenderingContext, context, context->is2d(), context.is2d());

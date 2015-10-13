@@ -46,6 +46,7 @@ namespace blink {
 class AutoscrollController;
 class ChromeClient;
 class ClientRectList;
+class CompositedDisplayList;
 class ContextMenuClient;
 class ContextMenuController;
 class Document;
@@ -56,6 +57,7 @@ class EditorClient;
 class FocusController;
 class Frame;
 class FrameHost;
+class MemoryPurgeController;
 class PluginData;
 class PointerLockController;
 class ScrollingCoordinator;
@@ -70,19 +72,21 @@ float deviceScaleFactor(LocalFrame*);
 
 class CORE_EXPORT Page final : public NoBaseWillBeGarbageCollectedFinalized<Page>, public WillBeHeapSupplementable<Page>, public PageLifecycleNotifier, public SettingsDelegate {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(Page);
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(Page);
     WTF_MAKE_NONCOPYABLE(Page);
     friend class Settings;
 public:
     static void platformColorsChanged();
 
     // It is up to the platform to ensure that non-null clients are provided where required.
-    struct CORE_EXPORT PageClients {
-        WTF_MAKE_NONCOPYABLE(PageClients); WTF_MAKE_FAST_ALLOCATED(PageClients);
+    struct CORE_EXPORT PageClients final {
+        STACK_ALLOCATED();
+        WTF_MAKE_NONCOPYABLE(PageClients);
     public:
         PageClients();
         ~PageClients();
 
-        ChromeClient* chromeClient;
+        RawPtrWillBeMember<ChromeClient> chromeClient;
         ContextMenuClient* contextMenuClient;
         EditorClient* editorClient;
         DragClient* dragClient;
@@ -90,7 +94,7 @@ public:
     };
 
     explicit Page(PageClients&);
-    virtual ~Page();
+    ~Page() override;
 
     void makeOrdinary();
 
@@ -160,7 +164,7 @@ public:
     void setDefersLoading(bool);
     bool defersLoading() const { return m_defersLoading; }
 
-    void setPageScaleFactor(float scale, const IntPoint& origin);
+    void setPageScaleFactor(float);
     float pageScaleFactor() const;
 
     float deviceScaleFactor() const { return m_deviceScaleFactor; }
@@ -196,7 +200,12 @@ public:
 
     void acceptLanguagesChanged();
 
+    void setCompositedDisplayList(PassOwnPtr<CompositedDisplayList>);
+    CompositedDisplayList* compositedDisplayListForTesting();
+
     static void networkStateChanged(bool online);
+
+    MemoryPurgeController& memoryPurgeController();
 
     DECLARE_TRACE();
     void willBeDestroyed();
@@ -209,10 +218,10 @@ private:
     void setNeedsLayoutInAllFrames();
 
     // SettingsDelegate overrides.
-    virtual void settingsChanged(SettingsDelegate::ChangeType) override;
+    void settingsChanged(SettingsDelegate::ChangeType) override;
 
     RefPtrWillBeMember<PageAnimator> m_animator;
-    const OwnPtr<AutoscrollController> m_autoscrollController;
+    const OwnPtrWillBeMember<AutoscrollController> m_autoscrollController;
     ChromeClient* m_chromeClient;
     const OwnPtrWillBeMember<DragCaretController> m_dragCaretController;
     const OwnPtrWillBeMember<DragController> m_dragController;
@@ -267,6 +276,8 @@ private:
     // A pointer to all the interfaces provided to in-process Frames for this Page.
     // FIXME: Most of the members of Page should move onto FrameHost.
     OwnPtrWillBeMember<FrameHost> m_frameHost;
+
+    OwnPtrWillBeMember<MemoryPurgeController> m_memoryPurgeController;
 };
 
 extern template class CORE_EXTERN_TEMPLATE_EXPORT WillBeHeapSupplement<Page>;

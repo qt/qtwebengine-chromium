@@ -10,14 +10,14 @@
 #include "mojo/runner/switches.h"
 
 int main(int argc, char** argv) {
-  base::AtExitManager at_exit;
   base::CommandLine::Init(argc, argv);
+  const base::CommandLine& command_line =
+      *base::CommandLine::ForCurrentProcess();
 
+  base::AtExitManager at_exit;
   mojo::runner::InitializeLogging();
   mojo::runner::WaitForDebuggerIfNecessary();
 
-  const base::CommandLine& command_line =
-      *base::CommandLine::ForCurrentProcess();
   if (command_line.HasSwitch(switches::kChildProcess))
     return mojo::runner::ChildProcessMain();
 

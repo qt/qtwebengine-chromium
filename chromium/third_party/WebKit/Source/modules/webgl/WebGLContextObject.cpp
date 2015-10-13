@@ -57,7 +57,7 @@ void WebGLContextObject::detachContext()
 
 WebGraphicsContext3D* WebGLContextObject::getAWebGraphicsContext3D() const
 {
-    return m_context ? m_context->webContext() : 0;
+    return m_context ? m_context->webContext() : nullptr;
 }
 
 DEFINE_TRACE(WebGLContextObject)

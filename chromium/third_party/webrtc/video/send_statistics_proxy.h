@@ -33,7 +33,6 @@ class SendStatisticsProxy : public CpuOveruseMetricsObserver,
                             public StreamDataCountersCallback,
                             public BitrateStatisticsObserver,
                             public FrameCountObserver,
-                            public ViEEncoderObserver,
                             public VideoEncoderRateObserver,
                             public SendSideDelayObserver {
  public:
@@ -47,11 +46,16 @@ class SendStatisticsProxy : public CpuOveruseMetricsObserver,
   virtual void OnSendEncodedImage(const EncodedImage& encoded_image,
                                   const RTPVideoHeader* rtp_video_header);
   // Used to update incoming frame rate.
-  void OnIncomingFrame();
+  void OnIncomingFrame(int width, int height);
+
+  // Used to update encode time of frames.
+  void OnEncodedFrame(int encode_time_ms);
 
   // From VideoEncoderRateObserver.
   void OnSetRates(uint32_t bitrate_bps, int framerate) override;
 
+  void OnOutgoingRate(uint32_t framerate, uint32_t bitrate);
+  void OnSuspendChange(bool is_suspended);
   void OnInactiveSsrc(uint32_t ssrc);
 
  protected:
@@ -61,7 +65,7 @@ class SendStatisticsProxy : public CpuOveruseMetricsObserver,
   void StatisticsUpdated(const RtcpStatistics& statistics,
                          uint32_t ssrc) override;
   void CNameChanged(const char* cname, uint32_t ssrc) override;
-  // From RtcpPacketTypeCounterObserver
+  // From RtcpPacketTypeCounterObserver.
   void RtcpPacketTypesCounterUpdated(
       uint32_t ssrc,
       const RtcpPacketTypeCounter& packet_counter) override;
@@ -78,18 +82,20 @@ class SendStatisticsProxy : public CpuOveruseMetricsObserver,
   void FrameCountUpdated(const FrameCounts& frame_counts,
                          uint32_t ssrc) override;
 
-  // From ViEEncoderObserver.
-  void OutgoingRate(const int video_channel,
-                    const unsigned int framerate,
-                    const unsigned int bitrate) override;
-
-  void SuspendChange(int video_channel, bool is_suspended) override;
-
   void SendSideDelayUpdated(int avg_delay_ms,
                             int max_delay_ms,
                             uint32_t ssrc) override;
 
  private:
+  struct SampleCounter {
+    SampleCounter() : sum(0), num_samples(0) {}
+    void Add(int sample);
+    int Avg(int min_required_samples) const;
+
+   private:
+    int sum;
+    int num_samples;
+  };
   struct StatsUpdateTimes {
     StatsUpdateTimes() : resolution_update_ms(0) {}
     int64_t resolution_update_ms;
@@ -105,10 +111,17 @@ class SendStatisticsProxy : public CpuOveruseMetricsObserver,
   mutable rtc::CriticalSection crit_;
   VideoSendStream::Stats stats_ GUARDED_BY(crit_);
   rtc::RateTracker input_frame_rate_tracker_ GUARDED_BY(crit_);
-  rtc::RateTracker input_frame_rate_tracker_total_ GUARDED_BY(crit_);
-  rtc::RateTracker sent_frame_rate_tracker_total_ GUARDED_BY(crit_);
+  rtc::RateTracker sent_frame_rate_tracker_ GUARDED_BY(crit_);
   uint32_t last_sent_frame_timestamp_ GUARDED_BY(crit_);
   std::map<uint32_t, StatsUpdateTimes> update_times_ GUARDED_BY(crit_);
+
+  int max_sent_width_per_timestamp_ GUARDED_BY(crit_);
+  int max_sent_height_per_timestamp_ GUARDED_BY(crit_);
+  SampleCounter input_width_counter_ GUARDED_BY(crit_);
+  SampleCounter input_height_counter_ GUARDED_BY(crit_);
+  SampleCounter sent_width_counter_ GUARDED_BY(crit_);
+  SampleCounter sent_height_counter_ GUARDED_BY(crit_);
+  SampleCounter encode_time_counter_ GUARDED_BY(crit_);
 };
 
 }  // namespace webrtc

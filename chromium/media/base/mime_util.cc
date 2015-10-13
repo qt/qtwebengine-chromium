@@ -36,6 +36,7 @@ class MimeUtil {
     H264_BASELINE,
     H264_MAIN,
     H264_HIGH,
+    HEVC_MAIN,
     VP8,
     VP9,
     THEORA
@@ -173,6 +174,8 @@ static const char* const proprietary_media_types[] = {
   "audio/mp3",
   "audio/x-mp3",
   "audio/mpeg",
+
+  // AAC / ADTS
   "audio/aac",
 
 #if defined(ENABLE_MPEG2TS_STREAM_PARSER)
@@ -198,6 +201,15 @@ static bool IsCodecSupportedOnAndroid(MimeUtil::Codec codec) {
     case MimeUtil::VP8:
     case MimeUtil::VORBIS:
       return true;
+
+    case MimeUtil::HEVC_MAIN:
+#if defined(ENABLE_HEVC_DEMUXING)
+      // HEVC/H.265 is supported in Lollipop+ (API Level 21), according to
+      // http://developer.android.com/reference/android/media/MediaFormat.html
+      return base::android::BuildInfo::GetInstance()->sdk_int() >= 21;
+#else
+      return false;
+#endif
 
     case MimeUtil::MPEG2_AAC_LC:
     case MimeUtil::MPEG2_AAC_MAIN:
@@ -253,6 +265,11 @@ static const char kMP4VideoCodecsExpression[] =
     // kUnambiguousCodecStringMap/kAmbiguousCodecStringMap should be the only
     // mapping from strings to codecs. See crbug.com/461009.
     "avc1.42E00A,avc1.4D400A,avc1.64000A,"
+#if defined(ENABLE_HEVC_DEMUXING)
+    // Any valid unambiguous HEVC codec id will work here, since these strings
+    // are parsed and mapped to MimeUtil::Codec enum values.
+    "hev1.1.6.L93.B0,"
+#endif
     "mp4a.66,mp4a.67,mp4a.68,mp4a.69,mp4a.6B,mp4a.40.2,mp4a.40.02,mp4a.40.5,"
     "mp4a.40.05,mp4a.40.29";
 
@@ -276,6 +293,7 @@ static const MediaFormatStrict format_codec_mappings[] = {
     {"audio/mpeg", "mp3"},
     {"audio/mp3", ""},
     {"audio/x-mp3", ""},
+    {"audio/aac", ""},
     {"audio/mp4", kMP4AudioCodecsExpression},
     {"audio/x-m4a", kMP4AudioCodecsExpression},
     {"video/mp4", kMP4VideoCodecsExpression},
@@ -396,8 +414,7 @@ void MimeUtil::InitializeMimeTypeMaps() {
 }
 
 bool MimeUtil::IsSupportedMediaMimeType(const std::string& mime_type) const {
-  return media_map_.find(base::StringToLowerASCII(mime_type)) !=
-         media_map_.end();
+  return media_map_.find(base::ToLowerASCII(mime_type)) != media_map_.end();
 }
 
 
@@ -417,9 +434,13 @@ bool MimeUtil::AreSupportedMediaCodecs(
 void MimeUtil::ParseCodecString(const std::string& codecs,
                                 std::vector<std::string>* codecs_out,
                                 bool strip) {
-  std::string no_quote_codecs;
-  base::TrimString(codecs, "\"", &no_quote_codecs);
-  base::SplitString(no_quote_codecs, ',', codecs_out);
+  *codecs_out = base::SplitString(
+      base::TrimString(codecs, "\"", base::TRIM_ALL),
+      ",", base::TRIM_WHITESPACE, base::SPLIT_WANT_ALL);
+
+  // Convert empty or all-whitespace input to 0 results.
+  if (codecs_out->size() == 1 && (*codecs_out)[0].empty())
+    codecs_out->clear();
 
   if (!strip)
     return;
@@ -435,14 +456,14 @@ void MimeUtil::ParseCodecString(const std::string& codecs,
 }
 
 bool MimeUtil::IsStrictMediaMimeType(const std::string& mime_type) const {
-  return strict_format_map_.find(base::StringToLowerASCII(mime_type)) !=
+  return strict_format_map_.find(base::ToLowerASCII(mime_type)) !=
          strict_format_map_.end();
 }
 
 SupportsType MimeUtil::IsSupportedStrictMediaMimeType(
     const std::string& mime_type,
     const std::vector<std::string>& codecs) const {
-  const std::string mime_type_lower_case = base::StringToLowerASCII(mime_type);
+  const std::string mime_type_lower_case = base::ToLowerASCII(mime_type);
   StrictMappings::const_iterator it_strict_map =
       strict_format_map_.find(mime_type_lower_case);
   if (it_strict_map == strict_format_map_.end())
@@ -477,28 +498,6 @@ void MimeUtil::RemoveProprietaryMediaTypesAndCodecsForTests() {
   allow_proprietary_codecs_ = false;
 }
 
-// Returns true iff |profile_str| conforms to hex string "42y0".
-//
-// |profile_str| is the first four characters of the H.264 suffix string. From
-// ISO-14496-10 7.3.2.1, it consists of:
-//   8 bits: profile_idc; required to be 0x42 here.
-//   1 bit: constraint_set0_flag; ignored here.
-//   1 bit: constraint_set1_flag; ignored here.
-//   1 bit: constraint_set2_flag; ignored here.
-//   1 bit: constraint_set3_flag; ignored here.
-//   4 bits: reserved; required to be 0 here.
-//
-// The spec indicates other ways, not implemented here, that a |profile_str|
-// can indicate a baseline conforming decoder is sufficient for decode in Annex
-// A.2.1: "[profile_idc not necessarily 0x42] with constraint_set0_flag set and
-// in which level_idc and constraint_set3_flag represent a level less than or
-// equal to the specified level."
-static bool IsValidH264BaselineProfile(const std::string& profile_str) {
-  return (profile_str.size() == 4 && profile_str[0] == '4' &&
-          profile_str[1] == '2' && base::IsHexDigit(profile_str[2]) &&
-          profile_str[3] == '0');
-}
-
 static bool IsValidH264Level(const std::string& level_str) {
   uint32 level;
   if (level_str.size() != 2 || !base::HexStringToUInt(level_str, &level))
@@ -514,9 +513,9 @@ static bool IsValidH264Level(const std::string& level_str) {
 }
 
 // Handle parsing H.264 codec IDs as outlined in RFC 6381 and ISO-14496-10.
-//   avc1.42y0xx, y >= 8 - H.264 Baseline
-//   avc1.4D40xx         - H.264 Main
-//   avc1.6400xx         - H.264 High
+//   avc1.42x0yy - H.264 Baseline
+//   avc1.4Dx0yy - H.264 Main
+//   avc1.64x0yy - H.264 High
 //
 //   avc1.xxxxxx & avc3.xxxxxx are considered ambiguous forms that are trying to
 //   signal H.264 Baseline. For example, the idc_level, profile_idc and
@@ -526,19 +525,32 @@ static bool IsValidH264Level(const std::string& level_str) {
 static bool ParseH264CodecID(const std::string& codec_id,
                              MimeUtil::Codec* codec,
                              bool* is_ambiguous) {
-  // Make sure we have avc1.xxxxxx or avc3.xxxxxx
+  // Make sure we have avc1.xxxxxx or avc3.xxxxxx , where xxxxxx are hex digits
+  if (!base::StartsWith(codec_id, "avc1.", base::CompareCase::SENSITIVE) &&
+      !base::StartsWith(codec_id, "avc3.", base::CompareCase::SENSITIVE)) {
+    return false;
+  }
   if (codec_id.size() != 11 ||
-      (!base::StartsWithASCII(codec_id, "avc1.", true) &&
-       !base::StartsWithASCII(codec_id, "avc3.", true))) {
+      !base::IsHexDigit(codec_id[5]) || !base::IsHexDigit(codec_id[6]) ||
+      !base::IsHexDigit(codec_id[7]) || !base::IsHexDigit(codec_id[8]) ||
+      !base::IsHexDigit(codec_id[9]) || !base::IsHexDigit(codec_id[10])) {
     return false;
   }
 
-  std::string profile = base::StringToUpperASCII(codec_id.substr(5, 4));
-  if (IsValidH264BaselineProfile(profile)) {
+  // Validate constraint flags and reserved bits.
+  if (!base::IsHexDigit(codec_id[7]) || codec_id[8] != '0') {
     *codec = MimeUtil::H264_BASELINE;
-  } else if (profile == "4D40") {
+    *is_ambiguous = true;
+    return true;
+  }
+
+  // Extract the profile.
+  std::string profile = base::ToUpperASCII(codec_id.substr(5, 2));
+  if (profile == "42") {
+    *codec = MimeUtil::H264_BASELINE;
+  } else if (profile == "4D") {
     *codec = MimeUtil::H264_MAIN;
-  } else if (profile == "6400") {
+  } else if (profile == "64") {
     *codec = MimeUtil::H264_HIGH;
   } else {
     *codec = MimeUtil::H264_BASELINE;
@@ -546,10 +558,46 @@ static bool ParseH264CodecID(const std::string& codec_id,
     return true;
   }
 
-  *is_ambiguous =
-      !IsValidH264Level(base::StringToUpperASCII(codec_id.substr(9)));
+  // Validate level.
+  *is_ambiguous = !IsValidH264Level(base::ToUpperASCII(codec_id.substr(9)));
   return true;
 }
+
+#if defined(ENABLE_HEVC_DEMUXING)
+// ISO/IEC FDIS 14496-15 standard section E.3 describes the syntax of codec ids
+// reserved for HEVC. According to that spec HEVC codec id must start with
+// either "hev1." or "hvc1.". We don't yet support full parsing of HEVC codec
+// ids, but since no other codec id starts with those string we'll just treat
+// any string starting with "hev1." or "hvc1." as valid HEVC codec ids.
+// crbug.com/482761
+static bool ParseHEVCCodecID(const std::string& codec_id,
+                             MimeUtil::Codec* codec,
+                             bool* is_ambiguous) {
+  if (base::StartsWith(codec_id, "hev1.", base::CompareCase::SENSITIVE) ||
+      base::StartsWith(codec_id, "hvc1.", base::CompareCase::SENSITIVE)) {
+    *codec = MimeUtil::HEVC_MAIN;
+
+    // TODO(servolk): Full HEVC codec id parsing is not implemented yet (see
+    // crbug.com/482761). So treat HEVC codec ids as ambiguous for now.
+    *is_ambiguous = true;
+
+    // TODO(servolk): Most HEVC codec ids are treated as ambiguous (see above),
+    // but we need to recognize at least one valid unambiguous HEVC codec id,
+    // which is added into kMP4VideoCodecsExpression. We need it to be
+    // unambiguous to avoid DCHECK(!is_ambiguous) in InitializeMimeTypeMaps. We
+    // also use these in unit tests (see
+    // content/browser/media/media_canplaytype_browsertest.cc).
+    // Remove this workaround after crbug.com/482761 is fixed.
+    if (codec_id == "hev1.1.6.L93.B0" || codec_id == "hvc1.1.6.L93.B0") {
+      *is_ambiguous = false;
+    }
+
+    return true;
+  }
+
+  return false;
+}
+#endif
 
 bool MimeUtil::StringToCodec(const std::string& codec_id,
                              Codec* codec,
@@ -563,8 +611,13 @@ bool MimeUtil::StringToCodec(const std::string& codec_id,
   }
 
   // If |codec_id| is not in |string_to_codec_map_|, then we assume that it is
-  // an H.264 codec ID because currently those are the only ones that can't be
-  // stored in the |string_to_codec_map_| and require parsing.
+  // either H.264 or HEVC/H.265 codec ID because currently those are the only
+  // ones that are not added to the |string_to_codec_map_| and require parsing.
+#if defined(ENABLE_HEVC_DEMUXING)
+  if (ParseHEVCCodecID(codec_id, codec, is_ambiguous)) {
+    return true;
+  }
+#endif
   return ParseH264CodecID(codec_id, codec, is_ambiguous);
 }
 
@@ -592,6 +645,7 @@ bool MimeUtil::IsCodecProprietary(Codec codec) const {
     case H264_BASELINE:
     case H264_MAIN:
     case H264_HIGH:
+    case HEVC_MAIN:
       return true;
 
     case PCM:
@@ -612,6 +666,11 @@ bool MimeUtil::GetDefaultCodecLowerCase(const std::string& mime_type_lower_case,
       mime_type_lower_case == "audio/mp3" ||
       mime_type_lower_case == "audio/x-mp3") {
     *default_codec = MimeUtil::MP3;
+    return true;
+  }
+
+  if (mime_type_lower_case == "audio/aac") {
+    *default_codec = MimeUtil::MPEG4_AAC_LC;
     return true;
   }
 

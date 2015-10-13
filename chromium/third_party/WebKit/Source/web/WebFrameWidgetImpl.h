@@ -40,6 +40,7 @@
 #include "web/PageWidgetDelegate.h"
 #include "web/WebLocalFrameImpl.h"
 #include "web/WebViewImpl.h"
+#include "wtf/Assertions.h"
 #include "wtf/HashSet.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/RefCounted.h"
@@ -49,7 +50,7 @@ class Frame;
 class Element;
 class LocalFrame;
 class Page;
-class DeprecatedPaintLayerCompositor;
+class PaintLayerCompositor;
 class UserGestureToken;
 class WebCompositorAnimationTimeline;
 class WebLayer;
@@ -57,9 +58,9 @@ class WebLayerTreeView;
 class WebMouseEvent;
 class WebMouseWheelEvent;
 
-class WebFrameWidgetImpl final : public WebFrameWidget
-    , public PageWidgetEventHandler
-    , public RefCounted<WebFrameWidgetImpl> {
+class WebFrameWidgetImpl final : public RefCountedWillBeGarbageCollectedFinalized<WebFrameWidgetImpl>
+    , public WebFrameWidget
+    , public PageWidgetEventHandler {
 public:
     static WebFrameWidgetImpl* create(WebWidgetClient*, WebLocalFrame*);
     static HashSet<WebFrameWidgetImpl*>& allInstances();
@@ -69,11 +70,10 @@ public:
     WebSize size() override;
     void willStartLiveResize() override;
     void resize(const WebSize&) override;
+    void resizeVisualViewport(const WebSize&) override;
     void resizePinchViewport(const WebSize&) override;
     void willEndLiveResize() override;
-    void willEnterFullScreen() override;
     void didEnterFullScreen() override;
-    void willExitFullScreen() override;
     void didExitFullScreen() override;
     void beginFrame(const WebBeginFrameArgs&) override;
     void layout() override;
@@ -102,6 +102,7 @@ public:
     bool confirmComposition(const WebString& text) override;
     bool compositionRange(size_t* location, size_t* length) override;
     WebTextInputInfo textInputInfo() override;
+    WebTextInputType textInputType() override;
     WebColor backgroundColor() const override;
     bool selectionBounds(WebRect& anchor, WebRect& focus) const override;
     bool selectionTextDirection(WebTextDirection& start, WebTextDirection& end) const override;
@@ -121,8 +122,7 @@ public:
 
     void scheduleAnimation();
 
-    DeprecatedPaintLayerCompositor* compositor() const;
-    void suppressInvalidations(bool enable);
+    PaintLayerCompositor* compositor() const;
     void setRootGraphicsLayer(GraphicsLayer*);
     void attachCompositorAnimationTimeline(WebCompositorAnimationTimeline*);
     void detachCompositorAnimationTimeline(WebCompositorAnimationTimeline*);
@@ -140,6 +140,9 @@ public:
     // the page is shutting down, but will be valid at all other times.
     Page* page() const { return view()->page(); }
 
+    // Event related methods:
+    void mouseContextMenu(const WebMouseEvent&);
+
     WebLayerTreeView* layerTreeView() const { return m_layerTreeView; }
 
     // Returns true if the event leads to scrolling.
@@ -148,12 +151,21 @@ public:
         ScrollDirection*,
         ScrollGranularity*);
 
+    DECLARE_TRACE();
+
 private:
     friend class WebFrameWidget; // For WebFrameWidget::create.
+#if ENABLE(OILPAN)
+    friend class GarbageCollectedFinalized<WebFrameWidgetImpl>;
+#else
     friend class WTF::RefCounted<WebFrameWidgetImpl>;
+#endif
 
     explicit WebFrameWidgetImpl(WebWidgetClient*, WebLocalFrame*);
     ~WebFrameWidgetImpl();
+
+    // Perform a hit test for a point relative to the root frame of the page.
+    HitTestResult hitTestResultForRootFramePos(const IntPoint& posInRootFrame);
 
     // Returns true if the event was actually processed.
     bool keyEventDefault(const WebKeyboardEvent&);
@@ -185,12 +197,12 @@ private:
 
     // WebFrameWidget is associated with a subtree of the frame tree, corresponding to a maximal
     // connected tree of LocalFrames. This member points to the root of that subtree.
-    WebLocalFrameImpl* m_localRoot;
+    RawPtrWillBeMember<WebLocalFrameImpl> m_localRoot;
 
     WebSize m_size;
 
     // If set, the (plugin) node which has mouse capture.
-    RefPtrWillBePersistent<Node> m_mouseCaptureNode;
+    RefPtrWillBeMember<Node> m_mouseCaptureNode;
     RefPtr<UserGestureToken> m_mouseCaptureGestureToken;
 
     WebLayerTreeView* m_layerTreeView;
@@ -204,7 +216,13 @@ private:
     bool m_ignoreInputEvents;
 
     static const WebInputEvent* m_currentInputEvent;
+
+#if ENABLE(OILPAN)
+    SelfKeepAlive<WebFrameWidgetImpl> m_selfKeepAlive;
+#endif
 };
+
+DEFINE_TYPE_CASTS(WebFrameWidgetImpl, WebFrameWidget, widget, widget->forSubframe(), widget.forSubframe());
 
 } // namespace blink
 

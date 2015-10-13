@@ -55,17 +55,17 @@ class LayerTreeHostDamageTestSetNeedsRedraw
 
     RenderSurfaceImpl* root_surface =
         impl->active_tree()->root_layer()->render_surface();
-    gfx::RectF root_damage =
+    gfx::Rect root_damage =
         root_surface->damage_tracker()->current_damage_rect();
 
     switch (draw_count_) {
       case 0:
         // The first frame has full damage.
-        EXPECT_EQ(gfx::RectF(10.f, 10.f).ToString(), root_damage.ToString());
+        EXPECT_EQ(gfx::Rect(10, 10), root_damage);
         break;
       case 1:
         // The second frame has full damage.
-        EXPECT_EQ(gfx::RectF(10.f, 10.f).ToString(), root_damage.ToString());
+        EXPECT_EQ(gfx::Rect(10, 10), root_damage);
         EndTest();
         break;
       case 2:
@@ -117,17 +117,17 @@ class LayerTreeHostDamageTestSetViewportSize
 
     RenderSurfaceImpl* root_surface =
         impl->active_tree()->root_layer()->render_surface();
-    gfx::RectF root_damage =
+    gfx::Rect root_damage =
         root_surface->damage_tracker()->current_damage_rect();
 
     switch (draw_count_) {
       case 0:
         // The first frame has full damage.
-        EXPECT_EQ(gfx::RectF(10.f, 10.f).ToString(), root_damage.ToString());
+        EXPECT_EQ(gfx::Rect(10, 10), root_damage);
         break;
       case 1:
         // The second frame has full damage.
-        EXPECT_EQ(gfx::RectF(15.f, 15.f).ToString(), root_damage.ToString());
+        EXPECT_EQ(gfx::Rect(15, 15), root_damage);
         EndTest();
         break;
       case 2:
@@ -260,7 +260,7 @@ class LayerTreeHostDamageTestForcedFullDamage : public LayerTreeHostDamageTest {
 
     RenderSurfaceImpl* root_surface =
         host_impl->active_tree()->root_layer()->render_surface();
-    gfx::RectF root_damage =
+    gfx::Rect root_damage =
         root_surface->damage_tracker()->current_damage_rect();
     root_damage.Intersect(root_surface->content_rect());
 
@@ -268,13 +268,12 @@ class LayerTreeHostDamageTestForcedFullDamage : public LayerTreeHostDamageTest {
     switch (source_frame) {
       case 0:
         // The first frame draws and clears any damage.
-        EXPECT_EQ(gfx::RectF(root_surface->content_rect()).ToString(),
-                  root_damage.ToString());
+        EXPECT_EQ(root_surface->content_rect(), root_damage);
         EXPECT_FALSE(frame_data->has_no_damage);
         break;
       case 1:
         // If we get a frame without damage then we don't draw.
-        EXPECT_EQ(gfx::RectF().ToString(), root_damage.ToString());
+        EXPECT_EQ(gfx::Rect(), root_damage);
         EXPECT_TRUE(frame_data->has_no_damage);
 
         // Then we set full damage for the next frame.
@@ -282,8 +281,7 @@ class LayerTreeHostDamageTestForcedFullDamage : public LayerTreeHostDamageTest {
         break;
       case 2:
         // The whole frame should be damaged as requested.
-        EXPECT_EQ(gfx::RectF(root_surface->content_rect()).ToString(),
-                  root_damage.ToString());
+        EXPECT_EQ(root_surface->content_rect(), root_damage);
         EXPECT_FALSE(frame_data->has_no_damage);
 
         // Just a part of the next frame should be damaged.
@@ -292,8 +290,7 @@ class LayerTreeHostDamageTestForcedFullDamage : public LayerTreeHostDamageTest {
       case 3:
         // The update rect in the child should be damaged and the damaged area
         // should match the invalidation.
-        EXPECT_EQ(gfx::RectF(100+10, 100+11, 12, 13).ToString(),
-                  root_damage.ToString());
+        EXPECT_EQ(gfx::Rect(100 + 10, 100 + 11, 12, 13), root_damage);
         EXPECT_FALSE(frame_data->has_no_damage);
 
         // If we damage part of the frame, but also damage the full
@@ -303,8 +300,7 @@ class LayerTreeHostDamageTestForcedFullDamage : public LayerTreeHostDamageTest {
         break;
       case 4:
         // The whole frame is damaged.
-        EXPECT_EQ(gfx::RectF(root_surface->content_rect()).ToString(),
-                  root_damage.ToString());
+        EXPECT_EQ(root_surface->content_rect(), root_damage);
         EXPECT_FALSE(frame_data->has_no_damage);
 
         EndTest();
@@ -362,9 +358,9 @@ class LayerTreeHostScrollbarDamageTest : public LayerTreeHostDamageTest {
     root_layer->AddChild(scrollbar_layer);
 
     gfx::RectF content_rect(content_layer->position(),
-                            content_layer->bounds());
+                            gfx::SizeF(content_layer->bounds()));
     gfx::RectF scrollbar_rect(scrollbar_layer->position(),
-                              scrollbar_layer->bounds());
+                              gfx::SizeF(scrollbar_layer->bounds()));
     EXPECT_FALSE(content_rect.Intersects(scrollbar_rect));
 
     LayerTreeHostDamageTest::SetupTree();
@@ -387,7 +383,7 @@ class LayerTreeHostDamageTestScrollbarDoesDamage
     EXPECT_EQ(DRAW_SUCCESS, draw_result);
     RenderSurfaceImpl* root_surface =
         host_impl->active_tree()->root_layer()->render_surface();
-    gfx::RectF root_damage =
+    gfx::Rect root_damage =
         root_surface->damage_tracker()->current_damage_rect();
     root_damage.Intersect(root_surface->content_rect());
     switch (did_swaps_) {
@@ -421,10 +417,10 @@ class LayerTreeHostDamageTestScrollbarDoesDamage
       case 1:
         // Test that modifying the position of the content layer (not
         // scrolling) won't damage the scrollbar.
-        scroll_layer->SetPosition(gfx::Point(1, 1));
-        scroll_layer->PushScrollOffsetFromMainThread(
-            scroll_layer->BaseScrollOffset());
-        host_impl->SetNeedsRedraw();
+        MainThreadTaskRunner()->PostTask(
+            FROM_HERE, base::Bind(&LayerTreeHostDamageTestScrollbarDoesDamage::
+                                      ModifyContentLayerPosition,
+                                  base::Unretained(this)));
         break;
       case 2:
         scroll_layer->ScrollBy(gfx::Vector2dF(10.f, 10.f));
@@ -439,6 +435,14 @@ class LayerTreeHostDamageTestScrollbarDoesDamage
                 base::Unretained(this)));
         break;
     }
+  }
+
+  void ModifyContentLayerPosition() {
+    EXPECT_EQ(1, did_swaps_);
+    Layer* root = layer_tree_host()->root_layer();
+    Layer* scroll_clip_layer = root->child_at(0);
+    Layer* scroll_layer = scroll_clip_layer->child_at(0);
+    scroll_layer->SetPosition(gfx::Point(10, 10));
   }
 
   void ResizeScrollLayer() {
@@ -470,7 +474,7 @@ class LayerTreeHostDamageTestScrollbarCommitDoesNoDamage
     EXPECT_EQ(DRAW_SUCCESS, draw_result);
     RenderSurfaceImpl* root_surface =
         host_impl->active_tree()->root_layer()->render_surface();
-    gfx::RectF root_damage =
+    gfx::Rect root_damage =
         root_surface->damage_tracker()->current_damage_rect();
     root_damage.Intersect(root_surface->content_rect());
     int frame = host_impl->active_tree()->source_frame_number();

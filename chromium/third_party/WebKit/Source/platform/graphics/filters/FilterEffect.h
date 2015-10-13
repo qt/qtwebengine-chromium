@@ -149,6 +149,8 @@ public:
 protected:
     FilterEffect(Filter*);
 
+    PassRefPtr<SkImageFilter> createTransparentBlack(SkiaImageFilterBuilder*) const;
+
     Color adaptColorToOperatingColorSpace(const Color& deviceColor);
 
     SkImageFilter::CropRect getCropRect(const FloatSize& cropOffset) const;
@@ -156,6 +158,8 @@ protected:
     void addAbsolutePaintRect(const FloatRect& absolutePaintRect);
 
 private:
+    bool hasConnectedInput() const;
+
     FilterEffectVector m_inputEffects;
 
     IntRect m_absolutePaintRect;

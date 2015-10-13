@@ -25,12 +25,12 @@
 #include "chromecast/base/metrics/grouped_histogram.h"
 #include "chromecast/browser/cast_browser_context.h"
 #include "chromecast/browser/cast_browser_process.h"
+#include "chromecast/browser/cast_content_browser_client.h"
 #include "chromecast/browser/cast_net_log.h"
 #include "chromecast/browser/devtools/remote_debugging_server.h"
 #include "chromecast/browser/metrics/cast_metrics_prefs.h"
 #include "chromecast/browser/metrics/cast_metrics_service_client.h"
 #include "chromecast/browser/pref_service_helper.h"
-#include "chromecast/browser/service/cast_service.h"
 #include "chromecast/browser/url_request_context_factory.h"
 #include "chromecast/common/platform_client_auth.h"
 #include "chromecast/media/base/key_systems_common.h"
@@ -38,6 +38,7 @@
 #include "chromecast/net/connectivity_checker.h"
 #include "chromecast/public/cast_media_shlib.h"
 #include "chromecast/public/cast_sys_info.h"
+#include "chromecast/service/cast_service.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/gpu_data_manager.h"
 #include "content/public/common/content_switches.h"
@@ -50,11 +51,10 @@
 #if defined(OS_ANDROID)
 #include "chromecast/app/android/crash_handler.h"
 #include "chromecast/browser/media/cast_media_client_android.h"
-#include "components/crash/browser/crash_dump_manager_android.h"
+#include "components/crash/content/browser/crash_dump_manager_android.h"
 #include "media/base/android/media_client_android.h"
 #include "net/android/network_change_notifier_factory_android.h"
 #else
-#include "chromecast/browser/media/cast_browser_cdm_factory.h"
 #include "chromecast/net/network_change_notifier_factory_cast.h"
 #endif
 
@@ -166,7 +166,6 @@ DefaultCommandLineSwitch g_default_switches[] = {
 #if defined(OS_ANDROID)
   // Disables Chromecast-specific WiFi-related features on ATV for now.
   { switches::kNoWifi, "" },
-  { switches::kEnableOverlayFullscreenVideo, ""},
   { switches::kDisableGestureRequirementForMediaPlayback, ""},
 #endif
   // Always enable HTMLMediaElement logs.
@@ -187,9 +186,16 @@ DefaultCommandLineSwitch g_default_switches[] = {
 #endif
 #endif
 #endif  // defined(OS_LINUX)
+  // Enable prefixed EME until all Cast partner apps are moved off of it.
+  { switches::kEnablePrefixedEncryptedMedia, "" },
   // Needed to fix a bug where the raster thread doesn't get scheduled for a
   // substantial time (~5 seconds).  See https://crbug.com/441895.
   { switches::kUseNormalPriorityForTileTaskWorkerThreads, "" },
+  // Needed so that our call to GpuDataManager::SetGLStrings doesn't race
+  // against GPU process creation (which is otherwise triggered from
+  // BrowserThreadsStarted).  The GPU process will be created as soon as a
+  // renderer needs it, which always happens after main loop starts.
+  { switches::kDisableGpuEarlyInit, "" },
   { NULL, NULL },  // Termination
 };
 
@@ -279,7 +285,10 @@ int CastBrowserMainParts::PreCreateThreads() {
   gfx::Screen::SetScreenInstance(gfx::SCREEN_TYPE_NATIVE,
                                  cast_browser_process_->cast_screen());
 #endif
+  return 0;
+}
 
+void CastBrowserMainParts::PreMainMessageLoopRun() {
 #if !defined(OS_ANDROID)
   // Set GL strings so GPU config code can make correct feature blacklisting/
   // whitelisting decisions.
@@ -290,10 +299,6 @@ int CastBrowserMainParts::PreCreateThreads() {
       sys_info->GetGlVersion());
 #endif  // !defined(OS_ANDROID)
 
-  return 0;
-}
-
-void CastBrowserMainParts::PreMainMessageLoopRun() {
   scoped_refptr<PrefRegistrySimple> pref_registry(new PrefRegistrySimple());
   metrics::RegisterPrefs(pref_registry.get());
   cast_browser_process_->SetPrefService(
@@ -303,8 +308,11 @@ void CastBrowserMainParts::PreMainMessageLoopRun() {
 #if defined(OS_ANDROID)
   ::media::SetMediaClientAndroid(new media::CastMediaClientAndroid());
 #else
-  if (cmd_line->HasSwitch(switches::kEnableCmaMediaPipeline))
-    ::media::SetBrowserCdmFactory(new media::CastBrowserCdmFactory());
+  if (cmd_line->HasSwitch(switches::kEnableCmaMediaPipeline)) {
+    scoped_ptr<::media::BrowserCdmFactory> cdm_factory =
+        cast_browser_process_->browser_client()->CreateBrowserCdmFactory();
+    ::media::SetBrowserCdmFactory(cdm_factory.release());
+  }
 #endif  // defined(OS_ANDROID)
 
   cast_browser_process_->SetConnectivityChecker(
@@ -327,19 +335,20 @@ void CastBrowserMainParts::PreMainMessageLoopRun() {
   if (!PlatformClientAuth::Initialize())
     LOG(ERROR) << "PlatformClientAuth::Initialize failed.";
 
-  cast_browser_process_->SetRemoteDebuggingServer(
-      make_scoped_ptr(new RemoteDebuggingServer()));
+  cast_browser_process_->SetRemoteDebuggingServer(make_scoped_ptr(
+      new RemoteDebuggingServer(cast_browser_process_->browser_client()->
+          EnableRemoteDebuggingImmediately())));
 
   media::MediaMessageLoop::GetTaskRunner()->PostTask(
       FROM_HERE,
       base::Bind(&media::CastMediaShlib::Initialize, cmd_line->argv()));
   ::media::InitializeMediaLibrary();
 
-  cast_browser_process_->SetCastService(CastService::Create(
-      cast_browser_process_->browser_context(),
-      cast_browser_process_->pref_service(),
-      cast_browser_process_->metrics_service_client(),
-      url_request_context_factory_->GetSystemGetter()));
+  cast_browser_process_->SetCastService(
+      cast_browser_process_->browser_client()->CreateCastService(
+          cast_browser_process_->browser_context(),
+          cast_browser_process_->pref_service(),
+          url_request_context_factory_->GetSystemGetter()));
   cast_browser_process_->cast_service()->Initialize();
 
   // Initializing metrics service and network delegates must happen after cast
@@ -397,11 +406,6 @@ void CastBrowserMainParts::PostMainMessageLoopRun() {
 
   DeregisterKillOnAlarm();
 #endif
-
-  // Finalize CastMediaShlib on media thread to ensure it's not accessed
-  // after Finalize.
-  media::MediaMessageLoop::GetTaskRunner()->PostTask(
-      FROM_HERE, base::Bind(&media::CastMediaShlib::Finalize));
 }
 
 }  // namespace shell

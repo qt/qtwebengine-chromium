@@ -33,7 +33,6 @@ struct NPObject;
 namespace blink {
 
 class HTMLImageLoader;
-class PluginPlaceholder;
 class LayoutEmbeddedObject;
 class LayoutPart;
 class Widget;
@@ -53,16 +52,8 @@ public:
 #endif
 
     void resetInstance();
-
-    // Returns the existing plugin widget, if there is one.
-    Widget* existingPluginWidget() const;
-
-    // Returns the plugin widget, forcing layout and post-layout tasks
-    // to happen synchronously (e.g. for JS bindings).
-    // See also layoutPartForJSBindings().
-    Widget* pluginWidgetForJSBindings();
-
     SharedPersistent<v8::Object>* pluginWrapper();
+    Widget* pluginWidget() const;
     NPObject* getNPObject();
     void setPluginFocus(bool focused);
     bool canProcessDrag() const;
@@ -78,9 +69,7 @@ public:
     void requestPluginCreationWithoutLayoutObjectIfPossible();
     void createPluginWithoutLayoutObject();
 
-    // Public for Internals::forcePluginPlaceholder.
-    bool usePlaceholderContent() const { return m_placeholder; }
-    void setPlaceholder(PassOwnPtrWillBeRawPtr<PluginPlaceholder>);
+    void removedFrom(ContainerNode* insertionPoint) override;
 
 protected:
     HTMLPlugInElement(const QualifiedName& tagName, Document&, bool createdByParser, PreferPlugInsForImagesOption);
@@ -151,11 +140,8 @@ private:
 
     mutable RefPtr<SharedPersistent<v8::Object>> m_pluginWrapper;
     NPObject* m_NPObject;
-    bool m_isCapturingMouseEvents;
     bool m_needsWidgetUpdate;
     bool m_shouldPreferPlugInsForImages;
-
-    OwnPtrWillBeMember<PluginPlaceholder> m_placeholder;
 
     // Normally the Widget is stored in HTMLFrameOwnerElement::m_widget.
     // However, plugins can persist even when not rendered. In order to

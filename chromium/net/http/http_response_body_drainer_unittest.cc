@@ -4,6 +4,8 @@
 
 #include "net/http/http_response_body_drainer.h"
 
+#include <stdint.h>
+
 #include <cstring>
 
 #include "base/bind.h"
@@ -96,13 +98,14 @@ class MockHttpStream : public HttpStream {
     return ERR_UNEXPECTED;
   }
 
-  bool CanFindEndOfResponse() const override { return true; }
   bool IsConnectionReused() const override { return false; }
   void SetConnectionReused() override {}
-  bool IsConnectionReusable() const override { return false; }
-  int64 GetTotalReceivedBytes() const override { return 0; }
+  bool CanReuseConnection() const override { return false; }
+  int64_t GetTotalReceivedBytes() const override { return 0; }
+  int64_t GetTotalSentBytes() const override { return 0; }
   void GetSSLInfo(SSLInfo* ssl_info) override {}
   void GetSSLCertRequestInfo(SSLCertRequestInfo* cert_request_info) override {}
+  bool GetRemoteEndpoint(IPEndPoint* endpoint) override { return false; }
 
   // Mocked API
   int ReadResponseBody(IOBuffer* buf,
@@ -117,8 +120,6 @@ class MockHttpStream : public HttpStream {
   HttpStream* RenewStreamForAuth() override { return NULL; }
 
   bool IsResponseBodyComplete() const override { return is_complete_; }
-
-  bool IsSpdyHttpStream() const override { return false; }
 
   bool GetLoadTimingInfo(LoadTimingInfo* load_timing_info) const override {
     return false;

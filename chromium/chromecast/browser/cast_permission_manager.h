@@ -18,17 +18,13 @@ class CastPermissionManager : public content::PermissionManager {
   ~CastPermissionManager() override;
 
   // content::PermissionManager implementation:
-  void RequestPermission(
+  int RequestPermission(
       content::PermissionType permission,
       content::RenderFrameHost* render_frame_host,
-      int request_id,
       const GURL& requesting_origin,
       bool user_gesture,
       const base::Callback<void(content::PermissionStatus)>& callback) override;
-  void CancelPermissionRequest(content::PermissionType permission,
-                               content::RenderFrameHost* render_frame_host,
-                               int request_id,
-                               const GURL& requesting_origin) override;
+  void CancelPermissionRequest(int request_id) override;
   void ResetPermission(content::PermissionType permission,
                        const GURL& requesting_origin,
                        const GURL& embedding_origin) override;

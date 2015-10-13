@@ -27,7 +27,7 @@ static void {{constant.name}}ConstantGetterCallback(v8::Local<v8::Name>, const v
 {% macro install_constants() %}
 {% if constant_configuration_constants %}
 {# Normal constants #}
-static const V8DOMConfiguration::ConstantConfiguration {{v8_class}}Constants[] = {
+const V8DOMConfiguration::ConstantConfiguration {{v8_class}}Constants[] = {
     {% for constant in constant_configuration_constants %}
     {{constant_configuration(constant)}},
     {% endfor %}
@@ -35,10 +35,13 @@ static const V8DOMConfiguration::ConstantConfiguration {{v8_class}}Constants[] =
 V8DOMConfiguration::installConstants(isolate, functionTemplate, prototypeTemplate, {{v8_class}}Constants, WTF_ARRAY_LENGTH({{v8_class}}Constants));
 {% endif %}
 {# Runtime-enabled constants #}
-{% for constant in runtime_enabled_constants %}
-{% filter runtime_enabled(constant.runtime_enabled_function) %}
-static const V8DOMConfiguration::ConstantConfiguration constantConfiguration = {{constant_configuration(constant)}};
-V8DOMConfiguration::installConstant(isolate, functionTemplate, prototypeTemplate, constantConfiguration);
+{% for constant_tuple in runtime_enabled_constants %}
+{% filter runtime_enabled(constant_tuple[0]) %}
+{% for constant in constant_tuple[1] %}
+{% set constant_name = constant.name.title().replace('_', '') %}
+const V8DOMConfiguration::ConstantConfiguration constant{{constant_name}}Configuration = {{constant_configuration(constant)}};
+V8DOMConfiguration::installConstant(isolate, functionTemplate, prototypeTemplate, constant{{constant_name}}Configuration);
+{% endfor %}
 {% endfilter %}
 {% endfor %}
 {# Constants with [DeprecateAs] or [MeasureAs] #}
@@ -60,12 +63,10 @@ static_assert({{constant.value}} == {{constant_cpp_class}}::{{constant.reflected
 {######################################}
 {%- macro constant_configuration(constant) %}
 {% if constant.idl_type in ('Double', 'Float') %}
-    {% set value = '0, %s, 0' % constant.value %}
-{% elif constant.idl_type == 'String' %}
-    {% set value = '0, 0, "%s"' % constant.value %}
+    {% set value = '0, %s' % constant.value %}
 {% else %}
     {# 'Short', 'Long' etc. #}
-    {% set value = '%s, 0, 0' % constant.value %}
+    {% set value = '%s, 0' % constant.value %}
 {% endif %}
 {"{{constant.name}}", {{value}}, V8DOMConfiguration::ConstantType{{constant.idl_type}}}
 {%- endmacro %}

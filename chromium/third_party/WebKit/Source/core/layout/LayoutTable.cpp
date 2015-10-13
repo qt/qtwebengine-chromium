@@ -42,7 +42,7 @@
 #include "core/layout/TableLayoutAlgorithmFixed.h"
 #include "core/layout/TextAutosizer.h"
 #include "core/paint/BoxPainter.h"
-#include "core/paint/DeprecatedPaintLayer.h"
+#include "core/paint/PaintLayer.h"
 #include "core/paint/TablePainter.h"
 #include "core/style/StyleInheritedData.h"
 
@@ -55,7 +55,6 @@ LayoutTable::LayoutTable(Element* element)
     , m_head(nullptr)
     , m_foot(nullptr)
     , m_firstBody(nullptr)
-    , m_currentBorder(nullptr)
     , m_collapsedBordersValid(false)
     , m_hasColElements(false)
     , m_needsSectionRecalc(false)
@@ -372,10 +371,6 @@ void LayoutTable::layoutCaption(LayoutTableCaption& caption)
     }
     // Apply the margins to the location now that they are definitely available from layout
     LayoutUnit captionLogicalTop = collapsedMarginBeforeForChild(caption) + logicalHeight();
-    if (view()->layoutState()->isPaginated()) {
-        captionLogicalTop += caption.paginationStrut();
-        caption.setPaginationStrut(0);
-    }
     caption.setLogicalLocation(LayoutPoint(caption.marginStart(), captionLogicalTop));
 
     if (!selfNeedsLayout())
@@ -437,7 +432,6 @@ void LayoutTable::layout()
     // section down (it is quite unlikely that any of the following sections
     // did not shift).
     bool sectionMoved = false;
-    LayoutUnit movedSectionLogicalTop = 0;
     {
         LayoutState state(*this, locationOffset());
         LayoutUnit oldLogicalWidth = logicalWidth();
@@ -494,10 +488,7 @@ void LayoutTable::layout()
                     continue;
                 layoutCaption(*m_captions[i]);
             }
-            if (logicalHeight() != oldTableLogicalTop) {
-                sectionMoved = true;
-                movedSectionLogicalTop = std::min(logicalHeight(), oldTableLogicalTop);
-            }
+            sectionMoved = logicalHeight() != oldTableLogicalTop;
         }
 
         LayoutUnit borderAndPaddingBefore = borderBefore() + (collapsing ? LayoutUnit() : paddingBefore());
@@ -541,10 +532,8 @@ void LayoutTable::layout()
         // position the table sections
         LayoutTableSection* section = topSection();
         while (section) {
-            if (!sectionMoved && section->logicalTop() != logicalHeight()) {
+            if (!sectionMoved && section->logicalTop() != logicalHeight())
                 sectionMoved = true;
-                movedSectionLogicalTop = std::min(logicalHeight(), section->logicalTop()) + (style()->isHorizontalWritingMode() ? section->visualOverflowRect().y() : section->visualOverflowRect().x());
-            }
             section->setLogicalLocation(LayoutPoint(sectionLogicalLeft, logicalHeight()));
 
             // As we may skip invalidation on the table, we need to ensure that sections are invalidated when they moved.
@@ -579,6 +568,7 @@ void LayoutTable::layout()
         invalidateCollapsedBorders();
 
         computeOverflow(clientLogicalBottom());
+        updateScrollInfoAfterLayout();
     }
 
     // FIXME: This value isn't the intrinsic content logical height, but we need
@@ -652,7 +642,7 @@ void LayoutTable::addOverflowFromChildren()
         addOverflowFromChild(section);
 }
 
-void LayoutTable::paintObject(const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
+void LayoutTable::paintObject(const PaintInfo& paintInfo, const LayoutPoint& paintOffset) const
 {
     TablePainter(*this).paintObject(paintInfo, paintOffset);
 }
@@ -674,12 +664,12 @@ void LayoutTable::subtractCaptionRect(LayoutRect& rect) const
     }
 }
 
-void LayoutTable::paintBoxDecorationBackground(const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
+void LayoutTable::paintBoxDecorationBackground(const PaintInfo& paintInfo, const LayoutPoint& paintOffset) const
 {
     TablePainter(*this).paintBoxDecorationBackground(paintInfo, paintOffset);
 }
 
-void LayoutTable::paintMask(const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
+void LayoutTable::paintMask(const PaintInfo& paintInfo, const LayoutPoint& paintOffset) const
 {
     TablePainter(*this).paintMask(paintInfo, paintOffset);
 }
@@ -1398,23 +1388,27 @@ PaintInvalidationReason LayoutTable::invalidatePaintIfNeeded(PaintInvalidationSt
 
 void LayoutTable::invalidatePaintOfSubtreesIfNeeded(PaintInvalidationState& childPaintInvalidationState)
 {
-    if (RuntimeEnabledFeatures::slimmingPaintEnabled()) {
-        // Table cells paint background from the containing column group, column, section and row.
-        // If background of any of them changed, we need to invalidate all affected cells.
-        // Here use shouldDoFullPaintInvalidation() as a broader condition of background change.
-        for (LayoutObject* section = firstChild(); section; section = section->nextSibling()) {
-            if (!section->isTableSection())
-                continue;
-            for (LayoutTableRow* row = toLayoutTableSection(section)->firstRow(); row; row = row->nextRow()) {
-                for (LayoutTableCell* cell = row->firstCell(); cell; cell = cell->nextCell()) {
-                    LayoutTableCol* column = colElement(cell->col());
-                    LayoutTableCol* columnGroup = column ? column->enclosingColumnGroup() : 0;
-                    if ((columnGroup && columnGroup->shouldDoFullPaintInvalidation())
-                        || (column && column->shouldDoFullPaintInvalidation())
-                        || section->shouldDoFullPaintInvalidation()
-                        || row->shouldDoFullPaintInvalidation())
-                        cell->invalidateDisplayItemClient(*cell);
+    // Table cells paint background from the containing column group, column, section and row.
+    // If background of any of them changed, we need to invalidate all affected cells.
+    // Here use shouldDoFullPaintInvalidation() as a broader condition of background change.
+    for (LayoutObject* section = firstChild(); section; section = section->nextSibling()) {
+        if (!section->isTableSection())
+            continue;
+        for (LayoutTableRow* row = toLayoutTableSection(section)->firstRow(); row; row = row->nextRow()) {
+            for (LayoutTableCell* cell = row->firstCell(); cell; cell = cell->nextCell()) {
+                LayoutTableCol* column = colElement(cell->col());
+                LayoutTableCol* columnGroup = column ? column->enclosingColumnGroup() : 0;
+                // Table cells paint container's background on the container's backing instead of its own (if any),
+                // so we must invalidate it by the containers.
+                bool invalidated = false;
+                if ((columnGroup && columnGroup->shouldDoFullPaintInvalidation())
+                    || (column && column->shouldDoFullPaintInvalidation())
+                    || section->shouldDoFullPaintInvalidation()) {
+                    section->invalidateDisplayItemClient(*cell);
+                    invalidated = true;
                 }
+                if ((!invalidated || row->isPaintInvalidationContainer()) && row->shouldDoFullPaintInvalidation())
+                    row->invalidateDisplayItemClient(*cell);
             }
         }
     }

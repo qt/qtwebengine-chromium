@@ -7,12 +7,12 @@
 #include "base/callback.h"
 #include "base/test/simple_test_tick_clock.h"
 #include "cc/test/ordered_simple_task_runner.h"
-#include "components/scheduler/child/nestable_task_runner_for_test.h"
+#include "components/scheduler/base/task_queue.h"
+#include "components/scheduler/base/task_queue_manager.h"
+#include "components/scheduler/base/test_time_source.h"
 #include "components/scheduler/child/scheduler_helper.h"
-#include "components/scheduler/child/scheduler_message_loop_delegate.h"
-#include "components/scheduler/child/task_queue.h"
-#include "components/scheduler/child/task_queue_manager.h"
-#include "components/scheduler/child/test_time_source.h"
+#include "components/scheduler/child/scheduler_task_runner_delegate_for_test.h"
+#include "components/scheduler/child/scheduler_task_runner_delegate_impl.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -126,14 +126,13 @@ void EndIdlePeriodIdleTask(IdleHelper* idle_helper, base::TimeTicks deadline) {
   idle_helper->EndIdlePeriod();
 }
 
-scoped_refptr<NestableSingleThreadTaskRunner>
-CreateNestableSingleThreadTaskRunner(
+scoped_refptr<SchedulerTaskRunnerDelegate> CreateTaskRunnerDelegate(
     base::MessageLoop* message_loop,
     scoped_refptr<cc::OrderedSimpleTaskRunner> mock_task_runner) {
   if (message_loop)
-    return SchedulerMessageLoopDelegate::Create(message_loop);
+    return SchedulerTaskRunnerDelegateImpl::Create(message_loop);
 
-  return NestableTaskRunnerForTest::Create(mock_task_runner);
+  return SchedulerTaskRunnerDelegateForTest::Create(mock_task_runner);
 }
 
 };  // namespace
@@ -145,7 +144,6 @@ class IdleHelperForTest : public IdleHelper, public IdleHelper::Delegate {
       base::TimeDelta required_quiescence_duration_before_long_idle_period)
       : IdleHelper(scheduler_helper,
                    this,
-                   SchedulerHelper::TASK_QUEUE_COUNT,
                    "test.idle",
                    TRACE_DISABLED_BY_DEFAULT("test.idle"),
                    "TestSchedulerIdlePeriod",
@@ -174,15 +172,13 @@ class BaseIdleHelperTest : public testing::Test {
                 ? nullptr
                 : new cc::OrderedSimpleTaskRunner(clock_.get(), false)),
         message_loop_(message_loop),
-        nestable_task_runner_(
-            CreateNestableSingleThreadTaskRunner(message_loop,
-                                                 mock_task_runner_)),
+        main_task_runner_(
+            CreateTaskRunnerDelegate(message_loop, mock_task_runner_)),
         scheduler_helper_(
-            new SchedulerHelper(nestable_task_runner_,
+            new SchedulerHelper(main_task_runner_,
                                 "test.idle",
                                 TRACE_DISABLED_BY_DEFAULT("test.idle"),
-                                TRACE_DISABLED_BY_DEFAULT("test.idle.debug"),
-                                SchedulerHelper::TASK_QUEUE_COUNT + 1)),
+                                TRACE_DISABLED_BY_DEFAULT("test.idle.debug"))),
         idle_helper_(new IdleHelperForTest(
             scheduler_helper_.get(),
             required_quiescence_duration_before_long_idle_period)),
@@ -278,7 +274,7 @@ class BaseIdleHelperTest : public testing::Test {
   scoped_refptr<cc::OrderedSimpleTaskRunner> mock_task_runner_;
   scoped_ptr<base::MessageLoop> message_loop_;
 
-  scoped_refptr<NestableSingleThreadTaskRunner> nestable_task_runner_;
+  scoped_refptr<SchedulerTaskRunnerDelegate> main_task_runner_;
   scoped_ptr<SchedulerHelper> scheduler_helper_;
   scoped_ptr<IdleHelperForTest> idle_helper_;
   scoped_refptr<base::SingleThreadTaskRunner> default_task_runner_;
@@ -828,7 +824,7 @@ TEST_F(IdleHelperTest, TestLongIdlePeriodRestartWaitsIfNotMaxDeadline) {
 
   // Once the pending task is run the new idle period should start.
   clock_->Advance(pending_task_delay - idle_task_duration);
-  RunUntilIdle();
+
   // Since the idle period tried to start before the pending task ran we have to
   // wait for the idle helper to retry starting the long idle period.
   clock_->Advance(retry_enable_long_idle_period_delay());

@@ -22,16 +22,14 @@ class AnimationEffectInputTest : public ::testing::Test {
 protected:
     AnimationEffectInputTest()
         : pageHolder(DummyPageHolder::create())
-        , document(pageHolder->document())
-        , element(document.createElement("foo", ASSERT_NO_EXCEPTION))
+        , element(pageHolder->document().createElement("foo", ASSERT_NO_EXCEPTION))
         , m_isolate(v8::Isolate::GetCurrent())
         , m_scope(m_isolate)
     {
-        document.documentElement()->appendChild(element.get());
+        pageHolder->document().documentElement()->appendChild(element.get());
     }
 
     OwnPtr<DummyPageHolder> pageHolder;
-    Document& document;
     RefPtrWillBePersistent<Element> element;
     TrackExceptionState exceptionState;
     v8::Isolate* m_isolate;
@@ -54,9 +52,9 @@ TEST_F(AnimationEffectInputTest, SortedOffsets)
     jsKeyframes.append(Dictionary(keyframe1, m_isolate, exceptionState));
     jsKeyframes.append(Dictionary(keyframe2, m_isolate, exceptionState));
 
-    RefPtrWillBeRawPtr<EffectModel> animationEffect = EffectInput::convert(element.get(), jsKeyframes, exceptionState);
+    EffectModel* animationEffect = EffectInput::convert(element.get(), jsKeyframes, exceptionState);
     EXPECT_FALSE(exceptionState.hadException());
-    const KeyframeEffectModelBase& keyframeEffect = *toKeyframeEffectModelBase(animationEffect.get());
+    const KeyframeEffectModelBase& keyframeEffect = *toKeyframeEffectModelBase(animationEffect);
     EXPECT_EQ(1.0, keyframeEffect.getFrames()[1]->offset());
 }
 
@@ -96,9 +94,9 @@ TEST_F(AnimationEffectInputTest, LooslySorted)
     jsKeyframes.append(Dictionary(keyframe2, m_isolate, exceptionState));
     jsKeyframes.append(Dictionary(keyframe3, m_isolate, exceptionState));
 
-    RefPtrWillBeRawPtr<EffectModel> animationEffect = EffectInput::convert(element.get(), jsKeyframes, exceptionState);
+    EffectModel* animationEffect = EffectInput::convert(element.get(), jsKeyframes, exceptionState);
     EXPECT_FALSE(exceptionState.hadException());
-    const KeyframeEffectModelBase& keyframeEffect = *toKeyframeEffectModelBase(animationEffect.get());
+    const KeyframeEffectModelBase& keyframeEffect = *toKeyframeEffectModelBase(animationEffect);
     EXPECT_EQ(1, keyframeEffect.getFrames()[2]->offset());
 }
 

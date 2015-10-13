@@ -59,12 +59,20 @@ public:
     String cssText() const;
 
     bool isPrimitiveValue() const { return m_classType == PrimitiveClass; }
+    bool isValuePair() const { return m_classType == ValuePairClass; }
     bool isValueList() const { return m_classType >= ValueListClass; }
 
     bool isBaseValueList() const { return m_classType == ValueListClass; }
 
+    bool isBasicShapeValue() const { return m_classType >= BasicShapeCircleClass && m_classType <= BasicShapeInsetClass; }
+    bool isBasicShapeCircleValue() const { return m_classType == BasicShapeCircleClass; }
+    bool isBasicShapeEllipseValue() const { return m_classType == BasicShapeEllipseClass; }
+    bool isBasicShapePolygonValue() const { return m_classType == BasicShapePolygonClass; }
+    bool isBasicShapeInsetValue() const { return m_classType == BasicShapeInsetClass; }
+
     bool isBorderImageSliceValue() const { return m_classType == BorderImageSliceClass; }
     bool isCanvasValue() const { return m_classType == CanvasClass; }
+    bool isCounterValue() const { return m_classType == CounterClass; }
     bool isCursorImageValue() const { return m_classType == CursorImageClass; }
     bool isCrossfadeValue() const { return m_classType == CrossfadeClass; }
     bool isFontFeatureValue() const { return m_classType == FontFeatureClass; }
@@ -81,13 +89,12 @@ public:
     bool isCSSWideKeyword() const { return m_classType >= InheritedClass && m_classType <= UnsetClass; }
     bool isLinearGradientValue() const { return m_classType == LinearGradientClass; }
     bool isPathValue() const { return m_classType == PathClass; }
+    bool isQuadValue() const { return m_classType == QuadClass; }
     bool isRadialGradientValue() const { return m_classType == RadialGradientClass; }
     bool isReflectValue() const { return m_classType == ReflectClass; }
     bool isShadowValue() const { return m_classType == ShadowClass; }
     bool isCubicBezierTimingFunctionValue() const { return m_classType == CubicBezierTimingFunctionClass; }
     bool isStepsTimingFunctionValue() const { return m_classType == StepsTimingFunctionClass; }
-    bool isLineBoxContainValue() const { return m_classType == LineBoxContainClass; }
-    bool isCalcValue() const {return m_classType == CalculationClass; }
     bool isGridTemplateAreasValue() const { return m_classType == GridTemplateAreasClass; }
     bool isSVGDocumentValue() const { return m_classType == CSSSVGDocumentClass; }
     bool isContentDistributionValue() const { return m_classType == CSSContentDistributionClass; }
@@ -113,6 +120,16 @@ protected:
     static const size_t ClassTypeBits = 6;
     enum ClassType {
         PrimitiveClass,
+        CounterClass,
+        QuadClass,
+        ValuePairClass,
+
+        // Basic shape classes.
+        // TODO(sashab): Represent these as a single subclass, BasicShapeClass.
+        BasicShapeCircleClass,
+        BasicShapeEllipseClass,
+        BasicShapePolygonClass,
+        BasicShapeInsetClass,
 
         // Image classes.
         ImageClass,
@@ -140,8 +157,6 @@ protected:
         ReflectClass,
         ShadowClass,
         UnicodeRangeClass,
-        LineBoxContainClass,
-        CalculationClass,
         GridTemplateAreasClass,
         PathClass,
 
@@ -170,7 +185,6 @@ protected:
     explicit CSSValue(ClassType classType)
         : m_primitiveUnitType(0)
         , m_hasCachedCSSText(false)
-        , m_isQuirkValue(false)
         , m_valueListSeparator(SpaceSeparator)
         , m_classType(classType)
     {
@@ -189,7 +203,6 @@ protected:
     // CSSPrimitiveValue bits:
     unsigned m_primitiveUnitType : 7; // CSSPrimitiveValue::UnitType
     mutable unsigned m_hasCachedCSSText : 1;
-    unsigned m_isQuirkValue : 1;
 
     unsigned m_valueListSeparator : ValueListSeparatorBits;
 

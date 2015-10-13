@@ -51,7 +51,8 @@ function TreeOutline(nonFocusable)
 TreeOutline.Events = {
     ElementAttached: "ElementAttached",
     ElementExpanded: "ElementExpanded",
-    ElementCollapsed: "ElementCollapsed"
+    ElementCollapsed: "ElementCollapsed",
+    ElementSelected: "ElementSelected"
 }
 
 TreeOutline.prototype = {
@@ -186,6 +187,38 @@ TreeOutline.prototype = {
     },
 
     /**
+     * @return {boolean}
+     */
+    selectPrevious: function()
+    {
+        var nextSelectedElement = this.selectedTreeElement.traversePreviousTreeElement(true);
+        while (nextSelectedElement && !nextSelectedElement.selectable)
+            nextSelectedElement = nextSelectedElement.traversePreviousTreeElement(!this.expandTreeElementsWhenArrowing);
+        if (nextSelectedElement) {
+            nextSelectedElement.reveal();
+            nextSelectedElement.select(false, true);
+            return true;
+        }
+        return false;
+    },
+
+    /**
+     * @return {boolean}
+     */
+    selectNext: function()
+    {
+        var nextSelectedElement = this.selectedTreeElement.traverseNextTreeElement(true);
+        while (nextSelectedElement && !nextSelectedElement.selectable)
+            nextSelectedElement = nextSelectedElement.traverseNextTreeElement(!this.expandTreeElementsWhenArrowing);
+        if (nextSelectedElement) {
+            nextSelectedElement.reveal();
+            nextSelectedElement.select(false, true);
+            return true;
+        }
+        return false;
+    },
+
+    /**
      * @param {!Event} event
      */
     _treeKeyDown: function(event)
@@ -199,15 +232,9 @@ TreeOutline.prototype = {
         var handled = false;
         var nextSelectedElement;
         if (event.keyIdentifier === "Up" && !event.altKey) {
-            nextSelectedElement = this.selectedTreeElement.traversePreviousTreeElement(true);
-            while (nextSelectedElement && !nextSelectedElement.selectable)
-                nextSelectedElement = nextSelectedElement.traversePreviousTreeElement(!this.expandTreeElementsWhenArrowing);
-            handled = nextSelectedElement ? true : false;
+            handled = this.selectPrevious();
         } else if (event.keyIdentifier === "Down" && !event.altKey) {
-            nextSelectedElement = this.selectedTreeElement.traverseNextTreeElement(true);
-            while (nextSelectedElement && !nextSelectedElement.selectable)
-                nextSelectedElement = nextSelectedElement.traverseNextTreeElement(!this.expandTreeElementsWhenArrowing);
-            handled = nextSelectedElement ? true : false;
+            handled = this.selectNext();
         } else if (event.keyIdentifier === "Left") {
             if (this.selectedTreeElement.expanded) {
                 if (event.altKey)
@@ -312,8 +339,6 @@ function TreeElement(title, expandable)
     this._listItemNode.treeElement = this;
     if (title)
         this.title = title;
-    if (typeof title === "string")
-        this.tooltip = title;
     this._listItemNode.addEventListener("mousedown", this._handleMouseDown.bind(this), false);
     this._listItemNode.addEventListener("selectstart", this._treeElementSelectStart.bind(this), false);
     this._listItemNode.addEventListener("click", this._treeElementToggled.bind(this), false);
@@ -328,6 +353,7 @@ function TreeElement(title, expandable)
     this.expanded = false;
     this.selected = false;
     this.setExpandable(expandable || false);
+    this._collapsible = true;
 }
 
 /** @const */
@@ -597,10 +623,7 @@ TreeElement.prototype = {
      */
     set tooltip(x)
     {
-        if (x)
-            this._listItemNode.setAttribute("title", x);
-        else
-            this._listItemNode.removeAttribute("title");
+        this._listItemNode.title = x;
     },
 
     /**
@@ -624,6 +647,21 @@ TreeElement.prototype = {
         this._listItemNode.classList.toggle("parent", expandable);
         if (!expandable)
             this.collapse();
+    },
+
+    /**
+     * @param {boolean} collapsible
+     */
+    setCollapsible: function(collapsible)
+    {
+        if (this._collapsible === collapsible)
+            return;
+
+        this._collapsible = collapsible;
+
+        this._listItemNode.classList.toggle("always-parent", !collapsible);
+        if (!collapsible)
+            this.expand();
     },
 
     get hidden()
@@ -750,7 +788,7 @@ TreeElement.prototype = {
 
     collapse: function()
     {
-        if (!this.expanded)
+        if (!this.expanded || !this._collapsible)
             return;
         this._listItemNode.classList.remove("expanded");
         this._childrenListNode.classList.remove("expanded");
@@ -785,9 +823,10 @@ TreeElement.prototype = {
         this._listItemNode.classList.add("expanded");
         this._childrenListNode.classList.add("expanded");
 
-        this.onexpand();
-        if (this.treeOutline)
+        if (this.treeOutline) {
+            this.onexpand();
             this.treeOutline.dispatchEventToListeners(TreeOutline.Events.ElementExpanded, this);
+        }
     },
 
     /**
@@ -877,6 +916,7 @@ TreeElement.prototype = {
         this._listItemNode.classList.add("selected");
         if (this._selectionElement)
             this._selectionElement.style.height = this._listItemNode.offsetHeight + "px";
+        this.treeOutline.dispatchEventToListeners(TreeOutline.Events.ElementSelected, this);
         return this.onselect(selectedByUser);
     },
 
@@ -904,7 +944,7 @@ TreeElement.prototype = {
 
     _populateIfNeeded: function()
     {
-        if (this._expandable && !this._children) {
+        if (this.treeOutline && this._expandable && !this._children) {
             this._children = [];
             this.onpopulate();
         }

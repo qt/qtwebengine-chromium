@@ -8,13 +8,14 @@
 #include "core/dom/ContextLifecycleObserver.h"
 #include "modules/ModulesExport.h"
 #include "platform/heap/Handle.h"
-#include "public/platform/WebServiceWorkerResponseError.h"
 #include "public/platform/WebURLRequest.h"
+#include "public/platform/modules/serviceworker/WebServiceWorkerResponseError.h"
 
 namespace blink {
 
 class ExceptionState;
 class ExecutionContext;
+class ScriptPromise;
 class ScriptState;
 class ScriptValue;
 
@@ -23,7 +24,7 @@ class ScriptValue;
 class MODULES_EXPORT RespondWithObserver final : public GarbageCollectedFinalized<RespondWithObserver>, public ContextLifecycleObserver {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(RespondWithObserver);
 public:
-    static RespondWithObserver* create(ExecutionContext*, int eventID, WebURLRequest::FetchRequestMode, WebURLRequest::FrameType);
+    static RespondWithObserver* create(ExecutionContext*, int eventID, const KURL& requestURL, WebURLRequest::FetchRequestMode, WebURLRequest::FrameType, WebURLRequest::RequestContext);
 
     void contextDestroyed() override;
 
@@ -31,7 +32,7 @@ public:
 
     // Observes the promise and delays calling didHandleFetchEvent() until the
     // given promise is resolved or rejected.
-    void respondWith(ScriptState*, const ScriptValue&, ExceptionState&);
+    void respondWith(ScriptState*, ScriptPromise, ExceptionState&);
 
     void responseWasRejected(WebServiceWorkerResponseError);
     void responseWasFulfilled(const ScriptValue&);
@@ -41,11 +42,13 @@ public:
 private:
     class ThenFunction;
 
-    RespondWithObserver(ExecutionContext*, int eventID, WebURLRequest::FetchRequestMode, WebURLRequest::FrameType);
+    RespondWithObserver(ExecutionContext*, int eventID, const KURL& requestURL, WebURLRequest::FetchRequestMode, WebURLRequest::FrameType, WebURLRequest::RequestContext);
 
     int m_eventID;
+    KURL m_requestURL;
     WebURLRequest::FetchRequestMode m_requestMode;
     WebURLRequest::FrameType m_frameType;
+    WebURLRequest::RequestContext m_requestContext;
 
     enum State { Initial, Pending, Done };
     State m_state;

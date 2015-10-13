@@ -7,20 +7,21 @@
 
 #include "platform/heap/Handle.h"
 #include "public/platform/modules/presentation/WebPresentationError.h"
+#include "wtf/Allocator.h"
 
 namespace blink {
 
 class DOMException;
+class ScriptPromiseResolver;
 
 // A container of methods taking care of WebPresentationError in WebCallbacks subclasses.
 class PresentationError final {
-    WTF_MAKE_NONCOPYABLE(PresentationError);
+    STATIC_ONLY(PresentationError);
 public:
-    static DOMException* take(const WebPresentationError&);
+    // For CallbackPromiseAdapter.
+    using WebType = const WebPresentationError&;
 
-private:
-    PresentationError() = delete;
-    ~PresentationError() = delete;
+    static DOMException* take(ScriptPromiseResolver*, const WebPresentationError&);
 };
 
 } // namespace blink

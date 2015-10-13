@@ -18,10 +18,10 @@
           # Note that the dependency on ../build/android/ was made more
           # precise to ../build/android/pylib/.
           '../build/android/pylib/',
+          '../build/android/devil/',
           '../build/util/',
           '../third_party/WebKit/PerformanceTests/resources/jquery.tablesorter.min.js',
           '../third_party/WebKit/PerformanceTests/resources/statistics.js',
-          '../third_party/android_testrunner/',
           '../third_party/flot/jquery.flot.min.js',
           '../third_party/webpagereplay/',
           '../tools/telemetry/',

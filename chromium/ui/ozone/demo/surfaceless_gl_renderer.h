@@ -13,14 +13,11 @@ class GLImage;
 
 namespace ui {
 
-class GpuMemoryBufferFactoryOzoneNativeBuffer;
-
 class SurfacelessGlRenderer : public GlRenderer {
  public:
-  SurfacelessGlRenderer(
-      gfx::AcceleratedWidget widget,
-      const gfx::Size& size,
-      GpuMemoryBufferFactoryOzoneNativeBuffer* buffer_factory);
+  SurfacelessGlRenderer(gfx::AcceleratedWidget widget,
+                        const scoped_refptr<gfx::GLSurface>& surface,
+                        const gfx::Size& size);
   ~SurfacelessGlRenderer() override;
 
   // Renderer:
@@ -29,18 +26,17 @@ class SurfacelessGlRenderer : public GlRenderer {
  private:
   // GlRenderer:
   void RenderFrame() override;
-  scoped_refptr<gfx::GLSurface> CreateSurface() override;
+  void PostRenderFrameTask(gfx::SwapResult result) override;
 
   class BufferWrapper {
    public:
     BufferWrapper();
     ~BufferWrapper();
 
-    bool Initialize(GpuMemoryBufferFactoryOzoneNativeBuffer* buffer_factory,
-                    gfx::AcceleratedWidget widget,
-                    const gfx::Size& size);
+    gfx::GLImage* image() const { return image_.get(); }
+
+    bool Initialize(gfx::AcceleratedWidget widget, const gfx::Size& size);
     void BindFramebuffer();
-    void SchedulePlane();
 
    private:
     gfx::AcceleratedWidget widget_ = gfx::kNullAcceleratedWidget;
@@ -51,9 +47,7 @@ class SurfacelessGlRenderer : public GlRenderer {
     unsigned int gl_tex_ = 0;
   };
 
-  GpuMemoryBufferFactoryOzoneNativeBuffer* buffer_factory_;
-
-  BufferWrapper buffers_[2];
+  scoped_ptr<BufferWrapper> buffers_[2];
   int back_buffer_ = 0;
 
   base::WeakPtrFactory<SurfacelessGlRenderer> weak_ptr_factory_;

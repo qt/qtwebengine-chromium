@@ -33,11 +33,12 @@
 
 #include <algorithm>
 
+#include "talk/app/webrtc/mediacontroller.h"
 #include "talk/media/base/capturemanager.h"
+#include "talk/media/base/device.h"
 #include "talk/media/base/hybriddataengine.h"
 #include "talk/media/base/rtpdataengine.h"
 #include "talk/media/base/videocapturer.h"
-#include "talk/media/devices/devicemanager.h"
 #ifdef HAVE_SCTP
 #include "talk/media/sctp/sctpdataengine.h"
 #endif
@@ -77,48 +78,35 @@ static DataEngineInterface* ConstructDataEngine() {
 
 ChannelManager::ChannelManager(MediaEngineInterface* me,
                                DataEngineInterface* dme,
-                               DeviceManagerInterface* dm,
                                CaptureManager* cm,
                                rtc::Thread* worker_thread) {
-  Construct(me, dme, dm, cm, worker_thread);
+  Construct(me, dme, cm, worker_thread);
 }
 
 ChannelManager::ChannelManager(MediaEngineInterface* me,
-                               DeviceManagerInterface* dm,
                                rtc::Thread* worker_thread) {
   Construct(me,
             ConstructDataEngine(),
-            dm,
             new CaptureManager(),
             worker_thread);
 }
 
 void ChannelManager::Construct(MediaEngineInterface* me,
                                DataEngineInterface* dme,
-                               DeviceManagerInterface* dm,
                                CaptureManager* cm,
                                rtc::Thread* worker_thread) {
   media_engine_.reset(me);
   data_media_engine_.reset(dme);
-  device_manager_.reset(dm);
   capture_manager_.reset(cm);
   initialized_ = false;
   main_thread_ = rtc::Thread::Current();
   worker_thread_ = worker_thread;
   // Get the default audio options from the media engine.
   audio_options_ = media_engine_->GetAudioOptions();
-  audio_in_device_ = DeviceManagerInterface::kDefaultDeviceName;
-  audio_out_device_ = DeviceManagerInterface::kDefaultDeviceName;
-  audio_delay_offset_ = kDefaultAudioDelayOffset;
   audio_output_volume_ = kNotSetOutputVolume;
   local_renderer_ = NULL;
   capturing_ = false;
-  monitoring_ = false;
   enable_rtx_ = false;
-
-  // Init the device manager immediately, and set up our default video device.
-  SignalDevicesChange.repeat(device_manager_->SignalDevicesChange);
-  device_manager_->Init();
 
   capture_manager_->SignalCapturerStateChange.connect(
       this, &ChannelManager::OnVideoCaptureStateChange);
@@ -153,10 +141,6 @@ bool ChannelManager::SetVideoRtxEnabled(bool enable) {
     LOG(LS_WARNING) << "Cannot toggle rtx after initialization!";
     return false;
   }
-}
-
-int ChannelManager::GetCapabilities() {
-  return media_engine_->GetCapabilities() & device_manager_->GetCapabilities();
 }
 
 void ChannelManager::GetSupportedAudioCodecs(
@@ -221,39 +205,9 @@ bool ChannelManager::Init() {
     return false;
   }
 
-  // Now that we're initialized, apply any stored preferences. A preferred
-  // device might have been unplugged. In this case, we fallback to the
-  // default device but keep the user preferences. The preferences are
-  // changed only when the Javascript FE changes them.
-  const std::string preferred_audio_in_device = audio_in_device_;
-  const std::string preferred_audio_out_device = audio_out_device_;
-  const std::string preferred_camera_device = camera_device_;
-  Device device;
-  if (!device_manager_->GetAudioInputDevice(audio_in_device_, &device)) {
-    LOG(LS_WARNING) << "The preferred microphone '" << audio_in_device_
-                    << "' is unavailable. Fall back to the default.";
-    audio_in_device_ = DeviceManagerInterface::kDefaultDeviceName;
-  }
-  if (!device_manager_->GetAudioOutputDevice(audio_out_device_, &device)) {
-    LOG(LS_WARNING) << "The preferred speaker '" << audio_out_device_
-                    << "' is unavailable. Fall back to the default.";
-    audio_out_device_ = DeviceManagerInterface::kDefaultDeviceName;
-  }
-  if (!device_manager_->GetVideoCaptureDevice(camera_device_, &device)) {
-    if (!camera_device_.empty()) {
-      LOG(LS_WARNING) << "The preferred camera '" << camera_device_
-                      << "' is unavailable. Fall back to the default.";
-    }
-    camera_device_ = DeviceManagerInterface::kDefaultDeviceName;
-  }
-
-  if (!SetAudioOptions(audio_in_device_, audio_out_device_,
-                       audio_options_, audio_delay_offset_)) {
-    LOG(LS_WARNING) << "Failed to SetAudioOptions with"
-                    << " microphone: " << audio_in_device_
-                    << " speaker: " << audio_out_device_
-                    << " options: " << audio_options_.ToString()
-                    << " delay: " << audio_delay_offset_;
+  if (!SetAudioOptions(audio_options_)) {
+    LOG(LS_WARNING) << "Failed to SetAudioOptions with options: "
+                    << audio_options_.ToString();
   }
 
   // If audio_output_volume_ has been set via SetOutputVolume(), set the
@@ -263,15 +217,6 @@ bool ChannelManager::Init() {
     LOG(LS_WARNING) << "Failed to SetOutputVolume to "
                     << audio_output_volume_;
   }
-  if (!SetCaptureDevice(camera_device_) && !camera_device_.empty()) {
-    LOG(LS_WARNING) << "Failed to SetCaptureDevice with camera: "
-                    << camera_device_;
-  }
-
-  // Restore the user preferences.
-  audio_in_device_ = preferred_audio_in_device;
-  audio_out_device_ = preferred_audio_out_device;
-  camera_device_ = preferred_camera_device;
 
   // Now apply the default video codec that has been set earlier.
   if (default_video_encoder_config_.max_codec.id != 0) {
@@ -308,38 +253,39 @@ void ChannelManager::Terminate_w() {
     DestroyVideoChannel_w(video_channels_.back());
   }
   while (!voice_channels_.empty()) {
-    DestroyVoiceChannel_w(voice_channels_.back(), nullptr);
-  }
-  if (!SetCaptureDevice_w(NULL)) {
-    LOG(LS_WARNING) << "failed to delete video capturer";
+    DestroyVoiceChannel_w(voice_channels_.back());
   }
   media_engine_->Terminate();
 }
 
 VoiceChannel* ChannelManager::CreateVoiceChannel(
-    BaseSession* session,
+    webrtc::MediaControllerInterface* media_controller,
+    TransportController* transport_controller,
     const std::string& content_name,
     bool rtcp,
     const AudioOptions& options) {
   return worker_thread_->Invoke<VoiceChannel*>(
-      Bind(&ChannelManager::CreateVoiceChannel_w, this, session, content_name,
-           rtcp, options));
+      Bind(&ChannelManager::CreateVoiceChannel_w, this, media_controller,
+           transport_controller, content_name, rtcp, options));
 }
 
 VoiceChannel* ChannelManager::CreateVoiceChannel_w(
-    BaseSession* session,
+    webrtc::MediaControllerInterface* media_controller,
+    TransportController* transport_controller,
     const std::string& content_name,
     bool rtcp,
     const AudioOptions& options) {
   ASSERT(initialized_);
   ASSERT(worker_thread_ == rtc::Thread::Current());
-  VoiceMediaChannel* media_channel = media_engine_->CreateChannel(options);
+  ASSERT(nullptr != media_controller);
+  VoiceMediaChannel* media_channel =
+      media_engine_->CreateChannel(media_controller->call_w(), options);
   if (!media_channel)
     return nullptr;
 
-  VoiceChannel* voice_channel = new VoiceChannel(
-      worker_thread_, media_engine_.get(), media_channel,
-      session, content_name, rtcp);
+  VoiceChannel* voice_channel =
+      new VoiceChannel(worker_thread_, media_engine_.get(), media_channel,
+                       transport_controller, content_name, rtcp);
   if (!voice_channel->Init()) {
     delete voice_channel;
     return nullptr;
@@ -348,17 +294,14 @@ VoiceChannel* ChannelManager::CreateVoiceChannel_w(
   return voice_channel;
 }
 
-void ChannelManager::DestroyVoiceChannel(VoiceChannel* voice_channel,
-                                         VideoChannel* video_channel) {
+void ChannelManager::DestroyVoiceChannel(VoiceChannel* voice_channel) {
   if (voice_channel) {
     worker_thread_->Invoke<void>(
-        Bind(&ChannelManager::DestroyVoiceChannel_w, this, voice_channel,
-             video_channel));
+        Bind(&ChannelManager::DestroyVoiceChannel_w, this, voice_channel));
   }
 }
 
-void ChannelManager::DestroyVoiceChannel_w(VoiceChannel* voice_channel,
-                                           VideoChannel* video_channel) {
+void ChannelManager::DestroyVoiceChannel_w(VoiceChannel* voice_channel) {
   // Destroy voice channel.
   ASSERT(initialized_);
   ASSERT(worker_thread_ == rtc::Thread::Current());
@@ -367,63 +310,38 @@ void ChannelManager::DestroyVoiceChannel_w(VoiceChannel* voice_channel,
   ASSERT(it != voice_channels_.end());
   if (it == voice_channels_.end())
     return;
-
-  if (video_channel) {
-    video_channel->media_channel()->DetachVoiceChannel();
-  }
   voice_channels_.erase(it);
   delete voice_channel;
 }
 
 VideoChannel* ChannelManager::CreateVideoChannel(
-    BaseSession* session,
+    webrtc::MediaControllerInterface* media_controller,
+    TransportController* transport_controller,
     const std::string& content_name,
     bool rtcp,
-    VoiceChannel* voice_channel) {
+    const VideoOptions& options) {
   return worker_thread_->Invoke<VideoChannel*>(
-      Bind(&ChannelManager::CreateVideoChannel_w,
-           this,
-           session,
-           content_name,
-           rtcp,
-           VideoOptions(),
-           voice_channel));
-}
-
-VideoChannel* ChannelManager::CreateVideoChannel(
-    BaseSession* session,
-    const std::string& content_name,
-    bool rtcp,
-    const VideoOptions& options,
-    VoiceChannel* voice_channel) {
-  return worker_thread_->Invoke<VideoChannel*>(
-      Bind(&ChannelManager::CreateVideoChannel_w,
-           this,
-           session,
-           content_name,
-           rtcp,
-           options,
-           voice_channel));
+      Bind(&ChannelManager::CreateVideoChannel_w, this, media_controller,
+           transport_controller, content_name, rtcp, options));
 }
 
 VideoChannel* ChannelManager::CreateVideoChannel_w(
-    BaseSession* session,
+    webrtc::MediaControllerInterface* media_controller,
+    TransportController* transport_controller,
     const std::string& content_name,
     bool rtcp,
-    const VideoOptions& options,
-    VoiceChannel* voice_channel) {
+    const VideoOptions& options) {
   ASSERT(initialized_);
   ASSERT(worker_thread_ == rtc::Thread::Current());
+  ASSERT(nullptr != media_controller);
   VideoMediaChannel* media_channel =
-      // voice_channel can be NULL in case of NullVoiceEngine.
-      media_engine_->CreateVideoChannel(
-          options, voice_channel ? voice_channel->media_channel() : NULL);
-  if (media_channel == NULL)
+      media_engine_->CreateVideoChannel(media_controller->call_w(), options);
+  if (media_channel == NULL) {
     return NULL;
+  }
 
   VideoChannel* video_channel = new VideoChannel(
-      worker_thread_, media_engine_.get(), media_channel,
-      session, content_name, rtcp);
+      worker_thread_, media_channel, transport_controller, content_name, rtcp);
   if (!video_channel->Init()) {
     delete video_channel;
     return NULL;
@@ -454,16 +372,20 @@ void ChannelManager::DestroyVideoChannel_w(VideoChannel* video_channel) {
 }
 
 DataChannel* ChannelManager::CreateDataChannel(
-    BaseSession* session, const std::string& content_name,
-    bool rtcp, DataChannelType channel_type) {
+    TransportController* transport_controller,
+    const std::string& content_name,
+    bool rtcp,
+    DataChannelType channel_type) {
   return worker_thread_->Invoke<DataChannel*>(
-      Bind(&ChannelManager::CreateDataChannel_w, this, session, content_name,
-           rtcp, channel_type));
+      Bind(&ChannelManager::CreateDataChannel_w, this, transport_controller,
+           content_name, rtcp, channel_type));
 }
 
 DataChannel* ChannelManager::CreateDataChannel_w(
-    BaseSession* session, const std::string& content_name,
-    bool rtcp, DataChannelType data_channel_type) {
+    TransportController* transport_controller,
+    const std::string& content_name,
+    bool rtcp,
+    DataChannelType data_channel_type) {
   // This is ok to alloc from a thread other than the worker thread.
   ASSERT(initialized_);
   DataMediaChannel* media_channel = data_media_engine_->CreateChannel(
@@ -475,8 +397,7 @@ DataChannel* ChannelManager::CreateDataChannel_w(
   }
 
   DataChannel* data_channel = new DataChannel(
-      worker_thread_, media_channel,
-      session, content_name, rtcp);
+      worker_thread_, media_channel, transport_controller, content_name, rtcp);
   if (!data_channel->Init()) {
     LOG(LS_WARNING) << "Failed to init data channel.";
     delete data_channel;
@@ -506,69 +427,34 @@ void ChannelManager::DestroyDataChannel_w(DataChannel* data_channel) {
   delete data_channel;
 }
 
-bool ChannelManager::GetAudioOptions(std::string* in_name,
-                                     std::string* out_name,
-                                     AudioOptions* options) {
-  if (in_name)
-    *in_name = audio_in_device_;
-  if (out_name)
-    *out_name = audio_out_device_;
-  if (options)
-    *options = audio_options_;
-  return true;
-}
-
-bool ChannelManager::SetAudioOptions(const std::string& in_name,
-                                     const std::string& out_name,
-                                     const AudioOptions& options) {
-  return SetAudioOptions(in_name, out_name, options, audio_delay_offset_);
-}
-
-bool ChannelManager::SetAudioOptions(const std::string& in_name,
-                                     const std::string& out_name,
-                                     const AudioOptions& options,
-                                     int delay_offset) {
-  // Get device ids from DeviceManager.
-  Device in_dev, out_dev;
-  if (!device_manager_->GetAudioInputDevice(in_name, &in_dev)) {
-    LOG(LS_WARNING) << "Failed to GetAudioInputDevice: " << in_name;
-    return false;
-  }
-  if (!device_manager_->GetAudioOutputDevice(out_name, &out_dev)) {
-    LOG(LS_WARNING) << "Failed to GetAudioOutputDevice: " << out_name;
-    return false;
-  }
+bool ChannelManager::SetAudioOptions(const AudioOptions& options) {
+  // "Get device ids from DeviceManager" - these are the defaults returned.
+  Device in_dev("", -1);
+  Device out_dev("", -1);
 
   // If we're initialized, pass the settings to the media engine.
   bool ret = true;
   if (initialized_) {
     ret = worker_thread_->Invoke<bool>(
         Bind(&ChannelManager::SetAudioOptions_w, this,
-             options, delay_offset, &in_dev, &out_dev));
+             options, &in_dev, &out_dev));
   }
 
   // If all worked well, save the values for use in GetAudioOptions.
   if (ret) {
     audio_options_ = options;
-    audio_in_device_ = in_name;
-    audio_out_device_ = out_name;
-    audio_delay_offset_ = delay_offset;
   }
   return ret;
 }
 
 bool ChannelManager::SetAudioOptions_w(
-    const AudioOptions& options, int delay_offset,
+    const AudioOptions& options,
     const Device* in_dev, const Device* out_dev) {
   ASSERT(worker_thread_ == rtc::Thread::Current());
   ASSERT(initialized_);
 
   // Set audio options
   bool ret = media_engine_->SetAudioOptions(options);
-
-  if (ret) {
-    ret = media_engine_->SetAudioDelayOffset(delay_offset);
-  }
 
   // Set the audio devices
   if (ret) {
@@ -601,113 +487,6 @@ bool ChannelManager::SetOutputVolume(int level) {
   return ret;
 }
 
-bool ChannelManager::IsSameCapturer(const std::string& capturer_name,
-                                    VideoCapturer* capturer) {
-  if (capturer == NULL) {
-    return false;
-  }
-  Device device;
-  if (!device_manager_->GetVideoCaptureDevice(capturer_name, &device)) {
-    return false;
-  }
-  return capturer->GetId() == device.id;
-}
-
-bool ChannelManager::GetVideoCaptureDevice(Device* device) {
-  std::string device_name;
-  if (!GetCaptureDevice(&device_name)) {
-    return false;
-  }
-  return device_manager_->GetVideoCaptureDevice(device_name, device);
-}
-
-bool ChannelManager::GetCaptureDevice(std::string* cam_name) {
-  if (camera_device_.empty()) {
-    // Initialize camera_device_ with default.
-    Device device;
-    if (!device_manager_->GetVideoCaptureDevice(
-        DeviceManagerInterface::kDefaultDeviceName, &device)) {
-      LOG(LS_WARNING) << "Device manager can't find default camera: " <<
-          DeviceManagerInterface::kDefaultDeviceName;
-      return false;
-    }
-    camera_device_ = device.name;
-  }
-  *cam_name = camera_device_;
-  return true;
-}
-
-bool ChannelManager::SetCaptureDevice(const std::string& cam_name) {
-  Device device;
-  bool ret = true;
-  if (!device_manager_->GetVideoCaptureDevice(cam_name, &device)) {
-    if (!cam_name.empty()) {
-      LOG(LS_WARNING) << "Device manager can't find camera: " << cam_name;
-    }
-    ret = false;
-  }
-
-  // If we're running, tell the media engine about it.
-  if (initialized_ && ret) {
-    ret = worker_thread_->Invoke<bool>(
-        Bind(&ChannelManager::SetCaptureDevice_w, this, &device));
-  }
-
-  // If everything worked, retain the name of the selected camera.
-  if (ret) {
-    camera_device_ = device.name;
-  } else if (camera_device_.empty()) {
-    // When video option setting fails, we still want camera_device_ to be in a
-    // good state, so we initialize it with default if it's empty.
-    Device default_device;
-    if (!device_manager_->GetVideoCaptureDevice(
-        DeviceManagerInterface::kDefaultDeviceName, &default_device)) {
-      LOG(LS_WARNING) << "Device manager can't find default camera: " <<
-          DeviceManagerInterface::kDefaultDeviceName;
-    }
-    camera_device_ = default_device.name;
-  }
-
-  return ret;
-}
-
-VideoCapturer* ChannelManager::CreateVideoCapturer() {
-  Device device;
-  if (!device_manager_->GetVideoCaptureDevice(camera_device_, &device)) {
-    if (!camera_device_.empty()) {
-      LOG(LS_WARNING) << "Device manager can't find camera: " << camera_device_;
-    }
-    return NULL;
-  }
-  VideoCapturer* capturer = device_manager_->CreateVideoCapturer(device);
-  if (capturer && default_video_encoder_config_.max_codec.id != 0) {
-    // For now, use the aspect ratio of the default_video_encoder_config_,
-    // which may be different than the native aspect ratio of the start
-    // format the camera may use.
-    capturer->UpdateAspectRatio(
-        default_video_encoder_config_.max_codec.width,
-        default_video_encoder_config_.max_codec.height);
-  }
-  return capturer;
-}
-
-VideoCapturer* ChannelManager::CreateScreenCapturer(
-    const ScreencastId& screenid) {
-  return device_manager_->CreateScreenCapturer(screenid);
-}
-
-bool ChannelManager::SetCaptureDevice_w(const Device* cam_device) {
-  ASSERT(worker_thread_ == rtc::Thread::Current());
-  ASSERT(initialized_);
-
-  if (!cam_device) {
-    video_device_name_.clear();
-    return true;
-  }
-  video_device_name_ = cam_device->name;
-  return true;
-}
-
 bool ChannelManager::SetDefaultVideoEncoderConfig(const VideoEncoderConfig& c) {
   bool ret = true;
   if (initialized_) {
@@ -717,16 +496,6 @@ bool ChannelManager::SetDefaultVideoEncoderConfig(const VideoEncoderConfig& c) {
   }
   if (ret) {
     default_video_encoder_config_ = c;
-  }
-  return ret;
-}
-
-bool ChannelManager::SetLocalMonitor(bool enable) {
-  bool ret = initialized_ && worker_thread_->Invoke<bool>(
-      Bind(&MediaEngineInterface::SetLocalMonitor,
-           media_engine_.get(), enable));
-  if (ret) {
-    monitoring_ = enable;
   }
   return ret;
 }
@@ -766,52 +535,6 @@ void ChannelManager::GetSupportedFormats_w(
   const std::vector<VideoFormat>* formats = capturer->GetSupportedFormats();
   if (formats != NULL)
     *out_formats = *formats;
-}
-
-// TODO(janahan): For now pass this request through the mediaengine to the
-// voice and video engines to do the real work. Once the capturer refactoring
-// is done, we will access the capturer using the ssrc (similar to how the
-// renderer is accessed today) and register with it directly.
-bool ChannelManager::RegisterVideoProcessor(VideoCapturer* capturer,
-                                            VideoProcessor* processor) {
-  return initialized_ && worker_thread_->Invoke<bool>(
-      Bind(&ChannelManager::RegisterVideoProcessor_w, this,
-           capturer, processor));
-}
-
-bool ChannelManager::RegisterVideoProcessor_w(VideoCapturer* capturer,
-                                              VideoProcessor* processor) {
-  return capture_manager_->AddVideoProcessor(capturer, processor);
-}
-
-bool ChannelManager::UnregisterVideoProcessor(VideoCapturer* capturer,
-                                              VideoProcessor* processor) {
-  return initialized_ && worker_thread_->Invoke<bool>(
-      Bind(&ChannelManager::UnregisterVideoProcessor_w, this,
-           capturer, processor));
-}
-
-bool ChannelManager::UnregisterVideoProcessor_w(VideoCapturer* capturer,
-                                                VideoProcessor* processor) {
-  return capture_manager_->RemoveVideoProcessor(capturer, processor);
-}
-
-bool ChannelManager::RegisterVoiceProcessor(
-    uint32 ssrc,
-    VoiceProcessor* processor,
-    MediaProcessorDirection direction) {
-  return initialized_ && worker_thread_->Invoke<bool>(
-      Bind(&MediaEngineInterface::RegisterVoiceProcessor, media_engine_.get(),
-           ssrc, processor, direction));
-}
-
-bool ChannelManager::UnregisterVoiceProcessor(
-    uint32 ssrc,
-    VoiceProcessor* processor,
-    MediaProcessorDirection direction) {
-  return initialized_ && worker_thread_->Invoke<bool>(
-      Bind(&MediaEngineInterface::UnregisterVoiceProcessor,
-           media_engine_.get(), ssrc, processor, direction));
 }
 
 // The following are done in the new "CaptureManager" style that
@@ -900,51 +623,6 @@ void ChannelManager::OnMessage(rtc::Message* message) {
       break;
     }
   }
-}
-
-
-static void GetDeviceNames(const std::vector<Device>& devs,
-                           std::vector<std::string>* names) {
-  names->clear();
-  for (size_t i = 0; i < devs.size(); ++i) {
-    names->push_back(devs[i].name);
-  }
-}
-
-bool ChannelManager::GetAudioInputDevices(std::vector<std::string>* names) {
-  names->clear();
-  std::vector<Device> devs;
-  bool ret = device_manager_->GetAudioInputDevices(&devs);
-  if (ret)
-    GetDeviceNames(devs, names);
-
-  return ret;
-}
-
-bool ChannelManager::GetAudioOutputDevices(std::vector<std::string>* names) {
-  names->clear();
-  std::vector<Device> devs;
-  bool ret = device_manager_->GetAudioOutputDevices(&devs);
-  if (ret)
-    GetDeviceNames(devs, names);
-
-  return ret;
-}
-
-bool ChannelManager::GetVideoCaptureDevices(std::vector<std::string>* names) {
-  names->clear();
-  std::vector<Device> devs;
-  bool ret = device_manager_->GetVideoCaptureDevices(&devs);
-  if (ret)
-    GetDeviceNames(devs, names);
-
-  return ret;
-}
-
-void ChannelManager::SetVideoCaptureDeviceMaxFormat(
-    const std::string& usb_id,
-    const VideoFormat& max_format) {
-  device_manager_->SetVideoCaptureDeviceMaxFormat(usb_id, max_format);
 }
 
 bool ChannelManager::StartAecDump(rtc::PlatformFile file) {

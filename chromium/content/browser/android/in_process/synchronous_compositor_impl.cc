@@ -8,11 +8,11 @@
 #include "base/bind.h"
 #include "base/lazy_instance.h"
 #include "base/message_loop/message_loop.h"
-#include "cc/input/input_handler.h"
 #include "content/browser/android/in_process/synchronous_compositor_external_begin_frame_source.h"
 #include "content/browser/android/in_process/synchronous_compositor_factory_impl.h"
 #include "content/browser/android/in_process/synchronous_compositor_registry.h"
 #include "content/browser/android/in_process/synchronous_input_event_filter.h"
+#include "content/browser/gpu/gpu_process_host.h"
 #include "content/browser/renderer_host/render_widget_host_view_android.h"
 #include "content/common/input/did_overscroll_params.h"
 #include "content/common/input_messages.h"
@@ -20,6 +20,7 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
+#include "ui/gfx/geometry/scroll_offset.h"
 #include "ui/gl/gl_surface.h"
 
 namespace content {
@@ -43,6 +44,11 @@ int GetInProcessRendererId() {
 
 base::LazyInstance<SynchronousCompositorFactoryImpl>::Leaky g_factory =
     LAZY_INSTANCE_INITIALIZER;
+
+base::Thread* CreateInProcessGpuThreadForSynchronousCompositor(
+    const InProcessChildThreadParams& params) {
+  return g_factory.Get().CreateInProcessGpuThread(params);
+}
 
 }  // namespace
 
@@ -73,10 +79,11 @@ SynchronousCompositorImpl::SynchronousCompositorImpl(WebContents* contents)
       begin_frame_source_(nullptr),
       contents_(contents),
       routing_id_(contents->GetRoutingID()),
-      input_handler_(nullptr),
+      synchronous_input_handler_proxy_(nullptr),
       registered_with_client_(false),
       is_active_(true),
       renderer_needs_begin_frames_(false),
+      need_animate_input_(false),
       weak_ptr_factory_(this) {
   DCHECK(contents);
   DCHECK_NE(routing_id_, MSG_ROUTING_NONE);
@@ -85,7 +92,7 @@ SynchronousCompositorImpl::SynchronousCompositorImpl(WebContents* contents)
 SynchronousCompositorImpl::~SynchronousCompositorImpl() {
   DCHECK(!output_surface_);
   DCHECK(!begin_frame_source_);
-  DCHECK(!input_handler_);
+  DCHECK(!synchronous_input_handler_proxy_);
 }
 
 void SynchronousCompositorImpl::SetClient(
@@ -113,7 +120,7 @@ void SynchronousCompositorImpl::RegisterWithClient() {
   DCHECK(CalledOnValidThread());
   DCHECK(compositor_client_);
   DCHECK(output_surface_);
-  DCHECK(input_handler_);
+  DCHECK(synchronous_input_handler_proxy_);
   DCHECK(!registered_with_client_);
   registered_with_client_ = true;
 
@@ -123,36 +130,40 @@ void SynchronousCompositorImpl::RegisterWithClient() {
     base::Bind(&SynchronousCompositorImpl::DidActivatePendingTree,
                weak_ptr_factory_.GetWeakPtr()));
 
-  // Setting the delegate causes UpdateRootLayerState immediately so do it
-  // after setting the client.
-  input_handler_->SetRootLayerScrollOffsetDelegate(this);
+  // This disables the input system from animating inputs autonomously, instead
+  // routing all input animations through the SynchronousInputHandler, which is
+  // |this| class. Calling this causes an UpdateRootLayerState() immediately so,
+  // do it after setting the client.
+  synchronous_input_handler_proxy_->SetOnlySynchronouslyAnimateRootFlings(this);
 }
 
 // static
 void SynchronousCompositor::SetGpuService(
     scoped_refptr<gpu::InProcessCommandBuffer::Service> service) {
   g_factory.Get().SetDeferredGpuService(service);
+  GpuProcessHost::RegisterGpuMainThreadFactory(
+      CreateInProcessGpuThreadForSynchronousCompositor);
 }
 
 // static
-void SynchronousCompositor::SetRecordFullDocument(bool record_full_document) {
-  g_factory.Get().SetRecordFullDocument(record_full_document);
+void SynchronousCompositor::SetUseIpcCommandBuffer() {
+  g_factory.Get().SetUseIpcCommandBuffer();
 }
 
 void SynchronousCompositorImpl::DidInitializeRendererObjects(
     SynchronousCompositorOutputSurface* output_surface,
     SynchronousCompositorExternalBeginFrameSource* begin_frame_source,
-    cc::InputHandler* input_handler) {
+    SynchronousInputHandlerProxy* synchronous_input_handler_proxy) {
   DCHECK(!output_surface_);
   DCHECK(!begin_frame_source_);
   DCHECK(output_surface);
   DCHECK(begin_frame_source);
   DCHECK(compositor_client_);
-  DCHECK(input_handler);
+  DCHECK(synchronous_input_handler_proxy);
 
   output_surface_ = output_surface;
   begin_frame_source_ = begin_frame_source;
-  input_handler_ = input_handler;
+  synchronous_input_handler_proxy_ = synchronous_input_handler_proxy;
 
   output_surface_->SetCompositor(this);
   begin_frame_source_->SetCompositor(this);
@@ -164,18 +175,22 @@ void SynchronousCompositorImpl::DidDestroyRendererObjects() {
   DCHECK(compositor_client_);
 
   if (registered_with_client_) {
-    input_handler_->SetRootLayerScrollOffsetDelegate(nullptr);
     output_surface_->SetTreeActivationCallback(base::Closure());
     compositor_client_->DidDestroyCompositor(this);
     registered_with_client_ = false;
   }
 
+  // This object is being destroyed, so remove pointers to it.
   begin_frame_source_->SetCompositor(nullptr);
   output_surface_->SetCompositor(nullptr);
+  synchronous_input_handler_proxy_->SetOnlySynchronouslyAnimateRootFlings(
+      nullptr);
 
-  input_handler_ = nullptr;
+  synchronous_input_handler_proxy_ = nullptr;
   begin_frame_source_ = nullptr;
   output_surface_ = nullptr;
+  // Don't propogate this signal from one renderer to the next.
+  need_animate_input_ = false;
 }
 
 scoped_ptr<cc::CompositorFrame> SynchronousCompositorImpl::DemandDrawHw(
@@ -255,9 +270,13 @@ void SynchronousCompositorImpl::PostInvalidate() {
     compositor_client_->PostInvalidate();
 }
 
-void SynchronousCompositorImpl::DidChangeRootLayerScrollOffset() {
-  if (input_handler_)
-    input_handler_->OnRootLayerDelegatedScrollOffsetChanged();
+void SynchronousCompositorImpl::DidChangeRootLayerScrollOffset(
+    const gfx::ScrollOffset& root_offset) {
+  DCHECK(CalledOnValidThread());
+  if (!synchronous_input_handler_proxy_)
+    return;
+  synchronous_input_handler_proxy_->SynchronouslySetRootScrollOffset(
+      root_offset);
 }
 
 void SynchronousCompositorImpl::SetIsActive(bool is_active) {
@@ -265,6 +284,14 @@ void SynchronousCompositorImpl::SetIsActive(bool is_active) {
                is_active);
   is_active_ = is_active;
   UpdateNeedsBeginFrames();
+}
+
+void SynchronousCompositorImpl::OnComputeScroll(
+    base::TimeTicks animation_time) {
+  if (need_animate_input_) {
+    need_animate_input_ = false;
+    synchronous_input_handler_proxy_->SynchronouslyAnimate(animation_time);
+  }
 }
 
 void SynchronousCompositorImpl::OnNeedsBeginFramesChange(
@@ -334,32 +361,13 @@ void SynchronousCompositorImpl::DidActivatePendingTree() {
   DeliverMessages();
 }
 
-gfx::ScrollOffset SynchronousCompositorImpl::GetTotalScrollOffset() {
-  DCHECK(CalledOnValidThread());
-  DCHECK(compositor_client_);
-  if (!registered_with_client_)
-    return gfx::ScrollOffset();
-  // TODO(miletus): Make GetTotalRootLayerScrollOffset return
-  // ScrollOffset. crbug.com/414283.
-  return gfx::ScrollOffset(
-      compositor_client_->GetTotalRootLayerScrollOffset());
-}
-
-bool SynchronousCompositorImpl::IsExternalScrollActive() const {
-  DCHECK(CalledOnValidThread());
-  DCHECK(compositor_client_);
-  if (!registered_with_client_)
-    return false;
-  return compositor_client_->IsExternalScrollActive();
-}
-
-void SynchronousCompositorImpl::SetNeedsAnimate(
-    const AnimationCallback& animation) {
+void SynchronousCompositorImpl::SetNeedsSynchronousAnimateInput() {
   DCHECK(CalledOnValidThread());
   DCHECK(compositor_client_);
   if (!registered_with_client_)
     return;
-  compositor_client_->SetNeedsAnimateScroll(animation);
+  need_animate_input_ = true;
+  compositor_client_->PostInvalidate();
 }
 
 void SynchronousCompositorImpl::UpdateRootLayerState(

@@ -111,8 +111,13 @@ class CONTENT_EXPORT FrameTreeNode {
     return current_url_;
   }
 
-  void set_current_url(const GURL& url) {
-    current_url_ = url;
+  // Sets the last committed URL for this frame and updates
+  // has_committed_real_load accordingly.
+  void SetCurrentURL(const GURL& url);
+
+  // Returns true iff SetCurrentURL has been called with a non-blank URL.
+  bool has_committed_real_load() const {
+    return has_committed_real_load_;
   }
 
   // Set the current origin and notify proxies about the update.
@@ -134,7 +139,8 @@ class CONTENT_EXPORT FrameTreeNode {
   bool CommitPendingSandboxFlags();
 
   bool HasSameOrigin(const FrameTreeNode& node) const {
-    return replication_state_.origin.IsSameAs(node.replication_state_.origin);
+    return replication_state_.origin.IsSameOriginWith(
+        node.replication_state_.origin);
   }
 
   const FrameReplicationState& current_replication_state() const {
@@ -197,6 +203,12 @@ class CONTENT_EXPORT FrameTreeNode {
   // FrameTree::ForEach to stop all loads in the entire FrameTree.
   bool StopLoading();
 
+  // Returns the time this frame was last focused.
+  base::TimeTicks last_focus_time() const { return last_focus_time_; }
+  void set_last_focus_time(const base::TimeTicks& last_focus_time) {
+    last_focus_time_ = last_focus_time;
+  }
+
  private:
   class OpenerDestroyedObserver;
 
@@ -241,11 +253,14 @@ class CONTENT_EXPORT FrameTreeNode {
   // The immediate children of this specific frame.
   ScopedVector<FrameTreeNode> children_;
 
-  // Track the current frame's last committed URL, so we can estimate the
-  // process impact of out-of-process iframes.
-  // TODO(creis): Remove this when we can store subframe URLs in the
-  // NavigationController.
+  // Track the current frame's last committed URL.
+  // TODO(creis): Consider storing a reference to the last committed
+  // FrameNavigationEntry here once those are created in all modes.
   GURL current_url_;
+
+  // Whether this frame has committed any real load, replacing its initial
+  // about:blank page.
+  bool has_committed_real_load_;
 
   // Track information that needs to be replicated to processes that have
   // proxies for this frame.
@@ -271,6 +286,8 @@ class CONTENT_EXPORT FrameTreeNode {
 
   // List of objects observing this FrameTreeNode.
   base::ObserverList<Observer> observers_;
+
+  base::TimeTicks last_focus_time_;
 
   DISALLOW_COPY_AND_ASSIGN(FrameTreeNode);
 };

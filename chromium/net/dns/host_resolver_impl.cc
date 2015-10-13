@@ -1417,9 +1417,7 @@ class HostResolverImpl::Job : public PrioritizedDispatcher::Job,
     return false;
   }
 
-  const Key key() const {
-    return key_;
-  }
+  const Key& key() const { return key_; }
 
   bool is_queued() const {
     return !handle_.is_null();
@@ -2118,7 +2116,7 @@ bool HostResolverImpl::ServeFromHosts(const Key& key,
   addresses->clear();
 
   // HOSTS lookups are case-insensitive.
-  std::string hostname = base::StringToLowerASCII(key.hostname);
+  std::string hostname = base::ToLowerASCII(key.hostname);
 
   const DnsHosts& hosts = dns_client_->GetConfig()->hosts;
 

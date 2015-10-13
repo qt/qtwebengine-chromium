@@ -12,18 +12,18 @@
 #include <vector>
 
 #include "base/memory/weak_ptr.h"
-#include "chromeos/dbus/bluetooth_adapter_client.h"
-#include "chromeos/dbus/bluetooth_agent_service_provider.h"
-#include "chromeos/dbus/bluetooth_device_client.h"
-#include "chromeos/dbus/bluetooth_input_client.h"
-#include "chromeos/dbus/bluetooth_profile_manager_client.h"
-#include "chromeos/dbus/bluetooth_profile_service_provider.h"
 #include "dbus/object_path.h"
 #include "device/bluetooth/bluetooth_adapter.h"
 #include "device/bluetooth/bluetooth_audio_sink.h"
 #include "device/bluetooth/bluetooth_device.h"
 #include "device/bluetooth/bluetooth_discovery_session.h"
 #include "device/bluetooth/bluetooth_export.h"
+#include "device/bluetooth/dbus/bluetooth_adapter_client.h"
+#include "device/bluetooth/dbus/bluetooth_agent_service_provider.h"
+#include "device/bluetooth/dbus/bluetooth_device_client.h"
+#include "device/bluetooth/dbus/bluetooth_input_client.h"
+#include "device/bluetooth/dbus/bluetooth_profile_manager_client.h"
+#include "device/bluetooth/dbus/bluetooth_profile_service_provider.h"
 
 namespace base {
 class SequencedTaskRunner;
@@ -60,10 +60,10 @@ class BluetoothRemoteGattServiceChromeOS;
 // BluetoothChromeOSTest, Shutdown.
 class DEVICE_BLUETOOTH_EXPORT BluetoothAdapterChromeOS
     : public device::BluetoothAdapter,
-      public chromeos::BluetoothAdapterClient::Observer,
-      public chromeos::BluetoothDeviceClient::Observer,
-      public chromeos::BluetoothInputClient::Observer,
-      public chromeos::BluetoothAgentServiceProvider::Delegate {
+      public bluez::BluetoothAdapterClient::Observer,
+      public bluez::BluetoothDeviceClient::Observer,
+      public bluez::BluetoothInputClient::Observer,
+      public bluez::BluetoothAgentServiceProvider::Delegate {
  public:
   typedef base::Callback<void(const std::string& error_message)>
       ErrorCompletionCallback;
@@ -119,6 +119,10 @@ class DEVICE_BLUETOOTH_EXPORT BluetoothAdapterChromeOS
   // its D-Bus properties. |device| is owned by the caller and cannot be NULL.
   void NotifyDeviceChanged(BluetoothDeviceChromeOS* device);
 
+  // Announce to observers a device address change.
+  void NotifyDeviceAddressChanged(BluetoothDeviceChromeOS* device,
+                                  const std::string& old_address);
+
   // The following methods are used to send various GATT observer events to
   // observers.
   void NotifyGattServiceAdded(BluetoothRemoteGattServiceChromeOS* service);
@@ -152,8 +156,8 @@ class DEVICE_BLUETOOTH_EXPORT BluetoothAdapterChromeOS
   // |error_callback| will be called.
   void UseProfile(const device::BluetoothUUID& uuid,
                   const dbus::ObjectPath& device_path,
-                  const BluetoothProfileManagerClient::Options& options,
-                  BluetoothProfileServiceProvider::Delegate* delegate,
+                  const bluez::BluetoothProfileManagerClient::Options& options,
+                  bluez::BluetoothProfileServiceProvider::Delegate* delegate,
                   const ProfileRegisteredCallback& success_callback,
                   const ErrorCompletionCallback& error_callback);
 
@@ -179,7 +183,7 @@ class DEVICE_BLUETOOTH_EXPORT BluetoothAdapterChromeOS
   // a call to BlueZ is pending.
   typedef std::tuple<device::BluetoothDiscoveryFilter*,
                      base::Closure,
-                     ErrorCallback> DiscoveryParamTuple;
+                     DiscoverySessionErrorCallback> DiscoveryParamTuple;
   typedef std::queue<DiscoveryParamTuple> DiscoveryCallbackQueue;
 
   // Callback pair for the profile registration queue.
@@ -189,23 +193,23 @@ class DEVICE_BLUETOOTH_EXPORT BluetoothAdapterChromeOS
   BluetoothAdapterChromeOS();
   ~BluetoothAdapterChromeOS() override;
 
-  // BluetoothAdapterClient::Observer override.
+  // bluez::BluetoothAdapterClient::Observer override.
   void AdapterAdded(const dbus::ObjectPath& object_path) override;
   void AdapterRemoved(const dbus::ObjectPath& object_path) override;
   void AdapterPropertyChanged(const dbus::ObjectPath& object_path,
                               const std::string& property_name) override;
 
-  // BluetoothDeviceClient::Observer override.
+  // bluez::BluetoothDeviceClient::Observer override.
   void DeviceAdded(const dbus::ObjectPath& object_path) override;
   void DeviceRemoved(const dbus::ObjectPath& object_path) override;
   void DevicePropertyChanged(const dbus::ObjectPath& object_path,
                              const std::string& property_name) override;
 
-  // BluetoothInputClient::Observer override.
+  // bluez::BluetoothInputClient::Observer override.
   void InputPropertyChanged(const dbus::ObjectPath& object_path,
                             const std::string& property_name) override;
 
-  // BluetoothAgentServiceProvider::Delegate override.
+  // bluez::BluetoothAgentServiceProvider::Delegate override.
   void Released() override;
   void RequestPinCode(const dbus::ObjectPath& device_path,
                       const PinCodeCallback& callback) override;
@@ -280,52 +284,60 @@ class DEVICE_BLUETOOTH_EXPORT BluetoothAdapterChromeOS
                                  bool success);
 
   // BluetoothAdapter:
-  void AddDiscoverySession(device::BluetoothDiscoveryFilter* discovery_filter,
-                           const base::Closure& callback,
-                           const ErrorCallback& error_callback) override;
+  void AddDiscoverySession(
+      device::BluetoothDiscoveryFilter* discovery_filter,
+      const base::Closure& callback,
+      const DiscoverySessionErrorCallback& error_callback) override;
   void RemoveDiscoverySession(
       device::BluetoothDiscoveryFilter* discovery_filter,
       const base::Closure& callback,
-      const ErrorCallback& error_callback) override;
+      const DiscoverySessionErrorCallback& error_callback) override;
   void SetDiscoveryFilter(
       scoped_ptr<device::BluetoothDiscoveryFilter> discovery_filter,
       const base::Closure& callback,
-      const ErrorCallback& error_callback) override;
+      const DiscoverySessionErrorCallback& error_callback) override;
 
   // Called by dbus:: on completion of the D-Bus method call to start discovery.
   void OnStartDiscovery(const base::Closure& callback,
-                        const ErrorCallback& error_callback);
-  void OnStartDiscoveryError(const base::Closure& callback,
-                             const ErrorCallback& error_callback,
-                             const std::string& error_name,
-                             const std::string& error_message);
+                        const DiscoverySessionErrorCallback& error_callback);
+  void OnStartDiscoveryError(
+      const base::Closure& callback,
+      const DiscoverySessionErrorCallback& error_callback,
+      const std::string& error_name,
+      const std::string& error_message);
 
   // Called by dbus:: on completion of the D-Bus method call to stop discovery.
   void OnStopDiscovery(const base::Closure& callback);
-  void OnStopDiscoveryError(const ErrorCallback& error_callback,
+  void OnStopDiscoveryError(const DiscoverySessionErrorCallback& error_callback,
                             const std::string& error_name,
                             const std::string& error_message);
 
-  void OnPreSetDiscoveryFilter(const base::Closure& callback,
-                               const ErrorCallback& error_callback);
-  void OnPreSetDiscoveryFilterError(const base::Closure& callback,
-                                    const ErrorCallback& error_callback);
-  void OnSetDiscoveryFilter(const base::Closure& callback,
-                            const ErrorCallback& error_callback);
-  void OnSetDiscoveryFilterError(const base::Closure& callback,
-                                 const ErrorCallback& error_callback,
-                                 const std::string& error_name,
-                                 const std::string& error_message);
+  void OnPreSetDiscoveryFilter(
+      const base::Closure& callback,
+      const DiscoverySessionErrorCallback& error_callback);
+  void OnPreSetDiscoveryFilterError(
+      const base::Closure& callback,
+      const DiscoverySessionErrorCallback& error_callback,
+      device::UMABluetoothDiscoverySessionOutcome outcome);
+  void OnSetDiscoveryFilter(
+      const base::Closure& callback,
+      const DiscoverySessionErrorCallback& error_callback);
+  void OnSetDiscoveryFilterError(
+      const base::Closure& callback,
+      const DiscoverySessionErrorCallback& error_callback,
+      const std::string& error_name,
+      const std::string& error_message);
 
   // Called by dbus:: on completion of the D-Bus method to register a profile.
   void OnRegisterProfile(const device::BluetoothUUID& uuid,
                          scoped_ptr<BluetoothAdapterProfileChromeOS> profile);
 
-  void SetProfileDelegate(const device::BluetoothUUID& uuid,
-                          const dbus::ObjectPath& device_path,
-                          BluetoothProfileServiceProvider::Delegate* delegate,
-                          const ProfileRegisteredCallback& success_callback,
-                          const ErrorCompletionCallback& error_callback);
+  void SetProfileDelegate(
+      const device::BluetoothUUID& uuid,
+      const dbus::ObjectPath& device_path,
+      bluez::BluetoothProfileServiceProvider::Delegate* delegate,
+      const ProfileRegisteredCallback& success_callback,
+      const ErrorCompletionCallback& error_callback);
   void OnRegisterProfileError(const device::BluetoothUUID& uuid,
                               const std::string& error_name,
                               const std::string& error_message);
@@ -365,7 +377,7 @@ class DEVICE_BLUETOOTH_EXPORT BluetoothAdapterChromeOS
 
   // Instance of the D-Bus agent object used for pairing, initialized with
   // our own class as its delegate.
-  scoped_ptr<BluetoothAgentServiceProvider> agent_;
+  scoped_ptr<bluez::BluetoothAgentServiceProvider> agent_;
 
   // UI thread task runner and socket thread object used to create sockets.
   scoped_refptr<base::SequencedTaskRunner> ui_task_runner_;

@@ -114,11 +114,15 @@ bool HTTPTransportWin::ExecuteSynchronously(std::string* response_body) {
   url_components.dwUrlPathLength = 1;
   url_components.dwExtraInfoLength = 1;
   std::wstring url_wide(base::UTF8ToUTF16(url()));
+  // dwFlags = ICU_REJECT_USERPWD fails on XP. See "Community Additions" at:
+  // https://msdn.microsoft.com/en-us/library/aa384092.aspx
   if (!WinHttpCrackUrl(
-          url_wide.c_str(), 0, ICU_REJECT_USERPWD, &url_components)) {
+          url_wide.c_str(), 0, 0, &url_components)) {
     LogErrorWinHttpMessage("WinHttpCrackUrl");
     return false;
   }
+  DCHECK(url_components.nScheme == INTERNET_SCHEME_HTTP ||
+         url_components.nScheme == INTERNET_SCHEME_HTTPS);
   std::wstring host_name(url_components.lpszHostName,
                          url_components.dwHostNameLength);
   std::wstring url_path(url_components.lpszUrlPath,
@@ -133,14 +137,15 @@ bool HTTPTransportWin::ExecuteSynchronously(std::string* response_body) {
     return false;
   }
 
-  ScopedHINTERNET request(
-      WinHttpOpenRequest(connect.get(),
-                         base::UTF8ToUTF16(method()).c_str(),
-                         url_path.c_str(),
-                         nullptr,
-                         WINHTTP_NO_REFERER,
-                         WINHTTP_DEFAULT_ACCEPT_TYPES,
-                         0));
+  ScopedHINTERNET request(WinHttpOpenRequest(
+      connect.get(),
+      base::UTF8ToUTF16(method()).c_str(),
+      url_path.c_str(),
+      nullptr,
+      WINHTTP_NO_REFERER,
+      WINHTTP_DEFAULT_ACCEPT_TYPES,
+      url_components.nScheme == INTERNET_SCHEME_HTTPS ? WINHTTP_FLAG_SECURE
+                                                      : 0));
   if (!request.get()) {
     LogErrorWinHttpMessage("WinHttpOpenRequest");
     return false;

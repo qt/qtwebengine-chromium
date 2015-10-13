@@ -32,12 +32,12 @@
 
 #include "bindings/core/v8/ScriptController.h"
 #include "core/dom/DocumentType.h"
+#include "core/editing/EditingUtilities.h"
 #include "core/editing/Editor.h"
 #include "core/editing/FrameSelection.h"
 #include "core/editing/InputMethodController.h"
-#include "core/editing/SpellChecker.h"
-#include "core/editing/htmlediting.h"
-#include "core/editing/markup.h"
+#include "core/editing/serializers/Serialization.h"
+#include "core/editing/spellcheck/SpellChecker.h"
 #include "core/events/Event.h"
 #include "core/fetch/ResourceFetcher.h"
 #include "core/frame/EventHandlerRegistry.h"
@@ -54,13 +54,14 @@
 #include "core/inspector/InstrumentingAgents.h"
 #include "core/layout/HitTestResult.h"
 #include "core/layout/LayoutView.h"
-#include "core/layout/compositing/DeprecatedPaintLayerCompositor.h"
+#include "core/layout/compositing/PaintLayerCompositor.h"
 #include "core/loader/FrameLoadRequest.h"
 #include "core/loader/FrameLoaderClient.h"
+#include "core/loader/NavigationScheduler.h"
 #include "core/page/FocusController.h"
 #include "core/page/Page.h"
 #include "core/page/scrolling/ScrollingCoordinator.h"
-#include "core/paint/DeprecatedPaintLayer.h"
+#include "core/paint/PaintLayer.h"
 #include "core/paint/TransformRecorder.h"
 #include "core/svg/SVGDocumentExtensions.h"
 #include "platform/DragImage.h"
@@ -68,10 +69,14 @@
 #include "platform/RuntimeEnabledFeatures.h"
 #include "platform/ScriptForbiddenScope.h"
 #include "platform/graphics/GraphicsContext.h"
-#include "platform/graphics/ImageBuffer.h"
+#include "platform/graphics/StaticBitmapImage.h"
 #include "platform/graphics/paint/ClipRecorder.h"
 #include "platform/graphics/paint/SkPictureBuilder.h"
 #include "platform/text/TextStream.h"
+#include "public/platform/WebFrameHostScheduler.h"
+#include "public/platform/WebFrameScheduler.h"
+#include "public/platform/WebSecurityOrigin.h"
+#include "third_party/skia/include/core/SkImage.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/StdLibExtras.h"
 
@@ -82,10 +87,11 @@ using namespace HTMLNames;
 namespace {
 
 struct ScopedFramePaintingState {
+    STACK_ALLOCATED();
+public:
     ScopedFramePaintingState(LocalFrame* frame, Node* node)
         : frame(frame)
         , node(node)
-        , paintBehavior(frame->view()->paintBehavior())
     {
         ASSERT(!node || node->layoutObject());
         if (node)
@@ -96,13 +102,11 @@ struct ScopedFramePaintingState {
     {
         if (node && node->layoutObject())
             node->layoutObject()->updateDragState(false);
-        frame->view()->setPaintBehavior(paintBehavior);
         frame->view()->setNodeToDraw(0);
     }
 
-    LocalFrame* frame;
-    Node* node;
-    PaintBehavior paintBehavior;
+    RawPtrWillBeMember<LocalFrame> frame;
+    RawPtrWillBeMember<Node> node;
 };
 
 inline float parentPageZoomFactor(LocalFrame* frame)
@@ -233,7 +237,7 @@ WindowProxy* LocalFrame::windowProxy(DOMWrapperWorld& world)
     return m_script->windowProxy(world);
 }
 
-void LocalFrame::navigate(Document& originDocument, const KURL& url, bool lockBackForwardList, UserGestureStatus userGestureStatus)
+void LocalFrame::navigate(Document& originDocument, const KURL& url, bool replaceCurrentItem, UserGestureStatus userGestureStatus)
 {
     // TODO(dcheng): Special case for window.open("about:blank") to ensure it loads synchronously into
     // a new window. This is our historical behavior, and it's consistent with the creation of
@@ -247,7 +251,7 @@ void LocalFrame::navigate(Document& originDocument, const KURL& url, bool lockBa
         request.resourceRequest().setHasUserGesture(userGestureStatus == UserGestureStatus::Active);
         m_loader.load(request);
     } else {
-        m_navigationScheduler.scheduleLocationChange(&originDocument, url.string(), lockBackForwardList);
+        m_navigationScheduler->scheduleLocationChange(&originDocument, url.string(), replaceCurrentItem);
     }
 }
 
@@ -268,7 +272,7 @@ void LocalFrame::reload(FrameLoadType loadType, ClientRedirectPolicy clientRedir
         request.setClientRedirect(clientRedirectPolicy);
         m_loader.load(request, loadType);
     } else {
-        m_navigationScheduler.scheduleReload();
+        m_navigationScheduler->scheduleReload();
     }
 }
 
@@ -281,6 +285,12 @@ void LocalFrame::detach(FrameDetachType type)
     m_loader.stopAllLoaders();
     m_loader.dispatchUnloadEvent();
     detachChildren();
+    m_frameScheduler.clear();
+
+    // All done if detaching the subframes brought about a detach of this frame also.
+    if (!client())
+        return;
+
     // stopAllLoaders() needs to be called after detachChildren(), because detachChildren()
     // will trigger the unload event handlers of any child frames, and those event
     // handlers might start a new subresource load in this frame.
@@ -586,18 +596,22 @@ double LocalFrame::devicePixelRatio() const
 }
 
 PassOwnPtr<DragImage> LocalFrame::paintIntoDragImage(
-    const DisplayItemClientWrapper& displayItemClient, DisplayItem::Type clipType, RespectImageOrientationEnum shouldRespectImageOrientation, IntRect paintingRect)
+    const DisplayItemClientWrapper& displayItemClient,
+    RespectImageOrientationEnum shouldRespectImageOrientation,
+    const GlobalPaintFlags globalPaintFlags, IntRect paintingRect, float opacity)
 {
     ASSERT(document()->isActive());
+    // Not flattening compositing layers will result in a broken image being painted.
+    ASSERT(globalPaintFlags & GlobalPaintFlattenCompositingLayers);
+
     float deviceScaleFactor = m_host->deviceScaleFactor();
     paintingRect.setWidth(paintingRect.width() * deviceScaleFactor);
     paintingRect.setHeight(paintingRect.height() * deviceScaleFactor);
 
-    OwnPtr<ImageBuffer> buffer = ImageBuffer::create(paintingRect.size());
-    if (!buffer)
-        return nullptr;
-
-    SkPictureBuilder pictureBuilder(paintingRect);
+    // The content is shifted to origin, to fit within the image bounds - which are the same
+    // as the picture bounds.
+    SkRect pictureBounds = SkRect::MakeIWH(paintingRect.width(), paintingRect.height());
+    SkPictureBuilder pictureBuilder(pictureBounds);
     {
         GraphicsContext& paintContext = pictureBuilder.context();
 
@@ -606,17 +620,16 @@ PassOwnPtr<DragImage> LocalFrame::paintIntoDragImage(
         transform.translate(-paintingRect.x(), -paintingRect.y());
         TransformRecorder transformRecorder(paintContext, displayItemClient, transform);
 
-        ClipRecorder clipRecorder(paintContext, displayItemClient, clipType,
-            LayoutRect(0, 0, paintingRect.maxX(), paintingRect.maxY()));
-
-        m_view->paintContents(&paintContext, paintingRect);
+        m_view->paintContents(&paintContext, globalPaintFlags, paintingRect);
 
     }
     RefPtr<const SkPicture> recording = pictureBuilder.endRecording();
-    buffer->canvas()->drawPicture(recording.get());
+    RefPtr<SkImage> skImage = adoptRef(SkImage::NewFromPicture(recording.get(),
+        SkISize::Make(paintingRect.width(), paintingRect.height()), nullptr, nullptr));
+    RefPtr<Image> image = StaticBitmapImage::create(skImage.release());
 
-    RefPtr<Image> image = buffer->copyImage();
-    return DragImage::create(image.get(), shouldRespectImageOrientation, deviceScaleFactor);
+    return DragImage::create(image.get(), shouldRespectImageOrientation, deviceScaleFactor,
+        InterpolationHigh, opacity);
 }
 
 PassOwnPtr<DragImage> LocalFrame::nodeImage(Node& node)
@@ -628,8 +641,6 @@ PassOwnPtr<DragImage> LocalFrame::nodeImage(Node& node)
 
     m_view->updateAllLifecyclePhases();
 
-    m_view->setPaintBehavior(state.paintBehavior | PaintBehaviorFlattenCompositingLayers);
-
     m_view->setNodeToDraw(&node); // Enable special sub-tree drawing mode.
 
     // Document::updateLayout may have blown away the original LayoutObject.
@@ -639,20 +650,21 @@ PassOwnPtr<DragImage> LocalFrame::nodeImage(Node& node)
 
     IntRect rect;
 
-    return paintIntoDragImage(*layoutObject, DisplayItem::ClipNodeImage, layoutObject->shouldRespectImageOrientation(),
-        layoutObject->paintingRootRect(rect));
+    return paintIntoDragImage(*layoutObject, layoutObject->shouldRespectImageOrientation(),
+        GlobalPaintFlattenCompositingLayers, layoutObject->paintingRootRect(rect));
 }
 
-PassOwnPtr<DragImage> LocalFrame::dragImageForSelection()
+PassOwnPtr<DragImage> LocalFrame::dragImageForSelection(float opacity)
 {
     if (!selection().isRange())
         return nullptr;
 
     const ScopedFramePaintingState state(this, 0);
-    m_view->setPaintBehavior(PaintBehaviorSelectionOnly | PaintBehaviorFlattenCompositingLayers);
     m_view->updateAllLifecyclePhases();
 
-    return paintIntoDragImage(*this, DisplayItem::ClipSelectionImage, DoNotRespectImageOrientation, enclosingIntRect(selection().bounds()));
+    return paintIntoDragImage(*this, DoNotRespectImageOrientation,
+        GlobalPaintSelectionOnly | GlobalPaintFlattenCompositingLayers,
+        enclosingIntRect(selection().bounds()), opacity);
 }
 
 String LocalFrame::selectedText() const
@@ -665,19 +677,19 @@ String LocalFrame::selectedTextForClipboard() const
     return selection().selectedTextForClipboard();
 }
 
-VisiblePosition LocalFrame::visiblePositionForPoint(const IntPoint& framePoint)
+PositionWithAffinity LocalFrame::positionForPoint(const IntPoint& framePoint)
 {
     HitTestResult result = eventHandler().hitTestResultAtPoint(framePoint);
     Node* node = result.innerNodeOrImageMapImage();
     if (!node)
-        return VisiblePosition();
+        return PositionWithAffinity();
     LayoutObject* layoutObject = node->layoutObject();
     if (!layoutObject)
-        return VisiblePosition();
-    VisiblePosition visiblePos = VisiblePosition(layoutObject->positionForPoint(result.localPoint()));
-    if (visiblePos.isNull())
-        visiblePos = VisiblePosition(firstPositionInOrBeforeNode(node));
-    return visiblePos;
+        return PositionWithAffinity();
+    const PositionWithAffinity position = layoutObject->positionForPoint(result.localPoint());
+    if (position.isNull())
+        return PositionWithAffinity(firstPositionInOrBeforeNode(node));
+    return position;
 }
 
 Document* LocalFrame::documentAtPoint(const IntPoint& pointInRootFrame)
@@ -693,28 +705,30 @@ Document* LocalFrame::documentAtPoint(const IntPoint& pointInRootFrame)
     return result.innerNode() ? &result.innerNode()->document() : nullptr;
 }
 
-PassRefPtrWillBeRawPtr<Range> LocalFrame::rangeForPoint(const IntPoint& framePoint)
+EphemeralRange LocalFrame::rangeForPoint(const IntPoint& framePoint)
 {
-    VisiblePosition position = visiblePositionForPoint(framePoint);
-    if (position.isNull())
-        return nullptr;
+    const PositionWithAffinity positionWithAffinity = positionForPoint(framePoint);
+    if (positionWithAffinity.isNull())
+        return EphemeralRange();
 
-    VisiblePosition previous = position.previous();
+    VisiblePosition position = createVisiblePosition(positionWithAffinity);
+    VisiblePosition previous = previousPositionOf(position);
     if (previous.isNotNull()) {
-        RefPtrWillBeRawPtr<Range> previousCharacterRange = makeRange(previous, position);
-        IntRect rect = editor().firstRectForRange(previousCharacterRange.get());
+        const EphemeralRange previousCharacterRange = makeRange(previous, position);
+        IntRect rect = editor().firstRectForRange(previousCharacterRange);
         if (rect.contains(framePoint))
-            return previousCharacterRange.release();
+            return EphemeralRange(previousCharacterRange);
     }
 
-    VisiblePosition next = position.next();
-    if (RefPtrWillBeRawPtr<Range> nextCharacterRange = makeRange(position, next)) {
-        IntRect rect = editor().firstRectForRange(nextCharacterRange.get());
+    VisiblePosition next = nextPositionOf(position);
+    const EphemeralRange nextCharacterRange = makeRange(position, next);
+    if (nextCharacterRange.isNotNull()) {
+        IntRect rect = editor().firstRectForRange(nextCharacterRange);
         if (rect.contains(framePoint))
-            return nextCharacterRange.release();
+            return EphemeralRange(nextCharacterRange);
     }
 
-    return nullptr;
+    return EphemeralRange();
 }
 
 bool LocalFrame::isURLAllowed(const KURL& url) const
@@ -786,9 +800,9 @@ bool LocalFrame::shouldScrollTopControls(const FloatSize& delta) const
     // direction to hide the top controls, only give the delta to the
     // top controls when the frame can scroll.
     DoublePoint maximumScrollPosition =
-        host()->pinchViewport().maximumScrollPositionDouble() +
+        host()->visualViewport().maximumScrollPositionDouble() +
         toDoubleSize(view()->maximumScrollPositionDouble());
-    DoublePoint scrollPosition = host()->pinchViewport()
+    DoublePoint scrollPosition = host()->visualViewport()
         .visibleRectInDocument().location();
     return delta.height() > 0 || scrollPosition.y() < maximumScrollPosition.y();
 }
@@ -830,7 +844,7 @@ String LocalFrame::localLayerTreeAsText(unsigned flags) const
 inline LocalFrame::LocalFrame(FrameLoaderClient* client, FrameHost* host, FrameOwner* owner)
     : Frame(client, host, owner)
     , m_loader(this)
-    , m_navigationScheduler(this)
+    , m_navigationScheduler(NavigationScheduler::create(this))
     , m_script(ScriptController::create(this))
     , m_editor(Editor::create(*this))
     , m_spellChecker(SpellChecker::create(*this))
@@ -846,6 +860,25 @@ inline LocalFrame::LocalFrame(FrameLoaderClient* client, FrameHost* host, FrameO
         m_instrumentingAgents = InstrumentingAgents::create();
     else
         m_instrumentingAgents = localFrameRoot()->m_instrumentingAgents;
+}
+
+WebFrameScheduler* LocalFrame::frameScheduler()
+{
+    if (!m_frameScheduler.get())
+        m_frameScheduler = adoptPtr(host()->frameHostScheduler()->createFrameScheduler());
+
+    ASSERT(m_frameScheduler.get());
+    return m_frameScheduler.get();
+}
+
+void LocalFrame::updateFrameSecurityOrigin()
+{
+    SecurityContext* context = securityContext();
+    if (!context)
+        return;
+
+    WebSecurityOrigin securityOrigin(context->securityOrigin());
+    frameScheduler()->setFrameOrigin(&securityOrigin);
 }
 
 DEFINE_WEAK_IDENTIFIER_MAP(LocalFrame);

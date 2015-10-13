@@ -91,8 +91,8 @@ bool GpuVideoDecodeAcceleratorHost::Initialize(media::VideoCodecProfile profile,
   channel_->AddRoute(route_id, weak_this_factory_.GetWeakPtr());
 
   bool succeeded = false;
-  Send(new GpuCommandBufferMsg_CreateVideoDecoder(
-      impl_->GetRouteID(), profile, route_id, &succeeded));
+  Send(new GpuCommandBufferMsg_CreateVideoDecoder(impl_->route_id(), profile,
+                                                  route_id, &succeeded));
 
   if (!succeeded) {
     DLOG(ERROR) << "Send(GpuCommandBufferMsg_CreateVideoDecoder()) failed";
@@ -118,8 +118,8 @@ void GpuVideoDecodeAcceleratorHost::Decode(
   }
 
   Send(new AcceleratedVideoDecoderMsg_Decode(
-      decoder_route_id_, handle, bitstream_buffer.id(),
-      bitstream_buffer.size()));
+      decoder_route_id_, handle, bitstream_buffer.id(), bitstream_buffer.size(),
+      bitstream_buffer.presentation_timestamp()));
 }
 
 void GpuVideoDecodeAcceleratorHost::AssignPictureBuffers(

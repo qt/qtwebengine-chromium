@@ -41,26 +41,26 @@ class FakeMetricsObserver : public MetricsObserverInterface {
   FakeMetricsObserver();
   void Reset();
 
-  void IncrementCounter(PeerConnectionMetricsCounter type) override;
+  void IncrementEnumCounter(PeerConnectionEnumCounterType,
+                            int counter,
+                            int counter_max) override;
   void AddHistogramSample(PeerConnectionMetricsName type,
                           int value) override;
-  void AddHistogramSample(PeerConnectionMetricsName type,
-                          const std::string& value) override;
 
   // Accessors to be used by the tests.
-  int GetCounter(PeerConnectionMetricsCounter type) const;
-  int GetIntHistogramSample(PeerConnectionMetricsName type) const;
-  const std::string& GetStringHistogramSample(
-      PeerConnectionMetricsName type) const;
+  int GetEnumCounter(PeerConnectionEnumCounterType type, int counter) const;
+  int GetHistogramSample(PeerConnectionMetricsName type) const;
 
  protected:
   ~FakeMetricsObserver() {}
 
  private:
   rtc::ThreadChecker thread_checker_;
-  int counters_[kPeerConnectionMetricsCounter_Max];
-  int int_histogram_samples_[kPeerConnectionMetricsCounter_Max];
-  std::string string_histogram_samples_[kPeerConnectionMetricsName_Max];
+  // The vector contains maps for each counter type. In the map, it's a mapping
+  // from individual counter to its count, such that it's memory efficient when
+  // comes to sparse enum types, like the SSL ciphers in the IANA registry.
+  std::vector<std::map<int, int>> counters_;
+  int histogram_samples_[kPeerConnectionMetricsName_Max];
 };
 
 }  // namespace webrtc

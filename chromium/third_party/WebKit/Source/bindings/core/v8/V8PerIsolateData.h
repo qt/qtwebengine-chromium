@@ -33,6 +33,7 @@
 #include "core/CoreExport.h"
 #include "core/inspector/ScriptDebuggerBase.h"
 #include "gin/public/isolate_holder.h"
+#include "gin/public/v8_idle_task_runner.h"
 #include "wtf/HashMap.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/OwnPtr.h"
@@ -49,15 +50,18 @@ struct WrapperTypeInfo;
 typedef WTF::Vector<DOMDataStore*> DOMDataStoreList;
 
 class CORE_EXPORT V8PerIsolateData {
+    WTF_MAKE_FAST_ALLOCATED(V8PerIsolateData);
     WTF_MAKE_NONCOPYABLE(V8PerIsolateData);
 public:
     class EndOfScopeTask {
+        WTF_MAKE_FAST_ALLOCATED(EndOfScopeTask);
     public:
         virtual ~EndOfScopeTask() { }
         virtual void run() = 0;
     };
 
     static v8::Isolate* initialize();
+
     static V8PerIsolateData* from(v8::Isolate* isolate)
     {
         ASSERT(isolate);
@@ -68,6 +72,8 @@ public:
     static void willBeDestroyed(v8::Isolate*);
     static void destroy(v8::Isolate*);
     static v8::Isolate* mainThreadIsolate();
+
+    static void enableIdleTasks(v8::Isolate*, PassOwnPtr<gin::V8IdleTaskRunner>);
 
     bool destructionPending() const { return m_destructionPending; }
     v8::Isolate* isolate() { return m_isolateHolder->isolate(); }
@@ -106,6 +112,7 @@ public:
     v8::Local<v8::Object> findInstanceInPrototypeChain(const WrapperTypeInfo*, v8::Local<v8::Value>);
 
     v8::Local<v8::Context> ensureScriptRegexpContext();
+    void clearScriptRegexpContext();
 
     const char* previousSamplingState() const { return m_previousSamplingState; }
     void setPreviousSamplingState(const char* name) { m_previousSamplingState = name; }
@@ -118,7 +125,7 @@ public:
     void runEndOfScopeTasks();
     void clearEndOfScopeTasks();
 
-    void setScriptDebugger(PassOwnPtrWillBeRawPtr<ScriptDebuggerBase>);
+    void setScriptDebugger(PassOwnPtr<ScriptDebuggerBase>);
 
 private:
     V8PerIsolateData();
@@ -154,11 +161,7 @@ private:
     bool m_performingMicrotaskCheckpoint;
 
     Vector<OwnPtr<EndOfScopeTask>> m_endOfScopeTasks;
-#if ENABLE(OILPAN)
-    CrossThreadPersistent<ScriptDebuggerBase> m_scriptDebugger;
-#else
     OwnPtr<ScriptDebuggerBase> m_scriptDebugger;
-#endif
 };
 
 } // namespace blink

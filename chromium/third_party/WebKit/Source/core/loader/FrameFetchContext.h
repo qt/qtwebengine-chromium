@@ -72,16 +72,14 @@ public:
     ResourceRequestCachePolicy resourceRequestCachePolicy(const ResourceRequest&, Resource::Type) const override;
     void dispatchDidChangeResourcePriority(unsigned long identifier, ResourceLoadPriority, int intraPriorityValue) override;
     void dispatchWillSendRequest(unsigned long identifier, ResourceRequest&, const ResourceResponse& redirectResponse, const FetchInitiatorInfo& = FetchInitiatorInfo()) override;
-    void dispatchDidLoadResourceFromMemoryCache(const ResourceRequest&, const ResourceResponse&) override;
+    void dispatchDidLoadResourceFromMemoryCache(const Resource*) override;
     void dispatchDidReceiveResponse(unsigned long identifier, const ResourceResponse&, ResourceLoader* = 0) override;
     void dispatchDidReceiveData(unsigned long identifier, const char* data, int dataLength, int encodedDataLength) override;
     void dispatchDidDownloadData(unsigned long identifier, int dataLength, int encodedDataLength)  override;
     void dispatchDidFinishLoading(unsigned long identifier, double finishTime, int64_t encodedDataLength) override;
     void dispatchDidFail(unsigned long identifier, const ResourceError&, bool isInternalRequest) override;
-    void sendRemainingDelegateMessages(unsigned long identifier, const ResourceResponse&, int dataLength) override;
 
     bool shouldLoadNewResource(Resource::Type) const override;
-    void dispatchWillRequestResource(FetchRequest*) override;
     void willStartLoadingResource(ResourceRequest&) override;
     void didLoadResource() override;
 
@@ -93,7 +91,6 @@ public:
     int64_t serviceWorkerID() const override;
 
     bool isMainFrame() const override;
-    bool hasSubstituteData() const override;
     bool defersLoading() const override;
     bool isLoadComplete() const override;
     bool pageDismissalEventBeingDispatched() const override;
@@ -104,7 +101,9 @@ public:
     void upgradeInsecureRequest(FetchRequest&) override;
     void addClientHintsIfNecessary(FetchRequest&) override;
     void addCSPHeaderIfNecessary(Resource::Type, FetchRequest&) override;
-    bool isLowPriorityIframe() const override;
+
+    bool fetchIncreasePriorities() const override;
+    ResourceLoadPriority modifyPriorityForExperiments(ResourceLoadPriority, Resource::Type, const FetchRequest&) override;
 
     void countClientHintsDPR() override;
     void countClientHintsResourceWidth() override;
@@ -114,16 +113,19 @@ public:
 
 private:
     explicit FrameFetchContext(DocumentLoader*);
-    inline DocumentLoader* ensureLoaderForNotifications();
+    inline DocumentLoader* ensureLoaderForNotifications() const;
 
     LocalFrame* frame() const; // Can be null
     void printAccessDeniedMessage(const KURL&) const;
+    ResourceRequestBlockedReason canRequestInternal(Resource::Type, const ResourceRequest&, const KURL&, const ResourceLoaderOptions&, bool forPreload, FetchRequest::OriginRestriction) const;
 
     // FIXME: Oilpan: Ideally this should just be a traced Member but that will
     // currently leak because ComputedStyle and its data are not on the heap.
     // See crbug.com/383860 for details.
     RawPtrWillBeWeakMember<Document> m_document;
     RawPtrWillBeMember<DocumentLoader> m_documentLoader;
+
+    bool m_imageFetched : 1;
 };
 
 }

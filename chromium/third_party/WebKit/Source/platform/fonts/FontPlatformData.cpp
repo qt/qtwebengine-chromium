@@ -21,13 +21,13 @@
 #include "config.h"
 #include "platform/fonts/FontPlatformData.h"
 
-#include "SkEndian.h"
 #include "SkTypeface.h"
 #include "hb-ot.h"
 #include "hb.h"
 #include "platform/fonts/Character.h"
 #include "platform/fonts/FontCache.h"
 #include "platform/fonts/shaping/HarfBuzzFace.h"
+#include "wtf/ByteSwap.h"
 #include "wtf/HashMap.h"
 #include "wtf/text/StringHash.h"
 #include "wtf/text/WTFString.h"
@@ -289,23 +289,23 @@ bool FontPlatformData::hasSpaceInLigaturesOrKerning(
 {
     const HarfBuzzFace* hbFace = harfBuzzFace();
     if (!hbFace)
-        return true;
+        return false;
 
     hb_face_t* face = hbFace->face();
     ASSERT(face);
-    hb_font_t* font = hbFace->createFont();
+    OwnPtr<hb_font_t> font = adoptPtr(hbFace->createFont());
     ASSERT(font);
 
     hb_codepoint_t space;
     // If the space glyph isn't present in the font then each space character
     // will be rendering using a fallback font, which grantees that it cannot
     // affect the shape of the preceding word.
-    if (!hb_font_get_glyph(font, spaceCharacter, 0, &space))
-        return true;
+    if (!hb_font_get_glyph(font.get(), spaceCharacter, 0, &space))
+        return false;
 
     if (!hb_ot_layout_has_substitution(face)
         && !hb_ot_layout_has_positioning(face)) {
-        return true;
+        return false;
     }
 
     bool foundSpaceInTable = false;
@@ -316,7 +316,6 @@ bool FontPlatformData::hasSpaceInLigaturesOrKerning(
         foundSpaceInTable = tableHasSpace(face, glyphs, HB_OT_TAG_GSUB, space);
 
     hb_set_destroy(glyphs);
-    hb_font_destroy(font);
 
     return foundSpaceInTable;
 }
@@ -359,7 +358,7 @@ PassRefPtr<SharedBuffer> FontPlatformData::openTypeTable(uint32_t table) const
 {
     RefPtr<SharedBuffer> buffer;
 
-    SkFontTableTag tag = SkEndianSwap32(table);
+    SkFontTableTag tag = WTF::bswap32(table);
     const size_t tableSize = m_typeface->getTableSize(tag);
     if (tableSize) {
         Vector<char> tableBuffer(tableSize);

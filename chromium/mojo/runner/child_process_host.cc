@@ -4,7 +4,6 @@
 
 #include "mojo/runner/child_process_host.h"
 
-#include "base/base_switches.h"
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/location.h"
@@ -16,21 +15,28 @@
 #include "base/task_runner.h"
 #include "base/task_runner_util.h"
 #include "base/thread_task_runner_handle.h"
-#include "mojo/edk/embedder/embedder.h"
 #include "mojo/public/cpp/bindings/interface_ptr_info.h"
 #include "mojo/public/cpp/system/core.h"
 #include "mojo/runner/context.h"
 #include "mojo/runner/switches.h"
 #include "mojo/runner/task_runners.h"
-#include "ui/gl/gl_switches.h"
+#include "third_party/mojo/src/mojo/edk/embedder/embedder.h"
+
+#if defined(OS_LINUX) && !defined(OS_ANDROID)
+#include "sandbox/linux/services/namespace_sandbox.h"
+#endif
 
 namespace mojo {
 namespace runner {
 
-ChildProcessHost::ChildProcessHost(Context* context, const std::string& name)
-    : context_(context), name_(name), channel_info_(nullptr) {
+ChildProcessHost::ChildProcessHost(Context* context,
+                                   bool start_sandboxed,
+                                   const base::FilePath& app_path)
+    : context_(context),
+      start_sandboxed_(start_sandboxed),
+      app_path_(app_path),
+      channel_info_(nullptr) {
   platform_channel_ = platform_channel_pair_.PassServerHandle();
-  DCHECK(!name.empty());
   CHECK(platform_channel_.is_valid());
 }
 
@@ -68,15 +74,13 @@ int ChildProcessHost::Join() {
 }
 
 void ChildProcessHost::StartApp(
-    const String& app_path,
-    bool clean_app_path,
     InterfaceRequest<Application> application_request,
     const ChildController::StartAppCallback& on_app_complete) {
   DCHECK(controller_);
 
   on_app_complete_ = on_app_complete;
   controller_->StartApp(
-      app_path, clean_app_path, application_request.Pass(),
+      application_request.Pass(),
       base::Bind(&ChildProcessHost::AppCompleted, base::Unretained(this)));
 }
 
@@ -97,25 +101,14 @@ void ChildProcessHost::DidStart(bool success) {
 }
 
 bool ChildProcessHost::DoLaunch() {
-  static const char* kForwardSwitches[] = {
-      switches::kOverrideUseGLWithOSMesaForTests,
-      switches::kTraceToConsole,
-      switches::kV,
-      switches::kVModule,
-      switches::kWaitForDebugger,
-  };
-
   const base::CommandLine* parent_command_line =
       base::CommandLine::ForCurrentProcess();
   base::CommandLine child_command_line(parent_command_line->GetProgram());
-  child_command_line.CopySwitchesFrom(*parent_command_line, kForwardSwitches,
-                                      arraysize(kForwardSwitches));
-  child_command_line.AppendSwitchASCII(switches::kApp, name_);
-  child_command_line.AppendSwitch(switches::kChildProcess);
+  child_command_line.AppendArguments(*parent_command_line, false);
+  child_command_line.AppendSwitchPath(switches::kChildProcess, app_path_);
 
-  auto args = parent_command_line->GetArgs();
-  for (const auto& arg : args)
-    child_command_line.AppendArgNative(arg);
+  if (start_sandboxed_)
+    child_command_line.AppendSwitch(switches::kEnableSandbox);
 
   embedder::HandlePassingInformation handle_passing_info;
   platform_channel_pair_.PrepareToPassClientHandleToChildProcess(
@@ -125,11 +118,26 @@ bool ChildProcessHost::DoLaunch() {
 #if defined(OS_WIN)
   options.handles_to_inherit = &handle_passing_info;
 #elif defined(OS_POSIX)
+  handle_passing_info.push_back(std::make_pair(STDIN_FILENO, STDIN_FILENO));
+  handle_passing_info.push_back(std::make_pair(STDOUT_FILENO, STDOUT_FILENO));
+  handle_passing_info.push_back(std::make_pair(STDERR_FILENO, STDERR_FILENO));
   options.fds_to_remap = &handle_passing_info;
 #endif
   DVLOG(2) << "Launching child with command line: "
            << child_command_line.GetCommandLineString();
-  child_process_ = base::LaunchProcess(child_command_line, options);
+#if defined(OS_LINUX) && !defined(OS_ANDROID)
+  if (start_sandboxed_) {
+    child_process_ =
+        sandbox::NamespaceSandbox::LaunchProcess(child_command_line, options);
+    if (!child_process_.IsValid()) {
+      LOG(ERROR) << "Starting the process with a sandbox failed. Missing kernel"
+                 << " support.";
+      return false;
+    }
+  } else
+#endif
+    child_process_ = base::LaunchProcess(child_command_line, options);
+
   if (!child_process_.IsValid())
     return false;
 
@@ -148,7 +156,8 @@ void ChildProcessHost::AppCompleted(int32_t result) {
 void ChildProcessHost::DidCreateChannel(embedder::ChannelInfo* channel_info) {
   DVLOG(2) << "AppChildProcessHost::DidCreateChannel()";
 
-  CHECK(channel_info);
+  DCHECK(channel_info ||
+         base::CommandLine::ForCurrentProcess()->HasSwitch("use-new-edk"));
   channel_info_ = channel_info;
 }
 

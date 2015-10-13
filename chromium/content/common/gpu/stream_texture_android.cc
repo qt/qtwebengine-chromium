@@ -184,7 +184,7 @@ void StreamTexture::OnEstablishPeer(int32 primary_id, int32 secondary_id) {
   if (!owner_stub_)
     return;
 
-  base::ProcessHandle process = owner_stub_->channel()->renderer_pid();
+  base::ProcessHandle process = owner_stub_->channel()->GetClientPID();
 
   SurfaceTexturePeer::GetInstance()->EstablishSurfaceTexturePeer(
       process, surface_texture_, primary_id, secondary_id);
@@ -212,6 +212,12 @@ bool StreamTexture::ScheduleOverlayPlane(gfx::AcceleratedWidget widget,
                                          const gfx::RectF& crop_rect) {
   NOTREACHED();
   return false;
+}
+
+void StreamTexture::OnMemoryDump(base::trace_event::ProcessMemoryDump* pmd,
+                                 uint64_t process_tracing_id,
+                                 const std::string& dump_name) {
+  // TODO(ericrk): Add OnMemoryDump for GLImages. crbug.com/514914
 }
 
 }  // namespace content

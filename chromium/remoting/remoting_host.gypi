@@ -72,7 +72,7 @@
                 ['chromeos==0 and use_ozone==0', {
                   'dependencies': [
                     # use GTK on Linux, even for Aura builds.
-                    '../build/linux/system.gyp:gtk',
+                    '../build/linux/system.gyp:gtk2',
                   ],
                 }]
               ],
@@ -186,6 +186,11 @@
               'sources': [
                 '<@(remoting_cast_sources)',
               ],
+            }],
+            ['remoting_use_gcd==1', {
+              'defines': [
+                'USE_GCD',
+              ]
             }],
           ],
         },  # end of target 'remoting_host'
@@ -447,6 +452,11 @@
                 'USE_REMOTING_MACOSX_INTERNAL'
               ],
             }],
+            ['remoting_use_gcd==1', {
+              'defines': [
+                'USE_GCD',
+              ]
+            }],
           ],  # end of 'conditions'
         },  # end of target 'remoting_me2me_host_static'
       ]  # end of targets
@@ -664,7 +674,7 @@
                 ['OS=="linux" and chromeos==0 and use_ozone==0', {
                   'dependencies': [
                     # Always use GTK on Linux, even for Aura builds.
-                    '../build/linux/system.gyp:gtk',
+                    '../build/linux/system.gyp:gtk2',
                   ],
                 }],
                 ['OS=="linux" and use_allocator!="none"', {

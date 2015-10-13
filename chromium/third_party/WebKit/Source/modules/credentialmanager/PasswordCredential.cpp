@@ -5,9 +5,14 @@
 #include "config.h"
 #include "modules/credentialmanager/PasswordCredential.h"
 
+#include "bindings/core/v8/Dictionary.h"
 #include "bindings/core/v8/ExceptionState.h"
-#include "core/html/DOMFormData.h"
+#include "core/dom/ExecutionContext.h"
+#include "core/html/FormData.h"
+#include "modules/credentialmanager/FormDataOptions.h"
+#include "modules/credentialmanager/PasswordCredentialData.h"
 #include "platform/credentialmanager/PlatformPasswordCredential.h"
+#include "platform/weborigin/SecurityOrigin.h"
 #include "public/platform/WebCredential.h"
 #include "public/platform/WebPasswordCredential.h"
 
@@ -18,12 +23,12 @@ PasswordCredential* PasswordCredential::create(WebPasswordCredential* webPasswor
     return new PasswordCredential(webPasswordCredential);
 }
 
-PasswordCredential* PasswordCredential::create(const String& id, const String& password, const String& name, const String& icon, ExceptionState& exceptionState)
+PasswordCredential* PasswordCredential::create(const PasswordCredentialData& data, ExceptionState& exceptionState)
 {
-    KURL iconURL = parseStringAsURL(icon, exceptionState);
+    KURL iconURL = parseStringAsURL(data.iconURL(), exceptionState);
     if (exceptionState.hadException())
         return nullptr;
-    return new PasswordCredential(id, password, name, iconURL);
+    return new PasswordCredential(data.id(), data.password(), data.name(), iconURL);
 }
 
 PasswordCredential::PasswordCredential(WebPasswordCredential* webPasswordCredential)
@@ -33,10 +38,21 @@ PasswordCredential::PasswordCredential(WebPasswordCredential* webPasswordCredent
 
 PasswordCredential::PasswordCredential(const String& id, const String& password, const String& name, const KURL& icon)
     : Credential(PlatformPasswordCredential::create(id, password, name, icon))
-    , m_formData(DOMFormData::create())
 {
-    m_formData->append("username", id);
-    m_formData->append("password", password);
+}
+
+FormData* PasswordCredential::toFormData(ScriptState* scriptState, const FormDataOptions& options)
+{
+    FormData* fd = FormData::create();
+
+    String errorMessage;
+    if (!scriptState->executionContext()->isSecureContext(errorMessage))
+        return fd;
+
+    fd->append(options.idName(), id());
+    fd->append(options.passwordName(), password());
+    fd->makeOpaque();
+    return fd;
 }
 
 const String& PasswordCredential::password() const
@@ -46,7 +62,6 @@ const String& PasswordCredential::password() const
 
 DEFINE_TRACE(PasswordCredential)
 {
-    visitor->trace(m_formData);
     Credential::trace(visitor);
 }
 

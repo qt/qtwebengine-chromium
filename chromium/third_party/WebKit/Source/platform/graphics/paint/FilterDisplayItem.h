@@ -16,10 +16,10 @@
 
 namespace blink {
 
-class PLATFORM_EXPORT BeginFilterDisplayItem : public PairedBeginDisplayItem {
+class PLATFORM_EXPORT BeginFilterDisplayItem final : public PairedBeginDisplayItem {
 public:
     BeginFilterDisplayItem(const DisplayItemClientWrapper& client, PassRefPtr<SkImageFilter> imageFilter, const FloatRect& bounds, PassOwnPtr<WebFilterOperations> filterOperations = nullptr)
-        : PairedBeginDisplayItem(client, BeginFilter)
+        : PairedBeginDisplayItem(client, BeginFilter, sizeof(*this))
         , m_imageFilter(imageFilter)
         , m_webFilterOperations(filterOperations)
         , m_bounds(bounds) { }
@@ -32,6 +32,14 @@ private:
 #ifndef NDEBUG
     void dumpPropertiesAsDebugString(WTF::StringBuilder&) const override;
 #endif
+#if ENABLE(ASSERT)
+    bool equals(const DisplayItem& other) const final
+    {
+        return DisplayItem::equals(other)
+            // TODO(wangxianzhu): compare m_imageFilter and m_webFilterOperations.
+            && m_bounds == static_cast<const BeginFilterDisplayItem&>(other).m_bounds;
+    }
+#endif
 
     // FIXME: m_imageFilter should be replaced with m_webFilterOperations when copying data to the compositor.
     RefPtr<SkImageFilter> m_imageFilter;
@@ -39,10 +47,10 @@ private:
     const FloatRect m_bounds;
 };
 
-class PLATFORM_EXPORT EndFilterDisplayItem : public PairedEndDisplayItem {
+class PLATFORM_EXPORT EndFilterDisplayItem final : public PairedEndDisplayItem {
 public:
     EndFilterDisplayItem(const DisplayItemClientWrapper& client)
-        : PairedEndDisplayItem(client, EndFilter) { }
+        : PairedEndDisplayItem(client, EndFilter, sizeof(*this)) { }
 
     void replay(GraphicsContext&) override;
     void appendToWebDisplayItemList(WebDisplayItemList*) const override;

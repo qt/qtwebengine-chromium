@@ -125,7 +125,7 @@ LinuxSandbox::~LinuxSandbox() {
 }
 
 LinuxSandbox* LinuxSandbox::GetInstance() {
-  LinuxSandbox* instance = Singleton<LinuxSandbox>::get();
+  LinuxSandbox* instance = base::Singleton<LinuxSandbox>::get();
   CHECK(instance);
   return instance;
 }
@@ -139,13 +139,6 @@ void LinuxSandbox::PreinitializeSandbox() {
   __sanitizer_sandbox_on_notify(sanitizer_args());
   sanitizer_args_.reset();
 #endif
-
-#if !defined(NDEBUG)
-  // The in-process stack dumping needs to open /proc/self/maps and cache
-  // its contents before the sandbox is enabled.  It also pre-opens the
-  // object files that are already loaded in the process address space.
-  base::debug::EnableInProcessStackDumpingForSandbox();
-#endif  // !defined(NDEBUG)
 
   // Open proc_fd_. It would break the security of the setuid sandbox if it was
   // not closed.
@@ -380,8 +373,7 @@ bool LinuxSandbox::seccomp_bpf_with_tsync_supported() const {
 
 bool LinuxSandbox::LimitAddressSpace(const std::string& process_type) {
   (void) process_type;
-#if !defined(ADDRESS_SANITIZER) && !defined(MEMORY_SANITIZER) && \
-    !defined(THREAD_SANITIZER)
+#if !defined(ANY_OF_AMTLU_SANITIZER)
   base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
   if (command_line->HasSwitch(switches::kNoSandbox)) {
     return false;

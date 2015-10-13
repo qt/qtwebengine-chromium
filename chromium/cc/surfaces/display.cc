@@ -20,6 +20,7 @@
 #include "cc/surfaces/surface_aggregator.h"
 #include "cc/surfaces/surface_manager.h"
 #include "gpu/command_buffer/client/gles2_interface.h"
+#include "ui/gfx/buffer_types.h"
 
 namespace cc {
 
@@ -62,17 +63,22 @@ void Display::SetSurfaceId(SurfaceId id, float device_scale_factor) {
   if (current_surface_id_ == id && device_scale_factor_ == device_scale_factor)
     return;
 
+  TRACE_EVENT0("cc", "Display::SetSurfaceId");
+
   current_surface_id_ = id;
   device_scale_factor_ = device_scale_factor;
 
   UpdateRootSurfaceResourcesLocked();
   if (scheduler_)
-    scheduler_->EntireDisplayDamaged(id);
+    scheduler_->SetNewRootSurface(id);
 }
 
 void Display::Resize(const gfx::Size& size) {
   if (size == current_surface_size_)
     return;
+
+  TRACE_EVENT0("cc", "Display::Resize");
+
   // Need to ensure all pending swaps have executed before the window is
   // resized, or D3D11 will scale the swap output.
   if (settings_.finish_rendering_on_resize) {
@@ -85,7 +91,7 @@ void Display::Resize(const gfx::Size& size) {
   swapped_since_resize_ = false;
   current_surface_size_ = size;
   if (scheduler_)
-    scheduler_->EntireDisplayDamaged(current_surface_id_);
+    scheduler_->DisplayResized();
 }
 
 void Display::SetExternalClip(const gfx::Rect& clip) {
@@ -96,13 +102,12 @@ void Display::InitializeRenderer() {
   if (resource_provider_)
     return;
 
-  // Display does not use GpuMemoryBuffers, so persistent map is not relevant.
-  bool use_persistent_map_for_gpu_memory_buffers = false;
   scoped_ptr<ResourceProvider> resource_provider = ResourceProvider::Create(
       output_surface_.get(), bitmap_manager_, gpu_memory_buffer_manager_,
-      nullptr, settings_.highp_threshold_min, settings_.use_rgba_4444_textures,
+      nullptr, settings_.highp_threshold_min,
       settings_.texture_id_allocation_chunk_size,
-      use_persistent_map_for_gpu_memory_buffers);
+      std::vector<unsigned>(static_cast<size_t>(gfx::BufferFormat::LAST) + 1,
+                            GL_TEXTURE_2D));
   if (!resource_provider)
     return;
 
@@ -122,7 +127,12 @@ void Display::InitializeRenderer() {
   }
 
   resource_provider_ = resource_provider.Pass();
-  aggregator_.reset(new SurfaceAggregator(manager_, resource_provider_.get()));
+  // TODO(jbauman): Outputting an incomplete quad list doesn't work when using
+  // overlays.
+  bool output_partial_list = renderer_->Capabilities().using_partial_swap &&
+                             !output_surface_->GetOverlayCandidateValidator();
+  aggregator_.reset(new SurfaceAggregator(manager_, resource_provider_.get(),
+                                          output_partial_list));
 }
 
 void Display::DidLoseOutputSurface() {
@@ -141,19 +151,26 @@ void Display::UpdateRootSurfaceResourcesLocked() {
 }
 
 bool Display::DrawAndSwap() {
-  if (current_surface_id_.is_null())
+  TRACE_EVENT0("cc", "Display::DrawAndSwap");
+
+  if (current_surface_id_.is_null()) {
+    TRACE_EVENT_INSTANT0("cc", "No root surface.", TRACE_EVENT_SCOPE_THREAD);
     return false;
+  }
 
   InitializeRenderer();
-  if (!output_surface_)
+  if (!output_surface_) {
+    TRACE_EVENT_INSTANT0("cc", "No output surface", TRACE_EVENT_SCOPE_THREAD);
     return false;
+  }
 
   scoped_ptr<CompositorFrame> frame =
       aggregator_->Aggregate(current_surface_id_);
-  if (!frame)
+  if (!frame) {
+    TRACE_EVENT_INSTANT0("cc", "Empty aggregated frame.",
+                         TRACE_EVENT_SCOPE_THREAD);
     return false;
-
-  TRACE_EVENT0("cc", "Display::DrawAndSwap");
+  }
 
   // Run callbacks early to allow pipelining.
   for (const auto& id_entry : aggregator_->previous_contained_surfaces()) {
@@ -161,6 +178,7 @@ bool Display::DrawAndSwap() {
     if (surface)
       surface->RunDrawCallbacks(SurfaceDrawStatus::DRAWN);
   }
+
   DelegatedFrameData* frame_data = frame->delegated_frame_data.get();
 
   frame->metadata.latency_info.insert(frame->metadata.latency_info.end(),
@@ -179,9 +197,13 @@ bool Display::DrawAndSwap() {
     have_damage =
         !frame_data->render_pass_list.back()->damage_rect.size().IsEmpty();
   }
-  bool avoid_swap = surface_size != current_surface_size_;
+
+  bool size_matches = surface_size == current_surface_size_;
+  if (!size_matches)
+    TRACE_EVENT_INSTANT0("cc", "Size missmatch.", TRACE_EVENT_SCOPE_THREAD);
+
   bool should_draw = !frame->metadata.latency_info.empty() ||
-                     have_copy_requests || (have_damage && !avoid_swap);
+                     have_copy_requests || (have_damage && size_matches);
 
   // If the surface is suspended then the resources to be used by the draw are
   // likely destroyed.
@@ -202,20 +224,25 @@ bool Display::DrawAndSwap() {
     renderer_->DrawFrame(&frame_data->render_pass_list, device_scale_factor_,
                          device_viewport_rect, device_clip_rect,
                          disable_picture_quad_image_filtering);
+  } else {
+    TRACE_EVENT_INSTANT0("cc", "Draw skipped.", TRACE_EVENT_SCOPE_THREAD);
   }
 
-  if (should_draw && !avoid_swap) {
+  bool should_swap = should_draw && size_matches;
+  if (should_swap) {
     swapped_since_resize_ = true;
     for (auto& latency : frame->metadata.latency_info) {
-      TRACE_EVENT_FLOW_STEP0(
-          "input,benchmark",
-          "LatencyInfo.Flow",
-          TRACE_ID_DONT_MANGLE(latency.trace_id),
-          "Display::DrawAndSwap");
+      TRACE_EVENT_WITH_FLOW1("input,benchmark", "LatencyInfo.Flow",
+          TRACE_ID_DONT_MANGLE(latency.trace_id()),
+          TRACE_EVENT_FLAG_FLOW_IN | TRACE_EVENT_FLAG_FLOW_OUT,
+          "step", "Display::DrawAndSwap");
     }
     benchmark_instrumentation::IssueDisplayRenderingStatsEvent();
     renderer_->SwapBuffers(frame->metadata);
   } else {
+    if (have_damage && !size_matches)
+      aggregator_->SetFullDamageForSurface(current_surface_id_);
+    TRACE_EVENT_INSTANT0("cc", "Swap skipped.", TRACE_EVENT_SCOPE_THREAD);
     stored_latency_info_.insert(stored_latency_info_.end(),
                                 frame->metadata.latency_info.begin(),
                                 frame->metadata.latency_info.end());
@@ -250,7 +277,9 @@ void Display::OnDraw() {
 }
 
 void Display::SetNeedsRedrawRect(const gfx::Rect& damage_rect) {
-  NOTREACHED();
+  aggregator_->SetFullDamageForSurface(current_surface_id_);
+  if (scheduler_)
+    scheduler_->SurfaceDamaged(current_surface_id_);
 }
 
 void Display::ReclaimResources(const CompositorFrameAck* ack) {

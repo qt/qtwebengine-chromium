@@ -19,15 +19,15 @@ class WebURL;
 // 'credentialmanager' module.
 class WebCredentialManagerClient {
 public:
-    typedef WebCallbacks<WebCredential, WebCredentialManagerError> RequestCallbacks;
-    typedef WebCallbacks<void, WebCredentialManagerError> NotificationCallbacks;
+    typedef WebCallbacks<WebCredential*, WebCredentialManagerError*> RequestCallbacks;
+    typedef WebCallbacks<void, WebCredentialManagerError*> NotificationCallbacks;
 
     // Ownership of the callback is transferred to the callee for each of
     // the following methods.
     virtual void dispatchFailedSignIn(const WebCredential&, NotificationCallbacks*) { }
-    virtual void dispatchSignedIn(const WebCredential&, NotificationCallbacks*) { }
+    virtual void dispatchStore(const WebCredential&, NotificationCallbacks*) { }
     virtual void dispatchRequireUserMediation(NotificationCallbacks*) { }
-    virtual void dispatchRequest(bool zeroClickOnly, const WebVector<WebURL>& federations, RequestCallbacks*) { }
+    virtual void dispatchGet(bool zeroClickOnly, const WebVector<WebURL>& federations, RequestCallbacks*) { }
 };
 
 } // namespace blink

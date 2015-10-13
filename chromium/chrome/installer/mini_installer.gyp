@@ -19,19 +19,19 @@
       ],
       'targets': [
         {
-	  # A target that is outdated if any of the mini_installer test sources
-	  # are modified.
+          # A target that is outdated if any of the mini_installer test sources
+          # are modified.
           'target_name': 'test_installer_sentinel',
           'type': 'none',
           'actions': [
             {
               'action_name': 'touch_sentinel',
-	      'variables': {
-	        'touch_sentinel_py': '../tools/build/win/touch_sentinel.py',
+              'variables': {
+                'touch_sentinel_py': '../tools/build/win/touch_sentinel.py',
               },
               'inputs': [
                 '<@(test_installer_sources)',  # from test_installer.gypi
-	        '<(touch_sentinel_py)',
+                '<(touch_sentinel_py)',
               ],
               'outputs': ['<(SHARED_INTERMEDIATE_DIR)/chrome/installer/test_installer_sentinel'],
               'action': ['python', '<(touch_sentinel_py)', '<@(_outputs)'],
@@ -39,6 +39,7 @@
           ],
         },
         {
+          # GN version: //chrome/installer/mini_installer
           'target_name': 'mini_installer',
           'type': 'executable',
 
@@ -76,6 +77,8 @@
             'mini_installer/mini_string.h',
             'mini_installer/pe_resource.cc',
             'mini_installer/pe_resource.h',
+            'mini_installer/regkey.cc',
+            'mini_installer/regkey.h',
           ],
           'msvs_settings': {
             'VCCLCompilerTool': {
@@ -155,9 +158,6 @@
           'msvs_precompiled_header': '',
           'msvs_precompiled_source': '',
 
-          # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
-          'msvs_disabled_warnings': [ 4267, ],
-
           'variables': {
             # Opt out the common compatibility manifest to work around
             # crbug.com/272660.
@@ -194,6 +194,7 @@
           ],
           'actions': [
             {
+              # GN version: //chrome/installer/mini_installer:archive
               'action_name': 'installer_archive',
               'variables': {
                 'create_installer_archive_py_path':

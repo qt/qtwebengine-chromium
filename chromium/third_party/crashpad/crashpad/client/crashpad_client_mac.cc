@@ -21,11 +21,12 @@
 #include "base/logging.h"
 #include "base/posix/eintr_wrapper.h"
 #include "base/strings/stringprintf.h"
-#include "client/crashpad_client.h"
 #include "util/mach/child_port_handshake.h"
 #include "util/mach/exception_ports.h"
 #include "util/mach/mach_extensions.h"
 #include "util/posix/close_multiple.h"
+
+namespace crashpad {
 
 namespace {
 
@@ -38,9 +39,45 @@ std::string FormatArgumentInt(const std::string& name, int value) {
   return base::StringPrintf("--%s=%d", name.c_str(), value);
 }
 
-}  // namespace
+// Set the exception handler for EXC_CRASH, EXC_RESOURCE, and EXC_GUARD.
+//
+// EXC_CRASH is how most crashes are received. Most other exception types such
+// as EXC_BAD_ACCESS are delivered to a host-level exception handler in the
+// kernel where they are converted to POSIX signals. See 10.9.5
+// xnu-2422.115.4/bsd/uxkern/ux_exception.c catch_mach_exception_raise(). If a
+// core-generating signal (triggered through this hardware mechanism or a
+// software mechanism such as abort() sending SIGABRT) is unhandled and the
+// process exits, or if the process is killed with SIGKILL for code-signing
+// reasons, an EXC_CRASH exception will be sent. See 10.9.5
+// xnu-2422.115.4/bsd/kern/kern_exit.c proc_prepareexit().
+//
+// EXC_RESOURCE and EXC_GUARD do not become signals or EXC_CRASH exceptions. The
+// host-level exception handler in the kernel does not receive these exception
+// types, and even if it did, it would not map them to signals. Instead, the
+// first Mach service loaded by the root (process ID 1) launchd with a boolean
+// “ExceptionServer” property in its job dictionary (regardless of its value) or
+// with any subdictionary property will become the host-level exception handler
+// for EXC_CRASH, EXC_RESOURCE, and EXC_GUARD. See 10.9.5
+// launchd-842.92.1/src/core.c job_setup_exception_port(). Normally, this job is
+// com.apple.ReportCrash.Root, the systemwide Apple Crash Reporter. Since it is
+// impossible to receive EXC_RESOURCE and EXC_GUARD exceptions through the
+// EXC_CRASH mechanism, an exception handler must be registered for them by name
+// if it is to receive these exception types. The default task-level handler for
+// these exception types is set by launchd in a similar manner.
+//
+// EXC_MASK_RESOURCE and EXC_MASK_GUARD are not available on all systems, and
+// the kernel will reject attempts to use them if it does not understand them,
+// so AND them with ExcMaskValid(). EXC_MASK_CRASH is always supported.
+bool SetCrashExceptionPorts(exception_handler_t exception_handler) {
+  ExceptionPorts exception_ports(ExceptionPorts::kTargetTypeTask, TASK_NULL);
+  return exception_ports.SetExceptionPort(
+      (EXC_MASK_CRASH | EXC_MASK_RESOURCE | EXC_MASK_GUARD) & ExcMaskValid(),
+      exception_handler,
+      EXCEPTION_STATE_IDENTITY | MACH_EXCEPTION_CODES,
+      MACHINE_THREAD_STATE);
+}
 
-namespace crashpad {
+}  // namespace
 
 CrashpadClient::CrashpadClient()
     : exception_port_() {
@@ -180,48 +217,17 @@ bool CrashpadClient::StartHandler(
 bool CrashpadClient::UseHandler() {
   DCHECK_NE(exception_port_, kMachPortNull);
 
-  // Set the exception handler for EXC_CRASH, EXC_RESOURCE, and EXC_GUARD.
-  //
-  // EXC_CRASH is how most crashes are received. Most other exception types such
-  // as EXC_BAD_ACCESS are delivered to a host-level exception handler in the
-  // kernel where they are converted to POSIX signals. See 10.9.5
-  // xnu-2422.115.4/bsd/uxkern/ux_exception.c catch_mach_exception_raise(). If a
-  // core-generating signal (triggered through this hardware mechanism or a
-  // software mechanism such as abort() sending SIGABRT) is unhandled and the
-  // process exits, or if the process is killed with SIGKILL for code-signing
-  // reasons, an EXC_CRASH exception will be sent. See 10.9.5
-  // xnu-2422.115.4/bsd/kern/kern_exit.c proc_prepareexit().
-  //
-  // EXC_RESOURCE and EXC_GUARD do not become signals or EXC_CRASH exceptions.
-  // The host-level exception handler in the kernel does not receive these
-  // exception types, and even if it did, it would not map them to signals.
-  // Instead, the first Mach service loaded by the root (process ID 1) launchd
-  // with a boolean “ExceptionServer” property in its job dictionary (regardless
-  // of its value) or with any subdictionary property will become the host-level
-  // exception handler for EXC_CRASH, EXC_RESOURCE, and EXC_GUARD. See 10.9.5
-  // launchd-842.92.1/src/core.c job_setup_exception_port(). Normally, this job
-  // is com.apple.ReportCrash.Root, the systemwide Apple Crash Reporter. Since
-  // it is impossible to receive EXC_RESOURCE and EXC_GUARD exceptions through
-  // the EXC_CRASH mechanism, an exception handler must be registered for them
-  // by name if it is to receive these exception types. The default task-level
-  // handler for these exception types is set by launchd in a similar manner.
-  //
-  // EXC_MASK_RESOURCE and EXC_MASK_GUARD are not available on all systems, and
-  // the kernel will reject attempts to use them if it does not understand them,
-  // so AND them with ExcMaskAll(). EXC_MASK_CRASH is not present in
-  // ExcMaskAll() but is always supported. See the documentation for
-  // ExcMaskAll().
-  ExceptionPorts exception_ports(ExceptionPorts::kTargetTypeTask, TASK_NULL);
-  if (!exception_ports.SetExceptionPort(
-          EXC_MASK_CRASH |
-              ((EXC_MASK_RESOURCE | EXC_MASK_GUARD) & ExcMaskAll()),
-          exception_port_,
-          EXCEPTION_STATE_IDENTITY | MACH_EXCEPTION_CODES,
-          MACHINE_THREAD_STATE)) {
-    return false;
-  }
+  return SetCrashExceptionPorts(exception_port_);
+}
 
-  return true;
+// static
+bool CrashpadClient::UseSystemDefaultHandler() {
+  base::mac::ScopedMachSendRight
+      system_crash_reporter_handler(SystemCrashReporterHandler());
+
+  // Proceed even if SystemCrashReporterHandler() failed, setting MACH_PORT_NULL
+  // to clear the current exception ports.
+  return SetCrashExceptionPorts(system_crash_reporter_handler);
 }
 
 }  // namespace crashpad

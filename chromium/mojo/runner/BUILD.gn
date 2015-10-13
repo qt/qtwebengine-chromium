@@ -17,10 +17,6 @@ group("runner") {
   deps = [
     ":mojo_runner",
   ]
-
-  if (is_android) {
-    deps += [ ":mojo_runner_apk" ]
-  }
 }
 
 if (is_android) {
@@ -37,6 +33,7 @@ source_set("mojo_runner_lib") {
     "//build/config/sanitizers:deps",
     "//mojo/common",
     "//mojo/environment:chromium",
+    "//mojo/message_pump",
   ]
 
   if (!is_android) {
@@ -56,9 +53,11 @@ source_set("mojo_runner_lib") {
 
     deps += [
       ":jni_headers",
-      "//components/view_manager",
+      "//components/mus",
+      "//components/mus/vm:lib",
       "//mojo/shell",
       "//ui/gl",
+      "//ui/platform_window/android",
     ]
   }
 }
@@ -66,6 +65,7 @@ source_set("mojo_runner_lib") {
 executable("mojo_runner") {
   deps = [
     ":mojo_runner_lib",
+    "//build/config/sanitizers:deps",
   ]
 
   if (is_android) {
@@ -77,8 +77,6 @@ executable("mojo_runner") {
     # It means dynamic symbols must be preserved and exported.
     ldflags = [ "-Wl,--export-dynamic" ]
   }
-
-  deps += [ "//build/config/sanitizers:deps" ]
 }
 
 source_set("in_process_native_runner") {
@@ -109,10 +107,10 @@ source_set("lib") {
     "init.h",
     "out_of_process_native_runner.cc",
     "out_of_process_native_runner.h",
+    "scoped_user_data_dir.cc",
+    "scoped_user_data_dir.h",
     "task_runners.cc",
     "task_runners.h",
-    "url_resolver.cc",
-    "url_resolver.h",
   ]
 
   deps = [
@@ -126,14 +124,29 @@ source_set("lib") {
     "//components/devtools_service/public/interfaces",
     "//mojo/application/public/cpp",
     "//mojo/common:tracing_impl",
+    "//mojo/message_pump",
+    "//mojo/package_manager",
+    "//mojo/services/network/public/interfaces",
+    "//mojo/services/tracing/public/cpp",
+    "//mojo/services/tracing/public/interfaces",
+    "//mojo/shell",
     "//mojo/util:filename_util",
     "//third_party/mojo/src/mojo/edk/system",
-    "//mojo/services/network/public/interfaces",
-    "//mojo/shell",
-    "//mojo/services/tracing:bindings",
     "//ui/gl",
     "//url",
   ]
+
+  if (is_linux && !is_android) {
+    sources += [
+      "linux_sandbox.cc",
+      "linux_sandbox.h",
+    ]
+
+    deps += [
+      "//sandbox/linux:sandbox",
+      "//sandbox/linux:sandbox_services",
+    ]
+  }
 
   public_deps = [
     ":switches",
@@ -159,8 +172,7 @@ source_set("lib") {
     deps += [
       ":jni_headers",
       ":run_android_application_function",
-      "//components/view_manager/gles2",
-      "//components/view_manager/native_viewport",
+      "//components/mus/gles2",
       "//mojo/application/public/cpp:content_handler",
     ]
   }
@@ -242,6 +254,7 @@ if (is_android) {
       ":lib",
       ":run_android_application_function",
       "//base",
+      "//build/config/sanitizers:deps",
     ]
   }
 
@@ -276,41 +289,60 @@ if (is_android) {
     custom_package = "org.chromium.mojo.shell"
   }
 
-  mojo_runner_assets_dir = "$root_build_dir/mojo_runner_assets"
   mojo_runner_test_assets_dir = "$root_build_dir/mojo_runner_test_assets"
+  mojo_runner_apptests_assets_dir =
+      "$root_build_dir/mojo_runner_apptests_assets"
 
-  copy_ex("copy_mojo_runner_assets") {
+  copy_ex("copy_mojo_runner_apptests_assets") {
+    testonly = true
     clear_dir = true
-    dest = mojo_runner_assets_dir
+    dest = mojo_runner_apptests_assets_dir
+
     deps = [
       ":bootstrap",
       ":bootstrap_java",
-      ":copy_mojo_runner",
-      "//mojo/services/network",
-    ]
-    sources = [
-      "$root_out_dir/lib.stripped/libbootstrap.so",
-      "$root_out_dir/obj/mojo/runner/bootstrap_java.dex.jar",
+      "//components/clipboard:apptests",
+      "//components/mus/vm:apptests",
+      "//components/resource_provider:apptests",
+      "//mojo/services/network:apptests",
     ]
 
-    # Directories can't be specified as sources so pass manually to the script.
-    args = [ "--files=" +
-             rebase_path("$root_out_dir/network_service", root_build_dir) ]
+    sources = [
+      "$root_out_dir/obj/mojo/runner/bootstrap_java.dex.jar",
+      "$root_shlib_dir/${shlib_prefix}bootstrap$shlib_extension",
+    ]
+
+    apptest_outputs = [
+      "clipboard",
+      "clipboard_apptests",
+      "mus_apptests",
+      "resource_provider",
+      "resource_provider_apptests",
+      "network_service",
+      "network_service_apptests",
+    ]
+
+    args = []
+    foreach(path, apptest_outputs) {
+      args +=
+          [ "--files=" + rebase_path("$root_out_dir/$path", root_build_dir) ]
+    }
   }
 
-  generate_mojo_shell_assets_list("build_mojo_runner_assets") {
+  generate_mojo_shell_assets_list("build_mojo_runner_apptests_assets") {
+    testonly = true
     deps = [
-      ":copy_mojo_runner_assets",
+      ":copy_mojo_runner_apptests_assets",
     ]
-    dir = mojo_runner_assets_dir
+    dir = mojo_runner_apptests_assets_dir
   }
 
   copy("copy_mojo_runner") {
     sources = [
-      "$root_out_dir/exe.stripped/mojo_runner",
+      "$root_out_dir/mojo_runner",
     ]
     outputs = [
-      "$root_out_dir/lib.stripped/libmojo_runner.so",
+      "$root_shlib_dir/${shlib_prefix}mojo_runner$shlib_extension",
     ]
     deps = [
       ":mojo_runner",
@@ -318,6 +350,7 @@ if (is_android) {
   }
 
   copy_ex("copy_mojo_runner_test_assets") {
+    testonly = true
     clear_dir = true
     dest = mojo_runner_test_assets_dir
     deps = [
@@ -333,27 +366,26 @@ if (is_android) {
     ]
   }
 
-  android_apk("mojo_runner_apk") {
-    apk_name = "MojoRunner"
-
+  android_apk("mojo_runner_apptests_apk") {
+    testonly = true
+    apk_name = "MojoRunnerApptests"
     android_manifest = "android/apk/AndroidManifest.xml"
-
-    native_libs = [ "libmojo_runner.so" ]
-
-    asset_location = mojo_runner_assets_dir
+    native_libs = [ "${shlib_prefix}mojo_runner$shlib_extension" ]
+    asset_location = mojo_runner_apptests_assets_dir
 
     deps = [
-      ":build_mojo_runner_assets",
+      ":build_mojo_runner_apptests_assets",
       ":copy_mojo_runner",
       ":java",
       ":resources",
       "//base:base_java",
-      "//third_party/android_tools:google_play_services_default_resources",
       "//ui/platform_window/android:platform_window_java",
+      google_play_services_resources,
     ]
   }
 
   generate_mojo_shell_assets_list("build_mojo_runner_test_assets") {
+    testonly = true
     deps = [
       ":copy_mojo_runner_test_assets",
     ]
@@ -385,6 +417,10 @@ mojom("child_process_bindings") {
 
 test("mojo_runner_unittests") {
   sources = [
+    "../fetcher/about_fetcher_unittest.cc",
+    "../fetcher/data_fetcher_unittest.cc",
+    "../fetcher/network_fetcher_unittest.cc",
+    "../fetcher/url_resolver_unittest.cc",
     "child_process_host_unittest.cc",
     "data_pipe_peek_unittest.cc",
     "in_process_native_runner_unittest.cc",
@@ -394,7 +430,6 @@ test("mojo_runner_unittests") {
     "shell_test_base_android.cc",
     "shell_test_base_unittest.cc",
     "shell_test_main.cc",
-    "url_resolver_unittest.cc",
   ]
 
   deps = [
@@ -403,8 +438,12 @@ test("mojo_runner_unittests") {
     "//base",
     "//base:i18n",
     "//base/test:test_support",
+    "//mojo/application/public/cpp",
     "//mojo/common",
     "//mojo/environment:chromium",
+    "//mojo/fetcher",
+    "//mojo/message_pump",
+    "//mojo/package_manager",
     "//mojo/services/test_service:bindings",
     "//mojo/shell",
     "//mojo/util:filename_util",
@@ -439,7 +478,7 @@ mojo_native_application("apptests") {
   testonly = true
 
   sources = [
-    # TODO(jam): needs http_server service.
+    # TODO(jam): needs http_server service. http://crbug.com/479316
     #"shell_apptest.cc",
   ]
 

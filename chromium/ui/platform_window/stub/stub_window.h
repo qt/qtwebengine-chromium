@@ -23,6 +23,7 @@ class STUB_WINDOW_EXPORT StubWindow : public PlatformWindow {
   void Close() override;
   void SetBounds(const gfx::Rect& bounds) override;
   gfx::Rect GetBounds() override;
+  void SetTitle(const base::string16& title) override;
   void SetCapture() override;
   void ReleaseCapture() override;
   void ToggleFullscreen() override;
@@ -32,6 +33,7 @@ class STUB_WINDOW_EXPORT StubWindow : public PlatformWindow {
   void SetCursor(PlatformCursor cursor) override;
   void MoveCursorTo(const gfx::Point& location) override;
   void ConfineCursorToBounds(const gfx::Rect& bounds) override;
+  PlatformImeController* GetPlatformImeController() override;
 
   PlatformWindowDelegate* delegate_;
   gfx::Rect bounds_;

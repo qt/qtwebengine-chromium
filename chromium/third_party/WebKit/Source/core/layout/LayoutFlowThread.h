@@ -32,7 +32,7 @@
 
 #include "core/CoreExport.h"
 #include "core/layout/LayoutBlockFlow.h"
-#include "core/paint/DeprecatedPaintLayerFragment.h"
+#include "core/paint/PaintLayerFragment.h"
 #include "wtf/ListHashSet.h"
 
 namespace blink {
@@ -48,36 +48,33 @@ typedef ListHashSet<LayoutMultiColumnSet*> LayoutMultiColumnSetList;
 class CORE_EXPORT LayoutFlowThread: public LayoutBlockFlow {
 public:
     LayoutFlowThread();
-    virtual ~LayoutFlowThread() { }
+    ~LayoutFlowThread() override { }
 
-    virtual bool isLayoutFlowThread() const override final { return true; }
+    bool isLayoutFlowThread() const final { return true; }
     virtual bool isLayoutMultiColumnFlowThread() const { return false; }
     virtual bool isLayoutPagedFlowThread() const { return false; }
 
-    virtual bool supportsPaintInvalidationStateCachedOffsets() const override { return false; }
+    bool supportsPaintInvalidationStateCachedOffsets() const override { return false; }
 
-    virtual void layout() override;
+    static LayoutFlowThread* locateFlowThreadContainingBlockOf(const LayoutObject&);
+
+    void layout() override;
 
     // Always create a Layer for the LayoutFlowThread so that we
     // can easily avoid drawing the children directly.
-    virtual DeprecatedPaintLayerType layerTypeRequired() const override final { return NormalDeprecatedPaintLayer; }
-
-    // Skip past a column spanner during flow thread layout. Spanners are not laid out inside the
-    // flow thread, since the flow thread is not in a spanner's containing block chain (since the
-    // containing block is the multicol container).
-    virtual void skipColumnSpanner(LayoutBox*, LayoutUnit logicalTopInFlowThread) { }
+    PaintLayerType layerTypeRequired() const final { return NormalPaintLayer; }
 
     virtual void flowThreadDescendantWasInserted(LayoutObject*) { }
     virtual void flowThreadDescendantWillBeRemoved(LayoutObject*) { }
-    virtual void flowThreadDescendantStyleWillChange(LayoutObject*, StyleDifference, const ComputedStyle& newStyle) { }
-    virtual void flowThreadDescendantStyleDidChange(LayoutObject*, StyleDifference, const ComputedStyle& oldStyle) { }
+    virtual void flowThreadDescendantStyleWillChange(LayoutBox*, StyleDifference, const ComputedStyle& newStyle) { }
+    virtual void flowThreadDescendantStyleDidChange(LayoutBox*, StyleDifference, const ComputedStyle& oldStyle) { }
 
-    virtual bool nodeAtPoint(HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction) override final;
+    bool nodeAtPoint(HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction) final;
 
     virtual void addColumnSetToThread(LayoutMultiColumnSet*) = 0;
     virtual void removeColumnSetFromThread(LayoutMultiColumnSet*);
 
-    virtual void computeLogicalHeight(LayoutUnit logicalHeight, LayoutUnit logicalTop, LogicalExtentComputedValues&) const override;
+    void computeLogicalHeight(LayoutUnit logicalHeight, LayoutUnit logicalTop, LogicalExtentComputedValues&) const override;
 
     bool hasColumnSets() const { return m_multiColumnSetList.size(); }
 
@@ -85,10 +82,10 @@ public:
     void invalidateColumnSets();
     bool hasValidColumnSetInfo() const { return !m_columnSetsInvalidated && !m_multiColumnSetList.isEmpty(); }
 
-    virtual void mapRectToPaintInvalidationBacking(const LayoutBoxModelObject* paintInvalidationContainer, LayoutRect&, const PaintInvalidationState*) const override;
+    void mapRectToPaintInvalidationBacking(const LayoutBoxModelObject* paintInvalidationContainer, LayoutRect&, const PaintInvalidationState*) const override;
 
     LayoutUnit pageLogicalHeightForOffset(LayoutUnit);
-    LayoutUnit pageRemainingLogicalHeightForOffset(LayoutUnit, PageBoundaryRule = IncludePageBoundary);
+    LayoutUnit pageRemainingLogicalHeightForOffset(LayoutUnit, PageBoundaryRule);
 
     virtual void setPageBreak(LayoutUnit /*offset*/, LayoutUnit /*spaceShortage*/) { }
     virtual void updateMinimumPageHeight(LayoutUnit /*offset*/, LayoutUnit /*minHeight*/) { }
@@ -98,7 +95,7 @@ public:
     virtual bool isPageLogicalHeightKnown() const { return true; }
     bool pageLogicalSizeChanged() const { return m_pageLogicalSizeChanged; }
 
-    void collectLayerFragments(DeprecatedPaintLayerFragments&, const LayoutRect& layerBoundingBox, const LayoutRect& dirtyRect);
+    void collectLayerFragments(PaintLayerFragments&, const LayoutRect& layerBoundingBox, const LayoutRect& dirtyRectInFlowThread);
 
     // Return the visual bounding box based on the supplied flow-thread bounding box. Both
     // rectangles are completely physical in terms of writing mode.

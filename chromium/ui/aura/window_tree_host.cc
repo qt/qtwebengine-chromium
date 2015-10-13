@@ -182,10 +182,6 @@ ui::InputMethod* WindowTreeHost::GetInputMethod() {
   if (!input_method_) {
     input_method_ =
         ui::CreateInputMethod(this, GetAcceleratedWidget()).release();
-    // Makes sure the input method is focused by default when created, because
-    // some environment doesn't have activated/focused state in WindowTreeHost.
-    // TODO(shuchen): move this to DisplayController so it's only for Ash.
-    input_method_->OnFocus();
     owned_input_method_ = true;
   }
   return input_method_;
@@ -197,12 +193,9 @@ void WindowTreeHost::SetSharedInputMethod(ui::InputMethod* input_method) {
   owned_input_method_ = false;
 }
 
-bool WindowTreeHost::DispatchKeyEventPostIME(const ui::KeyEvent& event) {
-  ui::KeyEvent copied_event(event);
-  ui::EventDispatchDetails details =
-      event_processor()->OnEventFromSource(&copied_event);
-  DCHECK(!details.dispatcher_destroyed);
-  return copied_event.handled();
+ui::EventDispatchDetails WindowTreeHost::DispatchKeyEventPostIME(
+    ui::KeyEvent* event) {
+  return SendEventToProcessor(event);
 }
 
 void WindowTreeHost::Show() {
@@ -246,28 +239,26 @@ void WindowTreeHost::DestroyDispatcher() {
   //window()->RemoveOrDestroyChildren();
 }
 
-void WindowTreeHost::CreateCompositor(
-    gfx::AcceleratedWidget accelerated_widget) {
+void WindowTreeHost::CreateCompositor() {
   DCHECK(Env::GetInstance());
   ui::ContextFactory* context_factory = Env::GetInstance()->context_factory();
   DCHECK(context_factory);
   compositor_.reset(
-      new ui::Compositor(GetAcceleratedWidget(),
-                         context_factory,
-                         base::ThreadTaskRunnerHandle::Get()));
-  // TODO(beng): I think this setup should probably all move to a "accelerated
-  // widget available" function.
+      new ui::Compositor(context_factory, base::ThreadTaskRunnerHandle::Get()));
   if (!dispatcher()) {
     window()->Init(ui::LAYER_NOT_DRAWN);
     window()->set_host(this);
     window()->SetName("RootWindow");
     window()->SetEventTargeter(
         scoped_ptr<ui::EventTargeter>(new WindowTargeter()));
-    prop_.reset(new ui::ViewProp(GetAcceleratedWidget(),
-                                 kWindowTreeHostForAcceleratedWidget,
-                                 this));
     dispatcher_.reset(new WindowEventDispatcher(this));
   }
+}
+
+void WindowTreeHost::OnAcceleratedWidgetAvailable() {
+  compositor_->SetAcceleratedWidgetAndStartCompositor(GetAcceleratedWidget());
+  prop_.reset(new ui::ViewProp(GetAcceleratedWidget(),
+                               kWindowTreeHostForAcceleratedWidget, this));
 }
 
 void WindowTreeHost::OnHostMoved(const gfx::Point& new_location) {
@@ -308,20 +299,6 @@ void WindowTreeHost::OnHostLostWindowCapture() {
 
 ui::EventProcessor* WindowTreeHost::GetEventProcessor() {
   return event_processor();
-}
-
-ui::EventDispatchDetails WindowTreeHost::DeliverEventToProcessor(
-    ui::Event* event) {
-  if (event->IsKeyEvent()) {
-    if (GetInputMethod()->DispatchKeyEvent(
-            *static_cast<ui::KeyEvent*>(event))) {
-      event->StopPropagation();
-      // TODO(shuchen): pass around the EventDispatchDetails from
-      // DispatchKeyEventPostIME instead of creating new from here.
-      return ui::EventDispatchDetails();
-    }
-  }
-  return ui::EventSource::DeliverEventToProcessor(event);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

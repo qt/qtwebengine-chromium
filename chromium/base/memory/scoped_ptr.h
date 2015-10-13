@@ -228,25 +228,14 @@ class scoped_ptr_impl {
     // https://crbug.com/162971
     assert(!ShouldAbortOnSelfReset<D>::value || p == nullptr || p != data_.ptr);
 
-    // Note that running data_.ptr = p can lead to undefined behavior if
-    // get_deleter()(get()) deletes this. In order to prevent this, reset()
-    // should update the stored pointer before deleting its old value.
-    //
-    // However, changing reset() to use that behavior may cause current code to
-    // break in unexpected ways. If the destruction of the owned object
-    // dereferences the scoped_ptr when it is destroyed by a call to reset(),
-    // then it will incorrectly dispatch calls to |p| rather than the original
-    // value of |data_.ptr|.
-    //
-    // During the transition period, set the stored pointer to nullptr while
-    // deleting the object. Eventually, this safety check will be removed to
-    // prevent the scenario initially described from occuring and
-    // http://crbug.com/176091 can be closed.
+    // Match C++11's definition of unique_ptr::reset(), which requires changing
+    // the pointer before invoking the deleter on the old pointer. This prevents
+    // |this| from being accessed after the deleter is run, which may destroy
+    // |this|.
     T* old = data_.ptr;
-    data_.ptr = nullptr;
+    data_.ptr = p;
     if (old != nullptr)
       static_cast<D&>(data_)(old);
-    data_.ptr = p;
   }
 
   T* get() const { return data_.ptr; }
@@ -465,9 +454,7 @@ class scoped_ptr<T[], D> {
   //   (C++98 [expr.delete]p3). If you're doing this, fix your code.
   // - it cannot be const-qualified differently from T per unique_ptr spec
   //   (http://cplusplus.github.com/LWG/lwg-active.html#2118). Users wanting
-  //   to work around this may use implicit_cast<const T*>().
-  //   However, because of the first bullet in this comment, users MUST
-  //   NOT use implicit_cast<Base*>() to upcast the static type of the array.
+  //   to work around this may use const_cast<const T*>().
   explicit scoped_ptr(element_type* array) : impl_(array) {}
 
   // Constructor.  Allows construction from a nullptr.

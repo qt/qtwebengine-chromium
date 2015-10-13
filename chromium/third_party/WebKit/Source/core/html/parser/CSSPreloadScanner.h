@@ -36,6 +36,7 @@ namespace blink {
 class SegmentedString;
 
 class CSSPreloadScanner {
+    DISALLOW_ALLOCATION();
     WTF_MAKE_NONCOPYABLE(CSSPreloadScanner);
 public:
     CSSPreloadScanner();
@@ -45,6 +46,8 @@ public:
 
     void scan(const HTMLToken::DataVector&, const SegmentedString&, PreloadRequestStream&);
     void scan(const String&, const SegmentedString&, PreloadRequestStream&);
+
+    void setReferrerPolicy(const ReferrerPolicy);
 
 private:
     enum State {
@@ -72,6 +75,8 @@ private:
 
     // Only non-zero during scan()
     PreloadRequestStream* m_requests;
+
+    ReferrerPolicy m_referrerPolicy;
 };
 
 }

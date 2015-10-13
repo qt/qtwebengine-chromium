@@ -22,13 +22,13 @@ namespace {
 
 class LayerTreeImplTest : public LayerTreeHostCommonTest {
  public:
-  LayerTreeImplTest() {
+  LayerTreeImplTest() : output_surface_(FakeOutputSurface::Create3d()) {
     LayerTreeSettings settings;
     settings.layer_transforms_should_scale_layer_contents = true;
-    settings.scrollbar_show_scale_threshold = 1.1f;
+    settings.verify_property_trees = true;
     host_impl_.reset(new FakeLayerTreeHostImpl(
         settings, &proxy_, &shared_bitmap_manager_, &task_graph_runner_));
-    EXPECT_TRUE(host_impl_->InitializeRenderer(FakeOutputSurface::Create3d()));
+    EXPECT_TRUE(host_impl_->InitializeRenderer(output_surface_.get()));
   }
 
   FakeLayerTreeHostImpl& host_impl() { return *host_impl_; }
@@ -43,6 +43,7 @@ class LayerTreeImplTest : public LayerTreeHostCommonTest {
   TestSharedBitmapManager shared_bitmap_manager_;
   TestTaskGraphRunner task_graph_runner_;
   FakeImplProxy proxy_;
+  scoped_ptr<OutputSurface> output_surface_;
   scoped_ptr<FakeLayerTreeHostImpl> host_impl_;
 };
 
@@ -89,6 +90,49 @@ TEST_F(LayerTreeImplTest, HitTestingForSingleLayer) {
       host_impl().active_tree()->FindLayerThatIsHitByPoint(test_point);
   ASSERT_TRUE(result_layer);
   EXPECT_EQ(12345, result_layer->id());
+}
+
+TEST_F(LayerTreeImplTest, UpdateViewportAndHitTest) {
+  // Ensures that the viewport rect is correctly updated by the clip tree.
+  TestSharedBitmapManager shared_bitmap_manager;
+  TestTaskGraphRunner task_graph_runner;
+  FakeImplProxy proxy;
+  LayerTreeSettings settings;
+  settings.verify_property_trees = true;
+  scoped_ptr<OutputSurface> output_surface = FakeOutputSurface::Create3d();
+  scoped_ptr<FakeLayerTreeHostImpl> host_impl;
+  host_impl.reset(new FakeLayerTreeHostImpl(
+      settings, &proxy, &shared_bitmap_manager, &task_graph_runner));
+  EXPECT_TRUE(host_impl->InitializeRenderer(output_surface.get()));
+  scoped_ptr<LayerImpl> root =
+      LayerImpl::Create(host_impl->active_tree(), 12345);
+
+  gfx::Transform identity_matrix;
+  gfx::Point3F transform_origin;
+  gfx::PointF position;
+  gfx::Size bounds(100, 100);
+  SetLayerPropertiesForTesting(root.get(), identity_matrix, transform_origin,
+                               position, bounds, true, false, true);
+  root->SetDrawsContent(true);
+
+  host_impl->SetViewportSize(root->bounds());
+  host_impl->active_tree()->SetRootLayer(root.Pass());
+  host_impl->UpdateNumChildrenAndDrawPropertiesForActiveTree();
+  EXPECT_EQ(
+      gfx::RectF(gfx::SizeF(bounds)),
+      host_impl->active_tree()->property_trees()->clip_tree.ViewportClip());
+  EXPECT_EQ(gfx::Rect(bounds),
+            host_impl->RootLayer()->visible_rect_from_property_trees());
+
+  gfx::Size new_bounds(50, 50);
+  host_impl->SetViewportSize(new_bounds);
+  gfx::Point test_point(51, 51);
+  host_impl->active_tree()->FindLayerThatIsHitByPoint(test_point);
+  EXPECT_EQ(
+      gfx::RectF(gfx::SizeF(new_bounds)),
+      host_impl->active_tree()->property_trees()->clip_tree.ViewportClip());
+  EXPECT_EQ(gfx::Rect(new_bounds),
+            host_impl->RootLayer()->visible_rect_from_property_trees());
 }
 
 TEST_F(LayerTreeImplTest, HitTestingForSingleLayerAndHud) {
@@ -972,6 +1016,9 @@ TEST_F(LayerTreeImplTest, HitTestingRespectsScrollParents) {
     // This should cause scroll child and its descendants to be affected by
     // |child|'s clip.
     scroll_child->SetScrollParent(child.get());
+    scoped_ptr<std::set<LayerImpl*>> scroll_children(new std::set<LayerImpl*>);
+    scroll_children->insert(scroll_child.get());
+    child->SetScrollChildren(scroll_children.release());
 
     SetLayerPropertiesForTesting(grand_child.get(), identity_matrix,
                                  transform_origin, position, bounds, true,
@@ -1293,6 +1340,7 @@ TEST_F(LayerTreeImplTest, MakeScrollbarsInvisibleNearMinPageScale) {
   const bool kIsOverlayScrollbar = true;
 
   LayerTreeImpl* active_tree = host_impl().active_tree();
+  active_tree->set_hide_pinch_scrollbars_near_min_scale(true);
 
   scoped_ptr<LayerImpl> scroll_layer = LayerImpl::Create(active_tree, 1);
   scoped_ptr<SolidColorScrollbarLayerImpl> vertical_scrollbar_layer =
@@ -1340,11 +1388,11 @@ TEST_F(LayerTreeImplTest, MakeScrollbarsInvisibleNearMinPageScale) {
   EXPECT_TRUE(vertical_scrollbar_layer->hide_layer_and_subtree());
   EXPECT_TRUE(horizontal_scrollbar_layer->hide_layer_and_subtree());
 
-  active_tree->PushPageScaleFromMainThread(1.05f, 1.0f, 4.0f);
+  active_tree->PushPageScaleFromMainThread(1.04f, 1.0f, 4.0f);
   EXPECT_TRUE(vertical_scrollbar_layer->hide_layer_and_subtree());
   EXPECT_TRUE(horizontal_scrollbar_layer->hide_layer_and_subtree());
 
-  active_tree->PushPageScaleFromMainThread(1.1f, 1.0f, 4.0f);
+  active_tree->PushPageScaleFromMainThread(1.06f, 1.0f, 4.0f);
   EXPECT_FALSE(vertical_scrollbar_layer->hide_layer_and_subtree());
   EXPECT_FALSE(horizontal_scrollbar_layer->hide_layer_and_subtree());
 
@@ -1448,14 +1496,14 @@ TEST_F(LayerTreeImplTest,
 
   float device_scale_factor = 3.f;
   float page_scale_factor = 5.f;
-  gfx::Size scaled_bounds_for_root = gfx::ToCeiledSize(
-      gfx::ScaleSize(root->bounds(), device_scale_factor * page_scale_factor));
+  gfx::Size scaled_bounds_for_root = gfx::ScaleToCeiledSize(
+      root->bounds(), device_scale_factor * page_scale_factor);
   host_impl().SetViewportSize(scaled_bounds_for_root);
 
-  host_impl().SetDeviceScaleFactor(device_scale_factor);
+  host_impl().active_tree()->SetDeviceScaleFactor(device_scale_factor);
   host_impl().active_tree()->PushPageScaleFromMainThread(
       page_scale_factor, page_scale_factor, page_scale_factor);
-  host_impl().SetPageScaleOnActiveTree(page_scale_factor);
+  host_impl().active_tree()->SetPageScaleOnActiveTree(page_scale_factor);
   host_impl().active_tree()->SetRootLayer(root.Pass());
   host_impl().active_tree()->SetViewportLayersFromIds(Layer::INVALID_ID, 1, 1,
                                                       Layer::INVALID_ID);
@@ -1907,14 +1955,14 @@ TEST_F(LayerTreeImplTest, SelectionBoundsForScaledLayers) {
 
   float device_scale_factor = 3.f;
   float page_scale_factor = 5.f;
-  gfx::Size scaled_bounds_for_root = gfx::ToCeiledSize(
-      gfx::ScaleSize(root->bounds(), device_scale_factor * page_scale_factor));
+  gfx::Size scaled_bounds_for_root = gfx::ScaleToCeiledSize(
+      root->bounds(), device_scale_factor * page_scale_factor);
   host_impl().SetViewportSize(scaled_bounds_for_root);
 
-  host_impl().SetDeviceScaleFactor(device_scale_factor);
+  host_impl().active_tree()->SetDeviceScaleFactor(device_scale_factor);
   host_impl().active_tree()->PushPageScaleFromMainThread(
       page_scale_factor, page_scale_factor, page_scale_factor);
-  host_impl().SetPageScaleOnActiveTree(page_scale_factor);
+  host_impl().active_tree()->SetPageScaleOnActiveTree(page_scale_factor);
   host_impl().active_tree()->SetRootLayer(root.Pass());
   host_impl().active_tree()->SetViewportLayersFromIds(Layer::INVALID_ID, 1, 1,
                                                       Layer::INVALID_ID);
@@ -1958,6 +2006,69 @@ TEST_F(LayerTreeImplTest, SelectionBoundsForScaledLayers) {
   EXPECT_EQ(expected_output_end_top, output.end.edge_top);
   EXPECT_EQ(expected_output_end_bottom, output.end.edge_bottom);
   EXPECT_TRUE(output.end.visible);
+}
+
+TEST_F(LayerTreeImplTest, SelectionBoundsWithLargeTransforms) {
+  int root_id = 1;
+  int child_id = 2;
+  int grand_child_id = 3;
+
+  scoped_ptr<LayerImpl> root =
+      LayerImpl::Create(host_impl().active_tree(), root_id);
+  gfx::Size bounds(100, 100);
+  gfx::Transform identity_matrix;
+  gfx::Point3F transform_origin;
+  gfx::PointF position;
+
+  SetLayerPropertiesForTesting(root.get(), identity_matrix, transform_origin,
+                               position, bounds, true, false, true);
+
+  gfx::Transform large_transform;
+  large_transform.Scale(SkDoubleToMScalar(1e37), SkDoubleToMScalar(1e37));
+  large_transform.RotateAboutYAxis(30);
+
+  {
+    scoped_ptr<LayerImpl> child =
+        LayerImpl::Create(host_impl().active_tree(), child_id);
+    SetLayerPropertiesForTesting(child.get(), large_transform, transform_origin,
+                                 position, bounds, true, false, false);
+
+    scoped_ptr<LayerImpl> grand_child =
+        LayerImpl::Create(host_impl().active_tree(), grand_child_id);
+    SetLayerPropertiesForTesting(grand_child.get(), large_transform,
+                                 transform_origin, position, bounds, true,
+                                 false, false);
+    grand_child->SetDrawsContent(true);
+
+    child->AddChild(grand_child.Pass());
+    root->AddChild(child.Pass());
+  }
+
+  host_impl().SetViewportSize(root->bounds());
+  host_impl().active_tree()->SetRootLayer(root.Pass());
+  host_impl().UpdateNumChildrenAndDrawPropertiesForActiveTree();
+
+  LayerSelection input;
+
+  input.start.type = SELECTION_BOUND_LEFT;
+  input.start.edge_top = gfx::PointF(10, 10);
+  input.start.edge_bottom = gfx::PointF(10, 20);
+  input.start.layer_id = grand_child_id;
+
+  input.end.type = SELECTION_BOUND_RIGHT;
+  input.end.edge_top = gfx::PointF(50, 10);
+  input.end.edge_bottom = gfx::PointF(50, 30);
+  input.end.layer_id = grand_child_id;
+
+  host_impl().active_tree()->RegisterSelection(input);
+
+  ViewportSelection output;
+  host_impl().active_tree()->GetViewportSelection(&output);
+
+  // edge_bottom and edge_top aren't allowed to have NaNs, so the selection
+  // should be empty.
+  EXPECT_EQ(ViewportSelectionBound(), output.start);
+  EXPECT_EQ(ViewportSelectionBound(), output.end);
 }
 
 TEST_F(LayerTreeImplTest, NumLayersTestOne) {

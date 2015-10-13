@@ -15,7 +15,6 @@
 #include "base/memory/weak_ptr.h"
 #include "base/threading/non_thread_safe.h"
 #include "base/time/time.h"
-#include "content/browser/gpu/gpu_surface_tracker.h"
 #include "content/common/content_export.h"
 #include "content/common/gpu/gpu_memory_uma_stats.h"
 #include "content/common/gpu/gpu_process_launch_causes.h"
@@ -110,15 +109,17 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
   // client. Once the GPU process responds asynchronously with the IPC handle
   // and GPUInfo, we call the callback.
   void EstablishGpuChannel(int client_id,
-                           bool share_context,
+                           uint64_t client_tracing_id,
+                           bool preempts,
+                           bool preempted,
                            bool allow_future_sync_points,
+                           bool allow_real_time_streams,
                            const EstablishChannelCallback& callback);
 
   // Tells the GPU process to create a new command buffer that draws into the
   // given surface.
   void CreateViewCommandBuffer(
       const gfx::GLSurfaceHandle& compositing_surface,
-      int surface_id,
       int client_id,
       const GPUCreateCommandBufferConfig& init_params,
       int route_id,
@@ -127,8 +128,8 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
   // Tells the GPU process to create a new GPU memory buffer.
   void CreateGpuMemoryBuffer(gfx::GpuMemoryBufferId id,
                              const gfx::Size& size,
-                             gfx::GpuMemoryBuffer::Format format,
-                             gfx::GpuMemoryBuffer::Usage usage,
+                             gfx::BufferFormat format,
+                             gfx::BufferUsage usage,
                              int client_id,
                              int32 surface_id,
                              const CreateGpuMemoryBufferCallback& callback);
@@ -141,7 +142,11 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
   // What kind of GPU process, e.g. sandboxed or unsandboxed.
   GpuProcessKind kind();
 
+  // Forcefully terminates the GPU process.
   void ForceShutdown();
+
+  // Asks the GPU process to stop by itself.
+  void StopGpuProcess();
 
   void BeginFrameSubscription(
       int surface_id,
@@ -164,13 +169,13 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
   bool OnMessageReceived(const IPC::Message& message) override;
   void OnChannelConnected(int32 peer_pid) override;
   void OnProcessLaunched() override;
+  void OnProcessLaunchFailed() override;
   void OnProcessCrashed(int exit_code) override;
 
   // Message handlers.
   void OnInitialized(bool result, const gpu::GPUInfo& gpu_info);
   void OnChannelEstablished(const IPC::ChannelHandle& channel_handle);
   void OnCommandBufferCreated(CreateCommandBufferResult result);
-  void OnDestroyCommandBuffer(int32 surface_id);
   void OnGpuMemoryBufferCreated(const gfx::GpuMemoryBufferHandle& handle);
   void OnDidCreateOffscreenContext(const GURL& url);
   void OnDidLoseContext(bool offscreen,
@@ -211,9 +216,6 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
   // The pending create gpu memory buffer requests we need to reply to.
   std::queue<CreateGpuMemoryBufferCallback> create_gpu_memory_buffer_requests_;
 
-  // Surface ids for pending gpu memory buffer request refs.
-  std::queue<int32> create_gpu_memory_buffer_surface_refs_;
-
   // Qeueud messages to send when the process launches.
   std::queue<IPC::Message*> queued_messages_;
 
@@ -237,9 +239,6 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
 
   // Time Init started.  Used to log total GPU process startup time to UMA.
   base::TimeTicks init_start_time_;
-
-  // Whether this host recorded a GPU crash or not.
-  bool gpu_crash_recorded_;
 
   // Master switch for enabling/disabling GPU acceleration for the current
   // browser session. It does not change the acceleration settings for
@@ -266,25 +265,11 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
   bool uma_memory_stats_received_;
   GPUMemoryUmaStats uma_memory_stats_;
 
-  // This map of frame subscribers are listening for frame presentation events.
-  // The key is the surface id and value is the subscriber.
-  typedef base::hash_map<int,
-                         base::WeakPtr<RenderWidgetHostViewFrameSubscriber> >
-  FrameSubscriberMap;
-  FrameSubscriberMap frame_subscribers_;
-
   typedef std::map<int32, scoped_refptr<ShaderDiskCache> >
       ClientIdToShaderCacheMap;
   ClientIdToShaderCacheMap client_id_to_shader_cache_;
 
   std::string shader_prefix_key_;
-
-  // Keep an extra reference to the SurfaceRef stored in the GpuSurfaceTracker
-  // in this map so that we don't destroy it whilst the GPU process is
-  // drawing to it.
-  typedef std::multimap<int, scoped_refptr<GpuSurfaceTracker::SurfaceRef> >
-      SurfaceRefMap;
-  SurfaceRefMap surface_refs_;
 
 #if defined(OS_MACOSX) && !defined(OS_IOS)
   // Unique unguessable token that the GPU process is using to register

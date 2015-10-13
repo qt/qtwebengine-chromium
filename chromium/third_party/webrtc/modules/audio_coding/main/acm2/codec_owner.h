@@ -15,13 +15,19 @@
 #include "webrtc/base/scoped_ptr.h"
 #include "webrtc/common_types.h"
 #include "webrtc/modules/audio_coding/codecs/audio_encoder.h"
-#include "webrtc/modules/audio_coding/codecs/isac/main/interface/audio_encoder_isac.h"
+#include "webrtc/modules/audio_coding/codecs/audio_decoder.h"
 #include "webrtc/modules/audio_coding/main/interface/audio_coding_module_typedefs.h"
 
+#if defined(WEBRTC_CODEC_ISAC) || defined(WEBRTC_CODEC_ISACFX)
+#include "webrtc/modules/audio_coding/codecs/isac/locked_bandwidth_info.h"
+#else
+// Dummy implementation, for when we don't have iSAC.
 namespace webrtc {
+class LockedIsacBandwidthInfo {};
+}
+#endif
 
-class AudioDecoder;
-
+namespace webrtc {
 namespace acm2 {
 
 class CodecOwner {
@@ -29,12 +35,14 @@ class CodecOwner {
   CodecOwner();
   ~CodecOwner();
 
-  void SetEncoders(const CodecInst& speech_inst,
+  // Start using the specified encoder. Returns false on error.
+  // TODO(kwiberg): Don't handle errors here (bug 5033)
+  bool SetEncoders(const CodecInst& speech_inst,
                    int cng_payload_type,
                    ACMVADMode vad_mode,
-                   int red_payload_type);
+                   int red_payload_type) WARN_UNUSED_RESULT;
 
-  void SetEncoders(AudioEncoderMutable* external_speech_encoder,
+  void SetEncoders(AudioEncoder* external_speech_encoder,
                    int cng_payload_type,
                    ACMVADMode vad_mode,
                    int red_payload_type);
@@ -49,31 +57,28 @@ class CodecOwner {
 
   AudioEncoder* Encoder();
   const AudioEncoder* Encoder() const;
-  AudioEncoderMutable* SpeechEncoder();
-  const AudioEncoderMutable* SpeechEncoder() const;
 
  private:
-  // There are three main cases for the state of the encoder members below:
-  // 1. An external encoder is used. |external_speech_encoder_| points to it.
-  //    |speech_encoder_| is null, and |isac_is_encoder_| is false.
-  // 2. The internal iSAC codec is used as encoder. |isac_codec_| points to it
-  //    and |isac_is_encoder_| is true. |external_speech_encoder_| and
-  //    |speech_encoder_| are null.
-  // 3. Another internal encoder is used. |speech_encoder_| points to it.
-  //    |external_speech_encoder_| is null, and |isac_is_encoder_| is false.
-  // In addition to case 2, |isac_codec_| is valid when GetIsacDecoder has been
-  // called.
-  rtc::scoped_ptr<AudioEncoderMutable> speech_encoder_;
-  rtc::scoped_ptr<AudioEncoderDecoderMutableIsac> isac_codec_;
-  bool isac_is_encoder_;
-  AudioEncoderMutable* external_speech_encoder_;
+  AudioEncoder* SpeechEncoder();
+  const AudioEncoder* SpeechEncoder() const;
+
+  // At most one of these is non-null:
+  rtc::scoped_ptr<AudioEncoder> speech_encoder_;
+  AudioEncoder* external_speech_encoder_;
+
+  // If we've created an iSAC decoder because someone called GetIsacDecoder,
+  // store it here.
+  rtc::scoped_ptr<AudioDecoder> isac_decoder_;
+
+  // iSAC bandwidth estimation info, for use with iSAC encoders and decoders.
+  LockedIsacBandwidthInfo isac_bandwidth_info_;
 
   // |cng_encoder_| and |red_encoder_| are valid iff CNG or RED, respectively,
   // are active.
   rtc::scoped_ptr<AudioEncoder> cng_encoder_;
   rtc::scoped_ptr<AudioEncoder> red_encoder_;
 
-  DISALLOW_COPY_AND_ASSIGN(CodecOwner);
+  RTC_DISALLOW_COPY_AND_ASSIGN(CodecOwner);
 };
 
 }  // namespace acm2

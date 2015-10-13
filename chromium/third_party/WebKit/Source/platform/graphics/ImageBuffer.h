@@ -43,6 +43,8 @@
 #include "wtf/PassOwnPtr.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/Uint8ClampedArray.h"
+#include "wtf/Vector.h"
+#include "wtf/text/WTFString.h"
 
 namespace WTF {
 
@@ -65,16 +67,6 @@ enum Multiply {
     Unmultiplied
 };
 
-enum BackingStoreCopy {
-    CopyBackingStore, // Guarantee subsequent draws don't affect the copy.
-    DontCopyBackingStore // Subsequent draws may affect the copy.
-};
-
-enum ScaleBehavior {
-    Scaled,
-    Unscaled
-};
-
 class PLATFORM_EXPORT ImageBuffer {
     WTF_MAKE_NONCOPYABLE(ImageBuffer); WTF_MAKE_FAST_ALLOCATED(ImageBuffer);
 public:
@@ -90,19 +82,20 @@ public:
     bool isRecording() const { return m_surface->isRecording(); }
     void setHasExpensiveOp() { m_surface->setHasExpensiveOp(); }
     bool isExpensiveToPaint() const { return m_surface->isExpensiveToPaint(); }
+    void prepareSurfaceForPaintingIfNeeded() { m_surface->prepareSurfaceForPaintingIfNeeded(); }
     bool isSurfaceValid() const;
     bool restoreSurface() const;
-    void didDraw(const FloatRect& rect) const { m_surface->didDraw(rect); }
+    void didDraw(const FloatRect&) const;
+    bool wasDrawnToAfterSnapshot() const { return m_snapshotState == DrawnToAfterSnapshot; }
 
     void setFilterQuality(SkFilterQuality filterQuality) { m_surface->setFilterQuality(filterQuality); }
     void setIsHidden(bool hidden) { m_surface->setIsHidden(hidden); }
 
     // Called by subclasses of ImageBufferSurface to install a new canvas object
-    void resetCanvas(SkCanvas*);
-
-    void willDrawVideo() { m_surface->willDrawVideo(); }
+    void resetCanvas(SkCanvas*) const;
 
     SkCanvas* canvas() const;
+    void disableDeferral() const;
 
     // Called at the end of a task that rendered a whole frame
     void finalizeFrame(const FloatRect &dirtyRect);
@@ -110,21 +103,18 @@ public:
 
     bool isDirty();
 
-    const SkBitmap& bitmap() const;
+    // FIXME: crbug.com/485243
+    // Prefer writePixels() and canvas()->draw*() for writing, and newImageSnapshot() for reading
+    const SkBitmap& deprecatedBitmapForOverwrite() const;
 
-    void willAccessPixels() { m_surface->willAccessPixels(); }
+    bool writePixels(const SkImageInfo&, const void* pixels, size_t rowBytes, int x, int y);
+
     void willOverwriteCanvas() { m_surface->willOverwriteCanvas(); }
-
-    PassRefPtr<Image> copyImage(BackingStoreCopy = CopyBackingStore, ScaleBehavior = Scaled) const;
-    // Give hints on the faster copyImage Mode, return DontCopyBackingStore if it supports the DontCopyBackingStore behavior
-    // or return CopyBackingStore if it doesn't.
-    static BackingStoreCopy fastCopyImageMode();
 
     bool getImageData(Multiply, const IntRect&, WTF::ArrayBufferContents&) const;
 
     void putByteArray(Multiply, const unsigned char* source, const IntSize& sourceSize, const IntRect& sourceRect, const IntPoint& destPoint);
 
-    String toDataURL(const String& mimeType, const double* quality = 0) const;
     AffineTransform baseTransform() const { return AffineTransform(); }
     WebLayer* platformLayer() const;
 
@@ -136,11 +126,13 @@ public:
 
     bool copyRenderingResultsFromDrawingBuffer(DrawingBuffer*, SourceDrawingBuffer);
 
-    void flush();
+    void flush(); // process deferred draw commands immediately
+    void flushGpu(); // Like flush(), but flushes all the way down to the Gpu context if the surface is accelerated
 
     void notifySurfaceInvalid();
 
-    PassRefPtr<SkImage> newImageSnapshot() const;
+    PassRefPtr<SkImage> newSkImageSnapshot(AccelerationHint) const;
+    PassRefPtr<Image> newImageSnapshot(AccelerationHint = PreferNoAcceleration) const;
 
     DisplayItemClient displayItemClient() const { return toDisplayItemClient(this); }
     String debugName() const { return "ImageBuffer"; }
@@ -150,18 +142,26 @@ public:
 private:
     ImageBuffer(PassOwnPtr<ImageBufferSurface>);
 
+    enum SnapshotState {
+        InitialSnapshotState,
+        DidAcquireSnapshot,
+        DrawnToAfterSnapshot,
+    };
+    mutable SnapshotState m_snapshotState;
     OwnPtr<ImageBufferSurface> m_surface;
     ImageBufferClient* m_client;
 };
 
 struct ImageDataBuffer {
-    ImageDataBuffer(const IntSize& size, unsigned char* data) : m_data(data), m_size(size) { }
-    String PLATFORM_EXPORT toDataURL(const String& mimeType, const double* quality) const;
-    unsigned char* pixels() const { return m_data; }
+    ImageDataBuffer(const IntSize& size, const unsigned char* data) : m_data(data), m_size(size) { }
+    String PLATFORM_EXPORT toDataURL(const String& mimeType, const double& quality) const;
+    bool PLATFORM_EXPORT encodeImage(const String& mimeType, const double& quality, Vector<char>* output) const;
+    const unsigned char* pixels() const { return m_data; }
     int height() const { return m_size.height(); }
     int width() const { return m_size.width(); }
-    unsigned char* m_data;
-    IntSize m_size;
+
+    const unsigned char* m_data;
+    const IntSize m_size;
 };
 
 } // namespace blink

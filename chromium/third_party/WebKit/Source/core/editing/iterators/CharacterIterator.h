@@ -41,7 +41,7 @@ template <typename Strategy>
 class CORE_EXPORT CharacterIteratorAlgorithm {
     STACK_ALLOCATED();
 public:
-    CharacterIteratorAlgorithm(const PositionAlgorithm<Strategy>& start, const PositionAlgorithm<Strategy>& end, TextIteratorBehaviorFlags = TextIteratorDefaultBehavior);
+    CharacterIteratorAlgorithm(const PositionTemplate<Strategy>& start, const PositionTemplate<Strategy>& end, TextIteratorBehaviorFlags = TextIteratorDefaultBehavior);
     explicit CharacterIteratorAlgorithm(const EphemeralRangeTemplate<Strategy>&, TextIteratorBehaviorFlags = TextIteratorDefaultBehavior);
 
     void advance(int numCharacters);
@@ -62,8 +62,8 @@ public:
     Node* currentContainer() const;
     int startOffset() const;
     int endOffset() const;
-    PositionAlgorithm<Strategy> startPosition() const;
-    PositionAlgorithm<Strategy> endPosition() const;
+    PositionTemplate<Strategy> startPosition() const;
+    PositionTemplate<Strategy> endPosition() const;
 
     EphemeralRangeTemplate<Strategy> calculateCharacterSubrange(int offset, int length);
 
@@ -80,7 +80,9 @@ private:
 extern template class CORE_EXTERN_TEMPLATE_EXPORT CharacterIteratorAlgorithm<EditingStrategy>;
 using CharacterIterator = CharacterIteratorAlgorithm<EditingStrategy>;
 
-CORE_EXPORT EphemeralRange findPlainText(const EphemeralRange& inputRange, const String&, FindOptions);
+extern template class CORE_EXTERN_TEMPLATE_EXPORT CharacterIteratorAlgorithm<EditingInComposedTreeStrategy>;
+
+CORE_EXPORT EphemeralRange calculateCharacterSubrange(const EphemeralRange&, int characterOffset, int characterCount);
 
 } // namespace blink
 

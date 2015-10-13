@@ -39,7 +39,6 @@
       <include name="IDR_BOOKMARK_MANAGER_BOOKMARK_BMM_TREE_JS" file="bookmark_manager/js/bmm/bookmark_tree.js" type="BINDATA" />
       <include name="IDR_BOOKMARK_MANAGER_BOOKMARK_DND_JS" file="bookmark_manager/js/dnd.js" type="BINDATA" />
       <include name="IDR_BOOKMARK_MANAGER_BOOKMARK_BMM_JS" file="bookmark_manager/js/bmm.js" type="BINDATA" />
-      <include name="IDR_BOOKMARK_MANAGER_BOOKMARK_CSS_JS" file="bookmark_manager/css/bmm.css.js" type="BINDATA" />
       <!-- Gaia auth extension -->
       <include name="IDR_GAIA_AUTH_MAIN" file="gaia_auth/main.html" allowexternalscript="true" type="BINDATA" />
       <include name="IDR_GAIA_AUTH_MAIN_JS" file="gaia_auth/main.js" type="BINDATA" />
@@ -144,18 +143,6 @@
         <include name="IDR_FIRST_RUN_DIALOG_ICON_128" file="chromeos/first_run/app/icon/128.png" type="BINDATA" />
         <include name="IDR_FIRST_RUN_DIALOG_ICON_256" file="chromeos/first_run/app/icon/256.png" type="BINDATA" />
       </if>
-      <if expr="chromeos">
-        <!-- Network status. -->
-        <include name="IDR_NETWORK_CONFIGURATION_STATUS_HTML" file="chromeos/network_configuration/status.html" allowexternalscript="true" type="BINDATA" />
-        <include name="IDR_NETWORK_CONFIGURATION_STATUS_CSS" file="chromeos/network_configuration/css/status.css" type="BINDATA" />
-        <include name="IDR_NETWORK_CONFIGURATION_NETWORK_STATUS_JS" file="chromeos/network_configuration/js/network_status.js" type="BINDATA" />
-        <include name="IDR_NETWORK_CONFIGURATION_MAIN_STATUS_JS" file="chromeos/network_configuration/js/main_status.js" type="BINDATA" />
-        <!-- Network configuration. -->
-        <include name="IDR_NETWORK_CONFIGURATION_CONFIG_HTML" file="chromeos/network_configuration/config.html" allowexternalscript="true" type="BINDATA" />
-        <include name="IDR_NETWORK_CONFIGURATION_CONFIG_CSS" file="chromeos/network_configuration/css/config.css" type="BINDATA" />
-        <include name="IDR_NETWORK_CONFIGURATION_NETWORK_CONFIG_JS" file="chromeos/network_configuration/js/network_config.js" type="BINDATA" />
-        <include name="IDR_NETWORK_CONFIGURATION_MAIN_CONFIG_JS" file="chromeos/network_configuration/js/main_config.js" type="BINDATA" />
-      </if>
       <if expr="enable_settings_app">
         <include name="IDR_SETTINGS_APP_JS" file="settings_app/settings_app.js" type="BINDATA" />
       </if>
@@ -166,8 +153,7 @@
         <include name="IDR_PDF_INDEX_MATERIAL_HTML" file="pdf/index-material.html" allowexternalscript="true" type="BINDATA" />
         <include name="IDR_PDF_MAIN_JS" file="pdf/main.js" type="BINDATA" />
         <include name="IDR_PDF_PDF_JS" file="pdf/pdf.js" type="BINDATA" />
-        <include name="IDR_PDF_SETTINGS_JS" file="pdf/settings.js" type="BINDATA" />
-        <include name="IDR_PDF_UI_MANAGER_JS" file="pdf/ui_manager.js" type="BINDATA" />
+        <include name="IDR_PDF_UI_MANAGER_JS" file="pdf/toolbar_manager.js" type="BINDATA" />
         <include name="IDR_PDF_VIEWPORT_JS" file="pdf/viewport.js" type="BINDATA" />
         <include name="IDR_PDF_OPEN_PDF_PARAMS_PARSER_JS" file="pdf/open_pdf_params_parser.js" type="BINDATA" />
         <include name="IDR_PDF_NAVIGATOR_JS" file="pdf/navigator.js" type="BINDATA" />
@@ -177,6 +163,7 @@
         <include name="IDR_PDF_BROWSER_API_JS" file="pdf/browser_api.js" type="BINDATA" />
         <include name="IDR_PDF_CONTENT_SCRIPT_JS" file="pdf/content_script.js" type="BINDATA" />
 
+        <include name="IDR_PDF_SHARED_ICON_STYLE_CSS" file="pdf/elements/shared-icon-style.css" type="BINDATA" />
         <include name="IDR_PDF_VIEWER_BOOKMARK_CSS" file="pdf/elements/viewer-bookmark/viewer-bookmark.css" type="BINDATA" />
         <include name="IDR_PDF_VIEWER_BOOKMARK_HTML" file="pdf/elements/viewer-bookmark/viewer-bookmark.html" type="BINDATA" />
         <include name="IDR_PDF_VIEWER_BOOKMARK_JS" file="pdf/elements/viewer-bookmark/viewer-bookmark.js" type="BINDATA" />
@@ -197,7 +184,6 @@
         <include name="IDR_PDF_VIEWER_PAGE_SELECTOR_CSS" file="pdf/elements/viewer-page-selector/viewer-page-selector.css" type="BINDATA" />
         <include name="IDR_PDF_VIEWER_PAGE_SELECTOR_HTML" file="pdf/elements/viewer-page-selector/viewer-page-selector.html" type="BINDATA" />
         <include name="IDR_PDF_VIEWER_PAGE_SELECTOR_JS" file="pdf/elements/viewer-page-selector/viewer-page-selector.js" type="BINDATA" />
-        <include name="IDR_PDF_VIEWER_PASSWORD_SCREEN_CSS" file="pdf/elements/viewer-password-screen/viewer-password-screen.css" type="BINDATA" />
         <include name="IDR_PDF_VIEWER_PASSWORD_SCREEN_HTML" file="pdf/elements/viewer-password-screen/viewer-password-screen.html" type="BINDATA" />
         <include name="IDR_PDF_VIEWER_PASSWORD_SCREEN_JS" file="pdf/elements/viewer-password-screen/viewer-password-screen.js" type="BINDATA" />
         <include name="IDR_PDF_VIEWER_PASSWORD_SCREEN_LEGACY_CSS" file="pdf/elements/viewer-password-screen-legacy/viewer-password-screen-legacy.css" type="BINDATA" />
@@ -242,6 +228,7 @@
       <include name="IDR_CRYPTOTOKEN_COUNTDOWN_JS" file="cryptotoken/countdown.js" type="BINDATA" />
       <include name="IDR_CRYPTOTOKEN_COUNTDOWNTIMER_JS" file="cryptotoken/countdowntimer.js" type="BINDATA" />
       <include name="IDR_CRYPTOTOKEN_SHA256_JS" file="cryptotoken/sha256.js" type="BINDATA" />
+      <include name="IDR_CRYPTOTOKEN_TIMER_JS" file="cryptotoken/timer.js" type="BINDATA" />
       <include name="IDR_CRYPTOTOKEN_HIDGNUBBYDEVICE_JS" file="cryptotoken/hidgnubbydevice.js" type="BINDATA" />
       <include name="IDR_CRYPTOTOKEN_USBGNUBBYDEVICE_JS" file="cryptotoken/usbgnubbydevice.js" type="BINDATA" />
       <include name="IDR_CRYPTOTOKEN_GNUBBIES_JS" file="cryptotoken/gnubbies.js" type="BINDATA" />
@@ -276,7 +263,9 @@
       <include name="IDR_CRYPTOTOKEN_GOOGLECORPINDIVIDUALATTEST_JS" file="cryptotoken/googlecorpindividualattest.js" type="BINDATA" />
       <include name="IDR_CRYPTOTOKEN_APPROVEDORIGINS_JS" file="cryptotoken/approvedorigins.js" type="BINDATA" />
       <include name="IDR_CRYPTOTOKEN_WEBREQUESTSENDER_JS" file="cryptotoken/webrequestsender.js" type="BINDATA" />
+      <include name="IDR_CRYPTOTOKEN_WINDOW_TIMER_JS" file="cryptotoken/window-timer.js" type="BINDATA" />
       <include name="IDR_CRYPTOTOKEN_WATCHDOG_JS" file="cryptotoken/watchdog.js" type="BINDATA" />
+      <include name="IDR_CRYPTOTOKEN_LOGGING_JS" file="cryptotoken/logging.js" type="BINDATA" />
       <include name="IDR_CRYPTOTOKEN_CRYPTOTOKENAPPROVEDORIGIN_JS" file="cryptotoken/cryptotokenapprovedorigins.js" type="BINDATA" />
       <include name="IDR_CRYPTOTOKEN_CRYPTOTOKENORIGINCHECK_JS" file="cryptotoken/cryptotokenorigincheck.js" type="BINDATA" />
       <include name="IDR_CRYPTOTOKEN_CRYPTOTOKENBACKGROUND_JS" file="cryptotoken/cryptotokenbackground.js" type="BINDATA" />

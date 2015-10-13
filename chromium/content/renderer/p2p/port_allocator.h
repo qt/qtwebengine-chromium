@@ -5,6 +5,8 @@
 #ifndef CONTENT_RENDERER_P2P_PORT_ALLOCATOR_H_
 #define CONTENT_RENDERER_P2P_PORT_ALLOCATOR_H_
 
+#include "base/memory/ref_counted.h"
+#include "base/single_thread_task_runner.h"
 #include "third_party/webrtc/p2p/client/basicportallocator.h"
 #include "url/gurl.h"
 
@@ -35,18 +37,22 @@ class P2PPortAllocator : public cricket::BasicPortAllocator {
 
     std::vector<RelayServerConfig> relays;
 
-    // Disable TCP-based transport when set to true.
-    bool disable_tcp_transport;
+    // Enable non-proxied UDP-based transport when set to true. When set to
+    // false, it effectively disables all UDP traffic until UDP-supporting proxy
+    // RETURN is available in the future.
+    bool enable_nonproxied_udp = true;
 
     // Disable binding to individual NICs when set to false.
-    bool enable_multiple_routes;
+    bool enable_multiple_routes = true;
   };
 
-  P2PPortAllocator(P2PSocketDispatcher* socket_dispatcher,
-                   rtc::NetworkManager* network_manager,
-                   rtc::PacketSocketFactory* socket_factory,
-                   const Config& config,
-                   const GURL& origin);
+  P2PPortAllocator(
+      const scoped_refptr<P2PSocketDispatcher>& socket_dispatcher,
+      scoped_ptr<rtc::NetworkManager> network_manager,
+      rtc::PacketSocketFactory* socket_factory,
+      const Config& config,
+      const GURL& origin,
+      const scoped_refptr<base::SingleThreadTaskRunner> task_runner);
   ~P2PPortAllocator() override;
 
   cricket::PortAllocatorSession* CreateSessionInternal(
@@ -57,10 +63,15 @@ class P2PPortAllocator : public cricket::BasicPortAllocator {
 
  private:
   friend class P2PPortAllocatorSession;
-
-  P2PSocketDispatcher* socket_dispatcher_;
+  scoped_ptr<rtc::NetworkManager> network_manager_;
+  scoped_refptr<P2PSocketDispatcher> socket_dispatcher_;
   Config config_;
   GURL origin_;
+
+  // This is the thread |network_manager_| is associated with and must be used
+  // to delete |network_manager_|.
+  const scoped_refptr<base::SingleThreadTaskRunner>
+      network_manager_task_runner_;
 
   DISALLOW_COPY_AND_ASSIGN(P2PPortAllocator);
 };

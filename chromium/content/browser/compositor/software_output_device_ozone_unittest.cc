@@ -5,7 +5,6 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/thread_task_runner_handle.h"
-#include "cc/output/software_frame_data.h"
 #include "content/browser/compositor/software_output_device_ozone.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/skia/include/core/SkDevice.h"
@@ -88,9 +87,10 @@ void SoftwareOutputDeviceOzoneTest::SetUp() {
   const gfx::Size size(500, 400);
   window_ = ui::OzonePlatform::GetInstance()->CreatePlatformWindow(
       &window_delegate_, gfx::Rect(size));
-  compositor_.reset(new ui::Compositor(window_delegate_.GetAcceleratedWidget(),
-                                       context_factory,
-                                       base::ThreadTaskRunnerHandle::Get()));
+  compositor_.reset(
+      new ui::Compositor(context_factory, base::ThreadTaskRunnerHandle::Get()));
+  compositor_->SetAcceleratedWidgetAndStartCompositor(
+      window_delegate_.GetAcceleratedWidget());
   compositor_->SetScaleAndSize(1.0f, size);
 
   output_device_.reset(new content::SoftwareOutputDeviceOzone(

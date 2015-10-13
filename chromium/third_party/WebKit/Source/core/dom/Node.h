@@ -26,7 +26,6 @@
 #define Node_h
 
 #include "bindings/core/v8/ExceptionStatePlaceholder.h"
-#include "bindings/core/v8/UnionTypesCore.h"
 #include "core/CoreExport.h"
 #include "core/dom/MutationObserver.h"
 #include "core/dom/SimulatedClickOptions.h"
@@ -210,12 +209,7 @@ public:
     Node* firstChild() const;
     Node* lastChild() const;
 
-    void prepend(const HeapVector<NodeOrString>&, ExceptionState&);
-    void append(const HeapVector<NodeOrString>&, ExceptionState&);
-    void before(const HeapVector<NodeOrString>&, ExceptionState&);
-    void after(const HeapVector<NodeOrString>&, ExceptionState&);
-    void replaceWith(const HeapVector<NodeOrString>&, ExceptionState&);
-    void remove(ExceptionState&);
+    void remove(ExceptionState& = ASSERT_NO_EXCEPTION);
 
     Node* pseudoAwareNextSibling() const;
     Node* pseudoAwarePreviousSibling() const;
@@ -231,8 +225,6 @@ public:
 
     bool hasChildren() const { return firstChild(); }
     virtual PassRefPtrWillBeRawPtr<Node> cloneNode(bool deep = false) = 0;
-    virtual const AtomicString& localName() const;
-    virtual const AtomicString& namespaceURI() const;
     void normalize();
 
     bool isSameNode(Node* other) const { return this == other; }
@@ -303,6 +295,9 @@ public:
     bool hasCustomStyleCallbacks() const { return getFlag(HasCustomStyleCallbacksFlag); }
 
     // If this node is in a shadow tree, returns its shadow host. Otherwise, returns nullptr.
+    // TODO(kochi): crbug.com/507413 shadowHost() can return nullptr even when it is in a
+    // shadow tree but its root is detached from its host. This can happen when handling
+    // queued events (e.g. during execCommand()).
     Element* shadowHost() const;
     ShadowRoot* containingShadowRoot() const;
     ShadowRoot* youngestShadowRoot() const;
@@ -389,7 +384,6 @@ public:
     void setNeedsStyleInvalidation();
 
     void updateDistribution();
-    void recalcDistribution();
 
     bool svgFilterNeedsLayerUpdate() const { return getFlag(SVGFilterNeedsLayerUpdateFlag); }
     void setSVGFilterNeedsLayerUpdate() { setFlag(SVGFilterNeedsLayerUpdateFlag); }
@@ -422,8 +416,8 @@ public:
         UserSelectAllDoesNotAffectEditability,
         UserSelectAllIsAlwaysNonEditable
     };
-    bool isContentEditable(UserSelectAllTreatment = UserSelectAllDoesNotAffectEditability);
-    bool isContentRichlyEditable();
+    bool isContentEditable(UserSelectAllTreatment = UserSelectAllDoesNotAffectEditability) const;
+    bool isContentRichlyEditable() const;
 
     bool hasEditableStyle(EditableType editableType = ContentIsEditable, UserSelectAllTreatment treatment = UserSelectAllIsAlwaysNonEditable) const
     {
@@ -451,12 +445,6 @@ public:
 
     virtual LayoutRect boundingBox() const;
     IntRect pixelSnappedBoundingBox() const { return pixelSnappedIntRect(boundingBox()); }
-
-    // Returns true if the node has a non-empty bounding box in layout.
-    // This does not 100% guarantee the user can see it, but is pretty close.
-    // Note: This method only works properly after layout has occurred.
-    // DEPRECATED: Use Element::hasNonEmptyLayoutSize() instead.
-    bool hasNonEmptyBoundingBox() const;
 
     unsigned nodeIndex() const;
 
@@ -525,6 +513,7 @@ public:
     LayoutBoxModelObject* layoutBoxModelObject() const;
 
     struct AttachContext {
+        STACK_ALLOCATED();
         ComputedStyle* resolvedStyle;
         bool performingReattach;
 
@@ -619,8 +608,8 @@ public:
     const AtomicString& interfaceName() const override;
     ExecutionContext* executionContext() const final;
 
-    bool addEventListener(const AtomicString& eventType, PassRefPtr<EventListener>, bool useCapture = false) override;
-    bool removeEventListener(const AtomicString& eventType, PassRefPtr<EventListener>, bool useCapture = false) override;
+    bool addEventListener(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener>, bool useCapture = false) override;
+    bool removeEventListener(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener>, bool useCapture = false) override;
     void removeAllEventListeners() override;
     void removeAllEventListenersRecursively();
 
@@ -629,11 +618,7 @@ public:
     virtual void* preDispatchEventHandler(Event*) { return nullptr; }
     virtual void postDispatchEventHandler(Event*, void* /*dataFromPreDispatch*/) { }
 
-    using EventTarget::dispatchEvent;
-    bool dispatchEvent(PassRefPtrWillBeRawPtr<Event>) override;
-
     void dispatchScopedEvent(PassRefPtrWillBeRawPtr<Event>);
-    void dispatchScopedEventDispatchMediator(PassRefPtrWillBeRawPtr<EventDispatchMediator>);
 
     virtual void handleLocalEvents(Event&);
 
@@ -644,10 +629,8 @@ public:
     bool dispatchWheelEvent(const PlatformWheelEvent&);
     bool dispatchMouseEvent(const PlatformMouseEvent&, const AtomicString& eventType, int clickCount = 0, Node* relatedTarget = nullptr);
     bool dispatchGestureEvent(const PlatformGestureEvent&);
-    bool dispatchTouchEvent(PassRefPtrWillBeRawPtr<TouchEvent>);
-    bool dispatchPointerEvent(PassRefPtrWillBeRawPtr<PointerEvent>);
 
-    void dispatchSimulatedClick(Event* underlyingEvent, SimulatedClickMouseEventOptions = SendNoEvents);
+    void dispatchSimulatedClick(Event* underlyingEvent, SimulatedClickMouseEventOptions = SendNoEvents, SimulatedClickCreationScope = SimulatedClickCreationScope::FromUserAgent);
 
     void dispatchInputEvent();
 
@@ -759,6 +742,8 @@ protected:
 
     virtual void didMoveToNewDocument(Document& oldDocument);
 
+    bool dispatchEventInternal(PassRefPtrWillBeRawPtr<Event>) override;
+
     static void reattachWhitespaceSiblingsIfNeeded(Text* start);
 
 #if !ENABLE(OILPAN)
@@ -806,6 +791,8 @@ private:
     bool isUserActionElementInActiveChain() const;
     bool isUserActionElementHovered() const;
     bool isUserActionElementFocused() const;
+
+    void recalcDistribution();
 
     void setStyleChange(StyleChangeType);
 
@@ -904,6 +891,11 @@ PassRefPtrWillBeRawPtr<T> T::create(Document& document) \
 { \
     return adoptRefWillBeNoop(new T(document)); \
 }
+
+// These printers are available only for testing in "webkit_unit_tests", and
+// implemented in "core/testing/CoreTestPrinters.cpp".
+std::ostream& operator<<(std::ostream&, const Node&);
+std::ostream& operator<<(std::ostream&, const Node*);
 
 } // namespace blink
 

@@ -127,8 +127,12 @@ void EventSource::connect()
     request.setHTTPHeaderField("Accept", "text/event-stream");
     request.setHTTPHeaderField("Cache-Control", "no-cache");
     request.setRequestContext(WebURLRequest::RequestContextEventSource);
-    if (!m_lastEventId.isEmpty())
-        request.setHTTPHeaderField("Last-Event-ID", m_lastEventId);
+    if (!m_lastEventId.isEmpty()) {
+        // HTTP headers are Latin-1 byte strings, but the Last-Event-ID header is encoded as UTF-8.
+        // TODO(davidben): This should be captured in the type of setHTTPHeaderField's arguments.
+        CString lastEventIdUtf8 = m_lastEventId.utf8();
+        request.setHTTPHeaderField("Last-Event-ID", AtomicString(reinterpret_cast<const LChar*>(lastEventIdUtf8.data()), lastEventIdUtf8.length()));
+    }
 
     SecurityOrigin* origin = executionContext.securityOrigin();
 
@@ -138,7 +142,7 @@ void EventSource::connect()
     options.contentSecurityPolicyEnforcement = ContentSecurityPolicy::shouldBypassMainWorld(&executionContext) ? DoNotEnforceContentSecurityPolicy : EnforceConnectSrcDirective;
 
     ResourceLoaderOptions resourceLoaderOptions;
-    resourceLoaderOptions.allowCredentials = (origin->canRequest(m_url) || m_withCredentials) ? AllowStoredCredentials : DoNotAllowStoredCredentials;
+    resourceLoaderOptions.allowCredentials = (origin->canRequestNoSuborigin(m_url) || m_withCredentials) ? AllowStoredCredentials : DoNotAllowStoredCredentials;
     resourceLoaderOptions.credentialsRequested = m_withCredentials ? ClientRequestedCredentials : ClientDidNotRequestCredentials;
     resourceLoaderOptions.dataBufferingPolicy = DoNotBufferData;
     resourceLoaderOptions.securityOrigin = origin;
@@ -315,13 +319,10 @@ void EventSource::abortConnectionAttempt()
 {
     ASSERT(m_state == CONNECTING);
 
-    if (m_requestInFlight) {
-        m_loader->cancel();
-    } else {
-        m_state = CLOSED;
-    }
+    m_loader = nullptr;
+    m_state = CLOSED;
+    networkRequestEnded();
 
-    ASSERT(m_state == CLOSED);
     dispatchEvent(Event::create(EventTypeNames::error));
 }
 
@@ -407,9 +408,9 @@ void EventSource::parseEventStreamLine(unsigned bufPos, int fieldLength, int lin
         } else if (field == "id") {
             m_currentlyParsedEventId = valueLength ? AtomicString(&m_receiveBuf[bufPos], valueLength) : "";
         } else if (field == "retry") {
-            if (!valueLength)
+            if (!valueLength) {
                 m_reconnectDelay = defaultReconnectDelay;
-            else {
+            } else {
                 String value(&m_receiveBuf[bufPos], valueLength);
                 bool ok;
                 unsigned long long retry = value.toUInt64(&ok);

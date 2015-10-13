@@ -44,6 +44,9 @@ void TestWindow::SetBounds(const gfx::Rect& bounds) {
   delegate_->OnBoundsChanged(bounds);
 }
 
+void TestWindow::SetTitle(const base::string16& title) {
+}
+
 void TestWindow::Show() {
 }
 
@@ -78,6 +81,10 @@ void TestWindow::MoveCursorTo(const gfx::Point& location) {
 }
 
 void TestWindow::ConfineCursorToBounds(const gfx::Rect& bounds) {
+}
+
+PlatformImeController* TestWindow::GetPlatformImeController() {
+  return nullptr;
 }
 
 }  // namespace ui

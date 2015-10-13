@@ -39,7 +39,7 @@ SkMatrixConvolutionImageFilter::SkMatrixConvolutionImageFilter(
     fTileMode(tileMode),
     fConvolveAlpha(convolveAlpha) {
     size_t size = (size_t) sk_64_mul(fKernelSize.width(), fKernelSize.height());
-    fKernel = SkNEW_ARRAY(SkScalar, size);
+    fKernel = new SkScalar[size];
     memcpy(fKernel, kernel, size * sizeof(SkScalar));
     SkASSERT(kernelSize.fWidth >= 1 && kernelSize.fHeight >= 1);
     SkASSERT(kernelOffset.fX >= 0 && kernelOffset.fX < kernelSize.fWidth);
@@ -57,21 +57,20 @@ SkMatrixConvolutionImageFilter* SkMatrixConvolutionImageFilter::Create(
     SkImageFilter* input,
     const CropRect* cropRect) {
     if (kernelSize.width() < 1 || kernelSize.height() < 1) {
-        return NULL;
+        return nullptr;
     }
     if (gMaxKernelSize / kernelSize.fWidth < kernelSize.fHeight) {
-        return NULL;
+        return nullptr;
     }
     if (!kernel) {
-        return NULL;
+        return nullptr;
     }
     if ((kernelOffset.fX < 0) || (kernelOffset.fX >= kernelSize.fWidth) ||
         (kernelOffset.fY < 0) || (kernelOffset.fY >= kernelSize.fHeight)) {
-        return NULL;
+        return nullptr;
     }
-    return SkNEW_ARGS(SkMatrixConvolutionImageFilter, (kernelSize, kernel, gain, bias,
-                                                       kernelOffset, tileMode, convolveAlpha,
-                                                       input, cropRect));
+    return new SkMatrixConvolutionImageFilter(kernelSize, kernel, gain, bias, kernelOffset,
+                                              tileMode, convolveAlpha, input, cropRect);
 }
 
 SkFlattenable* SkMatrixConvolutionImageFilter::CreateProc(SkReadBuffer& buffer) {
@@ -83,11 +82,11 @@ SkFlattenable* SkMatrixConvolutionImageFilter::CreateProc(SkReadBuffer& buffer) 
 
     const int64_t kernelArea = sk_64_mul(kernelSize.width(), kernelSize.height());
     if (!buffer.validate(kernelArea == count)) {
-        return NULL;
+        return nullptr;
     }
     SkAutoSTArray<16, SkScalar> kernel(count);
     if (!buffer.readScalarArray(kernel.get(), count)) {
-        return NULL;
+        return nullptr;
     }
     SkScalar gain = buffer.readScalar();
     SkScalar bias = buffer.readScalar();
@@ -127,8 +126,8 @@ public:
 class ClampPixelFetcher {
 public:
     static inline SkPMColor fetch(const SkBitmap& src, int x, int y, const SkIRect& bounds) {
-        x = SkPin32(x, bounds.fLeft, bounds.fRight - 1);
-        y = SkPin32(y, bounds.fTop, bounds.fBottom - 1);
+        x = SkTPin(x, bounds.fLeft, bounds.fRight - 1);
+        y = SkTPin(y, bounds.fTop, bounds.fBottom - 1);
         return *src.getAddr32(x, y);
     }
 };

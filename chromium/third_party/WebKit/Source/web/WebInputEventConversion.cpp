@@ -40,7 +40,7 @@
 #include "core/events/WheelEvent.h"
 #include "core/frame/FrameHost.h"
 #include "core/frame/FrameView.h"
-#include "core/frame/PinchViewport.h"
+#include "core/frame/VisualViewport.h"
 #include "core/layout/LayoutObject.h"
 #include "core/page/ChromeClient.h"
 #include "core/page/Page.h"
@@ -49,8 +49,6 @@
 #include "public/platform/Platform.h"
 
 namespace blink {
-
-static const double millisPerSecond = 1000.0;
 
 static float scaleDeltaToWindow(const Widget* widget, float delta)
 {
@@ -72,20 +70,20 @@ static FloatPoint convertHitPointToWindow(const Widget* widget, FloatPoint point
 {
     float scale = 1;
     IntSize offset;
-    IntPoint pinchViewport;
+    IntPoint visualViewport;
     FloatSize overscrollOffset;
     if (widget) {
         FrameView* rootView = toFrameView(widget->root());
         if (rootView) {
             scale = rootView->inputEventsScaleFactor();
             offset = rootView->inputEventsOffsetForEmulation();
-            pinchViewport = flooredIntPoint(rootView->page()->frameHost().pinchViewport().visibleRect().location());
+            visualViewport = flooredIntPoint(rootView->page()->frameHost().visualViewport().visibleRect().location());
             overscrollOffset = rootView->page()->frameHost().chromeClient().elasticOverscroll();
         }
     }
     return FloatPoint(
-        (point.x() - offset.width()) / scale + pinchViewport.x() + overscrollOffset.width(),
-        (point.y() - offset.height()) / scale + pinchViewport.y() + overscrollOffset.height());
+        (point.x() - offset.width()) / scale + visualViewport.x() + overscrollOffset.width(),
+        (point.y() - offset.height()) / scale + visualViewport.y() + overscrollOffset.height());
 }
 
 static unsigned toPlatformEventModifiers(int webModifiers)
@@ -99,6 +97,20 @@ static unsigned toPlatformEventModifiers(int webModifiers)
         newModifiers |= PlatformEvent::AltKey;
     if (webModifiers & WebInputEvent::MetaKey)
         newModifiers |= PlatformEvent::MetaKey;
+    return newModifiers;
+}
+
+static unsigned toPlatformKeyboardEventModifiers(int webModifiers)
+{
+    unsigned newModifiers = toPlatformEventModifiers(webModifiers);
+    if (webModifiers & WebInputEvent::IsKeyPad)
+        newModifiers |= PlatformEvent::IsKeyPad;
+    if (webModifiers & WebInputEvent::IsAutoRepeat)
+        newModifiers |= PlatformEvent::IsAutoRepeat;
+    if (webModifiers & WebInputEvent::IsLeft)
+        newModifiers |= PlatformEvent::IsLeft;
+    if (webModifiers & WebInputEvent::IsRight)
+        newModifiers |= PlatformEvent::IsRight;
     return newModifiers;
 }
 
@@ -187,6 +199,7 @@ PlatformWheelEventBuilder::PlatformWheelEventBuilder(Widget* widget, const WebMo
 
     m_hasPreciseScrollingDeltas = e.hasPreciseScrollingDeltas;
     m_canScroll = e.canScroll;
+    m_resendingPluginId = e.resendingPluginId;
     m_railsMode = static_cast<PlatformEvent::RailsMode>(e.railsMode);
 #if OS(MACOSX)
     m_phase = static_cast<PlatformWheelEventPhase>(e.phase);
@@ -204,15 +217,20 @@ PlatformGestureEventBuilder::PlatformGestureEventBuilder(Widget* widget, const W
     switch (e.type) {
     case WebInputEvent::GestureScrollBegin:
         m_type = PlatformEvent::GestureScrollBegin;
+        m_data.m_scroll.m_resendingPluginId = e.resendingPluginId;
         break;
     case WebInputEvent::GestureScrollEnd:
         m_type = PlatformEvent::GestureScrollEnd;
+        m_data.m_scroll.m_resendingPluginId = e.resendingPluginId;
         break;
     case WebInputEvent::GestureFlingStart:
         m_type = PlatformEvent::GestureFlingStart;
+        m_data.m_scroll.m_velocityX = e.data.flingStart.velocityX;
+        m_data.m_scroll.m_velocityY = e.data.flingStart.velocityY;
         break;
     case WebInputEvent::GestureScrollUpdate:
         m_type = PlatformEvent::GestureScrollUpdate;
+        m_data.m_scroll.m_resendingPluginId = e.resendingPluginId;
         m_data.m_scroll.m_deltaX = scaleDeltaToWindow(widget, e.data.scrollUpdate.deltaX);
         m_data.m_scroll.m_deltaY = scaleDeltaToWindow(widget, e.data.scrollUpdate.deltaY);
         m_data.m_scroll.m_velocityX = e.data.scrollUpdate.velocityX;
@@ -303,37 +321,15 @@ PlatformKeyboardEventBuilder::PlatformKeyboardEventBuilder(const WebKeyboardEven
     m_text = String(e.text);
     m_unmodifiedText = String(e.unmodifiedText);
     m_keyIdentifier = String(e.keyIdentifier);
-    m_autoRepeat = (e.modifiers & WebInputEvent::IsAutoRepeat);
     m_nativeVirtualKeyCode = e.nativeKeyCode;
-    m_isKeypad = (e.modifiers & WebInputEvent::IsKeyPad);
     m_isSystemKey = e.isSystemKey;
     // TODO: BUG482880 Fix this initialization to lazy initialization.
     m_code = Platform::current()->domCodeStringFromEnum(e.domCode);
     m_key = Platform::current()->domKeyStringFromEnum(e.domKey);
 
-    m_modifiers = toPlatformEventModifiers(e.modifiers);
-
-    // FIXME: PlatformKeyboardEvents expect a locational version of the keycode (e.g. VK_LSHIFT
-    // instead of VK_SHIFT). This should be changed so the location/keycode are stored separately,
-    // as in other places in the code.
+    m_modifiers = toPlatformKeyboardEventModifiers(e.modifiers);
+    m_timestamp = e.timeStampSeconds;
     m_windowsVirtualKeyCode = e.windowsKeyCode;
-    if (e.windowsKeyCode == VK_SHIFT) {
-        if (e.modifiers & WebInputEvent::IsLeft)
-            m_windowsVirtualKeyCode = VK_LSHIFT;
-        else if (e.modifiers & WebInputEvent::IsRight)
-            m_windowsVirtualKeyCode = VK_RSHIFT;
-    } else if (e.windowsKeyCode == VK_CONTROL) {
-        if (e.modifiers & WebInputEvent::IsLeft)
-            m_windowsVirtualKeyCode = VK_LCONTROL;
-        else if (e.modifiers & WebInputEvent::IsRight)
-            m_windowsVirtualKeyCode = VK_RCONTROL;
-    } else if (e.windowsKeyCode == VK_MENU) {
-        if (e.modifiers & WebInputEvent::IsLeft)
-            m_windowsVirtualKeyCode = VK_LMENU;
-        else if (e.modifiers & WebInputEvent::IsRight)
-            m_windowsVirtualKeyCode = VK_RMENU;
-    }
-
 }
 
 void PlatformKeyboardEventBuilder::setKeyType(Type type)
@@ -418,7 +414,7 @@ inline WebTouchPoint::State toWebTouchPointState(const AtomicString& type)
 
 PlatformTouchPointBuilder::PlatformTouchPointBuilder(Widget* widget, const WebTouchPoint& point)
 {
-    m_id = point.id;
+    m_pointerProperties = point;
     m_state = toPlatformTouchPointState(point.state);
 
     // This assumes convertFromContainingWindow does only translations, not scales.
@@ -429,7 +425,6 @@ PlatformTouchPointBuilder::PlatformTouchPointBuilder(Widget* widget, const WebTo
     m_screenPos = FloatPoint(point.screenPosition.x, point.screenPosition.y);
     m_radius = scaleSizeToWindow(widget, FloatSize(point.radiusX, point.radiusY));
     m_rotationAngle = point.rotationAngle;
-    m_force = point.force;
 }
 
 PlatformTouchEventBuilder::PlatformTouchEventBuilder(Widget* widget, const WebTouchEvent& event)
@@ -473,7 +468,7 @@ static IntPoint convertAbsoluteLocationForLayoutObject(const LayoutPoint& locati
 // RemoteFrameViews.
 static void updateWebMouseEventFromCoreMouseEvent(const MouseRelatedEvent& event, const Widget* widget, const LayoutObject& layoutObject, WebMouseEvent& webEvent)
 {
-    webEvent.timeStampSeconds = event.timeStamp() / millisPerSecond;
+    webEvent.timeStampSeconds = convertDOMTimeStampToSeconds(event.createTime());
     webEvent.modifiers = getWebInputModifiers(event);
 
     FrameView* view = widget ? toFrameView(widget->parent()) : 0;
@@ -563,7 +558,10 @@ WebMouseEventBuilder::WebMouseEventBuilder(const Widget* widget, const LayoutObj
     else
         return;
 
-    timeStampSeconds = event.timeStamp() / millisPerSecond;
+    // TODO(majidvp): Instead of using |Event::createTime| which is epoch time
+    // we should instead use |Event::platformTimeStamp| which is the actual
+    // platform monotonic time. See: crbug.com/538199
+    timeStampSeconds = convertDOMTimeStampToSeconds(event.createTime());
     modifiers = getWebInputModifiers(event);
 
     // The mouse event co-ordinates should be generated from the co-ordinates of the touch point.
@@ -599,6 +597,7 @@ WebMouseWheelEventBuilder::WebMouseWheelEventBuilder(const Widget* widget, const
     wheelTicksY = event.ticksY();
     scrollByPage = event.deltaMode() == WheelEvent::DOM_DELTA_PAGE;
     canScroll = event.canScroll();
+    resendingPluginId = event.resendingPluginId();
     railsMode = static_cast<RailsMode>(event.railsMode());
 }
 
@@ -621,7 +620,7 @@ WebKeyboardEventBuilder::WebKeyboardEventBuilder(const KeyboardEvent& event)
     else if (event.location() == KeyboardEvent::DOM_KEY_LOCATION_RIGHT)
         modifiers |= WebInputEvent::IsRight;
 
-    timeStampSeconds = event.timeStamp() / millisPerSecond;
+    timeStampSeconds = convertDOMTimeStampToSeconds(event.createTime());
     windowsKeyCode = event.keyCode();
 
     // The platform keyevent does not exist if the event was created using
@@ -714,7 +713,7 @@ WebTouchEventBuilder::WebTouchEventBuilder(const LayoutObject* layoutObject, con
     }
 
     modifiers = getWebInputModifiers(event);
-    timeStampSeconds = event.timeStamp() / millisPerSecond;
+    timeStampSeconds = convertDOMTimeStampToSeconds(event.createTime());
     cancelable = event.cancelable();
     causesScrollingIfUncanceled = event.causesScrollingIfUncanceled();
 
@@ -730,26 +729,34 @@ WebTouchEventBuilder::WebTouchEventBuilder(const LayoutObject* layoutObject, con
 
 WebGestureEventBuilder::WebGestureEventBuilder(const LayoutObject* layoutObject, const GestureEvent& event)
 {
-    if (event.type() == EventTypeNames::gestureshowpress)
+    if (event.type() == EventTypeNames::gestureshowpress) {
         type = GestureShowPress;
-    else if (event.type() == EventTypeNames::gesturelongpress)
+    } else if (event.type() == EventTypeNames::gesturelongpress) {
         type = GestureLongPress;
-    else if (event.type() == EventTypeNames::gesturetapdown)
+    } else if (event.type() == EventTypeNames::gesturetapdown) {
         type = GestureTapDown;
-    else if (event.type() == EventTypeNames::gesturescrollstart)
+    } else if (event.type() == EventTypeNames::gesturescrollstart) {
         type = GestureScrollBegin;
-    else if (event.type() == EventTypeNames::gesturescrollend)
+        resendingPluginId = event.resendingPluginId();
+    } else if (event.type() == EventTypeNames::gesturescrollend) {
         type = GestureScrollEnd;
-    else if (event.type() == EventTypeNames::gesturescrollupdate) {
+        resendingPluginId = event.resendingPluginId();
+    } else if (event.type() == EventTypeNames::gesturescrollupdate) {
         type = GestureScrollUpdate;
         data.scrollUpdate.deltaX = event.deltaX();
         data.scrollUpdate.deltaY = event.deltaY();
+        data.scrollUpdate.inertial = event.inertial();
+        resendingPluginId = event.resendingPluginId();
+    } else if (event.type() == EventTypeNames::gestureflingstart) {
+        type = GestureFlingStart;
+        data.flingStart.velocityX = event.velocityX();
+        data.flingStart.velocityY = event.velocityY();
     } else if (event.type() == EventTypeNames::gesturetap) {
         type = GestureTap;
         data.tap.tapCount = 1;
     }
 
-    timeStampSeconds = event.timeStamp() / millisPerSecond;
+    timeStampSeconds = convertDOMTimeStampToSeconds(event.createTime());
     modifiers = getWebInputModifiers(event);
 
     globalX = event.screenX();

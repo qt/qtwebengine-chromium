@@ -24,6 +24,7 @@
 #include <vector>
 
 #include "webrtc/base/basictypes.h"
+#include "webrtc/base/constructormagic.h"
 #include "webrtc/base/win32.h"
 
 namespace rtc {
@@ -329,7 +330,7 @@ class RegKey {
   // for unittest
   friend void RegKeyHelperFunctionsTest();
 
-  DISALLOW_COPY_AND_ASSIGN(RegKey);
+  RTC_DISALLOW_COPY_AND_ASSIGN(RegKey);
 };
 
 }  // namespace rtc

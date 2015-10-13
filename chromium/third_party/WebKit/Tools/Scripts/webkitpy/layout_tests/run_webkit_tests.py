@@ -35,6 +35,7 @@ import sys
 import traceback
 
 from webkitpy.common.host import Host
+from webkitpy.common.system.executive import Executive
 from webkitpy.layout_tests.controllers.manager import Manager
 from webkitpy.layout_tests.models import test_run_results
 from webkitpy.layout_tests.port import configuration_options, platform_options
@@ -66,16 +67,7 @@ def main(argv, stdout, stderr):
         return test_run_results.UNEXPECTED_ERROR_EXIT_STATUS
 
     try:
-        run_details = run(port, options, args, stderr)
-        if ((run_details.exit_code not in test_run_results.ERROR_CODES or
-             run_details.exit_code == test_run_results.EARLY_EXIT_STATUS) and
-            not run_details.initial_results.keyboard_interrupted):
-            bot_printer = buildbot_results.BuildBotPrinter(stdout, options.debug_rwt_logging)
-            bot_printer.print_results(run_details)
-            gen_dash_board = DashBoardGenerator(port)
-            gen_dash_board.generate()
-
-        return run_details.exit_code
+        return run(port, options, args, stderr, stdout).exit_code
 
     # We need to still handle KeyboardInterrupt, atleast for webkitpy unittest cases.
     except KeyboardInterrupt:
@@ -211,9 +203,6 @@ def parse_args(args):
         optparse.make_option("--iterations", type="int", default=1, help="Number of times to run the set of tests (e.g. ABCABCABC)"),
         optparse.make_option("--max-locked-shards", type="int", default=0,
             help="Set the maximum number of locked shards"),
-        optparse.make_option("--no-retry-failures", action="store_false",
-            dest="retry_failures",
-            help="Don't re-try any tests that produce unexpected results."),
         optparse.make_option("--nocheck-sys-deps", action="store_true",
             default=False,
             help="Don't check the system dependencies (themes)"),
@@ -228,8 +217,15 @@ def parse_args(args):
         optparse.make_option("--profiler", action="store",
             help="Output per-test profile information, using the specified profiler."),
         optparse.make_option("--repeat-each", type="int", default=1, help="Number of times to run each test (e.g. AAABBBCCC)"),
+        # TODO(joelo): Delete --retry-failures and --no-retry-failures as they
+        # are redundant with --num-retries.
         optparse.make_option("--retry-failures", action="store_true",
             help="Re-try any tests that produce unexpected results. Default is to not retry if an explicit list of tests is passed to run-webkit-tests."),
+        optparse.make_option("--no-retry-failures", action="store_false", dest="retry_failures",
+                             help="Don't re-try any tests that produce unexpected results."),
+        optparse.make_option("--num-retries", type="int", default=3,
+                             help=("Number of times to retry failures, default is 3. "
+                                   "Only relevant when failure retries are enabled.")),
         optparse.make_option("--run-chunk",
             help=("Run a specified chunk (n:l), the nth of len l, "
                  "of the layout tests")),
@@ -243,6 +239,8 @@ def parse_args(args):
                  "'ignore' == Run them anyway, "
                  "'only' == only run the SKIP tests, "
                  "'always' == always skip, even if listed on the command line.")),
+        optparse.make_option('--fastest', action='store', type='float',
+            help='Run the N% fastest tests as well as any tests listed on the commandline'),
         optparse.make_option("--test-list", action="append",
             help="read list of tests to run from file", metavar="FILE"),
         optparse.make_option("--time-out-ms",
@@ -359,20 +357,47 @@ def _set_up_derived_options(port, options, args):
     if not options.skipped:
         options.skipped = 'default'
 
-def run(port, options, args, logging_stream):
+
+def _run_tests(port, options, args, printer):
+    _set_up_derived_options(port, options, args)
+    manager = Manager(port, options, printer)
+    printer.print_config(port.results_directory())
+    return manager.run(args)
+
+
+def run(port, options, args, logging_stream, stdout):
     logger = logging.getLogger()
     logger.setLevel(logging.DEBUG if options.debug_rwt_logging else logging.INFO)
 
+    printer = printing.Printer(port, options, logging_stream, logger=logger)
     try:
-        printer = printing.Printer(port, options, logging_stream, logger=logger)
+        run_details = _run_tests(port, options, args, printer)
+        printer.flush()
 
-        _set_up_derived_options(port, options, args)
-        manager = Manager(port, options, printer)
-        printer.print_config(port.results_directory())
+        if (not options.dry_run and
+                (run_details.exit_code not in test_run_results.ERROR_CODES or
+                 run_details.exit_code == test_run_results.EARLY_EXIT_STATUS) and
+                not run_details.initial_results.keyboard_interrupted):
+            bot_printer = buildbot_results.BuildBotPrinter(stdout, options.debug_rwt_logging)
+            bot_printer.print_results(run_details)
+            stdout.flush()
 
-        run_details = manager.run(args)
+            _log.debug("Generating dashboard...")
+            gen_dash_board = DashBoardGenerator(port)
+            gen_dash_board.generate()
+            _log.debug("Dashboard generated.")
+
+        _log.debug("")
         _log.debug("Testing completed, Exit status: %d" % run_details.exit_code)
+
+        # Temporary process dump for debugging windows timeout issues, see crbug.com/522396.
+        _log.debug("")
+        _log.debug("Process dump:")
+        for process in Executive().process_dump():
+            _log.debug("\t%s" % process)
+
         return run_details
+
     finally:
         printer.cleanup()
 

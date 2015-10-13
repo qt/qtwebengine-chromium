@@ -314,10 +314,20 @@ void ScreenManager::UpdateControllerToWindowMapping() {
   // Apply the new mapping to all windows.
   for (auto pair : window_map_) {
     auto it = window_to_controller_map.find(pair.second);
+    HardwareDisplayController* controller = nullptr;
     if (it != window_to_controller_map.end())
-      pair.second->SetController(it->second);
-    else
-      pair.second->SetController(nullptr);
+      controller = it->second;
+
+    bool should_enable =
+        controller && pair.second->GetController() != controller;
+    pair.second->SetController(controller);
+
+    // If we're moving windows between controllers modeset the controller
+    // otherwise the controller may be waiting for a page flip while the window
+    // tries to schedule another buffer.
+    if (should_enable) {
+      EnableController(controller);
+    }
   }
 }
 
@@ -332,8 +342,8 @@ OverlayPlane ScreenManager::GetModesetBuffer(
   }
 
   scoped_refptr<DrmDevice> drm = controller->GetAllocationDrmDevice();
-  scoped_refptr<ScanoutBuffer> buffer =
-      buffer_generator_->Create(drm, bounds.size());
+  scoped_refptr<ScanoutBuffer> buffer = buffer_generator_->Create(
+      drm, gfx::BufferFormat::BGRA_8888, bounds.size());
   if (!buffer) {
     LOG(ERROR) << "Failed to create scanout buffer";
     return OverlayPlane(nullptr, 0, gfx::OVERLAY_TRANSFORM_INVALID, gfx::Rect(),

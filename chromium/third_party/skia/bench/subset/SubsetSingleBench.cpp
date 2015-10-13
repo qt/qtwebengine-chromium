@@ -5,13 +5,13 @@
  * found in the LICENSE file.
  */
 
+#include "CodecBenchPriv.h"
 #include "SubsetSingleBench.h"
 #include "SubsetBenchPriv.h"
 #include "SkData.h"
 #include "SkCodec.h"
 #include "SkImageDecoder.h"
 #include "SkOSFile.h"
-#include "SkScanlineDecoder.h"
 #include "SkStream.h"
 
 /*
@@ -39,7 +39,7 @@ SubsetSingleBench::SubsetSingleBench(const SkString& path,
     SkString baseName = SkOSPath::Basename(path.c_str());
 
     // Choose an informative color name
-    const char* colorName = get_color_name(fColorType);
+    const char* colorName = color_type_to_str(fColorType);
 
     fName.printf("%sSubsetSingle_%dx%d +%d_+%d_%s_%s", fUseCodec ? "Codec" : "Image", fSubsetWidth,
             fSubsetHeight, fOffsetLeft, fOffsetTop, baseName.c_str(), colorName);
@@ -57,7 +57,7 @@ bool SubsetSingleBench::isSuitableFor(Backend backend) {
     return kNonRendering_Backend == backend;
 }
 
-void SubsetSingleBench::onDraw(const int n, SkCanvas* canvas) {
+void SubsetSingleBench::onDraw(int n, SkCanvas* canvas) {
     // When the color type is kIndex8, we will need to store the color table.  If it is
     // used, it will be initialized by the codec.
     int colorCount;
@@ -66,18 +66,17 @@ void SubsetSingleBench::onDraw(const int n, SkCanvas* canvas) {
         for (int count = 0; count < n; count++) {
             SkAutoTDelete<SkCodec> codec(SkCodec::NewFromStream(fStream->duplicate()));
             const SkImageInfo info = codec->getInfo().makeColorType(fColorType);
-            SkAutoTDeleteArray<uint8_t> row(SkNEW_ARRAY(uint8_t, info.minRowBytes()));
-            SkScanlineDecoder* scanlineDecoder = codec->getScanlineDecoder(
-                    info, NULL, colors, &colorCount);
+            SkAutoTDeleteArray<uint8_t> row(new uint8_t[info.minRowBytes()]);
+            codec->startScanlineDecode(info, nullptr, colors, &colorCount);
 
             SkBitmap bitmap;
             SkImageInfo subsetInfo = info.makeWH(fSubsetWidth, fSubsetHeight);
             alloc_pixels(&bitmap, subsetInfo, colors, colorCount);
 
-            scanlineDecoder->skipScanlines(fOffsetTop);
+            codec->skipScanlines(fOffsetTop);
             uint32_t bpp = info.bytesPerPixel();
             for (uint32_t y = 0; y < fSubsetHeight; y++) {
-                scanlineDecoder->getScanlines(row.get(), 1, 0);
+                codec->getScanlines(row.get(), 1, 0);
                 memcpy(bitmap.getAddr(0, y), row.get() + fOffsetLeft * bpp,
                         fSubsetWidth * bpp);
             }

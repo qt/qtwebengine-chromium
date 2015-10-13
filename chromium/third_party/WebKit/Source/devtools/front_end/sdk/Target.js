@@ -139,7 +139,7 @@ WebInspector.Target.prototype = {
 
         this.tracingManager = new WebInspector.TracingManager(this);
 
-        if (this.isPage() && (Runtime.experiments.isEnabled("serviceWorkersInPageFrontend") || Runtime.experiments.isEnabled("serviceWorkersInResources")))
+        if (this.isPage())
             this.serviceWorkerManager = new WebInspector.ServiceWorkerManager(this);
 
         if (callback)
@@ -301,6 +301,7 @@ WebInspector.TargetManager.Events = {
     InspectedURLChanged: "InspectedURLChanged",
     MainFrameNavigated: "MainFrameNavigated",
     Load: "Load",
+    PageReloadRequested: "PageReloadRequested",
     WillReloadPage: "WillReloadPage",
     SuspendStateChanged: "SuspendStateChanged",
     TargetDisposed: "TargetDisposed"
@@ -362,11 +363,12 @@ WebInspector.TargetManager.prototype = {
 
     /**
      * @param {boolean=} ignoreCache
+     * @param {string=} injectedScript
      */
-    reloadPage: function(ignoreCache)
+    reloadPage: function(ignoreCache, injectedScript)
     {
         if (this._targets.length)
-            this._targets[0].resourceTreeModel.reloadPage(ignoreCache);
+            this._targets[0].resourceTreeModel.reloadPage(ignoreCache, injectedScript);
     },
 
     /**
@@ -483,6 +485,7 @@ WebInspector.TargetManager.prototype = {
             target.resourceTreeModel.addEventListener(WebInspector.ResourceTreeModel.EventTypes.InspectedURLChanged, this._redispatchEvent, this);
             target.resourceTreeModel.addEventListener(WebInspector.ResourceTreeModel.EventTypes.MainFrameNavigated, this._redispatchEvent, this);
             target.resourceTreeModel.addEventListener(WebInspector.ResourceTreeModel.EventTypes.Load, this._redispatchEvent, this);
+            target.resourceTreeModel.addEventListener(WebInspector.ResourceTreeModel.EventTypes.PageReloadRequested, this._redispatchEvent, this);
             target.resourceTreeModel.addEventListener(WebInspector.ResourceTreeModel.EventTypes.WillReloadPage, this._redispatchEvent, this);
         }
         var copy = this._observersByType(target._type);

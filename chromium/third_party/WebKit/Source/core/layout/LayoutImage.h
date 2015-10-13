@@ -34,6 +34,15 @@ namespace blink {
 class HTMLAreaElement;
 class HTMLMapElement;
 
+// LayoutImage is used to display any image type.
+//
+// There is 2 types of images:
+// * normal images, e.g. <image>, <picture>.
+// * content images with "content: url(path/to/image.png)".
+// We store the type inside  m_isGeneratedContent.
+//
+// The class is image type agnostic as it only manipulates decoded images.
+// See LayoutImageResource that holds this image.
 class CORE_EXPORT LayoutImage : public LayoutReplaced {
 public:
     // These are the paddings to use when displaying either alt text or an image.
@@ -41,11 +50,11 @@ public:
     static const unsigned short paddingHeight = 4;
 
     LayoutImage(Element*);
-    virtual ~LayoutImage();
+    ~LayoutImage() override;
 
     static LayoutImage* createAnonymous(Document*);
 
-    void setImageResource(PassOwnPtr<LayoutImageResource>);
+    void setImageResource(PassOwnPtrWillBeRawPtr<LayoutImageResource>);
 
     LayoutImageResource* imageResource() { return m_imageResource.get(); }
     const LayoutImageResource* imageResource() const { return m_imageResource.get(); }
@@ -61,55 +70,67 @@ public:
     inline void setImageDevicePixelRatio(float factor) { m_imageDevicePixelRatio = factor; }
     float imageDevicePixelRatio() const { return m_imageDevicePixelRatio; }
 
-    virtual void intrinsicSizeChanged() override
+    void intrinsicSizeChanged() override
     {
         if (m_imageResource)
             imageChanged(m_imageResource->imagePtr());
     }
 
-    virtual const char* name() const override { return "LayoutImage"; }
+    const char* name() const override { return "LayoutImage"; }
 
 protected:
-    virtual bool needsPreferredWidthsRecalculation() const override final;
-    virtual LayoutBox* embeddedContentBox() const override final;
-    virtual void computeIntrinsicRatioInformation(FloatSize& intrinsicSize, double& intrinsicRatio) const override final;
+    bool needsPreferredWidthsRecalculation() const final;
+    LayoutBox* embeddedContentBox() const final;
+    void computeIntrinsicRatioInformation(FloatSize& intrinsicSize, double& intrinsicRatio) const final;
 
-    virtual void imageChanged(WrappedImagePtr, const IntRect* = nullptr) override;
+    void imageChanged(WrappedImagePtr, const IntRect* = nullptr) override;
 
-    virtual void paint(const PaintInfo&, const LayoutPoint&) override final;
+    void paint(const PaintInfo&, const LayoutPoint&) const final;
 
-    virtual void layout() override;
-    virtual bool updateImageLoadingPriorities() override final;
+    void layout() override;
+    bool updateImageLoadingPriorities() final;
 
-    virtual bool isOfType(LayoutObjectType type) const override { return type == LayoutObjectLayoutImage || LayoutReplaced::isOfType(type); }
+    bool isOfType(LayoutObjectType type) const override { return type == LayoutObjectLayoutImage || LayoutReplaced::isOfType(type); }
 
-    virtual void willBeDestroyed() override;
+    void willBeDestroyed() override;
+
+    void styleDidChange(StyleDifference, const ComputedStyle* oldStyle) override;
 
 private:
-    virtual bool isImage() const override { return true; }
+    bool isImage() const override { return true; }
 
-    virtual void paintReplaced(const PaintInfo&, const LayoutPoint&) override;
+    void paintReplaced(const PaintInfo&, const LayoutPoint&) const override;
 
-    virtual bool foregroundIsKnownToBeOpaqueInRect(const LayoutRect& localRect, unsigned maxDepthToTest) const override final;
-    virtual bool computeBackgroundIsKnownToBeObscured() override final;
+    bool foregroundIsKnownToBeOpaqueInRect(const LayoutRect& localRect, unsigned maxDepthToTest) const final;
+    bool computeBackgroundIsKnownToBeObscured() const final;
 
-    virtual bool backgroundShouldAlwaysBeClipped() const override { return true; }
+    bool backgroundShouldAlwaysBeClipped() const override { return true; }
 
-    virtual LayoutUnit minimumReplacedHeight() const override;
+    LayoutUnit minimumReplacedHeight() const override;
 
-    virtual void notifyFinished(Resource*) override final;
-    virtual bool nodeAtPoint(HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction) override final;
+    void notifyFinished(Resource*) final;
+    bool nodeAtPoint(HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction) final;
 
-    virtual bool boxShadowShouldBeAppliedToBackground(BackgroundBleedAvoidance, InlineFlowBox*) const override final;
+    bool boxShadowShouldBeAppliedToBackground(BackgroundBleedAvoidance, const InlineFlowBox*) const final;
 
     void invalidatePaintAndMarkForLayoutIfNeeded();
     void updateIntrinsicSizeIfNeeded(const LayoutSize&);
     // Update the size of the image to be rendered. Object-fit may cause this to be different from the CSS box's content rect.
     void updateInnerContentRect();
 
-    // Text to display as long as the image isn't available.
-    OwnPtr<LayoutImageResource> m_imageResource;
+    // This member wraps the associated decoded image.
+    //
+    // This field is set using setImageResource above which can be called in
+    // several ways:
+    // * For normal images, from the network stack (ImageLoader) once we have
+    // some image data.
+    // * For generated content, the resource is loaded during style resolution
+    // and thus is stored in ComputedStyle (see ContentData::image) that gets
+    // propagated to the anonymous LayoutImage in LayoutObject::createObject.
+    OwnPtrWillBePersistent<LayoutImageResource> m_imageResource;
     bool m_didIncrementVisuallyNonEmptyPixelCount;
+
+    // This field stores whether this image is generated with 'content'.
     bool m_isGeneratedContent;
     float m_imageDevicePixelRatio;
 };

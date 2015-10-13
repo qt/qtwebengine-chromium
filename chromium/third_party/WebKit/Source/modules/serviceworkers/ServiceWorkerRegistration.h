@@ -5,13 +5,14 @@
 #ifndef ServiceWorkerRegistration_h
 #define ServiceWorkerRegistration_h
 
+#include "bindings/core/v8/ScriptPromiseResolver.h"
 #include "core/dom/ActiveDOMObject.h"
 #include "core/events/EventTarget.h"
 #include "modules/serviceworkers/ServiceWorker.h"
 #include "modules/serviceworkers/ServiceWorkerRegistration.h"
 #include "platform/Supplementable.h"
-#include "public/platform/WebServiceWorkerRegistration.h"
-#include "public/platform/WebServiceWorkerRegistrationProxy.h"
+#include "public/platform/modules/serviceworker/WebServiceWorkerRegistration.h"
+#include "public/platform/modules/serviceworker/WebServiceWorkerRegistrationProxy.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/PassRefPtr.h"
@@ -20,10 +21,12 @@
 namespace blink {
 
 class ScriptPromise;
-class ScriptPromiseResolver;
 class ScriptState;
 class WebServiceWorkerProvider;
 
+// The implementation of a service worker registration object in Blink. Actual
+// registration representation is in the embedder and this class accesses it
+// via WebServiceWorkerRegistration::Handle object.
 class ServiceWorkerRegistration final
     : public RefCountedGarbageCollectedEventTargetWithInlineData<ServiceWorkerRegistration>
     , public ActiveDOMObject
@@ -43,21 +46,19 @@ public:
     void setWaiting(WebServiceWorker*) override;
     void setActive(WebServiceWorker*) override;
 
-    // For CallbackPromiseAdapter.
-    typedef WebServiceWorkerRegistration WebType;
-    static ServiceWorkerRegistration* from(ExecutionContext*, WebType* registration);
-    static ServiceWorkerRegistration* take(ScriptPromiseResolver*, WebType* registration);
-    static void dispose(WebType* registration);
+    // Returns an existing registration object for the handle if it exists.
+    // Otherwise, returns a new registration object.
+    static ServiceWorkerRegistration* getOrCreate(ExecutionContext*, PassOwnPtr<WebServiceWorkerRegistration::Handle>);
 
-    PassRefPtrWillBeRawPtr<ServiceWorker> installing() { return m_installing.get(); }
-    PassRefPtrWillBeRawPtr<ServiceWorker> waiting() { return m_waiting.get(); }
-    PassRefPtrWillBeRawPtr<ServiceWorker> active() { return m_active.get(); }
+    ServiceWorker* installing() { return m_installing; }
+    ServiceWorker* waiting() { return m_waiting; }
+    ServiceWorker* active() { return m_active; }
 
     String scope() const;
 
-    WebServiceWorkerRegistration* webRegistration() { return m_outerRegistration.get(); }
+    WebServiceWorkerRegistration* webRegistration() { return m_handle->registration(); }
 
-    void update(ScriptState*, ExceptionState&);
+    ScriptPromise update(ScriptState*);
     ScriptPromise unregister(ScriptState*);
 
     DEFINE_ATTRIBUTE_EVENT_LISTENER(updatefound);
@@ -69,42 +70,33 @@ public:
     DECLARE_VIRTUAL_TRACE();
 
 private:
-    static ServiceWorkerRegistration* getOrCreate(ExecutionContext*, WebServiceWorkerRegistration*);
-    ServiceWorkerRegistration(ExecutionContext*, PassOwnPtr<WebServiceWorkerRegistration>);
+    ServiceWorkerRegistration(ExecutionContext*, PassOwnPtr<WebServiceWorkerRegistration::Handle>);
 
     // ActiveDOMObject overrides.
     bool hasPendingActivity() const override;
     void stop() override;
 
-    OwnPtr<WebServiceWorkerRegistration> m_outerRegistration;
+    // A handle to the registration representation in the embedder.
+    OwnPtr<WebServiceWorkerRegistration::Handle> m_handle;
+
     WebServiceWorkerProvider* m_provider;
-    RefPtrWillBeMember<ServiceWorker> m_installing;
-    RefPtrWillBeMember<ServiceWorker> m_waiting;
-    RefPtrWillBeMember<ServiceWorker> m_active;
+    Member<ServiceWorker> m_installing;
+    Member<ServiceWorker> m_waiting;
+    Member<ServiceWorker> m_active;
 
     bool m_stopped;
 };
 
 class ServiceWorkerRegistrationArray {
+    STATIC_ONLY(ServiceWorkerRegistrationArray);
 public:
-    typedef WebVector<WebServiceWorkerRegistration*> WebType;
-    static HeapVector<Member<ServiceWorkerRegistration>> take(ScriptPromiseResolver* resolver, PassOwnPtr<WebType> webServiceWorkerRegistrations)
+    static HeapVector<Member<ServiceWorkerRegistration>> take(ScriptPromiseResolver* resolver, Vector<OwnPtr<WebServiceWorkerRegistration::Handle>>* webServiceWorkerRegistrations)
     {
         HeapVector<Member<ServiceWorkerRegistration>> registrations;
-        for (WebServiceWorkerRegistration* registration : *webServiceWorkerRegistrations)
-            registrations.append(ServiceWorkerRegistration::take(resolver, registration));
+        for (auto& registration : *webServiceWorkerRegistrations)
+            registrations.append(ServiceWorkerRegistration::getOrCreate(resolver->executionContext(), registration.release()));
         return registrations;
     }
-
-    static void dispose(PassOwnPtr<WebType> webServiceWorkerRegistrations)
-    {
-        for (WebServiceWorkerRegistration* registration : *webServiceWorkerRegistrations)
-            ServiceWorkerRegistration::dispose(registration);
-    }
-
-private:
-    WTF_MAKE_NONCOPYABLE(ServiceWorkerRegistrationArray);
-    ServiceWorkerRegistrationArray() = delete;
 };
 
 } // namespace blink

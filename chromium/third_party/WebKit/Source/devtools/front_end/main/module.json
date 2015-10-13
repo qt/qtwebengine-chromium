@@ -69,7 +69,6 @@
         {
             "type": "@WebInspector.ActionDelegate",
             "actionId": "main.toggle-element-search",
-            "contextTypes": ["WebInspector.InspectElementModeController"],
             "className": "WebInspector.InspectElementModeController.ToggleSearchActionDelegate",
             "bindings": [
                 {
@@ -143,6 +142,13 @@
             ]
         },
         {
+            "type": "@WebInspector.ActionDelegate",
+            "actionId": "main.inspect-devices",
+            "title": "Inspect devices\u2026",
+            "className": "WebInspector.Main.InspectDevicesActionDelegate",
+            "experiment": "!inspectDevicesDialog"
+        },
+        {
             "type": "drawer-view",
             "name": "rendering",
             "title": "Rendering",
@@ -170,26 +176,14 @@
         },
         {
             "type": "@WebInspector.ToolbarItem.Provider",
-            "className": "WebInspector.InspectorView.ToggleDrawerButtonProvider",
-            "order": 2,
-            "location": "main-toolbar-right"
-        },
-        {
-            "type": "@WebInspector.ToolbarItem.Provider",
             "separator": true,
-            "order": 3,
+            "order": 98,
             "location": "main-toolbar-right"
         },
         {
             "type": "@WebInspector.ToolbarItem.Provider",
-            "className": "WebInspector.DockController.ButtonProvider",
-            "order": 5,
-            "location": "main-toolbar-right"
-        },
-        {
-            "type": "@WebInspector.ToolbarItem.Provider",
-            "separator": true,
-            "order": 90,
+            "className": "WebInspector.Main.MainMenuItem",
+            "order": 99,
             "location": "main-toolbar-right"
         },
         {
@@ -223,10 +217,15 @@
         {
             "type": "setting",
             "category": "Appearance",
-            "title": "Split panels vertically when docked to right",
-            "settingName": "splitVerticallyWhenDockedToRight",
-            "settingType": "boolean",
-            "defaultValue": true
+            "title": "Panel layout:",
+            "settingName": "sidebarPosition",
+            "settingType": "enum",
+            "defaultValue": "auto",
+            "options": [
+                ["horizontal", "bottom"],
+                ["vertical", "right"],
+                ["auto", "auto"]
+            ]
         },
         {
             "type": "setting",
@@ -267,6 +266,27 @@
             "className": "WebInspector.HandlerRegistry.OpenAnchorLocationSettingUI"
         },
         {
+            "type": "@WebInspector.ToolbarItem.Provider",
+            "className": "WebInspector.RenderingOptions.ButtonProvider",
+            "order": 1,
+            "location": "elements-toolbar",
+            "experiment": "materialDesign"
+        },
+        {
+            "type": "@WebInspector.ToolbarItem.Provider",
+            "separator": "true",
+            "order": 2,
+            "location": "elements-toolbar",
+            "experiment": "materialDesign"
+        },
+        {
+            "type": "context-menu-item",
+            "location": "mainMenu/navigate",
+            "order": 100,
+            "actionId": "main.inspect-devices",
+            "experiment": "!inspectDevicesDialog"
+        },
+        {
             "type": "setting",
             "settingName": "showPaintRects",
             "settingType": "boolean",
@@ -286,15 +306,16 @@
         },
         {
             "type": "setting",
-            "settingName": "continuousPainting",
+            "settingName": "showScrollBottleneckRects",
             "settingType": "boolean",
             "defaultValue": false
         },
         {
-            "type": "setting",
-            "settingName": "showScrollBottleneckRects",
-            "settingType": "boolean",
-            "defaultValue": false
+            "type": "@WebInspector.ToolbarItem.Provider",
+            "className": "WebInspector.InspectElementModeController.LayoutEditorButtonProvider",
+            "order": 4,
+            "location": "styles-sidebarpane-toolbar",
+            "experiment": "layoutEditor"
         }
     ],
     "dependencies": [
@@ -307,9 +328,9 @@
     "scripts": [
         "HelpScreenUntilReload.js",
         "AdvancedApp.js",
+        "FrontendWebSocketAPI.js",
         "RenderingOptions.js",
         "SimpleApp.js",
-        "TestController.js",
         "Tests.js",
         "OverlayController.js",
         "Main.js"

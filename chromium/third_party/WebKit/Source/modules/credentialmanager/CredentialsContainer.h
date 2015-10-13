@@ -22,8 +22,8 @@ public:
     static CredentialsContainer* create();
 
     // CredentialsContainer.h
-    ScriptPromise request(ScriptState*, const CredentialRequestOptions&);
-    ScriptPromise notifySignedIn(ScriptState*, Credential* = 0);
+    ScriptPromise get(ScriptState*, const CredentialRequestOptions&);
+    ScriptPromise store(ScriptState*, Credential* = 0);
     ScriptPromise requireUserMediation(ScriptState*);
 
     DEFINE_INLINE_VIRTUAL_TRACE() { }

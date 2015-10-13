@@ -35,8 +35,7 @@ class MediaDrmCredentialManager {
   static bool RegisterMediaDrmCredentialManager(JNIEnv* env);
 
  private:
-  friend struct DefaultSingletonTraits<MediaDrmCredentialManager>;
-  friend class Singleton<MediaDrmCredentialManager>;
+  friend struct base::DefaultSingletonTraits<MediaDrmCredentialManager>;
   typedef media::MediaDrmBridge::SecurityLevel SecurityLevel;
 
   MediaDrmCredentialManager();
@@ -53,7 +52,7 @@ class MediaDrmCredentialManager {
   bool ResetCredentialsInternal(SecurityLevel security_level);
 
   // The MediaDrmBridge object used to perform the credential reset.
-  scoped_ptr<media::MediaDrmBridge> media_drm_bridge_;
+  media::ScopedMediaDrmBridgePtr media_drm_bridge_;
 
   // The callback provided by the caller.
   ResetCredentialsCB reset_credentials_cb_;

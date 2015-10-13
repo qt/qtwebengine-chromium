@@ -6,6 +6,7 @@
 #define LocalFontFaceSource_h
 
 #include "core/css/CSSFontFaceSource.h"
+#include "wtf/Allocator.h"
 #include "wtf/text/AtomicString.h"
 
 namespace blink {
@@ -13,13 +14,14 @@ namespace blink {
 class LocalFontFaceSource final : public CSSFontFaceSource {
 public:
     LocalFontFaceSource(const String& fontName) : m_fontName(fontName) { }
-    virtual bool isLocal() const override { return true; }
-    virtual bool isLocalFontAvailable(const FontDescription&) override;
+    bool isLocal() const override { return true; }
+    bool isLocalFontAvailable(const FontDescription&) override;
 
 private:
-    virtual PassRefPtr<SimpleFontData> createFontData(const FontDescription&) override;
+    PassRefPtr<SimpleFontData> createFontData(const FontDescription&) override;
 
     class LocalFontHistograms {
+        DISALLOW_ALLOCATION();
     public:
         LocalFontHistograms() : m_reported(false) { }
         void record(bool loadSuccess);

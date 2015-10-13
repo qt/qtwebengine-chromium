@@ -5,23 +5,23 @@
 #ifndef GPU_COMMAND_BUFFER_SERVICE_CONTEXT_GROUP_H_
 #define GPU_COMMAND_BUFFER_SERVICE_CONTEXT_GROUP_H_
 
-#include <string>
 #include <vector>
 #include "base/basictypes.h"
 #include "base/containers/hash_tables.h"
-#include "base/memory/linked_ptr.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "gpu/command_buffer/common/constants.h"
 #include "gpu/command_buffer/common/gles2_cmd_format.h"
+#include "gpu/command_buffer/common/gles2_cmd_utils.h"
 #include "gpu/command_buffer/service/feature_info.h"
-#include "gpu/command_buffer/service/gles2_cmd_validation.h"
+#include "gpu/command_buffer/service/framebuffer_completeness_cache.h"
 #include "gpu/command_buffer/service/shader_translator_cache.h"
 #include "gpu/gpu_export.h"
 
 namespace gpu {
 
-class TransferBufferManagerInterface;
+class TransferBufferManager;
 class ValueStateMap;
 
 namespace gles2 {
@@ -32,6 +32,7 @@ class GLES2Decoder;
 class FramebufferManager;
 class MailboxManager;
 class RenderbufferManager;
+class PathManager;
 class ProgramManager;
 class ShaderManager;
 class TextureManager;
@@ -44,19 +45,12 @@ struct DisallowedFeatures;
 // resources.
 class GPU_EXPORT ContextGroup : public base::RefCounted<ContextGroup> {
  public:
-  enum ContextType {
-    CONTEXT_TYPE_WEBGL1,
-    CONTEXT_TYPE_WEBGL2,
-    CONTEXT_TYPE_OTHER,
-    CONTEXT_TYPE_UNDEFINED
-  };
-
-  static ContextType GetContextType(unsigned webgl_version);
-
   ContextGroup(
       const scoped_refptr<MailboxManager>& mailbox_manager,
       const scoped_refptr<MemoryTracker>& memory_tracker,
       const scoped_refptr<ShaderTranslatorCache>& shader_translator_cache,
+      const scoped_refptr<FramebufferCompletenessCache>&
+          framebuffer_completeness_cache,
       const scoped_refptr<FeatureInfo>& feature_info,
       const scoped_refptr<SubscriptionRefSet>& subscription_ref_set,
       const scoped_refptr<ValueStateMap>& pending_valuebuffer_state,
@@ -83,6 +77,10 @@ class GPU_EXPORT ContextGroup : public base::RefCounted<ContextGroup> {
 
   ShaderTranslatorCache* shader_translator_cache() const {
     return shader_translator_cache_.get();
+  }
+
+  FramebufferCompletenessCache* framebuffer_completeness_cache() const {
+    return framebuffer_completeness_cache_.get();
   }
 
   bool bind_generates_resource() {
@@ -153,6 +151,8 @@ class GPU_EXPORT ContextGroup : public base::RefCounted<ContextGroup> {
     return texture_manager_.get();
   }
 
+  PathManager* path_manager() const { return path_manager_.get(); }
+
   ProgramManager* program_manager() const {
     return program_manager_.get();
   }
@@ -169,7 +169,7 @@ class GPU_EXPORT ContextGroup : public base::RefCounted<ContextGroup> {
     return shader_manager_.get();
   }
 
-  TransferBufferManagerInterface* transfer_buffer_manager() const {
+  TransferBufferManager* transfer_buffer_manager() const {
     return transfer_buffer_manager_.get();
   }
 
@@ -177,14 +177,6 @@ class GPU_EXPORT ContextGroup : public base::RefCounted<ContextGroup> {
 
   // Loses all the context associated with this group.
   void LoseContexts(error::ContextLostReason reason);
-
-  // EXT_draw_buffer related states for backbuffer.
-  GLenum draw_buffer() const {
-    return draw_buffer_;
-  }
-  void set_draw_buffer(GLenum buf) {
-    draw_buffer_ = buf;
-  }
 
   bool GetBufferServiceId(GLuint client_id, GLuint* service_id) const;
 
@@ -259,12 +251,11 @@ class GPU_EXPORT ContextGroup : public base::RefCounted<ContextGroup> {
   bool QueryGLFeatureU(GLenum pname, GLint min_required, uint32* v);
   bool HaveContexts();
 
-  ContextType context_type_;
-
   scoped_refptr<MailboxManager> mailbox_manager_;
   scoped_refptr<MemoryTracker> memory_tracker_;
   scoped_refptr<ShaderTranslatorCache> shader_translator_cache_;
-  scoped_refptr<TransferBufferManagerInterface> transfer_buffer_manager_;
+  scoped_refptr<FramebufferCompletenessCache> framebuffer_completeness_cache_;
+  scoped_refptr<TransferBufferManager> transfer_buffer_manager_;
   scoped_refptr<SubscriptionRefSet> subscription_ref_set_;
   scoped_refptr<ValueStateMap> pending_valuebuffer_state_;
 
@@ -291,6 +282,8 @@ class GPU_EXPORT ContextGroup : public base::RefCounted<ContextGroup> {
 
   scoped_ptr<TextureManager> texture_manager_;
 
+  scoped_ptr<PathManager> path_manager_;
+
   scoped_ptr<ProgramManager> program_manager_;
 
   scoped_ptr<ShaderManager> shader_manager_;
@@ -306,8 +299,6 @@ class GPU_EXPORT ContextGroup : public base::RefCounted<ContextGroup> {
   base::hash_map<GLuint, GLuint> transformfeedbacks_id_map_;
   base::hash_map<GLuint, GLsync> syncs_id_map_;
 
-  GLenum draw_buffer_;
-
   DISALLOW_COPY_AND_ASSIGN(ContextGroup);
 };
 
@@ -315,5 +306,3 @@ class GPU_EXPORT ContextGroup : public base::RefCounted<ContextGroup> {
 }  // namespace gpu
 
 #endif  // GPU_COMMAND_BUFFER_SERVICE_CONTEXT_GROUP_H_
-
-

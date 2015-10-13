@@ -230,8 +230,6 @@ void RenderWidgetHostViewGuest::OnSwapCompositorFrame(
   gfx::Size frame_size = root_pass->output_rect.size();
   float scale_factor = frame->metadata.device_scale_factor;
 
-  guest_->UpdateGuestSizeIfNecessary(frame_size, scale_factor);
-
   // Check whether we need to recreate the cc::Surface, which means the child
   // frame renderer has changed its output surface, or size, or scale factor.
   if (output_surface_id != last_output_surface_id_ && surface_factory_) {
@@ -273,7 +271,8 @@ void RenderWidgetHostViewGuest::OnSwapCompositorFrame(
   ack_pending_count_++;
   // If this value grows very large, something is going wrong.
   DCHECK(ack_pending_count_ < 1000);
-  surface_factory_->SubmitFrame(surface_id_, frame.Pass(), ack_callback);
+  surface_factory_->SubmitCompositorFrame(surface_id_, frame.Pass(),
+                                          ack_callback);
 }
 
 bool RenderWidgetHostViewGuest::OnMessageReceived(const IPC::Message& msg) {
@@ -355,11 +354,8 @@ void RenderWidgetHostViewGuest::SetIsLoading(bool is_loading) {
   platform_view_->SetIsLoading(is_loading);
 }
 
-void RenderWidgetHostViewGuest::TextInputTypeChanged(
-    ui::TextInputType type,
-    ui::TextInputMode input_mode,
-    bool can_compose_inline,
-    int flags) {
+void RenderWidgetHostViewGuest::TextInputStateChanged(
+    const ViewHostMsg_TextInputState_Params& params) {
   if (!guest_)
     return;
 
@@ -367,7 +363,7 @@ void RenderWidgetHostViewGuest::TextInputTypeChanged(
   if (!rwhv)
     return;
   // Forward the information to embedding RWHV.
-  rwhv->TextInputTypeChanged(type, input_mode, can_compose_inline, flags);
+  rwhv->TextInputStateChanged(params);
 }
 
 void RenderWidgetHostViewGuest::ImeCancelComposition() {
@@ -451,6 +447,17 @@ void RenderWidgetHostViewGuest::GetScreenInfo(blink::WebScreenInfo* results) {
   RenderWidgetHostViewBase* embedder_view = GetOwnerRenderWidgetHostView();
   if (embedder_view)
     embedder_view->GetScreenInfo(results);
+}
+
+bool RenderWidgetHostViewGuest::GetScreenColorProfile(
+    std::vector<char>* color_profile) {
+  if (!guest_)
+    return false;
+  DCHECK(color_profile->empty());
+  RenderWidgetHostViewBase* embedder_view = GetOwnerRenderWidgetHostView();
+  if (embedder_view)
+    return embedder_view->GetScreenColorProfile(color_profile);
+  return false;
 }
 
 #if defined(OS_MACOSX)
@@ -622,14 +629,50 @@ RenderWidgetHostViewGuest::GetOwnerRenderWidgetHostView() const {
       guest_->GetOwnerRenderWidgetHostView());
 }
 
+void RenderWidgetHostViewGuest::WheelEventAck(
+    const blink::WebMouseWheelEvent& event,
+    InputEventAckState ack_result) {
+  if (ack_result == INPUT_EVENT_ACK_STATE_NOT_CONSUMED ||
+      ack_result == INPUT_EVENT_ACK_STATE_NO_CONSUMER_EXISTS) {
+    guest_->ResendEventToEmbedder(event);
+  }
+}
+
+void RenderWidgetHostViewGuest::GestureEventAck(
+    const blink::WebGestureEvent& event,
+    InputEventAckState ack_result) {
+  bool not_consumed = ack_result == INPUT_EVENT_ACK_STATE_NOT_CONSUMED ||
+                      ack_result == INPUT_EVENT_ACK_STATE_NO_CONSUMER_EXISTS;
+  // GestureScrollBegin/End are always consumed by the guest, so we only
+  // forward GestureScrollUpdate.
+  if (event.type == blink::WebInputEvent::GestureScrollUpdate && not_consumed)
+    guest_->ResendEventToEmbedder(event);
+}
+
 void RenderWidgetHostViewGuest::OnHandleInputEvent(
     RenderWidgetHostImpl* embedder,
     int browser_plugin_instance_id,
     const gfx::Rect& guest_window_rect,
     const blink::WebInputEvent* event) {
   if (blink::WebInputEvent::isMouseEventType(event->type)) {
-    host_->ForwardMouseEvent(
-        *static_cast<const blink::WebMouseEvent*>(event));
+    // The mouse events for BrowserPlugin are modified by all
+    // the CSS transforms applied on the <object> and embedder. As a result of
+    // this, the coordinates passed on to the guest renderer are potentially
+    // incorrect to determine the position of the context menu(they are not the
+    // actual X, Y of the window). As a hack, we report the last location of a
+    // right mouse up to the BrowserPluginGuest to inform it of the next
+    // potential location for context menu (BUG=470087).
+    // TODO(ekaramad): Find a better and more fundamental solution. Could the
+    // ContextMenuParams be based on global X, Y?
+    const blink::WebMouseEvent& mouse_event =
+        static_cast<const blink::WebMouseEvent&>(*event);
+    // A MouseDown on the ButtonRight could suggest a ContextMenu.
+    if (guest_ && mouse_event.type == blink::WebInputEvent::MouseDown &&
+        mouse_event.button == blink::WebPointerProperties::ButtonRight)
+      guest_->SetContextMenuPosition(
+          gfx::Point(mouse_event.globalX - GetViewBounds().x(),
+                     mouse_event.globalY - GetViewBounds().y()));
+    host_->ForwardMouseEvent(mouse_event);
     return;
   }
 
@@ -660,8 +703,22 @@ void RenderWidgetHostViewGuest::OnHandleInputEvent(
   }
 
   if (blink::WebInputEvent::isGestureEventType(event->type)) {
-    host_->ForwardGestureEvent(
-        *static_cast<const blink::WebGestureEvent*>(event));
+    const blink::WebGestureEvent& gesture_event =
+        *static_cast<const blink::WebGestureEvent*>(event);
+
+    // We don't forward inertial GestureScrollUpdates to the guest anymore
+    // since it now receives GestureFlingStart and will have its own fling
+    // curve generating GestureScrollUpdate events for it.
+    // TODO(wjmaclean): Should we try to avoid creating a fling curve in the
+    // embedder renderer in this case? BrowserPlugin can return 'true' for
+    // handleInputEvent() on a GestureFlingStart, and we could use this as
+    // a signal to let the guest handle the fling, though we'd need to be
+    // sure other plugins would behave appropriately (i.e. return 'false').
+    if (gesture_event.type == blink::WebInputEvent::GestureScrollUpdate &&
+        gesture_event.data.scrollUpdate.inertial) {
+      return;
+    }
+    host_->ForwardGestureEvent(gesture_event);
     return;
   }
 }

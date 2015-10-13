@@ -79,9 +79,10 @@ void TestURLRequestContext::Init() {
   if (!cert_verifier())
     context_storage_.set_cert_verifier(CertVerifier::CreateDefault());
   if (!transport_security_state())
-    context_storage_.set_transport_security_state(new TransportSecurityState);
+    context_storage_.set_transport_security_state(
+        make_scoped_ptr(new TransportSecurityState()));
   if (!ssl_config_service())
-    context_storage_.set_ssl_config_service(new SSLConfigServiceDefaults);
+    context_storage_.set_ssl_config_service(new SSLConfigServiceDefaults());
   if (!http_auth_handler_factory()) {
     context_storage_.set_http_auth_handler_factory(
         HttpAuthHandlerFactory::CreateDefault(host_resolver()));
@@ -89,10 +90,6 @@ void TestURLRequestContext::Init() {
   if (!http_server_properties()) {
     context_storage_.set_http_server_properties(
         scoped_ptr<HttpServerProperties>(new HttpServerPropertiesImpl()));
-  }
-  if (!transport_security_state()) {
-    context_storage_.set_transport_security_state(
-        new TransportSecurityState());
   }
   if (http_transaction_factory()) {
     // Make sure we haven't been passed an object we're not going to use.
@@ -111,9 +108,10 @@ void TestURLRequestContext::Init() {
     params.network_delegate = network_delegate();
     params.http_server_properties = http_server_properties();
     params.net_log = net_log();
-    context_storage_.set_http_transaction_factory(new HttpCache(
-        new HttpNetworkSession(params),
-        HttpCache::DefaultBackend::InMemory(0)));
+    context_storage_.set_http_transaction_factory(
+        make_scoped_ptr(new HttpCache(new HttpNetworkSession(params),
+                                      HttpCache::DefaultBackend::InMemory(0)))
+            .Pass());
   }
   // In-memory cookie store.
   if (!cookie_store())
@@ -125,11 +123,13 @@ void TestURLRequestContext::Init() {
                              base::WorkerPool::GetTaskRunner(true))));
   }
   if (!http_user_agent_settings()) {
-    context_storage_.set_http_user_agent_settings(
-        new StaticHttpUserAgentSettings("en-us,fr", std::string()));
+    context_storage_.set_http_user_agent_settings(make_scoped_ptr(
+        new StaticHttpUserAgentSettings("en-us,fr", std::string())));
   }
-  if (!job_factory())
-    context_storage_.set_job_factory(new URLRequestJobFactoryImpl);
+  if (!job_factory()) {
+    context_storage_.set_job_factory(
+        make_scoped_ptr(new URLRequestJobFactoryImpl()));
+  }
 }
 
 TestURLRequestContextGetter::TestURLRequestContextGetter(
@@ -327,13 +327,14 @@ TestNetworkDelegate::TestNetworkDelegate()
       observed_before_proxy_headers_sent_callbacks_(0),
       before_send_headers_count_(0),
       headers_received_count_(0),
+      total_network_bytes_received_(0),
+      total_network_bytes_sent_(0),
       has_load_timing_info_before_redirect_(false),
       has_load_timing_info_before_auth_(false),
       can_access_files_(true),
       first_party_only_cookies_enabled_(false),
       cancel_request_with_policy_violating_referrer_(false),
-      will_be_intercepted_on_next_error_(false) {
-}
+      will_be_intercepted_on_next_error_(false) {}
 
 TestNetworkDelegate::~TestNetworkDelegate() {
   for (std::map<int, int>::iterator i = next_states_.begin();
@@ -504,8 +505,16 @@ void TestNetworkDelegate::OnResponseStarted(URLRequest* request) {
   }
 }
 
-void TestNetworkDelegate::OnRawBytesRead(const URLRequest& request,
-                                         int bytes_read) {
+void TestNetworkDelegate::OnNetworkBytesReceived(const URLRequest& request,
+                                                 int64_t bytes_received) {
+  event_order_[request.identifier()] += "OnNetworkBytesReceived\n";
+  total_network_bytes_received_ += bytes_received;
+}
+
+void TestNetworkDelegate::OnNetworkBytesSent(const URLRequest& request,
+                                             int64_t bytes_sent) {
+  event_order_[request.identifier()] += "OnNetworkBytesSent\n";
+  total_network_bytes_sent_ += bytes_sent;
 }
 
 void TestNetworkDelegate::OnCompleted(URLRequest* request, bool started) {

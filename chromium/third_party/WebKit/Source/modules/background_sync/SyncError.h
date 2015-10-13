@@ -8,21 +8,16 @@
 #include "core/dom/DOMException.h"
 #include "platform/heap/Handle.h"
 #include "public/platform/modules/background_sync/WebSyncError.h"
+#include "wtf/Allocator.h"
 
 namespace blink {
 
 class ScriptPromiseResolver;
 
 class SyncError {
-    WTF_MAKE_NONCOPYABLE(SyncError);
+    STATIC_ONLY(SyncError);
 public:
-    // For CallbackPromiseAdapter.
-    using WebType = WebSyncError;
-    static DOMException* take(ScriptPromiseResolver*, WebType*);
-    static void dispose(WebType*);
-
-private:
-    SyncError() = delete;
+    static DOMException* take(ScriptPromiseResolver*, const WebSyncError&);
 };
 
 } // namespace blink

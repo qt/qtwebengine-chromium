@@ -78,7 +78,7 @@ GpuVideoEncodeAcceleratorHost::GetSupportedProfiles() {
 }
 
 bool GpuVideoEncodeAcceleratorHost::Initialize(
-    media::VideoFrame::Format input_format,
+    media::VideoPixelFormat input_format,
     const gfx::Size& input_visible_size,
     media::VideoCodecProfile output_profile,
     uint32 initial_bitrate,
@@ -94,13 +94,9 @@ bool GpuVideoEncodeAcceleratorHost::Initialize(
   channel_->AddRoute(route_id, weak_this_factory_.GetWeakPtr());
 
   bool succeeded = false;
-  Send(new GpuCommandBufferMsg_CreateVideoEncoder(impl_->GetRouteID(),
-                                                  input_format,
-                                                  input_visible_size,
-                                                  output_profile,
-                                                  initial_bitrate,
-                                                  route_id,
-                                                  &succeeded));
+  Send(new GpuCommandBufferMsg_CreateVideoEncoder(
+      impl_->route_id(), input_format, input_visible_size, output_profile,
+      initial_bitrate, route_id, &succeeded));
   if (!succeeded) {
     DLOG(ERROR) << "Send(GpuCommandBufferMsg_CreateVideoEncoder()) failed";
     channel_->RemoveRoute(route_id);
@@ -118,32 +114,39 @@ void GpuVideoEncodeAcceleratorHost::Encode(
     return;
 
   if (!base::SharedMemory::IsHandleValid(frame->shared_memory_handle())) {
-    NOTIFY_ERROR(kPlatformFailureError)
-        << "Encode(): cannot encode frame not backed by shared memory";
+    NOTIFY_ERROR(kPlatformFailureError) << "EncodeSharedMemory(): cannot "
+                                           "encode frame with invalid shared "
+                                           "memory handle";
     return;
   }
-  base::SharedMemoryHandle handle =
+
+  AcceleratedVideoEncoderMsg_Encode_Params params;
+  params.frame_id = next_frame_id_;
+  params.buffer_handle =
       channel_->ShareToGpuProcess(frame->shared_memory_handle());
-  if (!base::SharedMemory::IsHandleValid(handle)) {
-    NOTIFY_ERROR(kPlatformFailureError)
-        << "Encode(): failed to duplicate buffer handle for GPU process";
+  if (!base::SharedMemory::IsHandleValid(params.buffer_handle)) {
+    NOTIFY_ERROR(kPlatformFailureError) << "EncodeSharedMemory(): failed to "
+                                           "duplicate buffer handle for GPU "
+                                           "process";
     return;
   }
-
+  params.buffer_offset =
+      base::checked_cast<uint32_t>(frame->shared_memory_offset());
   // We assume that planar frame data passed here is packed and contiguous.
-  const size_t plane_count = media::VideoFrame::NumPlanes(frame->format());
-  size_t frame_size = 0;
-  for (size_t i = 0; i < plane_count; ++i) {
+  base::CheckedNumeric<uint32_t> buffer_size = 0u;
+  for (size_t i = 0; i < media::VideoFrame::NumPlanes(frame->format()); ++i) {
     // Cast DCHECK parameters to void* to avoid printing uint8* as a string.
-    DCHECK_EQ(reinterpret_cast<void*>(frame->data(i)),
-              reinterpret_cast<void*>((frame->data(0) + frame_size)))
+    DCHECK_EQ(
+        reinterpret_cast<void*>(frame->data(i)),
+        reinterpret_cast<void*>((frame->data(0) + buffer_size.ValueOrDie())))
         << "plane=" << i;
-    frame_size += frame->stride(i) * frame->rows(i);
+    buffer_size +=
+        base::checked_cast<uint32_t>(frame->stride(i) * frame->rows(i));
   }
+  params.buffer_size = buffer_size.ValueOrDie();
+  params.force_keyframe = force_keyframe;
 
-  Send(new AcceleratedVideoEncoderMsg_Encode(
-      encoder_route_id_, next_frame_id_, handle, frame->shared_memory_offset(),
-      frame_size, force_keyframe));
+  Send(new AcceleratedVideoEncoderMsg_Encode(encoder_route_id_, params));
   frame_map_[next_frame_id_] = frame;
 
   // Mask against 30 bits, to avoid (undefined) wraparound on signed integer.

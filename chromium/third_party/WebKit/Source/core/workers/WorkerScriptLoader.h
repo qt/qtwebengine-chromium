@@ -37,6 +37,7 @@
 #include "wtf/FastAllocBase.h"
 #include "wtf/Functional.h"
 #include "wtf/PassRefPtr.h"
+#include "wtf/RefCounted.h"
 #include "wtf/text/StringBuilder.h"
 
 namespace blink {
@@ -47,11 +48,13 @@ class ResourceResponse;
 class ExecutionContext;
 class TextResourceDecoder;
 
-class CORE_EXPORT WorkerScriptLoader final : public ThreadableLoaderClient {
+class CORE_EXPORT WorkerScriptLoader final : public RefCounted<WorkerScriptLoader>, public ThreadableLoaderClient {
     WTF_MAKE_FAST_ALLOCATED(WorkerScriptLoader);
 public:
-    WorkerScriptLoader();
-    ~WorkerScriptLoader() override;
+    static PassRefPtr<WorkerScriptLoader> create()
+    {
+        return adoptRef(new WorkerScriptLoader());
+    }
 
     void loadSynchronously(ExecutionContext&, const KURL&, CrossOriginRequestPolicy);
     // TODO: |finishedCallback| is not currently guaranteed to be invoked if
@@ -74,8 +77,8 @@ public:
     PassOwnPtr<Vector<char>> releaseCachedMetadata() { return m_cachedMetadata.release(); }
     const Vector<char>* cachedMetadata() const { return m_cachedMetadata.get(); }
 
-    PassRefPtr<ContentSecurityPolicy> contentSecurityPolicy() { return m_contentSecurityPolicy; }
-    PassRefPtr<ContentSecurityPolicy> releaseContentSecurityPolicy() { return m_contentSecurityPolicy.release(); }
+    ContentSecurityPolicy* contentSecurityPolicy() { return m_contentSecurityPolicy.get(); }
+    PassRefPtrWillBeRawPtr<ContentSecurityPolicy> releaseContentSecurityPolicy() { return m_contentSecurityPolicy.release(); }
 
     // ThreadableLoaderClient
     void didReceiveResponse(unsigned long /*identifier*/, const ResourceResponse&, PassOwnPtr<WebDataConsumerHandle>) override;
@@ -88,6 +91,11 @@ public:
     void setRequestContext(WebURLRequest::RequestContext requestContext) { m_requestContext = requestContext; }
 
 private:
+    friend class WTF::RefCounted<WorkerScriptLoader>;
+
+    WorkerScriptLoader();
+    ~WorkerScriptLoader() override;
+
     PassOwnPtr<ResourceRequest> createResourceRequest();
     void notifyError();
     void notifyFinished();
@@ -110,7 +118,7 @@ private:
     long long m_appCacheID;
     OwnPtr<Vector<char>> m_cachedMetadata;
     WebURLRequest::RequestContext m_requestContext;
-    RefPtr<ContentSecurityPolicy> m_contentSecurityPolicy;
+    RefPtrWillBePersistent<ContentSecurityPolicy> m_contentSecurityPolicy;
 };
 
 } // namespace blink

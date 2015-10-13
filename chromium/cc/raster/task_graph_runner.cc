@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "base/containers/hash_tables.h"
 #include "base/strings/stringprintf.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/trace_event/trace_event.h"
@@ -68,34 +69,19 @@ class DependentIterator {
   TaskGraph::Node* current_node_;
 };
 
-class DependencyMismatchComparator {
- public:
-  explicit DependencyMismatchComparator(const TaskGraph* graph)
-      : graph_(graph) {}
+bool DependencyMismatch(const TaskGraph* graph) {
+  // Value storage will be 0-initialized.
+  base::hash_map<const Task*, size_t> dependents;
+  for (const TaskGraph::Edge& edge : graph->edges)
+    dependents[edge.dependent]++;
 
-  bool operator()(const TaskGraph::Node& node) const {
-    return static_cast<size_t>(std::count_if(graph_->edges.begin(),
-                                             graph_->edges.end(),
-                                             DependentComparator(node.task))) !=
-           node.dependencies;
+  for (const TaskGraph::Node& node : graph->nodes) {
+    if (dependents[node.task] != node.dependencies)
+      return true;
   }
 
- private:
-  class DependentComparator {
-   public:
-    explicit DependentComparator(const Task* dependent)
-        : dependent_(dependent) {}
-
-    bool operator()(const TaskGraph::Edge& edge) const {
-      return edge.dependent == dependent_;
-    }
-
-   private:
-    const Task* dependent_;
-  };
-
-  const TaskGraph* graph_;
-};
+  return false;
+}
 
 }  // namespace
 
@@ -171,10 +157,7 @@ void TaskGraphRunner::ScheduleTasks(NamespaceToken token, TaskGraph* graph) {
                graph->edges.size());
 
   DCHECK(token.IsValid());
-  DCHECK(std::find_if(graph->nodes.begin(),
-                      graph->nodes.end(),
-                      DependencyMismatchComparator(graph)) ==
-         graph->nodes.end());
+  DCHECK(!DependencyMismatch(graph));
 
   {
     base::AutoLock lock(lock_);
@@ -347,6 +330,18 @@ void TaskGraphRunner::Shutdown() {
   // Wake up a worker so it knows it should exit. This will cause all workers
   // to exit as each will wake up another worker before exiting.
   has_ready_to_run_tasks_cv_.Signal();
+}
+
+void TaskGraphRunner::FlushForTesting() {
+  base::AutoLock lock(lock_);
+
+  while (std::find_if(namespaces_.begin(), namespaces_.end(),
+                      [](const TaskNamespaceMap::value_type& entry) {
+                        return !HasFinishedRunningTasksInNamespace(
+                            &entry.second);
+                      }) != namespaces_.end()) {
+    has_namespaces_with_finished_running_tasks_cv_.Wait();
+  }
 }
 
 void TaskGraphRunner::Run() {

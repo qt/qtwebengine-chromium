@@ -4,6 +4,7 @@
 {
   'variables': {
     'chromium_code': 1,
+    'system_webview_package_name%': 'com.android.webview',
   },
   'targets': [
     {
@@ -24,8 +25,16 @@
             'arch_suffix':'64'
           }],
         ],
+        'grit_out_dir': '<(SHARED_INTERMEDIATE_DIR)/android_webview',
       },
       'actions': [
+        {
+          'action_name': 'generate_aw_resources',
+          'variables': {
+            'grit_grd_file': 'ui/aw_resources.grd',
+          },
+          'includes': [ '../build/grit_action.gypi' ],
+        },
         {
           'action_name': 'repack_android_webview_pack',
           'variables': {
@@ -36,26 +45,34 @@
               '<(SHARED_INTERMEDIATE_DIR)/content/content_resources.pak',
               '<(SHARED_INTERMEDIATE_DIR)/net/net_resources.pak',
               '<(SHARED_INTERMEDIATE_DIR)/ui/resources/ui_resources_100_percent.pak',
+              '<(grit_out_dir)/aw_resources.pak',
             ],
             'pak_output': '<(PRODUCT_DIR)/android_webview_assets/webviewchromium.pak',
           },
          'includes': [ '../build/repack_action.gypi' ],
         },
         {
-          'action_name': 'android_webview_locales_rename_paks',
+          'action_name': 'generate_aw_strings',
           'variables': {
-            'rename_locales': 'tools/webview_locales_rename_paks.py',
+            'grit_grd_file': 'ui/aw_strings.grd',
+          },
+          'includes': [ '../build/grit_action.gypi' ],
+        },
+        {
+          'action_name': 'android_webview_repack_locales',
+          'variables': {
+            'repack_locales': 'tools/webview_repack_locales.py',
           },
           'inputs': [
-            '<(rename_locales)',
-            '<!@pymod_do_main(webview_locales_rename_paks -i -p <(PRODUCT_DIR) -s <(SHARED_INTERMEDIATE_DIR) <(locales))'
+            '<(repack_locales)',
+            '<!@pymod_do_main(webview_repack_locales -i -p <(PRODUCT_DIR) -s <(SHARED_INTERMEDIATE_DIR) <(locales))'
           ],
           'outputs': [
-            '<!@pymod_do_main(webview_locales_rename_paks -o -p <(PRODUCT_DIR) -s <(SHARED_INTERMEDIATE_DIR) <(locales))'
+            '<!@pymod_do_main(webview_repack_locales -o -p <(PRODUCT_DIR) -s <(SHARED_INTERMEDIATE_DIR) <(locales))'
           ],
           'action': [
             'python',
-            '<(rename_locales)',
+            '<(repack_locales)',
             '-p', '<(PRODUCT_DIR)',
             '-s', '<(SHARED_INTERMEDIATE_DIR)',
             '<@(locales)',
@@ -172,6 +189,7 @@
         '../components/components.gyp:devtools_discovery',
         '../components/components.gyp:navigation_interception',
         '../components/components.gyp:printing_common',
+        '../components/components.gyp:printing_browser',
         '../components/components.gyp:printing_renderer',
         '../components/components.gyp:visitedlink_browser',
         '../components/components.gyp:visitedlink_renderer',
@@ -197,6 +215,10 @@
         '../v8/tools/gyp/v8.gyp:v8',
         'android_webview_pak',
         'android_webview_version',
+        '../components/components.gyp:policy',
+        '../components/components.gyp:policy_component',
+        '../components/components.gyp:pref_registry',
+        '../components/url_formatter/url_formatter.gyp:url_formatter',
       ],
       'include_dirs': [
         '..',
@@ -209,6 +231,8 @@
         'browser/aw_browser_main_parts.cc',
         'browser/aw_browser_main_parts.h',
         'browser/aw_browser_permission_request_delegate.h',
+        'browser/aw_browser_policy_connector.cc',
+        'browser/aw_browser_policy_connector.h',
         'browser/aw_contents_client_bridge_base.cc',
         'browser/aw_contents_client_bridge_base.h',
         'browser/aw_content_browser_client.cc',
@@ -228,6 +252,7 @@
         'browser/aw_http_auth_handler_base.h',
         'browser/aw_javascript_dialog_manager.cc',
         'browser/aw_javascript_dialog_manager.h',
+        'browser/aw_locale_manager.h',
         'browser/aw_login_delegate.cc',
         'browser/aw_login_delegate.h',
         'browser/aw_media_client_android.cc',
@@ -239,6 +264,8 @@
         'browser/aw_permission_manager.h',
         'browser/aw_pref_store.cc',
         'browser/aw_pref_store.h',
+        'browser/aw_print_manager.cc',
+        'browser/aw_print_manager.h',
         'browser/aw_printing_message_filter.cc',
         'browser/aw_printing_message_filter.h',
         'browser/aw_quota_manager_bridge.cc',
@@ -247,8 +274,6 @@
         'browser/aw_quota_permission_context.h',
         'browser/aw_render_thread_context_provider.cc',
         'browser/aw_render_thread_context_provider.h',
-        'browser/aw_request_interceptor.cc',
-        'browser/aw_request_interceptor.h',
         'browser/aw_resource_context.cc',
         'browser/aw_resource_context.h',
         'browser/aw_ssl_host_state_delegate.cc',
@@ -256,8 +281,6 @@
         'browser/aw_result_codes.h',
         'browser/aw_web_preferences_populater.cc',
         'browser/aw_web_preferences_populater.h',
-        'browser/aw_web_resource_response.cc',
-        'browser/aw_web_resource_response.h',
         'browser/browser_view_renderer.cc',
         'browser/browser_view_renderer.h',
         'browser/browser_view_renderer_client.h',
@@ -277,12 +300,17 @@
         'browser/gl_view_renderer_manager.h',
         'browser/net/android_stream_reader_url_request_job.cc',
         'browser/net/android_stream_reader_url_request_job.h',
+        'browser/net/aw_http_user_agent_settings.h',
+        'browser/net/aw_http_user_agent_settings.cc',
         'browser/net/aw_network_delegate.cc',
         'browser/net/aw_network_delegate.h',
+        'browser/net/aw_request_interceptor.cc',
+        'browser/net/aw_request_interceptor.h',
         'browser/net/aw_url_request_context_getter.cc',
         'browser/net/aw_url_request_context_getter.h',
         'browser/net/aw_url_request_job_factory.cc',
         'browser/net/aw_url_request_job_factory.h',
+        'browser/net/aw_web_resource_response.h',
         'browser/net_disk_cache_remover.cc',
         'browser/net_disk_cache_remover.h',
         'browser/net/init_native_callback.h',
@@ -296,8 +324,6 @@
         'browser/renderer_host/aw_render_view_host_ext.h',
         'browser/renderer_host/aw_resource_dispatcher_host_delegate.cc',
         'browser/renderer_host/aw_resource_dispatcher_host_delegate.h',
-        'browser/renderer_host/print_manager.cc',
-        'browser/renderer_host/print_manager.h',
         'browser/scoped_allow_wait_for_legacy_web_view_api.h',
         'browser/scoped_app_gl_state_restore.cc',
         'browser/scoped_app_gl_state_restore.h',
@@ -307,6 +333,7 @@
         'common/android_webview_message_generator.h',
         'common/aw_content_client.cc',
         'common/aw_content_client.h',
+        'common/aw_descriptors.h',
         'common/aw_hit_test_data.cc',
         'common/aw_hit_test_data.h',
         'common/aw_message_port_messages.h',
@@ -357,8 +384,10 @@
       'target_name': 'android_webview_java',
       'type': 'none',
       'dependencies': [
+        '../android_webview/native/webview_native.gyp:android_webview_aw_permission_request_resource',
         '../components/components.gyp:external_video_surface_java',
         '../components/components.gyp:navigation_interception_java',
+        '../components/components.gyp:policy_java',
         '../components/components.gyp:web_contents_delegate_android_java',
         '../content/content.gyp:content_java',
         '../ui/android/ui_android.gyp:ui_java',
@@ -375,12 +404,24 @@
       'includes': [ '../build/java.gypi' ],
     },
     {
+      'target_name': 'system_webview_glue_java',
+      'variables': {
+        'android_sdk_jar': '../third_party/android_platform/webview/frameworks_6.0.jar',
+        'java_in_dir': 'glue/java',
+      },
+      'includes': [ 'apk/system_webview_glue_common.gypi' ],
+    },
+    {
       'target_name': 'system_webview_apk',
+      'dependencies': [
+        'system_webview_glue_java',
+      ],
       'variables': {
         'apk_name': 'SystemWebView',
-        'android_sdk_jar': '../third_party/android_platform/webview/frameworks_5.1.0_r1.jar',
-        'java_in_dir': 'glue/java',
+        'android_sdk_jar': '../third_party/android_platform/webview/frameworks_6.0.jar',
+        'java_in_dir': '../build/android/empty',
         'resource_dir': 'apk/java/res',
+        'android_manifest_template_vars': ['package=<(system_webview_package_name)'],
       },
       'includes': [ 'apk/system_webview_apk_common.gypi' ],
     },

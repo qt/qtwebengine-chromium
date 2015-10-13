@@ -18,22 +18,18 @@ CastPermissionManager::CastPermissionManager()
 CastPermissionManager::~CastPermissionManager() {
 }
 
-void CastPermissionManager::RequestPermission(
+int CastPermissionManager::RequestPermission(
     content::PermissionType permission,
     content::RenderFrameHost* render_frame_host,
-    int request_id,
     const GURL& origin,
     bool user_gesture,
     const base::Callback<void(content::PermissionStatus)>& callback) {
   LOG(INFO) << __FUNCTION__ << ": " << static_cast<int>(permission);
   callback.Run(content::PermissionStatus::PERMISSION_STATUS_GRANTED);
+  return kNoPendingOperation;
 }
 
-void CastPermissionManager::CancelPermissionRequest(
-    content::PermissionType permission,
-    content::RenderFrameHost* render_frame_host,
-    int request_id,
-    const GURL& origin) {
+void CastPermissionManager::CancelPermissionRequest(int request_id) {
 }
 
 void CastPermissionManager::ResetPermission(
@@ -61,7 +57,7 @@ int CastPermissionManager::SubscribePermissionStatusChange(
     const GURL& requesting_origin,
     const GURL& embedding_origin,
     const base::Callback<void(content::PermissionStatus)>& callback) {
-  return -1;
+  return kNoPendingOperation;
 }
 
 void CastPermissionManager::UnsubscribePermissionStatusChange(

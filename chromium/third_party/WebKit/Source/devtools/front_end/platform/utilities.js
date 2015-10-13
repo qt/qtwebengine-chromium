@@ -279,22 +279,6 @@ String.prototype.removeURLFragment = function()
 }
 
 /**
- * @return {boolean}
- */
-String.prototype.startsWith = function(substring)
-{
-    return !this.lastIndexOf(substring, 0);
-}
-
-/**
- * @return {boolean}
- */
-String.prototype.endsWith = function(substring)
-{
-    return this.indexOf(substring, this.length - substring.length) !== -1;
-}
-
-/**
  * @param {string|undefined} string
  * @return {number}
  */
@@ -975,7 +959,10 @@ String.tokenizeFormatString = function(format, formatters)
 
     function addStringToken(str)
     {
-        tokens.push({ type: "string", value: str });
+        if (tokens.length && tokens[tokens.length - 1].type === "string")
+            tokens[tokens.length - 1].value += str;
+        else
+            tokens.push({ type: "string", value: str });
     }
 
     function addSpecifierToken(specifier, precision, substitutionIndex)
@@ -1435,6 +1422,23 @@ CallbackBarrier.prototype = {
         this._outgoingCallback = callback;
         if (!this._pendingIncomingCallbacksCount)
             this._outgoingCallback();
+    },
+
+    /**
+     * @return {!Promise.<undefined>}
+     */
+    donePromise: function()
+    {
+        return new Promise(promiseConstructor.bind(this));
+
+        /**
+         * @param {function()} success
+         * @this {CallbackBarrier}
+         */
+        function promiseConstructor(success)
+        {
+            this.callWhenDone(success);
+        }
     },
 
     /**

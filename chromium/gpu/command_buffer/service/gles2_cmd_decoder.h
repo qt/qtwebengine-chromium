@@ -30,7 +30,6 @@ class Size;
 
 namespace gpu {
 
-class AsyncPixelTransferManager;
 struct Mailbox;
 
 namespace gles2 {
@@ -188,24 +187,22 @@ class GPU_EXPORT GLES2Decoder : public base::SupportsWeakPtr<GLES2Decoder>,
   // Gets the ValuebufferManager for this context.
   virtual ValuebufferManager* GetValuebufferManager() = 0;
 
-  // Process any pending queries. Returns false if there are no pending queries.
-  virtual bool ProcessPendingQueries(bool did_finish) = 0;
+  // Returns false if there are no pending queries.
+  virtual bool HasPendingQueries() const = 0;
 
-  // Returns false if there are no idle work to be made.
-  virtual bool HasMoreIdleWork() = 0;
+  // Process any pending queries.
+  virtual void ProcessPendingQueries(bool did_finish) = 0;
 
+  // Returns false if there is no idle work to be made.
+  virtual bool HasMoreIdleWork() const = 0;
+
+  // Perform any idle work that needs to be made.
   virtual void PerformIdleWork() = 0;
 
   // Sets a callback which is called when a glResizeCHROMIUM command
   // is processed.
   virtual void SetResizeCallback(
       const base::Callback<void(gfx::Size, float)>& callback) = 0;
-
-  // Interface to performing async pixel transfers.
-  virtual AsyncPixelTransferManager* GetAsyncPixelTransferManager() = 0;
-  virtual void ResetAsyncPixelTransferManagerForTest() = 0;
-  virtual void SetAsyncPixelTransferManagerForTest(
-      AsyncPixelTransferManager* manager) = 0;
 
   // Get the service texture ID corresponding to a client texture ID.
   // If no such record is found then return false.

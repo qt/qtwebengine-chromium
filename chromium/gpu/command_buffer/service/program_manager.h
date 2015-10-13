@@ -50,6 +50,16 @@ class GPU_EXPORT Program : public base::RefCounted<Program> {
     kUniformMatrix2f = 1 << 8,
     kUniformMatrix3f = 1 << 9,
     kUniformMatrix4f = 1 << 10,
+    kUniform1ui = 1 << 11,
+    kUniform2ui = 1 << 12,
+    kUniform3ui = 1 << 13,
+    kUniform4ui = 1 << 14,
+    kUniformMatrix2x3f = 1 << 15,
+    kUniformMatrix2x4f = 1 << 16,
+    kUniformMatrix3x2f = 1 << 17,
+    kUniformMatrix3x4f = 1 << 18,
+    kUniformMatrix4x2f = 1 << 19,
+    kUniformMatrix4x3f = 1 << 20,
   };
 
   struct UniformInfo {
@@ -95,6 +105,7 @@ class GPU_EXPORT Program : public base::RefCounted<Program> {
   typedef std::vector<VertexAttrib> AttribInfoVector;
   typedef std::vector<int> SamplerIndices;
   typedef std::map<std::string, GLint> LocationMap;
+  typedef std::vector<std::string> StringVector;
 
   Program(ProgramManager* manager, GLuint service_id);
 
@@ -131,6 +142,10 @@ class GPU_EXPORT Program : public base::RefCounted<Program> {
 
   // If the original name is not found, return NULL.
   const std::string* GetAttribMappedName(
+      const std::string& original_name) const;
+
+  // If the original name is not found, return NULL.
+  const std::string* GetUniformMappedName(
       const std::string& original_name) const;
 
   // If the hashed name is not found, return NULL.
@@ -221,6 +236,11 @@ class GPU_EXPORT Program : public base::RefCounted<Program> {
   // We only consider the declared attributes in the program.
   bool DetectAttribLocationBindingConflicts() const;
 
+  // Detects if there are uniform location conflicts from
+  // glBindUniformLocationCHROMIUM() calls.
+  // We only consider the statically used uniforms in the program.
+  bool DetectUniformLocationBindingConflicts() const;
+
   // Detects if there are uniforms of the same name but different type
   // or precision in vertex/fragment shaders.
   // Return true and set the first found conflicting hashed name to
@@ -307,7 +327,12 @@ class GPU_EXPORT Program : public base::RefCounted<Program> {
   // translated.
   void ExecuteBindAttribLocationCalls();
 
-  bool AddUniformInfo(
+  // The names of transform feedback varyings need to be hashed just
+  // like bound attributes' locations, just before the link call.
+  // Returns false upon failure.
+  bool ExecuteTransformFeedbackVaryingsCall();
+
+  void AddUniformInfo(
       GLsizei size, GLenum type, GLint location, GLint fake_base_location,
       const std::string& name, const std::string& original_name,
       size_t* next_available_index);
@@ -434,7 +459,7 @@ class GPU_EXPORT ProgramManager {
   static bool IsInvalidPrefix(const char* name, size_t length);
 
   // Check if a Program is owned by this ProgramManager.
-  bool IsOwned(Program* program);
+  bool IsOwned(Program* program) const;
 
   static int32 MakeFakeLocation(int32 index, int32 element);
 

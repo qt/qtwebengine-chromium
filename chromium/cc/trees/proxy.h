@@ -60,7 +60,9 @@ class CC_EXPORT Proxy {
 
   // Will call LayerTreeHost::OnCreateAndInitializeOutputSurfaceAttempted
   // with the result of this function.
-  virtual void SetOutputSurface(scoped_ptr<OutputSurface> output_surface) = 0;
+  virtual void SetOutputSurface(OutputSurface* output_surface) = 0;
+
+  virtual void ReleaseOutputSurface() = 0;
 
   // Indicates that the compositing surface associated with our context is
   // ready to use.
@@ -93,13 +95,7 @@ class CC_EXPORT Proxy {
   virtual void Start() = 0;
   virtual void Stop() = 0;   // Must be called before deleting the proxy.
 
-  // Forces 3D commands on all contexts to wait for all previous SwapBuffers
-  // to finish before executing in the GPU process.
-  virtual void ForceSerializeOnSwapBuffers() = 0;
-
   virtual bool SupportsImplScrolling() const = 0;
-
-  virtual void SetDebugState(const LayerTreeDebugState& debug_state) = 0;
 
   virtual void SetChildrenNeedBeginFrames(bool children_need_begin_frames) = 0;
 

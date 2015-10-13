@@ -141,7 +141,7 @@ private:
             return;
         }
         ++m_token;
-        m_readerThread->postTask(FROM_HERE, new Task(threadSafeBind(&Context::updateReader, this, m_token)));
+        m_readerThread->taskRunner()->postTask(FROM_HERE, new Task(threadSafeBind(&Context::updateReader, this, m_token)));
     }
 
     OwnPtr<Reader> m_reader;
@@ -183,20 +183,34 @@ Result CompositeDataConsumerHandle::ReaderImpl::endRead(size_t readSize)
     return m_context->endRead(readSize);
 }
 
-CompositeDataConsumerHandle::CompositeDataConsumerHandle(PassOwnPtr<WebDataConsumerHandle> handle)
-    : m_context(Context::create(handle)) { }
+CompositeDataConsumerHandle::Updater::Updater(PassRefPtr<Context> context)
+    : m_context(context)
+#if ENABLE(ASSERT)
+    , m_thread(Platform::current()->currentThread())
+#endif
+{
+}
+
+CompositeDataConsumerHandle::Updater::~Updater() {}
+
+void CompositeDataConsumerHandle::Updater::update(PassOwnPtr<WebDataConsumerHandle> handle)
+{
+    ASSERT(handle);
+    ASSERT(m_thread->isCurrentThread());
+    m_context->update(handle);
+}
+
+CompositeDataConsumerHandle::CompositeDataConsumerHandle(PassOwnPtr<WebDataConsumerHandle> handle, Updater** updater)
+    : m_context(Context::create(handle))
+{
+    *updater = new Updater(m_context);
+}
 
 CompositeDataConsumerHandle::~CompositeDataConsumerHandle() { }
 
 WebDataConsumerHandle::Reader* CompositeDataConsumerHandle::obtainReaderInternal(Client* client)
 {
     return m_context->obtainReader(client).leakPtr();
-}
-
-void CompositeDataConsumerHandle::update(PassOwnPtr<WebDataConsumerHandle> handle)
-{
-    ASSERT(handle);
-    m_context->update(handle);
 }
 
 } // namespace blink

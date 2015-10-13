@@ -43,6 +43,30 @@ LayoutFlowThread::LayoutFlowThread()
 {
 }
 
+LayoutFlowThread* LayoutFlowThread::locateFlowThreadContainingBlockOf(const LayoutObject& descendant)
+{
+    ASSERT(descendant.isInsideFlowThread());
+    LayoutObject* curr = const_cast<LayoutObject*>(&descendant);
+    while (curr) {
+        if (curr->isSVG() && !curr->isSVGRoot())
+            return nullptr;
+        if (curr->isLayoutFlowThread())
+            return toLayoutFlowThread(curr);
+        LayoutObject* container = curr->container();
+        curr = curr->parent();
+        while (curr != container) {
+            if (curr->isLayoutFlowThread()) {
+                // The nearest ancestor flow thread isn't in our containing block chain. Then we
+                // aren't really part of any flow thread, and we should stop looking. This happens
+                // when there are out-of-flow objects or column spanners.
+                return nullptr;
+            }
+            curr = curr->parent();
+        }
+    }
+    return nullptr;
+}
+
 void LayoutFlowThread::removeColumnSetFromThread(LayoutMultiColumnSet* columnSet)
 {
     ASSERT(columnSet);
@@ -116,27 +140,18 @@ LayoutUnit LayoutFlowThread::pageLogicalHeightForOffset(LayoutUnit offset)
 {
     LayoutMultiColumnSet* columnSet = columnSetAtBlockOffset(offset);
     if (!columnSet)
-        return 0;
+        return LayoutUnit();
 
-    return columnSet->pageLogicalHeight();
+    return columnSet->pageLogicalHeightForOffset(offset);
 }
 
 LayoutUnit LayoutFlowThread::pageRemainingLogicalHeightForOffset(LayoutUnit offset, PageBoundaryRule pageBoundaryRule)
 {
     LayoutMultiColumnSet* columnSet = columnSetAtBlockOffset(offset);
     if (!columnSet)
-        return 0;
+        return LayoutUnit();
 
-    LayoutUnit pageLogicalTop = columnSet->pageLogicalTopForOffset(offset);
-    LayoutUnit pageLogicalHeight = columnSet->pageLogicalHeight();
-    LayoutUnit pageLogicalBottom = pageLogicalTop + pageLogicalHeight;
-    LayoutUnit remainingHeight = pageLogicalBottom - offset;
-    if (pageBoundaryRule == IncludePageBoundary) {
-        // If IncludePageBoundary is set, the line exactly on the top edge of a
-        // columnSet will act as being part of the previous columnSet.
-        remainingHeight = intMod(remainingHeight, pageLogicalHeight);
-    }
-    return remainingHeight;
+    return columnSet->pageRemainingLogicalHeightForOffset(offset, pageBoundaryRule);
 }
 
 void LayoutFlowThread::generateColumnSetIntervalTree()
@@ -148,31 +163,26 @@ void LayoutFlowThread::generateColumnSetIntervalTree()
         m_multiColumnSetIntervalTree.add(MultiColumnSetIntervalTree::createInterval(columnSet->logicalTopInFlowThread(), columnSet->logicalBottomInFlowThread(), columnSet));
 }
 
-void LayoutFlowThread::collectLayerFragments(DeprecatedPaintLayerFragments& layerFragments, const LayoutRect& layerBoundingBox, const LayoutRect& dirtyRect)
+void LayoutFlowThread::collectLayerFragments(PaintLayerFragments& layerFragments, const LayoutRect& layerBoundingBox, const LayoutRect& dirtyRectInFlowThread)
 {
     ASSERT(!m_columnSetsInvalidated);
 
+    LayoutRect dirtyRectInMulticolContainer(dirtyRectInFlowThread);
+    dirtyRectInMulticolContainer.moveBy(location());
+
     for (LayoutMultiColumnSetList::const_iterator iter = m_multiColumnSetList.begin(); iter != m_multiColumnSetList.end(); ++iter) {
         LayoutMultiColumnSet* columnSet = *iter;
-        columnSet->collectLayerFragments(layerFragments, layerBoundingBox, dirtyRect);
+        columnSet->collectLayerFragments(layerFragments, layerBoundingBox, dirtyRectInMulticolContainer);
     }
 }
 
 LayoutRect LayoutFlowThread::fragmentsBoundingBox(const LayoutRect& layerBoundingBox) const
 {
-    ASSERT(!m_columnSetsInvalidated);
+    ASSERT(!RuntimeEnabledFeatures::slimmingPaintV2Enabled() || !m_columnSetsInvalidated);
 
     LayoutRect result;
-    for (auto* columnSet : m_multiColumnSetList) {
-        DeprecatedPaintLayerFragments fragments;
-        columnSet->collectLayerFragments(fragments, layerBoundingBox, LayoutRect(LayoutRect::infiniteIntRect()));
-        for (const auto& fragment : fragments) {
-            LayoutRect fragmentRect(layerBoundingBox);
-            fragmentRect.intersect(fragment.paginationClip);
-            fragmentRect.moveBy(fragment.paginationOffset);
-            result.unite(fragmentRect);
-        }
-    }
+    for (auto* columnSet : m_multiColumnSetList)
+        result.unite(columnSet->fragmentsBoundingBox(layerBoundingBox));
 
     return result;
 }

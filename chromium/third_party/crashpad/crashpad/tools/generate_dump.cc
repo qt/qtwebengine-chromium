@@ -41,6 +41,8 @@
 #elif defined(OS_WIN)
 #include "base/strings/utf_string_conversions.h"
 #include "snapshot/win/process_snapshot_win.h"
+#include "util/win/scoped_process_suspend.h"
+#include "util/win/xp_compat.h"
 #endif  // OS_MACOSX
 
 namespace crashpad {
@@ -150,7 +152,7 @@ int GenerateDumpMain(int argc, char* argv[]) {
   }
 #elif defined(OS_WIN)
   ScopedKernelHANDLE process(
-      OpenProcess(PROCESS_ALL_ACCESS, false, options.pid));
+      OpenProcess(kXPProcessAllAccess, false, options.pid));
   if (!process.is_valid()) {
     LOG(ERROR) << "could not open process " << options.pid;
     return EXIT_FAILURE;
@@ -168,9 +170,9 @@ int GenerateDumpMain(int argc, char* argv[]) {
       suspend.reset(new ScopedTaskSuspend(task));
     }
 #elif defined(OS_WIN)
+    scoped_ptr<ScopedProcessSuspend> suspend;
     if (options.suspend) {
-      LOG(ERROR) << "TODO(scottmg): --no-suspend is required for now.";
-      return EXIT_FAILURE;
+      suspend.reset(new ScopedProcessSuspend(process.get()));
     }
 #endif  // OS_MACOSX
 
@@ -181,7 +183,10 @@ int GenerateDumpMain(int argc, char* argv[]) {
     }
 #elif defined(OS_WIN)
     ProcessSnapshotWin process_snapshot;
-    if (!process_snapshot.Initialize(process.get())) {
+    if (!process_snapshot.Initialize(process.get(),
+                                     options.suspend
+                                         ? ProcessSuspensionState::kSuspended
+                                         : ProcessSuspensionState::kRunning)) {
       return EXIT_FAILURE;
     }
 #endif  // OS_MACOSX

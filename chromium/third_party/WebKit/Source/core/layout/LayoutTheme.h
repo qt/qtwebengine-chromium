@@ -33,7 +33,6 @@
 
 namespace blink {
 
-class AuthorStyleInfo;
 class ComputedStyle;
 class Element;
 class FileList;
@@ -62,7 +61,7 @@ public:
     // metrics and defaults given the contents of the style.  This includes sophisticated operations like
     // selection of control size based off the font, the disabling of appearance when certain other properties like
     // "border" are set, or if the appearance is not supported by the theme.
-    void adjustStyle(ComputedStyle&, Element*, const AuthorStyleInfo&);
+    void adjustStyle(ComputedStyle&, Element*);
 
     // The remaining methods should be implemented by the platform-specific portion of the theme, e.g.,
     // LayoutThemeMac.cpp for Mac OS X.
@@ -84,7 +83,7 @@ public:
     bool isControlContainer(ControlPart) const;
 
     // Whether or not the control has been styled enough by the author to disable the native appearance.
-    virtual bool isControlStyled(const ComputedStyle&, const AuthorStyleInfo&) const;
+    virtual bool isControlStyled(const ComputedStyle&) const;
 
     // Some controls may spill out of their containers (e.g., the check on an OSX 10.9 checkbox). Add this
     // "visual overflow" to the object's border box rect.
@@ -95,7 +94,7 @@ public:
     // or vice versa).
     bool controlStateChanged(LayoutObject&, ControlState) const;
 
-    bool shouldDrawDefaultFocusRing(LayoutObject*) const;
+    bool shouldDrawDefaultFocusRing(const LayoutObject&) const;
 
     // A method asking if the theme's controls actually care about redrawing when hovered.
     virtual bool supportsHover(const ComputedStyle&) const { return false; }
@@ -136,9 +135,13 @@ public:
     void systemFont(CSSValueID systemFontID, FontDescription&);
     virtual Color systemColor(CSSValueID) const;
 
+    // Whether the default system font should have its average character width
+    // adjusted to match MS Shell Dlg.
+    virtual bool needsHackForTextControlWithFontFamily(const AtomicString&) const { return false; }
+
     virtual int minimumMenuListSize(const ComputedStyle&) const { return 0; }
 
-    virtual void adjustSliderThumbSize(ComputedStyle&, Element*) const;
+    virtual void adjustSliderThumbSize(ComputedStyle&) const;
 
     virtual int popupInternalPaddingLeft(const ComputedStyle&) const { return 0; }
     virtual int popupInternalPaddingRight(const ComputedStyle&) const { return 0; }
@@ -157,7 +160,7 @@ public:
     String formatMediaControlsTime(float time) const;
     String formatMediaControlsCurrentTime(float currentTime, float duration) const;
 
-    virtual IntSize meterSizeForBounds(const LayoutMeter*, const IntRect&) const;
+    virtual IntSize meterSizeForBounds(const LayoutMeter&, const IntRect&) const;
     virtual bool supportsMeter(ControlPart) const;
 
     // Returns size of one slider tick mark for a horizontal track.
@@ -166,7 +169,6 @@ public:
     // Returns the distance of slider tick origin from the slider track center.
     virtual int sliderTickOffsetFromTrackCenter() const = 0;
 
-    virtual bool shouldShowPlaceholderWhenFocused() const { return false; }
     virtual bool shouldHaveSpinButton(HTMLInputElement*) const;
 
     // Functions for <select> elements.
@@ -199,44 +201,44 @@ protected:
     virtual Color platformInactiveListBoxSelectionForegroundColor() const;
 
     // A method asking if the theme is able to draw the focus ring.
-    virtual bool supportsFocusRing(const ComputedStyle&) const;
+    virtual bool supportsFocusRing(const ComputedStyle&) const = 0;
 
 #if !USE(NEW_THEME)
     // Methods for each appearance value.
-    virtual void adjustCheckboxStyle(ComputedStyle&, Element*) const;
+    virtual void adjustCheckboxStyle(ComputedStyle&) const;
     virtual void setCheckboxSize(ComputedStyle&) const { }
 
-    virtual void adjustRadioStyle(ComputedStyle&, Element*) const;
+    virtual void adjustRadioStyle(ComputedStyle&) const;
     virtual void setRadioSize(ComputedStyle&) const { }
 
-    virtual void adjustButtonStyle(ComputedStyle&, Element*) const;
-    virtual void adjustInnerSpinButtonStyle(ComputedStyle&, Element*) const;
+    virtual void adjustButtonStyle(ComputedStyle&) const;
+    virtual void adjustInnerSpinButtonStyle(ComputedStyle&) const;
 #endif
 
     virtual void adjustMenuListStyle(ComputedStyle&, Element*) const;
     virtual void adjustMenuListButtonStyle(ComputedStyle&, Element*) const;
-    virtual void adjustSliderThumbStyle(ComputedStyle&, Element*) const;
-    virtual void adjustSearchFieldStyle(ComputedStyle&, Element*) const;
-    virtual void adjustSearchFieldCancelButtonStyle(ComputedStyle&, Element*) const;
-    virtual void adjustSearchFieldDecorationStyle(ComputedStyle&, Element*) const;
-    virtual void adjustSearchFieldResultsDecorationStyle(ComputedStyle&, Element*) const;
-    void adjustStyleUsingFallbackTheme(ComputedStyle&, Element*);
-    void adjustCheckboxStyleUsingFallbackTheme(ComputedStyle&, Element*) const;
-    void adjustRadioStyleUsingFallbackTheme(ComputedStyle&, Element*) const;
+    virtual void adjustSliderThumbStyle(ComputedStyle&) const;
+    virtual void adjustSearchFieldStyle(ComputedStyle&) const;
+    virtual void adjustSearchFieldCancelButtonStyle(ComputedStyle&) const;
+    virtual void adjustSearchFieldDecorationStyle(ComputedStyle&) const;
+    virtual void adjustSearchFieldResultsDecorationStyle(ComputedStyle&) const;
+    void adjustStyleUsingFallbackTheme(ComputedStyle&);
+    void adjustCheckboxStyleUsingFallbackTheme(ComputedStyle&) const;
+    void adjustRadioStyleUsingFallbackTheme(ComputedStyle&) const;
 
 public:
     // Methods for state querying
-    static ControlStates controlStatesForLayoutObject(const LayoutObject*);
-    static bool isActive(const LayoutObject*);
-    static bool isChecked(const LayoutObject*);
-    static bool isIndeterminate(const LayoutObject*);
-    static bool isEnabled(const LayoutObject*);
-    static bool isFocused(const LayoutObject*);
-    static bool isPressed(const LayoutObject*);
-    static bool isSpinUpButtonPartPressed(const LayoutObject*);
-    static bool isHovered(const LayoutObject*);
-    static bool isSpinUpButtonPartHovered(const LayoutObject*);
-    static bool isReadOnlyControl(const LayoutObject*);
+    static ControlStates controlStatesForLayoutObject(const LayoutObject&);
+    static bool isActive(const LayoutObject&);
+    static bool isChecked(const LayoutObject&);
+    static bool isIndeterminate(const LayoutObject&);
+    static bool isEnabled(const LayoutObject&);
+    static bool isFocused(const LayoutObject&);
+    static bool isPressed(const LayoutObject&);
+    static bool isSpinUpButtonPartPressed(const LayoutObject&);
+    static bool isHovered(const LayoutObject&);
+    static bool isSpinUpButtonPartHovered(const LayoutObject&);
+    static bool isReadOnlyControl(const LayoutObject&);
 
 private:
     Color m_customFocusRingColor;

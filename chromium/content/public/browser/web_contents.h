@@ -58,6 +58,7 @@ class WebContentsDelegate;
 struct CustomContextMenuContext;
 struct DropData;
 struct Manifest;
+struct PageImportanceSignals;
 struct RendererPreferences;
 
 // WebContents is the core class in content/. A WebContents renders web content
@@ -248,8 +249,10 @@ class WebContents : public PageNavigator,
   // Create a WebUI page for the given url. In most cases, this doesn't need to
   // be called by embedders since content will create its own WebUI objects as
   // necessary. However if the embedder wants to create its own WebUI object and
-  // keep track of it manually, it can use this.
-  virtual WebUI* CreateWebUI(const GURL& url) = 0;
+  // keep track of it manually, it can use this. |frame_name| is used to
+  // identify the frame and cannot be empty.
+  virtual WebUI* CreateSubframeWebUI(const GURL& url,
+                                     const std::string& frame_name) = 0;
 
   // Returns the committed WebUI if one exists, otherwise the pending one.
   virtual WebUI* GetWebUI() const = 0;
@@ -275,6 +278,8 @@ class WebContents : public PageNavigator,
   virtual void SetParentNativeViewAccessible(
       gfx::NativeViewAccessible accessible_parent) = 0;
 #endif
+
+  virtual const PageImportanceSignals& GetPageImportanceSignals() const = 0;
 
   // Tab navigation state ------------------------------------------------------
 
@@ -672,6 +677,8 @@ class WebContents : public PageNavigator,
   virtual void ResumeMediaSession() = 0;
   // Requests to suspend the current media session.
   virtual void SuspendMediaSession() = 0;
+  // Requests to stop the current media session.
+  virtual void StopMediaSession() = 0;
 
   CONTENT_EXPORT static WebContents* FromJavaWebContents(
       jobject jweb_contents_android);

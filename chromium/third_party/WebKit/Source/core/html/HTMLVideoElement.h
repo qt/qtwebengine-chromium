@@ -55,10 +55,11 @@ public:
     unsigned videoHeight() const;
 
     // Fullscreen
-    void webkitEnterFullscreen(ExceptionState&);
+    void webkitEnterFullscreen();
     void webkitExitFullscreen();
     bool webkitSupportsFullscreen();
     bool webkitDisplayingFullscreen();
+    bool usesOverlayFullscreenVideo() const override;
 
     // Statistics
     unsigned webkitDecodedFrameCount() const;
@@ -72,15 +73,12 @@ public:
 
     bool shouldDisplayPosterImage() const { return displayMode() == Poster; }
 
-    KURL posterImageURL() const;
-
     bool hasAvailableVideoFrame() const;
 
-    // FIXME: Remove this when WebMediaPlayerClientImpl::loadInternal does not depend on it.
-    KURL mediaPlayerPosterURL() override;
+    KURL posterImageURL() const override;
 
     // CanvasImageSource implementation
-    PassRefPtr<Image> getSourceImageForCanvas(SourceImageMode, SourceImageStatus*) const override;
+    PassRefPtr<Image> getSourceImageForCanvas(SourceImageStatus*, AccelerationHint) const override;
     bool isVideoElement() const override { return true; }
     bool wouldTaintOrigin(SecurityOrigin*) const override;
     FloatSize elementSize() const override;
@@ -98,7 +96,6 @@ private:
     bool isPresentationAttribute(const QualifiedName&) const override;
     void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) override;
     bool hasVideo() const override { return webMediaPlayer() && webMediaPlayer()->hasVideo(); }
-    bool supportsFullscreen() const;
     bool isURLAttribute(const Attribute&) const override;
     const AtomicString imageSourceURL() const override;
 

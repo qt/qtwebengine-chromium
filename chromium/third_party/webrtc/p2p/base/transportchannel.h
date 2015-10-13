@@ -37,16 +37,22 @@ enum PacketFlags {
 };
 
 // Used to indicate channel's connection state.
-enum TransportChannelState { STATE_CONNECTING, STATE_COMPLETED, STATE_FAILED };
+enum TransportChannelState {
+  STATE_INIT,
+  STATE_CONNECTING,  // Will enter this state once a connection is created
+  STATE_COMPLETED,
+  STATE_FAILED
+};
 
 // A TransportChannel represents one logical stream of packets that are sent
 // between the two sides of a session.
 class TransportChannel : public sigslot::has_slots<> {
  public:
-  explicit TransportChannel(const std::string& content_name, int component)
-      : content_name_(content_name),
+  explicit TransportChannel(const std::string& transport_name, int component)
+      : transport_name_(transport_name),
         component_(component),
-        readable_(false), writable_(false), receiving_(false) {}
+        writable_(false),
+        receiving_(false) {}
   virtual ~TransportChannel() {}
 
   // TODO(guoweis) - Make this pure virtual once all subclasses of
@@ -59,16 +65,13 @@ class TransportChannel : public sigslot::has_slots<> {
   // Returns the session id of this channel.
   virtual const std::string SessionId() const { return std::string(); }
 
-  const std::string& content_name() const { return content_name_; }
+  const std::string& transport_name() const { return transport_name_; }
   int component() const { return component_; }
 
-  // Returns the readable and states of this channel.  Each time one of these
-  // states changes, a signal is raised.  These states are aggregated by the
-  // TransportManager.
-  bool readable() const { return readable_; }
+  // Returns the states of this channel.  Each time one of these states changes,
+  // a signal is raised.  These states are aggregated by the TransportManager.
   bool writable() const { return writable_; }
   bool receiving() const { return receiving_; }
-  sigslot::signal1<TransportChannel*> SignalReadableState;
   sigslot::signal1<TransportChannel*> SignalWritableState;
   // Emitted when the TransportChannel's ability to send has changed.
   sigslot::signal1<TransportChannel*> SignalReadyToSend;
@@ -103,16 +106,23 @@ class TransportChannel : public sigslot::has_slots<> {
   virtual bool SetSrtpCiphers(const std::vector<std::string>& ciphers) = 0;
 
   // Finds out which DTLS-SRTP cipher was negotiated.
-  virtual bool GetSrtpCipher(std::string* cipher) = 0;
+  // TODO(guoweis): Remove this once all dependencies implement this.
+  virtual bool GetSrtpCryptoSuite(std::string* cipher) {
+    return false;
+  }
 
   // Finds out which DTLS cipher was negotiated.
-  virtual bool GetSslCipher(std::string* cipher) = 0;
+  // TODO(guoweis): Remove this once all dependencies implement this.
+  virtual bool GetSslCipherSuite(uint16_t* cipher) {
+    return false;
+  }
 
-  // Gets a copy of the local SSL identity, owned by the caller.
-  virtual bool GetLocalIdentity(rtc::SSLIdentity** identity) const = 0;
+  // Gets the local RTCCertificate used for DTLS.
+  virtual rtc::scoped_refptr<rtc::RTCCertificate>
+  GetLocalCertificate() const = 0;
 
   // Gets a copy of the remote side's SSL certificate, owned by the caller.
-  virtual bool GetRemoteCertificate(rtc::SSLCertificate** cert) const = 0;
+  virtual bool GetRemoteSSLCertificate(rtc::SSLCertificate** cert) const = 0;
 
   // Allows key material to be extracted for external encryption.
   virtual bool ExportKeyingMaterial(const std::string& label,
@@ -138,8 +148,8 @@ class TransportChannel : public sigslot::has_slots<> {
   std::string ToString() const;
 
  protected:
-  // Sets the readable state, signaling if necessary.
-  void set_readable(bool readable);
+  // TODO(honghaiz): Remove this once chromium's unit tests no longer call it.
+  void set_readable(bool readable) { set_receiving(readable); }
 
   // Sets the writable state, signaling if necessary.
   void set_writable(bool writable);
@@ -147,16 +157,14 @@ class TransportChannel : public sigslot::has_slots<> {
   // Sets the receiving state, signaling if necessary.
   void set_receiving(bool receiving);
 
-
  private:
   // Used mostly for debugging.
-  std::string content_name_;
+  std::string transport_name_;
   int component_;
-  bool readable_;
   bool writable_;
   bool receiving_;
 
-  DISALLOW_COPY_AND_ASSIGN(TransportChannel);
+  RTC_DISALLOW_COPY_AND_ASSIGN(TransportChannel);
 };
 
 }  // namespace cricket

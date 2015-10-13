@@ -180,7 +180,7 @@ PassOwnPtrWillBeRawPtr<ClickHandlingState> RadioInputType::willDispatchClick()
     state->checked = element().checked();
     state->checkedRadioButton = element().checkedRadioButtonForGroup();
     element().setChecked(true, DispatchChangeEvent);
-
+    m_isInClickHandler = true;
     return state.release();
 }
 
@@ -196,10 +196,10 @@ void RadioInputType::didDispatchClick(Event* event, const ClickHandlingState& st
             && checkedRadioButton->form() == element().form()
             && checkedRadioButton->name() == element().name())
             checkedRadioButton->setChecked(true);
-    } else {
+    } else if (state.checked != element().checked()) {
         element().dispatchChangeEventIfNeeded();
     }
-
+    m_isInClickHandler = false;
     // The work we did in willDispatchClick was default handling.
     event->setDefaultHandled();
 }

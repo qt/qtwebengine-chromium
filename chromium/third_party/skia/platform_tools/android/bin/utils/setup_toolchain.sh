@@ -1,3 +1,8 @@
+# Copyright 2015 Google Inc.
+#
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
 #!/bin/bash
 #
 # setup_toolchain.sh: Sets toolchain environment variables used by other scripts.
@@ -27,47 +32,41 @@ if [ -z "$SCRIPT_DIR" ]; then
 fi
 
 function default_toolchain() {
-  NDK_REV=${NDK_REV-10c}
+  TOOLCHAINS=${SCRIPT_DIR}/../toolchains
+
   ANDROID_ARCH=${ANDROID_ARCH-arm}
-  
+  LLVM=3.6
+  NDK=r10e
+
   if [[ $ANDROID_ARCH == *64* ]]; then
-    API_LEVEL=21 # Official Android 5.0 (Lollipop) system images
+      API=21  # Android 5.0
   else
-    API_LEVEL=14 # Official Android 4.0 system images
+      API=14  # Android 4.0
   fi
 
-  TOOLCHAIN_DIR=${SCRIPT_DIR}/../toolchains
-  if [ $(uname) == "Darwin" ]; then
-    verbose "Using Mac toolchain."
-    TOOLCHAIN_TYPE=ndk-r$NDK_REV-$ANDROID_ARCH-darwin_v$API_LEVEL
-  else
-    verbose "Using Linux toolchain."
-    TOOLCHAIN_TYPE=ndk-r$NDK_REV-$ANDROID_ARCH-linux_v$API_LEVEL
-  fi
-  exportVar ANDROID_TOOLCHAIN "${TOOLCHAIN_DIR}/${TOOLCHAIN_TYPE}/bin"
+  TOOLCHAIN=$ANDROID_ARCH-$NDK-$API
+  HOST=`uname | tr '[A-Z]' '[a-z]'`
 
-  # Hack for NDK_REV == 10c to ensure that clang is present as it was
-  # added to the tarball after it was initially distributed.
-  if [ ! -x ${ANDROID_TOOLCHAIN}/clang ]; then
-    rm -rf ${TOOLCHAIN_DIR}/${TOOLCHAIN_TYPE}
-  fi
+  exportVar ANDROID_TOOLCHAIN "${TOOLCHAINS}/${TOOLCHAIN}/bin"
 
-  # if the toolchain doesn't exist on your machine then we need to fetch it
   if [ ! -d "$ANDROID_TOOLCHAIN" ]; then
-    mkdir -p $TOOLCHAIN_DIR
-    # enter the toolchain directory then download, unpack, and remove the tarball
-    pushd $TOOLCHAIN_DIR
-    TARBALL=ndk-r$NDK_REV-v$API_LEVEL.tgz
-
-    ${SCRIPT_DIR}/download_toolchains.py \
-        http://chromium-skia-gm.commondatastorage.googleapis.com/android-toolchains/$TARBALL \
-        $TOOLCHAIN_DIR/$TARBALL
-    tar -xzf $TARBALL $TOOLCHAIN_TYPE
-    rm $TARBALL
+    mkdir -p $TOOLCHAINS
+    pushd $TOOLCHAINS
+    curl -o $NDK.bin https://dl.google.com/android/ndk/android-ndk-$NDK-$HOST-x86_64.bin
+    chmod +x $NDK.bin
+    ./$NDK.bin -y
+    ./android-ndk-$NDK/build/tools/make-standalone-toolchain.sh \
+        --arch=$ANDROID_ARCH    \
+        --llvm-version=$LLVM    \
+        --platform=android-$API \
+        --install_dir=$TOOLCHAIN
+    cp android-ndk-$NDK/prebuilt/android-$ANDROID_ARCH/gdbserver/gdbserver $TOOLCHAIN
+    rm $NDK.bin
+    rm -rf android-ndk-$NDK
     popd
   fi
 
-  verbose "Targeting NDK API $API_LEVEL (NDK Revision $NDK_REV)"
+  verbose "Targeting NDK API $API (NDK Revision $NDK)"
 }
 
 #check to see if the toolchain has been defined and if not setup the default toolchain
@@ -90,22 +89,60 @@ ANDROID_TOOLCHAIN_PREFIX=${GCC%%-gcc}
 
 CCACHE=${ANDROID_MAKE_CCACHE-$(which ccache || true)}
 
-if [ -z $USE_CLANG ]; then
-  exportVar CC "$CCACHE $ANDROID_TOOLCHAIN_PREFIX-gcc"
-  exportVar CXX "$CCACHE $ANDROID_TOOLCHAIN_PREFIX-g++"
-  exportVar LINK "$CCACHE $ANDROID_TOOLCHAIN_PREFIX-gcc"
-else
-  # temporarily disable ccache as it is generating errors
-  CCACHE=""
-  exportVar CC "$CCACHE $ANDROID_TOOLCHAIN_PREFIX-clang"
-  exportVar CXX "$CCACHE $ANDROID_TOOLCHAIN_PREFIX-clang++"
-  exportVar LINK "$CCACHE $ANDROID_TOOLCHAIN_PREFIX-clang"
-fi
+# Cross compiling Android on Mac is not currently supported by gyp.
+# It doesn't appear to be supported on Windows either.
+# As of now, we will only support cross compiling on Linux.
+# libjpeg-turbo assembly code for x86 and x86-64 Android devices
+# must be disabled for Android on non-Linux platforms because
+# of this issue.  We still support compiling on Mac and other
+# variants for local development, but shipping versions of Skia
+# should be compiled on Linux for performance reasons.
+# TODO (msarett): Collect more information about this.
+if [ $(uname) == "Linux" ]; then
+  if [ -z $USE_CLANG ]; then
+    exportVar CC_target "$CCACHE $ANDROID_TOOLCHAIN_PREFIX-gcc"
+    exportVar CXX_target "$CCACHE $ANDROID_TOOLCHAIN_PREFIX-g++"
+    exportVar LINK_target "$CCACHE $ANDROID_TOOLCHAIN_PREFIX-gcc"
+    exportVar CC_host "$CCACHE cc"
+    exportVar CXX_host "$CCACHE c++"
+    exportVar LINK_host "$CCACHE cc"
+  else
+    # temporarily disable ccache as it is generating errors
+    CCACHE=""
+    exportVar CC_target "$CCACHE $ANDROID_TOOLCHAIN_PREFIX-clang"
+    exportVar CXX_target "$CCACHE $ANDROID_TOOLCHAIN_PREFIX-clang++"
+    exportVar LINK_target "$CCACHE $ANDROID_TOOLCHAIN_PREFIX-clang"
+    exportVar CC_host "$CCACHE clang"
+    exportVar CXX_host "$CCACHE clang++"
+    exportVar LINK_host "$CCACHE clang"
+  fi
 
-exportVar AR "$ANDROID_TOOLCHAIN_PREFIX-ar"
-exportVar RANLIB "$ANDROID_TOOLCHAIN_PREFIX-ranlib"
-exportVar OBJCOPY "$ANDROID_TOOLCHAIN_PREFIX-objcopy"
-exportVar STRIP "$ANDROID_TOOLCHAIN_PREFIX-strip"
+  exportVar AR_target "$ANDROID_TOOLCHAIN_PREFIX-ar"
+  exportVar RANLIB_target "$ANDROID_TOOLCHAIN_PREFIX-ranlib"
+  exportVar OBJCOPY_target "$ANDROID_TOOLCHAIN_PREFIX-objcopy"
+  exportVar STRIP_target "$ANDROID_TOOLCHAIN_PREFIX-strip"
+  exportVar AR_host "ar"
+  exportVar RANLIB_host "ranlib"
+  exportVar OBJCOPY_host "objcopy"
+  exportVar STRIP_host "strip"
+else
+  if [ -z $USE_CLANG ]; then
+    exportVar CC "$CCACHE $ANDROID_TOOLCHAIN_PREFIX-gcc"
+    exportVar CXX "$CCACHE $ANDROID_TOOLCHAIN_PREFIX-g++"
+    exportVar LINK "$CCACHE $ANDROID_TOOLCHAIN_PREFIX-gcc"
+  else
+    # temporarily disable ccache as it is generating errors
+    CCACHE=""
+    exportVar CC "$CCACHE $ANDROID_TOOLCHAIN_PREFIX-clang"
+    exportVar CXX "$CCACHE $ANDROID_TOOLCHAIN_PREFIX-clang++"
+    exportVar LINK "$CCACHE $ANDROID_TOOLCHAIN_PREFIX-clang"
+  fi
+
+  exportVar AR "$ANDROID_TOOLCHAIN_PREFIX-ar"
+  exportVar RANLIB "$ANDROID_TOOLCHAIN_PREFIX-ranlib"
+  exportVar OBJCOPY "$ANDROID_TOOLCHAIN_PREFIX-objcopy"
+  exportVar STRIP "$ANDROID_TOOLCHAIN_PREFIX-strip"
+fi
 
 # Create symlinks for nm & readelf and add them to the path so that the ninja
 # build uses them instead of attempting to use the one on the system.

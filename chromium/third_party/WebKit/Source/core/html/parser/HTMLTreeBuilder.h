@@ -135,7 +135,6 @@ private:
     void processEndTagForInRow(AtomicHTMLToken*);
     void processEndTagForInCell(AtomicHTMLToken*);
 
-    void processIsindexStartTagForInBody(AtomicHTMLToken*);
     void processHtmlStartTagForInBody(AtomicHTMLToken*);
     bool processBodyEndTagForInBody(AtomicHTMLToken*);
     bool processTableEndTagForInTable();
@@ -170,8 +169,6 @@ private:
     inline HTMLStackItem* adjustedCurrentStackItem() const;
     inline bool shouldProcessTokenInForeignContent(AtomicHTMLToken*);
     void processTokenInForeignContent(AtomicHTMLToken*);
-
-    Vector<Attribute> attributesForIsindexInput(AtomicHTMLToken*);
 
     void callTheAdoptionAgency(AtomicHTMLToken*);
 
@@ -210,6 +207,7 @@ private:
         RefPtrWillBeMember<HTMLStackItem> m_contextElementStackItem;
     };
 
+    // https://html.spec.whatwg.org/#frameset-ok-flag
     bool m_framesetOk;
 #if ENABLE(ASSERT)
     bool m_isAttached;

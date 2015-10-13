@@ -34,6 +34,7 @@
 #include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderClient.h"
 #include "core/plugins/PluginView.h"
+#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/weborigin/SecurityOrigin.h"
 
 namespace blink {
@@ -242,11 +243,11 @@ Widget* HTMLFrameOwnerElement::ownedWidget() const
     return m_widget.get();
 }
 
-bool HTMLFrameOwnerElement::loadOrRedirectSubframe(const KURL& url, const AtomicString& frameName, bool lockBackForwardList)
+bool HTMLFrameOwnerElement::loadOrRedirectSubframe(const KURL& url, const AtomicString& frameName, bool replaceCurrentItem)
 {
     RefPtrWillBeRawPtr<LocalFrame> parentFrame = document().frame();
     if (contentFrame()) {
-        contentFrame()->navigate(document(), url, lockBackForwardList, UserGestureStatus::None);
+        contentFrame()->navigate(document(), url, replaceCurrentItem, UserGestureStatus::None);
         return true;
     }
 
@@ -261,7 +262,15 @@ bool HTMLFrameOwnerElement::loadOrRedirectSubframe(const KURL& url, const Atomic
     if (document().frame()->host()->subframeCount() >= FrameHost::maxNumberOfFrames)
         return false;
 
-    return parentFrame->loader().client()->createFrame(FrameLoadRequest(&document(), url, "_self", CheckContentSecurityPolicy), frameName, this);
+    FrameLoadRequest frameLoadRequest(&document(), url, "_self", CheckContentSecurityPolicy);
+
+    if (RuntimeEnabledFeatures::referrerPolicyAttributeEnabled()) {
+        ReferrerPolicy policy = referrerPolicyAttribute();
+        if (policy != ReferrerPolicyDefault)
+            frameLoadRequest.resourceRequest().setHTTPReferrer(SecurityPolicy::generateReferrer(policy, url, document().outgoingReferrer()));
+    }
+
+    return parentFrame->loader().client()->createFrame(frameLoadRequest, frameName, this);
 }
 
 DEFINE_TRACE(HTMLFrameOwnerElement)

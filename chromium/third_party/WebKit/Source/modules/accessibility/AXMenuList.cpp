@@ -26,6 +26,7 @@
 #include "config.h"
 #include "modules/accessibility/AXMenuList.h"
 
+#include "core/html/HTMLSelectElement.h"
 #include "core/layout/LayoutMenuList.h"
 #include "modules/accessibility/AXMenuListPopup.h"
 #include "modules/accessibility/AXObjectCacheImpl.h"
@@ -37,9 +38,9 @@ AXMenuList::AXMenuList(LayoutMenuList* layoutObject, AXObjectCacheImpl& axObject
 {
 }
 
-PassRefPtrWillBeRawPtr<AXMenuList> AXMenuList::create(LayoutMenuList* layoutObject, AXObjectCacheImpl& axObjectCache)
+AXMenuList* AXMenuList::create(LayoutMenuList* layoutObject, AXObjectCacheImpl& axObjectCache)
 {
-    return adoptRefWillBeNoop(new AXMenuList(layoutObject, axObjectCache));
+    return new AXMenuList(layoutObject, axObjectCache);
 }
 
 AccessibilityRole AXMenuList::determineAccessibilityRole()
@@ -55,11 +56,11 @@ bool AXMenuList::press() const
     if (!m_layoutObject)
         return false;
 
-    LayoutMenuList* menuList = toLayoutMenuList(m_layoutObject);
-    if (menuList->popupIsVisible())
-        menuList->hidePopup();
+    HTMLSelectElement* select = toLayoutMenuList(m_layoutObject)->selectElement();
+    if (select->popupIsVisible())
+        select->hidePopup();
     else
-        menuList->showPopup();
+        select->showPopup();
     return true;
 }
 
@@ -104,7 +105,7 @@ bool AXMenuList::isCollapsed() const
     if (!m_layoutObject)
         return true;
 
-    return !toLayoutMenuList(m_layoutObject)->popupIsVisible();
+    return !toLayoutMenuList(m_layoutObject)->selectElement()->popupIsVisible();
 }
 
 AccessibilityExpanded AXMenuList::isExpanded() const

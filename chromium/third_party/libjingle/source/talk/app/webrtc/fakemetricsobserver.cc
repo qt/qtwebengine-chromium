@@ -35,47 +35,45 @@ FakeMetricsObserver::FakeMetricsObserver() {
 }
 
 void FakeMetricsObserver::Reset() {
-  DCHECK(thread_checker_.CalledOnValidThread());
-  memset(counters_, 0, sizeof(counters_));
-  memset(int_histogram_samples_, 0, sizeof(int_histogram_samples_));
-  for (std::string& type : string_histogram_samples_) {
-    type.clear();
-  }
+  RTC_DCHECK(thread_checker_.CalledOnValidThread());
+  counters_.clear();
+  memset(histogram_samples_, 0, sizeof(histogram_samples_));
 }
 
-void FakeMetricsObserver::IncrementCounter(PeerConnectionMetricsCounter type) {
-  DCHECK(thread_checker_.CalledOnValidThread());
-  ++counters_[type];
+void FakeMetricsObserver::IncrementEnumCounter(
+    PeerConnectionEnumCounterType type,
+    int counter,
+    int counter_max) {
+  RTC_DCHECK(thread_checker_.CalledOnValidThread());
+  if (counters_.size() <= static_cast<size_t>(type)) {
+    counters_.resize(type + 1);
+  }
+  auto& counters = counters_[type];
+  ++counters[counter];
 }
 
 void FakeMetricsObserver::AddHistogramSample(PeerConnectionMetricsName type,
     int value) {
-  DCHECK(thread_checker_.CalledOnValidThread());
-  DCHECK_EQ(int_histogram_samples_[type], 0);
-  int_histogram_samples_[type] = value;
+  RTC_DCHECK(thread_checker_.CalledOnValidThread());
+  RTC_DCHECK_EQ(histogram_samples_[type], 0);
+  histogram_samples_[type] = value;
 }
 
-void FakeMetricsObserver::AddHistogramSample(PeerConnectionMetricsName type,
-    const std::string& value) {
-  DCHECK(thread_checker_.CalledOnValidThread());
-  string_histogram_samples_[type].assign(value);
+int FakeMetricsObserver::GetEnumCounter(PeerConnectionEnumCounterType type,
+                                        int counter) const {
+  RTC_DCHECK(thread_checker_.CalledOnValidThread());
+  RTC_CHECK(counters_.size() > static_cast<size_t>(type));
+  const auto& it = counters_[type].find(counter);
+  if (it == counters_[type].end()) {
+    return 0;
+  }
+  return it->second;
 }
 
-int FakeMetricsObserver::GetCounter(PeerConnectionMetricsCounter type) const {
-  DCHECK(thread_checker_.CalledOnValidThread());
-  return counters_[type];
-}
-
-int FakeMetricsObserver::GetIntHistogramSample(
+int FakeMetricsObserver::GetHistogramSample(
     PeerConnectionMetricsName type) const {
-  DCHECK(thread_checker_.CalledOnValidThread());
-  return int_histogram_samples_[type];
-}
-
-const std::string& FakeMetricsObserver::GetStringHistogramSample(
-    PeerConnectionMetricsName type) const {
-  DCHECK(thread_checker_.CalledOnValidThread());
-  return string_histogram_samples_[type];
+  RTC_DCHECK(thread_checker_.CalledOnValidThread());
+  return histogram_samples_[type];
 }
 
 }  // namespace webrtc

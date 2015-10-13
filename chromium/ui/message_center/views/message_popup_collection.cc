@@ -62,7 +62,7 @@ MessagePopupCollection::MessagePopupCollection(
       context_menu_controller_(new MessageViewContextMenuController(this)),
       weak_factory_(this) {
   DCHECK(message_center_);
-  defer_timer_.reset(new base::OneShotTimer<MessagePopupCollection>);
+  defer_timer_.reset(new base::OneShotTimer);
   message_center_->AddObserver(this);
   alignment_delegate_->set_collection(this);
 }
@@ -112,9 +112,13 @@ void MessagePopupCollection::MarkAllPopupsShown() {
 }
 
 void MessagePopupCollection::UpdateWidgets() {
+  if (message_center_->IsMessageCenterVisible()) {
+    DCHECK_EQ(0u, message_center_->GetPopupNotifications().size());
+    return;
+  }
+
   NotificationList::PopupNotifications popups =
       message_center_->GetPopupNotifications();
-
   if (popups.empty()) {
     CloseAllWidgets();
     return;

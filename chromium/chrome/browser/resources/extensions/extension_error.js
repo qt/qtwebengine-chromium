@@ -43,41 +43,25 @@ cr.define('extensions', function() {
    * notification to the user when an error is caused by an extension.
    * @param {(RuntimeError|ManifestError)} error The error the element should
    *     represent.
-   * @param {Element} boundary The boundary for the focus grid.
    * @constructor
-   * @extends {cr.ui.FocusRow}
+   * @extends {HTMLElement}
    */
-  function ExtensionError(error, boundary) {
+  function ExtensionError(error) {
     var div = cloneTemplate('extension-error-metadata');
     div.__proto__ = ExtensionError.prototype;
-    div.decorateWithError_(error, boundary);
+    div.decorate(error);
     return div;
   }
 
   ExtensionError.prototype = {
-    __proto__: cr.ui.FocusRow.prototype,
-
-    /** @override */
-    getEquivalentElement: function(element) {
-      if (element.classList.contains('extension-error-metadata'))
-        return this;
-      if (element.classList.contains('error-delete-button')) {
-        return /** @type {!HTMLElement} */ (this.querySelector(
-            '.error-delete-button'));
-      }
-      assertNotReached();
-      return element;
-    },
+    __proto__: HTMLElement.prototype,
 
     /**
      * @param {(RuntimeError|ManifestError)} error The error the element should
      *     represent.
-     * @param {Element} boundary The boundary for the FocusGrid.
      * @private
      */
-    decorateWithError_: function(error, boundary) {
-      this.decorate(boundary);
-
+    decorate: function(error) {
       /**
        * The backing error.
        * @type {(ManifestError|RuntimeError)}
@@ -125,13 +109,11 @@ cr.define('extensions', function() {
         if (e.target != deleteButton)
           this.requestActive_();
       }.bind(this));
+
       this.addEventListener('keydown', function(e) {
         if (e.keyIdentifier == 'Enter' && e.target != deleteButton)
           this.requestActive_();
       });
-
-      this.addFocusableElement(this);
-      this.addFocusableElement(this.querySelector('.error-delete-button'));
     },
 
     /**
@@ -161,6 +143,23 @@ cr.define('extensions', function() {
     return div;
   }
 
+  /**
+   * @param {!Element} root
+   * @param {?Node} boundary
+   * @constructor
+   * @extends {cr.ui.FocusRow}
+   */
+  ExtensionErrorList.FocusRow = function(root, boundary) {
+    cr.ui.FocusRow.call(this, root, boundary);
+
+    this.addItem('message', '.extension-error-message');
+    this.addItem('delete', '.error-delete-button');
+  };
+
+  ExtensionErrorList.FocusRow.prototype = {
+    __proto__: cr.ui.FocusRow.prototype,
+  };
+
   ExtensionErrorList.prototype = {
     __proto__: HTMLDivElement.prototype,
 
@@ -169,17 +168,18 @@ cr.define('extensions', function() {
      * @param {Array<(RuntimeError|ManifestError)>} errors The list of errors.
      */
     decorate: function(errors) {
-      /**
-       * @private {!Array<(ManifestError|RuntimeError)>}
-       */
+      /** @private {!Array<(ManifestError|RuntimeError)>} */
       this.errors_ = [];
 
+      /** @private {!cr.ui.FocusGrid} */
       this.focusGrid_ = new cr.ui.FocusGrid();
-      this.gridBoundary_ = this.querySelector('.extension-error-list-contents');
-      this.gridBoundary_.addEventListener('focus', this.onFocus_.bind(this));
-      this.gridBoundary_.addEventListener('focusin',
-                                          this.onFocusin_.bind(this));
+
+      /** @private {Element} */
+      this.listContents_ = this.querySelector('.extension-error-list-contents');
+
       errors.forEach(this.addError_, this);
+
+      this.focusGrid_.ensureRowActive();
 
       this.addEventListener('highlightExtensionError', function(e) {
         this.setActiveErrorNode_(e.target);
@@ -228,10 +228,12 @@ cr.define('extensions', function() {
     addError_: function(error) {
       this.querySelector('#no-errors-span').hidden = true;
       this.errors_.push(error);
-      var focusRow = new ExtensionError(error, this.gridBoundary_);
-      this.gridBoundary_.appendChild(document.createElement('li')).
-          appendChild(focusRow);
-      this.focusGrid_.addRow(focusRow);
+
+      var extensionError = new ExtensionError(error);
+      this.listContents_.appendChild(extensionError);
+
+      this.focusGrid_.addRow(
+          new ExtensionErrorList.FocusRow(extensionError, this.listContents_));
     },
 
     /**
@@ -253,6 +255,14 @@ cr.define('extensions', function() {
 
       this.errors_.splice(index, 1);
       var listElement = errorList.children[index];
+
+      var focusRow = this.focusGrid_.getRowForRoot(listElement);
+      this.focusGrid_.removeRow(focusRow);
+      this.focusGrid_.ensureRowActive();
+      focusRow.destroy();
+
+      // TODO(dbeam): in a world where this UI is actually used, we should
+      // probably move the focus before removing |listElement|.
       listElement.parentNode.removeChild(listElement);
 
       if (wasActive) {
@@ -356,25 +366,6 @@ cr.define('extensions', function() {
       this.dispatchEvent(
           new CustomEvent('activeExtensionErrorChanged',
                           {bubbles: true, detail: node ? node.error : null}));
-    },
-
-    /**
-     * The grid should not be focusable once it or an element inside it is
-     * focused. This is necessary to allow tabbing out of the grid in reverse.
-     * @private
-     */
-    onFocusin_: function() {
-      this.gridBoundary_.tabIndex = -1;
-    },
-
-    /**
-     * Focus the first focusable row when tabbing into the grid for the
-     * first time.
-     * @private
-     */
-    onFocus_: function() {
-      var activeRow = this.gridBoundary_.querySelector('.focus-row-active');
-      activeRow.getEquivalentElement(null).focus();
     },
   };
 

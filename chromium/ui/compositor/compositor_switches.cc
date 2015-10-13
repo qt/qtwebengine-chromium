@@ -15,10 +15,10 @@ const char kEnableHardwareOverlays[] = "enable-hardware-overlays";
 // Forces tests to produce pixel output when they normally wouldn't.
 const char kEnablePixelOutputInTests[] = "enable-pixel-output-in-tests";
 
-const char kUIDisableThreadedCompositing[] = "ui-disable-threaded-compositing";
-
 const char kUIEnableCompositorAnimationTimelines[] =
     "ui-enable-compositor-animation-timelines";
+
+const char kUIEnableRGBA4444Textures[] = "ui-enable-rgba-4444-textures";
 
 const char kUIEnableZeroCopy[] = "ui-enable-zero-copy";
 
@@ -32,11 +32,6 @@ bool IsUIZeroCopyEnabled() {
   const base::CommandLine& command_line =
       *base::CommandLine::ForCurrentProcess();
   return command_line.HasSwitch(switches::kUIEnableZeroCopy);
-}
-
-bool IsUIOneCopyEnabled() {
-  // One-copy is on by default unless zero copy is enabled.
-  return !IsUIZeroCopyEnabled();
 }
 
 }  // namespace ui

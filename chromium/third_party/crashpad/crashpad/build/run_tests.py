@@ -25,8 +25,9 @@ import sys
 # location in the recipe.
 def main(args):
   if len(args) != 1:
-    print >>sys.stderr, 'usage: run_tests.py {Debug|Release}'
-    return 1;
+    print >> sys.stderr, \
+        'usage: run_tests.py {Debug|Release|Debug_x64|Release_x64}'
+    return 1
 
   crashpad_dir = \
       os.path.join(os.path.dirname(os.path.abspath(__file__)), os.pardir)
@@ -51,10 +52,6 @@ def main(args):
       'crashpad_test_test',
       'crashpad_util_test',
   ]
-  if platform.system() == 'Windows':
-    tests += [
-        'crashpad_handler_test',
-    ]
   for test in tests:
     print '-' * 80
     print test

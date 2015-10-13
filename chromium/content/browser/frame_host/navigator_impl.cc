@@ -11,6 +11,7 @@
 #include "content/browser/frame_host/frame_tree_node.h"
 #include "content/browser/frame_host/navigation_controller_impl.h"
 #include "content/browser/frame_host/navigation_entry_impl.h"
+#include "content/browser/frame_host/navigation_handle_impl.h"
 #include "content/browser/frame_host/navigation_request.h"
 #include "content/browser/frame_host/navigation_request_info.h"
 #include "content/browser/frame_host/navigator_delegate.h"
@@ -21,6 +22,7 @@
 #include "content/browser/webui/web_ui_impl.h"
 #include "content/common/frame_messages.h"
 #include "content/common/navigation_params.h"
+#include "content/common/site_isolation_policy.h"
 #include "content/common/view_messages.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/content_browser_client.h"
@@ -71,8 +73,7 @@ FrameMsg_Navigate_Type::Value GetNavigationType(
 }
 
 RenderFrameHostManager* GetRenderManager(RenderFrameHostImpl* rfh) {
-  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kSitePerProcess))
+  if (SiteIsolationPolicy::AreCrossProcessFramesPossible())
     return rfh->frame_tree_node()->render_manager();
 
   return rfh->frame_tree_node()->frame_tree()->root()->render_manager();
@@ -118,24 +119,48 @@ NavigationController* NavigatorImpl::GetController() {
 void NavigatorImpl::DidStartProvisionalLoad(
     RenderFrameHostImpl* render_frame_host,
     const GURL& url) {
+  bool is_main_frame = render_frame_host->frame_tree_node()->IsMainFrame();
   bool is_error_page = (url.spec() == kUnreachableWebDataURL);
   bool is_iframe_srcdoc = (url.spec() == kAboutSrcDocURL);
   GURL validated_url(url);
   RenderProcessHost* render_process_host = render_frame_host->GetProcess();
   render_process_host->FilterURL(false, &validated_url);
 
-  bool is_main_frame = render_frame_host->frame_tree_node()->IsMainFrame();
-  if (is_main_frame && !is_error_page)
+  if (is_main_frame && !is_error_page) {
     DidStartMainFrameNavigation(validated_url,
                                 render_frame_host->GetSiteInstance());
+  }
 
   if (delegate_) {
     // Notify the observer about the start of the provisional load.
-    delegate_->DidStartProvisionalLoad(
-        render_frame_host, validated_url, is_error_page, is_iframe_srcdoc);
+    delegate_->DidStartProvisionalLoad(render_frame_host, validated_url,
+                                       is_error_page, is_iframe_srcdoc);
   }
-}
 
+  if (is_error_page ||
+      base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableBrowserSideNavigation)) {
+    return;
+  }
+
+  if (render_frame_host->navigation_handle()) {
+    if (render_frame_host->navigation_handle()->is_transferring()) {
+      // If the navigation is completing a transfer, this
+      // DidStartProvisionalLoad should not correspond to a new navigation.
+      DCHECK_EQ(url, render_frame_host->navigation_handle()->GetURL());
+      render_frame_host->navigation_handle()->set_is_transferring(false);
+      return;
+    }
+
+    // This ensures that notifications about the end of the previous
+    // navigation are sent before notifications about the start of the
+    // new navigation.
+    render_frame_host->SetNavigationHandle(scoped_ptr<NavigationHandleImpl>());
+  }
+
+  render_frame_host->SetNavigationHandle(
+      NavigationHandleImpl::Create(validated_url, is_main_frame, delegate_));
+}
 
 void NavigatorImpl::DidFailProvisionalLoadWithError(
     RenderFrameHostImpl* render_frame_host,
@@ -244,6 +269,13 @@ bool NavigatorImpl::NavigateToEntry(
     dest_referrer = Referrer();
   }
 
+  // Don't attempt to navigate to non-empty invalid URLs.
+  if (!dest_url.is_valid() && !dest_url.is_empty()) {
+    LOG(WARNING) << "Refusing to load invalid URL: "
+                 << dest_url.possibly_invalid_spec();
+    return false;
+  }
+
   // The renderer will reject IPC messages with URLs longer than
   // this limit, so don't attempt to navigate with a longer URL.
   if (dest_url.spec().size() > GetMaxURLChars()) {
@@ -314,7 +346,7 @@ bool NavigatorImpl::NavigateToEntry(
         entry.ConstructStartNavigationParams(),
         entry.ConstructRequestNavigationParams(
             frame_entry, navigation_start, is_same_document_history_load,
-            controller_->HasCommittedRealLoad(frame_tree_node),
+            frame_tree_node->has_committed_real_load(),
             controller_->GetPendingEntryIndex() == -1,
             controller_->GetIndexOfEntry(&entry),
             controller_->GetLastCommittedEntryIndex(),
@@ -361,12 +393,12 @@ bool NavigatorImpl::NavigateToPendingEntry(
 
 void NavigatorImpl::DidNavigate(
     RenderFrameHostImpl* render_frame_host,
-    const FrameHostMsg_DidCommitProvisionalLoad_Params& input_params) {
-  FrameHostMsg_DidCommitProvisionalLoad_Params params(input_params);
+    const FrameHostMsg_DidCommitProvisionalLoad_Params& params) {
   FrameTree* frame_tree = render_frame_host->frame_tree_node()->frame_tree();
-  bool use_site_per_process = base::CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kSitePerProcess);
+  bool oopifs_possible = SiteIsolationPolicy::AreCrossProcessFramesPossible();
 
+  bool is_navigation_within_page = controller_->IsURLInPageNavigation(
+      params.url, params.was_within_same_page, render_frame_host);
   if (ui::PageTransitionIsMainFrame(params.transition)) {
     if (delegate_) {
       // When overscroll navigation gesture is enabled, a screenshot of the page
@@ -385,12 +417,10 @@ void NavigatorImpl::DidNavigate(
       }
 
       // Run tasks that must execute just before the commit.
-      bool is_navigation_within_page = controller_->IsURLInPageNavigation(
-          params.url, params.was_within_same_page, render_frame_host);
       delegate_->DidNavigateMainFramePreCommit(is_navigation_within_page);
     }
 
-    if (!use_site_per_process)
+    if (!oopifs_possible)
       frame_tree->root()->render_manager()->DidNavigateFrame(
           render_frame_host, params.gesture == NavigationGestureUser);
   }
@@ -405,7 +435,7 @@ void NavigatorImpl::DidNavigate(
 
   // When using --site-per-process, we notify the RFHM for all navigations,
   // not just main frame navigations.
-  if (use_site_per_process) {
+  if (oopifs_possible) {
     FrameTreeNode* frame = render_frame_host->frame_tree_node();
     frame->render_manager()->DidNavigateFrame(
         render_frame_host, params.gesture == NavigationGestureUser);
@@ -439,10 +469,8 @@ void NavigatorImpl::DidNavigate(
   bool did_navigate = controller_->RendererDidNavigate(render_frame_host,
                                                        params, &details);
 
-  // For now, keep track of each frame's URL in its FrameTreeNode.  This lets
-  // us estimate our process count for implementing OOP iframes.
-  // TODO(creis): Remove this when we track which pages commit in each frame.
-  render_frame_host->frame_tree_node()->set_current_url(params.url);
+  // Keep track of each frame's URL in its FrameTreeNode.
+  render_frame_host->frame_tree_node()->SetCurrentURL(params.url);
 
   // Send notification about committed provisional loads. This notification is
   // different from the NAV_ENTRY_COMMITTED notification which doesn't include
@@ -464,6 +492,9 @@ void NavigatorImpl::DidNavigate(
     delegate_->DidCommitProvisionalLoad(render_frame_host,
                                         params.url,
                                         transition_type);
+    render_frame_host->navigation_handle()->DidCommitNavigation(
+        is_navigation_within_page, render_frame_host);
+    render_frame_host->SetNavigationHandle(nullptr);
   }
 
   if (!did_navigate)
@@ -556,10 +587,8 @@ void NavigatorImpl::RequestTransferURL(
   // Send the navigation to the current FrameTreeNode if it's destined for a
   // subframe in the current tab.  We'll assume it's for the main frame
   // (possibly of a new or different WebContents) otherwise.
-  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kSitePerProcess) &&
-      disposition == CURRENT_TAB &&
-      render_frame_host->GetParent()) {
+  if (SiteIsolationPolicy::AreCrossProcessFramesPossible() &&
+      disposition == CURRENT_TAB && render_frame_host->GetParent()) {
     frame_tree_node_id =
         render_frame_host->frame_tree_node()->frame_tree_node_id();
   }
@@ -657,6 +686,7 @@ void NavigatorImpl::OnBeginNavigation(
           controller_->GetLastCommittedEntryIndex(),
           controller_->GetEntryCount()));
   NavigationRequest* navigation_request = frame_tree_node->navigation_request();
+  navigation_request->CreateNavigationHandle(delegate_);
 
   if (frame_tree_node->IsMainFrame()) {
     // Renderer-initiated main-frame navigations that need to swap processes
@@ -716,6 +746,7 @@ void NavigatorImpl::CommitNavigation(FrameTreeNode* frame_tree_node,
   CheckWebUIRendererDoesNotDisplayNormalURL(
       render_frame_host, navigation_request->common_params().url);
 
+  navigation_request->TransferNavigationHandleOwnership(render_frame_host);
   render_frame_host->CommitNavigation(response, body.Pass(),
                                       navigation_request->common_params(),
                                       navigation_request->request_params());
@@ -745,6 +776,7 @@ void NavigatorImpl::FailedNavigation(FrameTreeNode* frame_tree_node,
   CheckWebUIRendererDoesNotDisplayNormalURL(
       render_frame_host, navigation_request->common_params().url);
 
+  navigation_request->TransferNavigationHandleOwnership(render_frame_host);
   render_frame_host->FailedNavigation(navigation_request->common_params(),
                                       navigation_request->request_params(),
                                       has_stale_copy_in_cache, error_code);
@@ -823,6 +855,7 @@ void NavigatorImpl::RequestNavigation(
           navigation_type, is_same_document_history_load, navigation_start,
           controller_));
   NavigationRequest* navigation_request = frame_tree_node->navigation_request();
+  navigation_request->CreateNavigationHandle(delegate_);
 
   // Have the current renderer execute its beforeunload event if needed. If it
   // is not needed (when beforeunload dispatch is not needed or this navigation

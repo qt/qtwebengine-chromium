@@ -37,13 +37,13 @@
 #include "core/InputTypeNames.h"
 #include "core/css/CSSStyleDeclaration.h"
 #include "core/dom/Document.h"
-#include "core/dom/DocumentMarkerController.h"
 #include "core/editing/Editor.h"
-#include "core/editing/SpellChecker.h"
+#include "core/editing/markers/DocumentMarkerController.h"
+#include "core/editing/spellcheck/SpellChecker.h"
 #include "core/frame/FrameHost.h"
 #include "core/frame/FrameView.h"
-#include "core/frame/PinchViewport.h"
 #include "core/frame/Settings.h"
+#include "core/frame/VisualViewport.h"
 #include "core/html/HTMLAnchorElement.h"
 #include "core/html/HTMLFormElement.h"
 #include "core/html/HTMLImageElement.h"
@@ -77,6 +77,7 @@
 #include "public/web/WebSearchableFormData.h"
 #include "public/web/WebSpellCheckClient.h"
 #include "public/web/WebViewClient.h"
+#include "web/ContextMenuAllowedScope.h"
 #include "web/WebDataSourceImpl.h"
 #include "web/WebLocalFrameImpl.h"
 #include "web/WebPluginContainerImpl.h"
@@ -129,7 +130,7 @@ static String selectMisspelledWord(LocalFrame* selectedFrame)
     HitTestResult hitTestResult = selectedFrame->eventHandler().
         hitTestResultAtPoint(selectedFrame->page()->contextMenuController().hitTestResult().pointInInnerNodeFrame());
     Node* innerNode = hitTestResult.innerNode();
-    VisiblePosition pos(innerNode->layoutObject()->positionForPoint(
+    VisiblePosition pos = createVisiblePosition(innerNode->layoutObject()->positionForPoint(
         hitTestResult.localPoint()));
 
     if (pos.isNull())
@@ -162,8 +163,8 @@ static String selectMisspellingAsync(LocalFrame* selectedFrame, String& descript
         return String();
 
     // Caret and range selections always return valid normalized ranges.
-    RefPtrWillBeRawPtr<Range> selectionRange = selection.toNormalizedRange();
-    DocumentMarkerVector markers = selectedFrame->document()->markers().markersInRange(selectionRange.get(), DocumentMarker::MisspellingMarkers());
+    RefPtrWillBeRawPtr<Range> selectionRange = createRange(selection.toNormalizedEphemeralRange());
+    DocumentMarkerVector markers = selectedFrame->document()->markers().markersInRange(EphemeralRange(selectionRange.get()), DocumentMarker::MisspellingMarkers());
     if (markers.size() != 1)
         return String();
     description = markers[0]->description();
@@ -187,7 +188,7 @@ void ContextMenuClientImpl::showContextMenu(const ContextMenu* defaultMenu)
     // response to user input (Mouse event WM_RBUTTONDOWN,
     // Keyboard events KeyVK_APPS, Shift+F10). Check if this is being invoked
     // in response to the above input events before popping up the context menu.
-    if (!m_webView->contextMenuAllowed())
+    if (!ContextMenuAllowedScope::isContextMenuAllowed())
         return;
 
     HitTestResult r = m_webView->page()->contextMenuController().hitTestResult();
@@ -311,8 +312,20 @@ void ContextMenuClientImpl::showContextMenu(const ContextMenu* defaultMenu)
         data.frameEncoding = selectedFrame->document()->encodingName();
 
     // Send the frame and page URLs in any case.
-    data.pageURL = urlFromFrame(m_webView->mainFrameImpl()->frame());
-    if (selectedFrame != m_webView->mainFrameImpl()->frame()) {
+    if (!m_webView->page()->mainFrame()->isLocalFrame()) {
+        // TODO(kenrb): This works around the problem of URLs not being
+        // available for top-level frames that are in a different process.
+        // It mostly works to convert the security origin to a URL, but
+        // extensions accessing that property will not get the correct value
+        // in that case. See https://crbug.com/534561
+        WebSecurityOrigin origin = m_webView->mainFrame()->securityOrigin();
+        if (!origin.isNull())
+            data.pageURL = KURL(ParsedURLString, origin.toString());
+    } else {
+        data.pageURL = urlFromFrame(toLocalFrame(m_webView->page()->mainFrame()));
+    }
+
+    if (selectedFrame != m_webView->page()->mainFrame()) {
         data.frameURL = urlFromFrame(selectedFrame);
         RefPtrWillBeRawPtr<HistoryItem> historyItem = selectedFrame->loader().currentItem();
         if (historyItem)

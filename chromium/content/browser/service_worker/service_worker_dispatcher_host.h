@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "base/id_map.h"
+#include "base/memory/scoped_vector.h"
 #include "base/memory/weak_ptr.h"
 #include "base/strings/string16.h"
 #include "content/browser/service_worker/service_worker_registration_status.h"
@@ -65,7 +66,7 @@ class CONTENT_EXPORT ServiceWorkerDispatcherHost : public BrowserMessageFilter {
                                                int64 version_id);
 
   // Returns the existing registration handle whose reference count is
-  // incremented or newly created one if it doesn't exist.
+  // incremented or a newly created one if it doesn't exist.
   ServiceWorkerRegistrationHandle* GetOrCreateRegistrationHandle(
       base::WeakPtr<ServiceWorkerProviderHost> provider_host,
       ServiceWorkerRegistration* registration);
@@ -88,7 +89,10 @@ class CONTENT_EXPORT ServiceWorkerDispatcherHost : public BrowserMessageFilter {
                                int provider_id,
                                const GURL& pattern,
                                const GURL& script_url);
-  void OnUpdateServiceWorker(int provider_id, int64 registration_id);
+  void OnUpdateServiceWorker(int thread_id,
+                             int request_id,
+                             int provider_id,
+                             int64 registration_id);
   void OnUnregisterServiceWorker(int thread_id,
                                  int request_id,
                                  int provider_id,
@@ -107,9 +111,10 @@ class CONTENT_EXPORT ServiceWorkerDispatcherHost : public BrowserMessageFilter {
   void OnProviderDestroyed(int provider_id);
   void OnSetHostedVersionId(int provider_id, int64 version_id);
   void OnWorkerReadyForInspection(int embedded_worker_id);
-  void OnWorkerScriptLoaded(int embedded_worker_id,
-                            int thread_id,
-                            int provider_id);
+  void OnWorkerScriptLoaded(int embedded_worker_id);
+  void OnWorkerThreadStarted(int embedded_worker_id,
+                             int thread_id,
+                             int provider_id);
   void OnWorkerScriptLoadFailed(int embedded_worker_id);
   void OnWorkerScriptEvaluated(int embedded_worker_id, bool success);
   void OnWorkerStarted(int embedded_worker_id);
@@ -135,7 +140,7 @@ class CONTENT_EXPORT ServiceWorkerDispatcherHost : public BrowserMessageFilter {
 
   ServiceWorkerRegistrationHandle* FindRegistrationHandle(
       int provider_id,
-      int64 registration_id);
+      int64 registration_handle_id);
 
   void GetRegistrationObjectInfoAndVersionAttributes(
       base::WeakPtr<ServiceWorkerProviderHost> provider_host,
@@ -150,6 +155,13 @@ class CONTENT_EXPORT ServiceWorkerDispatcherHost : public BrowserMessageFilter {
                             ServiceWorkerStatusCode status,
                             const std::string& status_message,
                             int64 registration_id);
+
+  void UpdateComplete(int thread_id,
+                      int provider_id,
+                      int request_id,
+                      ServiceWorkerStatusCode status,
+                      const std::string& status_message,
+                      int64 registration_id);
 
   void UnregistrationComplete(int thread_id,
                               int request_id,
@@ -180,6 +192,11 @@ class CONTENT_EXPORT ServiceWorkerDispatcherHost : public BrowserMessageFilter {
                              ServiceWorkerStatusCode status,
                              const std::string& status_message);
 
+  void SendUpdateError(int thread_id,
+                       int request_id,
+                       ServiceWorkerStatusCode status,
+                       const std::string& status_message);
+
   void SendUnregistrationError(int thread_id,
                                int request_id,
                                ServiceWorkerStatusCode status);
@@ -200,7 +217,10 @@ class CONTENT_EXPORT ServiceWorkerDispatcherHost : public BrowserMessageFilter {
   scoped_refptr<ServiceWorkerContextWrapper> context_wrapper_;
 
   IDMap<ServiceWorkerHandle, IDMapOwnPointer> handles_;
-  IDMap<ServiceWorkerRegistrationHandle, IDMapOwnPointer> registration_handles_;
+
+  using RegistrationHandleMap =
+      IDMap<ServiceWorkerRegistrationHandle, IDMapOwnPointer>;
+  RegistrationHandleMap registration_handles_;
 
   bool channel_ready_;  // True after BrowserMessageFilter::sender_ != NULL.
   ScopedVector<IPC::Message> pending_messages_;

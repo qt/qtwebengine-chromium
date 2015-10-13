@@ -23,47 +23,44 @@ Polymer({
 
   properties: {
     /**
-     * ID of the page.
+     * The current active route.
      */
-    PAGE_ID: {
-      type: String,
-      value: 'internet',
-      readOnly: true
+    currentRoute: {
+      type: Object,
+      notify: true,
     },
 
     /**
-     * Route for the page.
+     * The network GUID for the detail subpage.
      */
-    route: {
+    detailGuid: {
       type: String,
-      value: ''
     },
 
     /**
-     * Whether the page is a subpage.
+     * The network type for the known networks subpage.
      */
-    subpage: {
-      type: Boolean,
-      value: false,
-      readOnly: true
-    },
-
-    /**
-     * Title for the page header and navigation menu.
-     */
-    pageTitle: {
+    knownNetworksType: {
       type: String,
-      value: function() { return loadTimeData.getString('internetPageTitle'); }
-    },
-
-    /**
-     * Name of the 'core-icon' to show. TODO(stevenjb): Update this with the
-     * icon for the active internet connection.
-     */
-    icon: {
-      type: String,
-      value: 'settings-ethernet',
-      readOnly: true
     },
   },
+
+  /**
+   * @param {!{detail: !CrOnc.NetworkStateProperties}} event
+   * @private
+   */
+  onShowDetail_: function(event) {
+    this.detailGuid = event.detail.GUID;
+    this.$.pages.setSubpageChain(['network-detail']);
+  },
+
+  /**
+   * @param {!{detail: {type: string}}} event
+   * @private
+   */
+  onShowKnownNetworks_: function(event) {
+    this.knownNetworksType = event.detail.type;
+    this.$.pages.setSubpageChain(['known-networks']);
+  },
+
 });

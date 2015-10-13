@@ -27,15 +27,40 @@ class WebString;
 // will pass it to the SyncRegistration.
 class SyncRegistrationCallbacks final : public WebSyncRegistrationCallbacks {
     WTF_MAKE_NONCOPYABLE(SyncRegistrationCallbacks);
+    // FIXME(tasak): when making public/platform classes to use PartitionAlloc,
+    // the following macro should be moved to WebCallbacks defined in public/platformWebCallbacks.h.
+    WTF_MAKE_FAST_ALLOCATED(SyncRegistrationCallbacks);
 public:
-    SyncRegistrationCallbacks(PassRefPtrWillBeRawPtr<ScriptPromiseResolver>, ServiceWorkerRegistration*);
+    SyncRegistrationCallbacks(ScriptPromiseResolver*, ServiceWorkerRegistration*);
     ~SyncRegistrationCallbacks() override;
 
-    void onSuccess(WebSyncRegistration*) override;
-    void onError(WebSyncError*) override;
+    void onSuccess(WebPassOwnPtr<WebSyncRegistration>) override;
+    void onError(const WebSyncError&) override;
 
 private:
-    RefPtrWillBePersistent<ScriptPromiseResolver> m_resolver;
+    Persistent<ScriptPromiseResolver> m_resolver;
+    Persistent<ServiceWorkerRegistration> m_serviceWorkerRegistration;
+};
+
+// SyncNotifyWhenDoneCallbacks is an implementation of
+// WebSyncNotifyWhenDoneCallbacks that will resolve the underlying promise
+// depending on the result passed to the callback. It takes a
+// ServiceWorkerRegistration in its constructor and will pass it to the
+// SyncProvider.
+class SyncNotifyWhenDoneCallbacks final : public WebSyncNotifyWhenDoneCallbacks {
+    WTF_MAKE_NONCOPYABLE(SyncNotifyWhenDoneCallbacks);
+    // FIXME(tasak): when making public/platform classes to use PartitionAlloc,
+    // the following macro should be moved to WebCallbacks defined in public/platformWebCallbacks.h.
+    WTF_MAKE_FAST_ALLOCATED(SyncNotifyWhenDoneCallbacks);
+public:
+    SyncNotifyWhenDoneCallbacks(ScriptPromiseResolver*, ServiceWorkerRegistration*);
+    ~SyncNotifyWhenDoneCallbacks() override;
+
+    void onSuccess(bool) override;
+    void onError(const WebSyncError&) override;
+
+private:
+    Persistent<ScriptPromiseResolver> m_resolver;
     Persistent<ServiceWorkerRegistration> m_serviceWorkerRegistration;
 };
 
@@ -46,15 +71,18 @@ private:
 // SyncProvider.
 class SyncUnregistrationCallbacks final : public WebSyncUnregistrationCallbacks {
     WTF_MAKE_NONCOPYABLE(SyncUnregistrationCallbacks);
+    // FIXME(tasak): when making public/platform classes to use PartitionAlloc,
+    // the following macro should be moved to WebCallbacks defined in public/platformWebCallbacks.h.
+    WTF_MAKE_FAST_ALLOCATED(SyncUnregistrationCallbacks);
 public:
-    SyncUnregistrationCallbacks(PassRefPtrWillBeRawPtr<ScriptPromiseResolver>, ServiceWorkerRegistration*);
+    SyncUnregistrationCallbacks(ScriptPromiseResolver*, ServiceWorkerRegistration*);
     ~SyncUnregistrationCallbacks() override;
 
-    void onSuccess(bool*) override;
-    void onError(WebSyncError*) override;
+    void onSuccess(bool) override;
+    void onError(const WebSyncError&) override;
 
 private:
-    RefPtrWillBePersistent<ScriptPromiseResolver> m_resolver;
+    Persistent<ScriptPromiseResolver> m_resolver;
     Persistent<ServiceWorkerRegistration> m_serviceWorkerRegistration;
 };
 
@@ -64,15 +92,18 @@ private:
 // will pass it to the SyncRegistration.
 class SyncGetRegistrationsCallbacks final : public WebSyncGetRegistrationsCallbacks {
     WTF_MAKE_NONCOPYABLE(SyncGetRegistrationsCallbacks);
+    // FIXME(tasak): when making public/platform classes to use PartitionAlloc,
+    // the following macro should be moved to WebCallbacks defined in public/platformWebCallbacks.h.
+    WTF_MAKE_FAST_ALLOCATED(SyncGetRegistrationsCallbacks);
 public:
-    SyncGetRegistrationsCallbacks(PassRefPtrWillBeRawPtr<ScriptPromiseResolver>, ServiceWorkerRegistration*);
+    SyncGetRegistrationsCallbacks(ScriptPromiseResolver*, ServiceWorkerRegistration*);
     ~SyncGetRegistrationsCallbacks() override;
 
-    void onSuccess(WebVector<WebSyncRegistration*>*) override;
-    void onError(WebSyncError*) override;
+    void onSuccess(const WebVector<WebSyncRegistration*>&) override;
+    void onError(const WebSyncError&) override;
 
 private:
-    RefPtrWillBePersistent<ScriptPromiseResolver> m_resolver;
+    Persistent<ScriptPromiseResolver> m_resolver;
     Persistent<ServiceWorkerRegistration> m_serviceWorkerRegistration;
 };
 
@@ -81,16 +112,18 @@ private:
 // depending on the permission status passed to the callback.
 class SyncGetPermissionStatusCallbacks final : public WebSyncGetPermissionStatusCallbacks {
     WTF_MAKE_NONCOPYABLE(SyncGetPermissionStatusCallbacks);
+    WTF_MAKE_FAST_ALLOCATED(SyncGetPermissionStatusCallbacks);
 public:
-    SyncGetPermissionStatusCallbacks(PassRefPtrWillBeRawPtr<ScriptPromiseResolver>, ServiceWorkerRegistration*);
+    SyncGetPermissionStatusCallbacks(ScriptPromiseResolver*, ServiceWorkerRegistration*);
     ~SyncGetPermissionStatusCallbacks() override;
 
-    void onSuccess(WebSyncPermissionStatus*) override;
-    void onError(WebSyncError*) override;
+    void onSuccess(WebSyncPermissionStatus) override;
+    void onError(const WebSyncError&) override;
 
 private:
     static String permissionString(WebSyncPermissionStatus);
-    RefPtrWillBePersistent<ScriptPromiseResolver> m_resolver;
+
+    Persistent<ScriptPromiseResolver> m_resolver;
     Persistent<ServiceWorkerRegistration> m_serviceWorkerRegistration;
 };
 

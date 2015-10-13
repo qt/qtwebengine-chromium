@@ -50,6 +50,7 @@ from webkitpy.layout_tests.models import test_expectations
 from webkitpy.layout_tests.models import test_failures
 from webkitpy.layout_tests.models import test_run_results
 from webkitpy.layout_tests.models.test_input import TestInput
+from webkitpy.tool import grammar
 
 _log = logging.getLogger(__name__)
 
@@ -95,7 +96,8 @@ class Manager(object):
         self._runner = LayoutTestRunner(self._options, self._port, self._printer, self._results_directory, self._test_is_slow)
 
     def _collect_tests(self, args):
-        return self._finder.find_tests(self._options, args)
+        return self._finder.find_tests(args, test_list=self._options.test_list,
+            fastest_percentile=self._options.fastest)
 
     def _is_http_test(self, test):
         return (
@@ -175,7 +177,7 @@ class Manager(object):
             # Simply override the current folder contents with new results.
             import errno
             if e.errno == errno.EEXIST or e.errno == errno.ENOENT:
-                _log.warning("No results.html file found in previous run, skipping it.")
+                self._printer.write_update("No results.html file found in previous run, skipping it.")
             return None
         archived_name = ''.join((self._filesystem.basename(self._results_directory), "_", timestamp))
         archived_path = self._filesystem.join(self._filesystem.dirname(self._results_directory), archived_name)
@@ -236,8 +238,9 @@ class Manager(object):
         """Run the tests and return a RunDetails object with the results."""
         start_time = time.time()
         self._printer.write_update("Collecting tests ...")
+        running_all_tests = False
         try:
-            paths, test_names = self._collect_tests(args)
+            paths, test_names, running_all_tests = self._collect_tests(args)
         except IOError:
             # This is raised if --test-list doesn't exist
             return test_run_results.RunDetails(exit_code=test_run_results.NO_TESTS_EXIT_STATUS)
@@ -267,26 +270,41 @@ class Manager(object):
         try:
             self._start_servers(tests_to_run)
 
-            initial_results = self._run_tests(tests_to_run, tests_to_skip, self._options.repeat_each, self._options.iterations,
-                self._port.num_workers(int(self._options.child_processes)), retrying=False)
+            num_workers = self._port.num_workers(int(self._options.child_processes))
+
+            initial_results = self._run_tests(
+                tests_to_run, tests_to_skip, self._options.repeat_each, self._options.iterations,
+                num_workers)
 
             # Don't retry failures when interrupted by user or failures limit exception.
             should_retry_failures = should_retry_failures and not (initial_results.interrupted or initial_results.keyboard_interrupted)
 
             tests_to_retry = self._tests_to_retry(initial_results)
+            all_retry_results = []
             if should_retry_failures and tests_to_retry:
                 enabled_pixel_tests_in_retry = self._force_pixel_tests_if_needed()
 
-                _log.info('')
-                _log.info("Retrying %d unexpected failure(s) ..." % len(tests_to_retry))
-                _log.info('')
-                retry_results = self._run_tests(tests_to_retry, tests_to_skip=set(), repeat_each=1, iterations=1,
-                    num_workers=1, retrying=True)
+                for retry_attempt in xrange(1, self._options.num_retries + 1):
+                    if not tests_to_retry:
+                        break
+
+                    _log.info('')
+                    _log.info('Retrying %s, attempt %d of %d...' %
+                              (grammar.pluralize('unexpected failure', len(tests_to_retry)),
+                               retry_attempt, self._options.num_retries))
+
+                    retry_results = self._run_tests(tests_to_retry,
+                                                    tests_to_skip=set(),
+                                                    repeat_each=1,
+                                                    iterations=1,
+                                                    num_workers=num_workers,
+                                                    retry_attempt=retry_attempt)
+                    all_retry_results.append(retry_results)
+
+                    tests_to_retry = self._tests_to_retry(retry_results)
 
                 if enabled_pixel_tests_in_retry:
                     self._options.pixel_tests = False
-            else:
-                retry_results = None
         finally:
             self._stop_servers()
             self._clean_up_run()
@@ -295,12 +313,16 @@ class Manager(object):
         # for new logs after the test run finishes.
         self._printer.write_update("looking for new crash logs")
         self._look_for_new_crash_logs(initial_results, start_time)
-        if retry_results:
-            self._look_for_new_crash_logs(retry_results, start_time)
+        for retry_attempt_results in all_retry_results:
+            self._look_for_new_crash_logs(retry_attempt_results, start_time)
 
         _log.debug("summarizing results")
-        summarized_full_results = test_run_results.summarize_results(self._port, self._expectations, initial_results, retry_results, enabled_pixel_tests_in_retry)
-        summarized_failing_results = test_run_results.summarize_results(self._port, self._expectations, initial_results, retry_results, enabled_pixel_tests_in_retry, only_include_failing=True)
+        summarized_full_results = test_run_results.summarize_results(
+            self._port, self._expectations, initial_results, all_retry_results,
+            enabled_pixel_tests_in_retry)
+        summarized_failing_results = test_run_results.summarize_results(
+            self._port, self._expectations, initial_results, all_retry_results,
+            enabled_pixel_tests_in_retry, only_include_failing=True)
 
         exit_code = summarized_failing_results['num_regressions']
         if exit_code > test_run_results.MAX_FAILURES_EXIT_STATUS:
@@ -309,7 +331,7 @@ class Manager(object):
             exit_code = test_run_results.MAX_FAILURES_EXIT_STATUS
 
         if not self._options.dry_run:
-            self._write_json_files(summarized_full_results, summarized_failing_results, initial_results)
+            self._write_json_files(summarized_full_results, summarized_failing_results, initial_results, running_all_tests)
 
             if self._options.write_full_results_to:
                 self._filesystem.copyfile(self._filesystem.join(self._results_directory, "full_results.json"),
@@ -330,16 +352,20 @@ class Manager(object):
 
         self._check_for_stale_w3c_dir()
 
-        return test_run_results.RunDetails(exit_code, summarized_full_results, summarized_failing_results, initial_results, retry_results, enabled_pixel_tests_in_retry)
+        return test_run_results.RunDetails(
+            exit_code, summarized_full_results, summarized_failing_results,
+            initial_results, all_retry_results, enabled_pixel_tests_in_retry)
 
-    def _run_tests(self, tests_to_run, tests_to_skip, repeat_each, iterations, num_workers, retrying):
+    def _run_tests(self, tests_to_run, tests_to_skip, repeat_each, iterations,
+                   num_workers, retry_attempt=0):
 
         test_inputs = []
         for _ in xrange(iterations):
             for test in tests_to_run:
                 for _ in xrange(repeat_each):
                     test_inputs.append(self._test_input_for_file(test))
-        return self._runner.run_tests(self._expectations, test_inputs, tests_to_skip, num_workers, retrying)
+        return self._runner.run_tests(self._expectations, test_inputs,
+                                      tests_to_skip, num_workers, retry_attempt)
 
     def _start_servers(self, tests_to_run):
         if self._port.is_wpt_enabled() and any(self._port.is_wpt_test(test) for test in tests_to_run):
@@ -450,13 +476,19 @@ class Manager(object):
     def _tests_to_retry(self, run_results):
         return [result.test_name for result in run_results.unexpected_results_by_name.values() if result.type != test_expectations.PASS]
 
-    def _write_json_files(self, summarized_full_results, summarized_failing_results, initial_results):
+    def _write_json_files(self, summarized_full_results, summarized_failing_results, initial_results, running_all_tests):
         _log.debug("Writing JSON files in %s." % self._results_directory)
 
         # FIXME: Upload stats.json to the server and delete times_ms.
         times_trie = json_results_generator.test_timings_trie(initial_results.results_by_name.values())
         times_json_path = self._filesystem.join(self._results_directory, "times_ms.json")
         json_results_generator.write_json(self._filesystem, times_trie, times_json_path)
+
+        # Save out the times data so we can use it for --fastest in the future.
+        if running_all_tests:
+            bot_test_times_path = self._port.bot_test_times_path()
+            self._filesystem.maybe_make_directory(self._filesystem.dirname(bot_test_times_path))
+            json_results_generator.write_json(self._filesystem, times_trie, bot_test_times_path)
 
         stats_trie = self._stats_trie(initial_results)
         stats_path = self._filesystem.join(self._results_directory, "stats.json")

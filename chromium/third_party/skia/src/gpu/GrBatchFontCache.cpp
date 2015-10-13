@@ -7,9 +7,9 @@
 
 #include "GrBatchFontCache.h"
 #include "GrContext.h"
-#include "GrFontAtlasSizes.h"
 #include "GrGpu.h"
 #include "GrRectanizer.h"
+#include "GrResourceProvider.h"
 #include "GrSurfacePriv.h"
 #include "SkString.h"
 
@@ -17,48 +17,21 @@
 
 ///////////////////////////////////////////////////////////////////////////////
 
-static GrBatchAtlas* make_atlas(GrContext* context, GrPixelConfig config,
-                                int textureWidth, int textureHeight,
-                                int numPlotsX, int numPlotsY) {
-    GrSurfaceDesc desc;
-    desc.fFlags = kNone_GrSurfaceFlags;
-    desc.fWidth = textureWidth;
-    desc.fHeight = textureHeight;
-    desc.fConfig = config;
-
-    // We don't want to flush the context so we claim we're in the middle of flushing so as to
-    // guarantee we do not recieve a texture with pending IO
-    GrTexture* texture = context->textureProvider()->refScratchTexture(
-        desc, GrTextureProvider::kApprox_ScratchTexMatch, true);
-    if (!texture) {
-        return NULL;
-    }
-    return SkNEW_ARGS(GrBatchAtlas, (texture, numPlotsX, numPlotsY));
-}
-
 bool GrBatchFontCache::initAtlas(GrMaskFormat format) {
     int index = MaskFormatToAtlasIndex(format);
     if (!fAtlases[index]) {
-        GrPixelConfig config = this->getPixelConfig(format);
-        if (kA8_GrMaskFormat == format) {
-            fAtlases[index] = make_atlas(fContext, config,
-                                         GR_FONT_ATLAS_A8_TEXTURE_WIDTH,
-                                         GR_FONT_ATLAS_TEXTURE_HEIGHT,
-                                         GR_FONT_ATLAS_A8_NUM_PLOTS_X,
-                                         GR_FONT_ATLAS_NUM_PLOTS_Y);
-        } else {
-            fAtlases[index] = make_atlas(fContext, config,
-                                         GR_FONT_ATLAS_TEXTURE_WIDTH,
-                                         GR_FONT_ATLAS_TEXTURE_HEIGHT,
-                                         GR_FONT_ATLAS_NUM_PLOTS_X,
-                                         GR_FONT_ATLAS_NUM_PLOTS_Y);
-        }
+        GrPixelConfig config = MaskFormatToPixelConfig(format);
+        int width = fAtlasConfigs[index].fWidth;
+        int height = fAtlasConfigs[index].fHeight;
+        int numPlotsX = fAtlasConfigs[index].numPlotsX();
+        int numPlotsY = fAtlasConfigs[index].numPlotsY();
 
-        // Atlas creation can fail
-        if (fAtlases[index]) {
-            fAtlases[index]->registerEvictionCallback(&GrBatchFontCache::HandleEviction,
-                                                      (void*)this);
-        } else {
+        fAtlases[index] =
+                fContext->resourceProvider()->createAtlas(config, width, height,
+                                                          numPlotsX, numPlotsY,
+                                                          &GrBatchFontCache::HandleEviction,
+                                                          (void*)this);
+        if (!fAtlases[index]) {
             return false;
         }
     }
@@ -67,10 +40,26 @@ bool GrBatchFontCache::initAtlas(GrMaskFormat format) {
 
 GrBatchFontCache::GrBatchFontCache(GrContext* context)
     : fContext(context)
-    , fPreserveStrike(NULL) {
+    , fPreserveStrike(nullptr) {
     for (int i = 0; i < kMaskFormatCount; ++i) {
-        fAtlases[i] = NULL;
+        fAtlases[i] = nullptr;
     }
+
+    // setup default atlas configs
+    fAtlasConfigs[kA8_GrMaskFormat].fWidth = 2048;
+    fAtlasConfigs[kA8_GrMaskFormat].fHeight = 2048;
+    fAtlasConfigs[kA8_GrMaskFormat].fPlotWidth = 512;
+    fAtlasConfigs[kA8_GrMaskFormat].fPlotHeight = 256;
+
+    fAtlasConfigs[kA565_GrMaskFormat].fWidth = 1024;
+    fAtlasConfigs[kA565_GrMaskFormat].fHeight = 2048;
+    fAtlasConfigs[kA565_GrMaskFormat].fPlotWidth = 256;
+    fAtlasConfigs[kA565_GrMaskFormat].fPlotHeight = 256;
+
+    fAtlasConfigs[kARGB_GrMaskFormat].fWidth = 1024;
+    fAtlasConfigs[kARGB_GrMaskFormat].fHeight = 2048;
+    fAtlasConfigs[kARGB_GrMaskFormat].fPlotWidth = 256;
+    fAtlasConfigs[kARGB_GrMaskFormat].fPlotHeight = 256;
 }
 
 GrBatchFontCache::~GrBatchFontCache() {
@@ -81,7 +70,7 @@ GrBatchFontCache::~GrBatchFontCache() {
         ++iter;
     }
     for (int i = 0; i < kMaskFormatCount; ++i) {
-        SkDELETE(fAtlases[i]);
+        delete fAtlases[i];
     }
 }
 
@@ -94,20 +83,9 @@ void GrBatchFontCache::freeAll() {
     }
     fCache.rewind();
     for (int i = 0; i < kMaskFormatCount; ++i) {
-        SkDELETE(fAtlases[i]);
-        fAtlases[i] = NULL;
+        delete fAtlases[i];
+        fAtlases[i] = nullptr;
     }
-}
-
-GrPixelConfig GrBatchFontCache::getPixelConfig(GrMaskFormat format) const {
-    static const GrPixelConfig kPixelConfigs[] = {
-        kAlpha_8_GrPixelConfig,
-        kRGB_565_GrPixelConfig,
-        kSkia8888_GrPixelConfig
-    };
-    SK_COMPILE_ASSERT(SK_ARRAY_COUNT(kPixelConfigs) == kMaskFormatCount, array_size_mismatch);
-
-    return kPixelConfigs[format];
 }
 
 void GrBatchFontCache::HandleEviction(GrBatchAtlas::AtlasID id, void* ptr) {
@@ -147,6 +125,18 @@ void GrBatchFontCache::dump() const {
     ++gDumpCount;
 }
 
+void GrBatchFontCache::setAtlasSizes_ForTesting(const GrBatchAtlasConfig configs[3]) {
+    // delete any old atlases, this should be safe to do as long as we are not in the middle of a
+    // flush
+    for (int i = 0; i < kMaskFormatCount; i++) {
+        if (fAtlases[i]) {
+            delete fAtlases[i];
+            fAtlases[i] = nullptr;
+        }
+    }
+    memcpy(fAtlasConfigs, configs, sizeof(fAtlasConfigs));
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 
 /*
@@ -179,16 +169,16 @@ GrGlyph* GrBatchTextStrike::generateGlyph(const SkGlyph& skGlyph, GrGlyph::Packe
     SkIRect bounds;
     if (GrGlyph::kDistance_MaskStyle == GrGlyph::UnpackMaskStyle(packed)) {
         if (!scaler->getPackedGlyphDFBounds(skGlyph, &bounds)) {
-            return NULL;
+            return nullptr;
         }
     } else {
         if (!scaler->getPackedGlyphBounds(skGlyph, &bounds)) {
-            return NULL;
+            return nullptr;
         }
     }
     GrMaskFormat format = scaler->getPackedGlyphMaskFormat(skGlyph);
 
-    GrGlyph* glyph = (GrGlyph*)fPool.alloc(sizeof(GrGlyph), SK_MALLOC_THROW);
+    GrGlyph* glyph = (GrGlyph*)fPool.alloc(sizeof(GrGlyph));
     glyph->init(packed, bounds, format);
     fCache.add(glyph);
     return glyph;
@@ -206,13 +196,12 @@ void GrBatchTextStrike::removeID(GrBatchAtlas::AtlasID id) {
     }
 }
 
-bool GrBatchTextStrike::addGlyphToAtlas(GrBatchTarget* batchTarget, GrGlyph* glyph,
+bool GrBatchTextStrike::addGlyphToAtlas(GrDrawBatch::Target* target, GrGlyph* glyph,
                                         GrFontScaler* scaler, const SkGlyph& skGlyph,
                                         GrMaskFormat expectedMaskFormat) {
     SkASSERT(glyph);
     SkASSERT(scaler);
     SkASSERT(fCache.find(glyph->fPackedID));
-    SkASSERT(NULL == glyph->fPlot);
 
     SkAutoUnref ar(SkSafeRef(scaler));
 
@@ -234,10 +223,11 @@ bool GrBatchTextStrike::addGlyphToAtlas(GrBatchTarget* batchTarget, GrGlyph* gly
         }
     }
 
-    bool success = fBatchFontCache->addToAtlas(this, &glyph->fID, batchTarget, expectedMaskFormat,
+    bool success = fBatchFontCache->addToAtlas(this, &glyph->fID, target, expectedMaskFormat,
                                                glyph->width(), glyph->height(),
                                                storage.get(), &glyph->fAtlasLocation);
     if (success) {
+        SkASSERT(GrBatchAtlas::kInvalidAtlasID != glyph->fID);
         fAtlasedGlyphs++;
     }
     return success;

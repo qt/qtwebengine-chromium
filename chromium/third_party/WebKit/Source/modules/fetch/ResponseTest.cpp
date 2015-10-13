@@ -17,7 +17,7 @@
 #include "modules/fetch/FetchResponseData.h"
 #include "platform/blob/BlobData.h"
 #include "platform/testing/UnitTestHelpers.h"
-#include "public/platform/WebServiceWorkerResponse.h"
+#include "public/platform/modules/serviceworker/WebServiceWorkerResponse.h"
 #include <gtest/gtest.h>
 
 namespace blink {
@@ -145,45 +145,44 @@ TEST_F(ServiceWorkerResponseTest, FromWebServiceWorkerResponseOpaque)
     EXPECT_FALSE(exceptionState.hadException());
 }
 
-void loadInternalBufferAsString(Response* response, FetchDataLoader::Client* client)
-{
-    FetchDataLoader* fetchDataLoader = FetchDataLoader::createLoaderAsString();
-    OwnPtr<DrainingBodyStreamBuffer> buffer = response->createInternalDrainingStream();
-    buffer->startLoading(response->executionContext(), fetchDataLoader, client);
-}
-
 void checkResponseStream(Response* response, bool checkResponseBodyStreamBuffer)
 {
-    void* buffer = response->internalBufferForTest();
+    BodyStreamBuffer* originalInternal = response->internalBodyBuffer();
     if (checkResponseBodyStreamBuffer) {
-        EXPECT_EQ(response->bufferForTest(), buffer);
+        EXPECT_EQ(response->bodyBuffer(), originalInternal);
     } else {
-        EXPECT_FALSE(response->bufferForTest());
+        EXPECT_FALSE(response->bodyBuffer());
     }
 
     TrackExceptionState exceptionState;
     Response* clonedResponse = response->clone(exceptionState);
     EXPECT_FALSE(exceptionState.hadException());
 
-    EXPECT_TRUE(response->internalBufferForTest());
-    EXPECT_TRUE(clonedResponse->internalBufferForTest());
-    EXPECT_NE(response->internalBufferForTest(), buffer);
-    EXPECT_NE(clonedResponse->internalBufferForTest(), buffer);
-    EXPECT_NE(response->internalBufferForTest(), clonedResponse->internalBufferForTest());
+    if (!response->internalBodyBuffer())
+        FAIL() << "internalBodyBuffer() must not be null.";
+    if (!clonedResponse->internalBodyBuffer())
+        FAIL() << "internalBodyBuffer() must not be null.";
+    EXPECT_TRUE(response->internalBodyBuffer());
+    EXPECT_TRUE(clonedResponse->internalBodyBuffer());
+    EXPECT_TRUE(response->internalBodyBuffer());
+    EXPECT_TRUE(clonedResponse->internalBodyBuffer());
+    EXPECT_NE(response->internalBodyBuffer(), originalInternal);
+    EXPECT_NE(clonedResponse->internalBodyBuffer(), originalInternal);
+    EXPECT_NE(response->internalBodyBuffer(), clonedResponse->internalBodyBuffer());
     if (checkResponseBodyStreamBuffer) {
-        EXPECT_EQ(response->bufferForTest(), response->internalBufferForTest());
-        EXPECT_EQ(clonedResponse->bufferForTest(), clonedResponse->internalBufferForTest());
+        EXPECT_EQ(response->bodyBuffer(), response->internalBodyBuffer());
+        EXPECT_EQ(clonedResponse->bodyBuffer(), clonedResponse->internalBodyBuffer());
     } else {
-        EXPECT_FALSE(response->bufferForTest());
-        EXPECT_FALSE(clonedResponse->bufferForTest());
+        EXPECT_FALSE(response->bodyBuffer());
+        EXPECT_FALSE(clonedResponse->bodyBuffer());
     }
     DataConsumerHandleTestUtil::MockFetchDataLoaderClient* client1 = new DataConsumerHandleTestUtil::MockFetchDataLoaderClient();
     DataConsumerHandleTestUtil::MockFetchDataLoaderClient* client2 = new DataConsumerHandleTestUtil::MockFetchDataLoaderClient();
     EXPECT_CALL(*client1, didFetchDataLoadedString(String("Hello, world")));
     EXPECT_CALL(*client2, didFetchDataLoadedString(String("Hello, world")));
 
-    loadInternalBufferAsString(response, client1);
-    loadInternalBufferAsString(clonedResponse, client2);
+    response->internalBodyBuffer()->startLoading(response->executionContext(), FetchDataLoader::createLoaderAsString(), client1);
+    clonedResponse->internalBodyBuffer()->startLoading(response->executionContext(), FetchDataLoader::createLoaderAsString(), client2);
     blink::testing::runPendingTasks();
 }
 
@@ -194,7 +193,7 @@ BodyStreamBuffer* createHelloWorldBuffer()
     src->add(Command(Command::Data, "Hello, "));
     src->add(Command(Command::Data, "world"));
     src->add(Command(Command::Done));
-    return BodyStreamBuffer::create(createFetchDataConsumerHandleFromWebHandle(src.release()));
+    return new BodyStreamBuffer(createFetchDataConsumerHandleFromWebHandle(src.release()));
 }
 
 TEST_F(ServiceWorkerResponseTest, BodyStreamBufferCloneDefault)
@@ -203,7 +202,7 @@ TEST_F(ServiceWorkerResponseTest, BodyStreamBufferCloneDefault)
     FetchResponseData* fetchResponseData = FetchResponseData::createWithBuffer(buffer);
     fetchResponseData->setURL(KURL(ParsedURLString, "http://www.response.com"));
     Response* response = Response::create(executionContext(), fetchResponseData);
-    EXPECT_EQ(response->internalBufferForTest(), buffer);
+    EXPECT_EQ(response->internalBodyBuffer(), buffer);
     checkResponseStream(response, true);
 }
 
@@ -214,7 +213,7 @@ TEST_F(ServiceWorkerResponseTest, BodyStreamBufferCloneBasic)
     fetchResponseData->setURL(KURL(ParsedURLString, "http://www.response.com"));
     fetchResponseData = fetchResponseData->createBasicFilteredResponse();
     Response* response = Response::create(executionContext(), fetchResponseData);
-    EXPECT_EQ(response->internalBufferForTest(), buffer);
+    EXPECT_EQ(response->internalBodyBuffer(), buffer);
     checkResponseStream(response, true);
 }
 
@@ -225,7 +224,7 @@ TEST_F(ServiceWorkerResponseTest, BodyStreamBufferCloneCORS)
     fetchResponseData->setURL(KURL(ParsedURLString, "http://www.response.com"));
     fetchResponseData = fetchResponseData->createCORSFilteredResponse();
     Response* response = Response::create(executionContext(), fetchResponseData);
-    EXPECT_EQ(response->internalBufferForTest(), buffer);
+    EXPECT_EQ(response->internalBodyBuffer(), buffer);
     checkResponseStream(response, true);
 }
 
@@ -236,13 +235,13 @@ TEST_F(ServiceWorkerResponseTest, BodyStreamBufferCloneOpaque)
     fetchResponseData->setURL(KURL(ParsedURLString, "http://www.response.com"));
     fetchResponseData = fetchResponseData->createOpaqueFilteredResponse();
     Response* response = Response::create(executionContext(), fetchResponseData);
-    EXPECT_EQ(response->internalBufferForTest(), buffer);
+    EXPECT_EQ(response->internalBodyBuffer(), buffer);
     checkResponseStream(response, false);
 }
 
 TEST_F(ServiceWorkerResponseTest, BodyStreamBufferCloneError)
 {
-    BodyStreamBuffer* buffer = BodyStreamBuffer::create(createFetchDataConsumerHandleFromWebHandle(createUnexpectedErrorDataConsumerHandle()));
+    BodyStreamBuffer* buffer = new BodyStreamBuffer(createFetchDataConsumerHandleFromWebHandle(createUnexpectedErrorDataConsumerHandle()));
     FetchResponseData* fetchResponseData = FetchResponseData::createWithBuffer(buffer);
     fetchResponseData->setURL(KURL(ParsedURLString, "http://www.response.com"));
     Response* response = Response::create(executionContext(), fetchResponseData);
@@ -255,8 +254,8 @@ TEST_F(ServiceWorkerResponseTest, BodyStreamBufferCloneError)
     EXPECT_CALL(*client1, didFetchDataLoadFailed());
     EXPECT_CALL(*client2, didFetchDataLoadFailed());
 
-    loadInternalBufferAsString(response, client1);
-    loadInternalBufferAsString(clonedResponse, client2);
+    response->internalBodyBuffer()->startLoading(response->executionContext(), FetchDataLoader::createLoaderAsString(), client1);
+    clonedResponse->internalBodyBuffer()->startLoading(response->executionContext(), FetchDataLoader::createLoaderAsString(), client2);
     blink::testing::runPendingTasks();
 }
 

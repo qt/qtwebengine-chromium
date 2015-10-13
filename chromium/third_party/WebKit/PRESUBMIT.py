@@ -161,7 +161,8 @@ def _CheckStyle(input_api, output_api):
     style_checker_path = input_api.os_path.join(input_api.PresubmitLocalPath(),
         'Tools', 'Scripts', 'check-webkit-style')
     args = ([input_api.python_executable, style_checker_path, '--diff-files']
-        + [f.LocalPath() for f in input_api.AffectedFiles()])
+            + [input_api.os_path.join('..', '..', f.LocalPath())
+               for f in input_api.AffectedFiles()])
     results = []
 
     try:
@@ -336,7 +337,7 @@ def CheckChangeOnCommit(input_api, output_api):
     results.extend(_CommonChecks(input_api, output_api))
     results.extend(input_api.canned_checks.CheckTreeIsOpen(
         input_api, output_api,
-        json_url='http://blink-status.appspot.com/current?format=json'))
+        json_url='http://chromium-status.appspot.com/current?format=json'))
     results.extend(input_api.canned_checks.CheckChangeHasDescription(
         input_api, output_api))
     results.extend(_CheckSubversionConfig(input_api, output_api))
@@ -344,17 +345,27 @@ def CheckChangeOnCommit(input_api, output_api):
 
 
 def GetPreferredTryMasters(project, change):
-    return {
-        'tryserver.blink': {
-            'android_blink_compile_dbg': set(['defaulttests']),
-            'android_blink_compile_rel': set(['defaulttests']),
-            'android_chromium_gn_compile_rel': set(['defaulttests']),
-            'linux_blink_compile_dbg': set(['defaulttests']),
-            'linux_blink_rel': set(['defaulttests']),
-            'linux_chromium_gn_rel': set(['defaulttests']),
-            'mac_blink_compile_dbg': set(['defaulttests']),
-            'mac_blink_rel': set(['defaulttests']),
-            'win_blink_compile_dbg': set(['defaulttests']),
-            'win_blink_rel': set(['defaulttests']),
-        },
-    }
+    import json
+    import os.path
+    import platform
+    import subprocess
+
+    cq_config_path = os.path.join(
+        change.RepositoryRoot(), 'infra', 'config', 'cq.cfg')
+    # commit_queue.py below is a script in depot_tools directory, which has a
+    # 'builders' command to retrieve a list of CQ builders from the CQ config.
+    is_win = platform.system() == 'Windows'
+    masters = json.loads(subprocess.check_output(
+        ['commit_queue', 'builders', cq_config_path], shell=is_win))
+
+    try_config = {}
+    for master in masters:
+        try_config.setdefault(master, {})
+        for builder in masters[master]:
+            # Do not trigger presubmit builders, since they're likely to fail
+            # (e.g. OWNERS checks before finished code review), and we're
+            # running local presubmit anyway.
+            if 'presubmit' not in builder:
+                try_config[master][builder] = ['defaulttests']
+
+    return try_config

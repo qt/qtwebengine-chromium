@@ -35,7 +35,7 @@ typedef struct WebRtcCngDecoder_ {
 } WebRtcCngDecoder;
 
 typedef struct WebRtcCngEncoder_ {
-  int16_t enc_nrOfCoefs;
+  size_t enc_nrOfCoefs;
   int enc_sampfreq;
   int16_t enc_interval;
   int16_t enc_msSinceSID;
@@ -169,7 +169,7 @@ int WebRtcCng_InitEnc(CNG_enc_inst* cng_inst, int fs, int16_t interval,
   return 0;
 }
 
-int16_t WebRtcCng_InitDec(CNG_dec_inst* cng_inst) {
+void WebRtcCng_InitDec(CNG_dec_inst* cng_inst) {
   int i;
 
   WebRtcCngDecoder* inst = (WebRtcCngDecoder*) cng_inst;
@@ -188,8 +188,6 @@ int16_t WebRtcCng_InitDec(CNG_dec_inst* cng_inst) {
   inst->dec_used_reflCoefs[0] = 0;
   inst->dec_used_energy = 0;
   inst->initflag = 1;
-
-  return 0;
 }
 
 /****************************************************************************
@@ -228,8 +226,8 @@ int16_t WebRtcCng_FreeDec(CNG_dec_inst* cng_inst) {
  *                      -1 - Error
  */
 int WebRtcCng_Encode(CNG_enc_inst* cng_inst, int16_t* speech,
-                     int16_t nrOfSamples, uint8_t* SIDdata,
-                     int16_t* bytesOut, int16_t forceSID) {
+                     size_t nrOfSamples, uint8_t* SIDdata,
+                     size_t* bytesOut, int16_t forceSID) {
   WebRtcCngEncoder* inst = (WebRtcCngEncoder*) cng_inst;
 
   int16_t arCoefs[WEBRTC_CNG_MAX_LPC_ORDER + 1];
@@ -240,10 +238,11 @@ int WebRtcCng_Encode(CNG_enc_inst* cng_inst, int16_t* speech,
   int16_t ReflBetaComp = 13107;  /* 0.4 in q15. */
   int32_t outEnergy;
   int outShifts;
-  int i, stab;
+  size_t i;
+  int stab;
   int acorrScale;
-  int index;
-  int16_t ind, factor;
+  size_t index;
+  size_t ind, factor;
   int32_t* bptr;
   int32_t blo, bhi;
   int16_t negate;
@@ -281,7 +280,7 @@ int WebRtcCng_Encode(CNG_enc_inst* cng_inst, int16_t* speech,
       outShifts--;
     }
   }
-  outEnergy = WebRtcSpl_DivW32W16(outEnergy, factor);
+  outEnergy = WebRtcSpl_DivW32W16(outEnergy, (int16_t)factor);
 
   if (outEnergy > 1) {
     /* Create Hanning Window. */
@@ -390,7 +389,7 @@ int WebRtcCng_Encode(CNG_enc_inst* cng_inst, int16_t* speech,
 
     inst->enc_msSinceSID +=
         (int16_t)((1000 * nrOfSamples) / inst->enc_sampfreq);
-    return inst->enc_nrOfCoefs + 1;
+    return (int)(inst->enc_nrOfCoefs + 1);
   } else {
     inst->enc_msSinceSID +=
         (int16_t)((1000 * nrOfSamples) / inst->enc_sampfreq);
@@ -475,10 +474,10 @@ int16_t WebRtcCng_UpdateSid(CNG_dec_inst* cng_inst, uint8_t* SID,
  *                       -1 - Error
  */
 int16_t WebRtcCng_Generate(CNG_dec_inst* cng_inst, int16_t* outData,
-                           int16_t nrOfSamples, int16_t new_period) {
+                           size_t nrOfSamples, int16_t new_period) {
   WebRtcCngDecoder* inst = (WebRtcCngDecoder*) cng_inst;
 
-  int i;
+  size_t i;
   int16_t excitation[WEBRTC_CNG_MAX_OUTSIZE_ORDER];
   int16_t low[WEBRTC_CNG_MAX_OUTSIZE_ORDER];
   int16_t lpPoly[WEBRTC_CNG_MAX_LPC_ORDER + 1];

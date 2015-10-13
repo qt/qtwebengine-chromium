@@ -20,6 +20,7 @@
 #include "cc/resources/memory_history.h"
 #include "cc/resources/resource_pool.h"
 #include "cc/tiles/eviction_tile_priority_queue.h"
+#include "cc/tiles/image_decode_controller.h"
 #include "cc/tiles/raster_tile_priority_queue.h"
 #include "cc/tiles/tile.h"
 #include "cc/tiles/tile_draw_info.h"
@@ -132,9 +133,7 @@ class CC_EXPORT TileManager : public TileTaskRunnerClient {
   // date draw information.
   void Flush();
 
-  ScopedTilePtr CreateTile(const gfx::Size& desired_texture_size,
-                           const gfx::Rect& content_rect,
-                           float contents_scale,
+  ScopedTilePtr CreateTile(const Tile::CreateInfo& info,
                            int layer_id,
                            int source_frame_number,
                            int flags);
@@ -155,7 +154,7 @@ class CC_EXPORT TileManager : public TileTaskRunnerClient {
       TileDrawInfo& draw_info = tiles[i]->draw_info();
       draw_info.resource_ = resource_pool_->AcquireResource(
           tiles[i]->desired_texture_size(),
-          tile_task_runner_->GetResourceFormat());
+          tile_task_runner_->GetResourceFormat(false));
     }
   }
 
@@ -214,10 +213,10 @@ class CC_EXPORT TileManager : public TileTaskRunnerClient {
   friend class Tile;
   // Virtual for testing.
   virtual void Release(Tile* tile);
+  Tile::Id GetUniqueTileId() { return ++next_tile_id_; }
 
   // Overriden from TileTaskRunnerClient:
   void DidFinishRunningTileTasks(TaskSet task_set) override;
-  TaskSetCollection TasksThatShouldBeForcedToComplete() const override;
 
   typedef std::vector<PrioritizedTile> PrioritizedTileVector;
   typedef std::set<Tile*> TileSet;
@@ -252,21 +251,16 @@ class CC_EXPORT TileManager : public TileTaskRunnerClient {
     int resource_count_;
   };
 
-  void OnImageDecodeTaskCompleted(int layer_id,
-                                  SkPixelRef* pixel_ref,
-                                  bool was_canceled);
   void OnRasterTaskCompleted(Tile::Id tile,
-                             scoped_ptr<ScopedResource> resource,
+                             Resource* resource,
                              const RasterSource::SolidColorAnalysis& analysis,
                              bool was_canceled);
   void UpdateTileDrawInfo(Tile* tile,
-                          scoped_ptr<ScopedResource> resource,
+                          Resource* resource,
                           const RasterSource::SolidColorAnalysis& analysis);
 
   void FreeResourcesForTile(Tile* tile);
   void FreeResourcesForTileAndNotifyClientIfTileWasReadyToDraw(Tile* tile);
-  scoped_refptr<ImageDecodeTask> CreateImageDecodeTask(Tile* tile,
-                                                       SkPixelRef* pixel_ref);
   scoped_refptr<RasterTask> CreateRasterTask(
       const PrioritizedTile& prioritized_tile);
 
@@ -286,6 +280,9 @@ class CC_EXPORT TileManager : public TileTaskRunnerClient {
   void CheckIfMoreTilesNeedToBePrepared();
   void CheckAndIssueSignals();
 
+  ResourceFormat DetermineResourceFormat(const Tile* tile) const;
+  bool DetermineResourceRequiresSwizzle(const Tile* tile) const;
+
   TileManagerClient* client_;
   scoped_refptr<base::SequencedTaskRunner> task_runner_;
   ResourcePool* resource_pool_;
@@ -302,13 +299,7 @@ class CC_EXPORT TileManager : public TileTaskRunnerClient {
   bool did_check_for_completed_tasks_since_last_schedule_tasks_;
   bool did_oom_on_last_assign_;
 
-  typedef base::hash_map<uint32_t, scoped_refptr<ImageDecodeTask>>
-      PixelRefTaskMap;
-  typedef base::hash_map<int, PixelRefTaskMap> LayerPixelRefTaskMap;
-  LayerPixelRefTaskMap image_decode_tasks_;
-
-  typedef base::hash_map<int, int> LayerCountMap;
-  LayerCountMap used_layer_counts_;
+  ImageDecodeController image_decode_controller_;
 
   RasterTaskCompletionStats flush_stats_;
 
@@ -339,6 +330,7 @@ class CC_EXPORT TileManager : public TileTaskRunnerClient {
   bool has_scheduled_tile_tasks_;
 
   uint64_t prepare_tiles_count_;
+  uint64_t next_tile_id_;
 
   DISALLOW_COPY_AND_ASSIGN(TileManager);
 };

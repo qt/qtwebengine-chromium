@@ -10,9 +10,9 @@
 #include "base/memory/ref_counted.h"
 #include "cc/base/cc_export.h"
 #include "cc/debug/traced_value.h"
+#include "cc/playback/discardable_image_map.h"
 #include "skia/ext/refptr.h"
 #include "third_party/skia/include/core/SkColor.h"
-#include "third_party/skia/include/core/SkPixelRef.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/geometry/size.h"
 
@@ -20,8 +20,6 @@ class SkCanvas;
 class SkPicture;
 
 namespace cc {
-
-class Picture;
 
 class CC_EXPORT RasterSource : public base::RefCountedThreadSafe<RasterSource> {
  public:
@@ -69,19 +67,21 @@ class CC_EXPORT RasterSource : public base::RefCountedThreadSafe<RasterSource> {
   // Returns the size of this raster source.
   virtual gfx::Size GetSize() const = 0;
 
-  // Populate the given list with all SkPixelRefs that may overlap the given
-  // rect at given scale.
-  virtual void GatherPixelRefs(const gfx::Rect& content_rect,
-                               float contents_scale,
-                               std::vector<SkPixelRef*>* pixel_refs) const = 0;
+  // Populate the given list with all images that may overlap the given
+  // rect in layer space.
+  virtual void GetDiscardableImagesInRect(
+      const gfx::Rect& layer_rect,
+      std::vector<PositionImage>* images) const = 0;
 
-  // Return true iff this raster source can raster the given rect at given
-  // scale.
-  virtual bool CoversRect(const gfx::Rect& content_rect,
-                          float contents_scale) const = 0;
+  // Return true iff this raster source can raster the given rect in layer
+  // space.
+  virtual bool CoversRect(const gfx::Rect& layer_rect) const = 0;
 
   // Returns true if this raster source has anything to rasterize.
   virtual bool HasRecordings() const = 0;
+
+  // Valid rectangle in which everything is recorded and can be rastered from.
+  virtual gfx::Rect RecordedViewport() const = 0;
 
   // Informs the raster source that it should attempt to use distance field text
   // during rasterization.

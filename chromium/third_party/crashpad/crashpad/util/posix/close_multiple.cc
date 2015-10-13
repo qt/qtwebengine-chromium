@@ -24,11 +24,11 @@
 
 #include <algorithm>
 
-#include "base/basictypes.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/posix/eintr_wrapper.h"
 #include "build/build_config.h"
+#include "util/misc/implicit_cast.h"
 #include "util/numeric/safe_assignment.h"
 
 // Everything in this file is expected to execute between fork() and exec(),

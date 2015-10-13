@@ -62,25 +62,26 @@ SkData* DecodingImageGenerator::onRefEncodedData()
     return 0;
 }
 
-SkImageGenerator::Result DecodingImageGenerator::onGetPixels(const SkImageInfo& info,
-    void* pixels, size_t rowBytes, const Options&, SkPMColor ctable[], int* ctableCount)
+bool DecodingImageGenerator::onGetPixels(const SkImageInfo& info, void* pixels, size_t rowBytes,
+    SkPMColor ctable[], int* ctableCount)
 {
     TRACE_EVENT1("blink", "DecodingImageGenerator::getPixels", "index", static_cast<int>(m_frameIndex));
 
     // Implementation doesn't support scaling yet so make sure we're not given a different size.
-    if (info.width() != getInfo().width() || info.height() != getInfo().height()) {
-        return kInvalidScale;
-    }
+    if (info.width() != getInfo().width() || info.height() != getInfo().height())
+        return false;
+
     if (info.colorType() != getInfo().colorType()) {
         // ImageFrame may have changed the owning SkBitmap to kOpaque_SkAlphaType after sniffing the encoded data, so if we see a request
         // for opaque, that is ok even if our initial alphatype was not opaque.
-        return kInvalidConversion;
+        return false;
     }
 
     PlatformInstrumentation::willDecodeLazyPixelRef(m_generationId);
     bool decoded = m_frameGenerator->decodeAndScale(getInfo(), m_frameIndex, pixels, rowBytes);
     PlatformInstrumentation::didDecodeLazyPixelRef();
-    return decoded ? kSuccess : kInvalidInput;
+
+    return decoded;
 }
 
 bool DecodingImageGenerator::onGetYUV8Planes(SkISize sizes[3], void* planes[3], size_t rowBytes[3], SkYUVColorSpace* colorSpace)
@@ -106,7 +107,7 @@ SkImageGenerator* DecodingImageGenerator::create(SkData* data)
 
     // We just need the size of the image, so we have to temporarily create an ImageDecoder. Since
     // we only need the size, it doesn't really matter about premul or not, or gamma settings.
-    OwnPtr<ImageDecoder> decoder = ImageDecoder::create(*buffer.get(), ImageSource::AlphaPremultiplied, ImageSource::GammaAndColorProfileApplied);
+    OwnPtr<ImageDecoder> decoder = ImageDecoder::create(*buffer.get(), ImageDecoder::AlphaPremultiplied, ImageDecoder::GammaAndColorProfileApplied);
     if (!decoder)
         return 0;
 

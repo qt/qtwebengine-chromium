@@ -3,6 +3,11 @@
 // found in the LICENSE file.
 
 /**
+* @typedef {Array<{object: !WebInspector.RemoteObject, eventListeners: ?Array<!WebInspector.EventListener>, frameworkEventListeners: ?{eventListeners: ?Array<!WebInspector.EventListener>, internalHandlers: ?WebInspector.RemoteArray}, isInternal: ?Array<boolean>}>}
+*/
+WebInspector.EventListenersResult;
+
+/**
  * @constructor
  * @param {!Element} element
  */
@@ -29,21 +34,96 @@ WebInspector.EventListenersView.prototype = {
      */
     addObjects: function(objects)
     {
+        this.reset();
         var promises = [];
-        for (var i = 0; i < objects.length; ++i)
-            promises.push(objects[i].eventListeners());
-        return Promise.all(promises).then(listenersCallback.bind(this));
+        for (var object of objects)
+            promises.push(this._addObject(object));
+        return Promise.all(promises).then(this.addEmptyHolderIfNeeded.bind(this)).then(this._eventListenersArrivedForTest.bind(this));
+     },
+
+    /**
+     * @param {!WebInspector.RemoteObject} object
+     * @return {!Promise<undefined>}
+     */
+    _addObject: function(object)
+    {
+        /** @type {?Array<!WebInspector.EventListener>} */
+        var eventListeners = null;
+        /** @type {?WebInspector.FrameworkEventListenersObject}*/
+        var frameworkEventListenersObject = null;
+
+        var promises = [];
+        promises.push(object.eventListeners().then(storeEventListeners));
+        promises.push(WebInspector.EventListener.frameworkEventListeners(object).then(storeFrameworkEventListenersObject));
+        return Promise.all(promises).then(markInternalEventListeners).then(addEventListeners.bind(this));
+
         /**
-         * @param {!Array<?Array<!WebInspector.EventListener>>} listeners
+         * @param {?Array<!WebInspector.EventListener>} result
+         */
+        function storeEventListeners(result)
+        {
+            eventListeners = result;
+        }
+
+        /**
+         * @param {?WebInspector.FrameworkEventListenersObject} result
+         */
+        function storeFrameworkEventListenersObject(result)
+        {
+            frameworkEventListenersObject = result;
+        }
+
+        /**
+         * @return {!Promise<undefined>}
+         */
+        function markInternalEventListeners()
+        {
+            if (!eventListeners || !frameworkEventListenersObject.internalHandlers)
+                return Promise.resolve(undefined);
+            return frameworkEventListenersObject.internalHandlers.object().callFunctionJSONPromise(isInternalEventListener, eventListeners.map(handlerArgument)).then(setIsInternal);
+
+            /**
+             * @param {!WebInspector.EventListener} listener
+             * @return {!RuntimeAgent.CallArgument}
+             */
+            function handlerArgument(listener)
+            {
+                return WebInspector.RemoteObject.toCallArgument(listener.handler());
+            }
+
+            /**
+             * @suppressReceiverCheck
+             * @return {!Array<boolean>}
+             * @this {Array<*>}
+             */
+            function isInternalEventListener()
+            {
+                var isInternal = [];
+                var internalHandlersSet = new Set(this);
+                for (var handler of arguments)
+                    isInternal.push(internalHandlersSet.has(handler));
+                return isInternal;
+            }
+
+            /**
+             * @param {!Array<boolean>} isInternal
+             */
+            function setIsInternal(isInternal)
+            {
+                for (var i = 0; i < eventListeners.length; ++i) {
+                    if (isInternal[i])
+                        eventListeners[i].setListenerType("frameworkInternal");
+                }
+            }
+        }
+
+        /**
          * @this {WebInspector.EventListenersView}
          */
-        function listenersCallback(listeners)
+        function addEventListeners()
         {
-            this.reset();
-            for (var i = 0; i < listeners.length; ++i)
-                this._addObjectEventListeners(objects[i], listeners[i]);
-            this.addEmptyHolderIfNeeded();
-            this._eventListenersArrivedForTest();
+            this._addObjectEventListeners(object, eventListeners);
+            this._addObjectEventListeners(object, frameworkEventListenersObject.eventListeners);
         }
     },
 
@@ -62,6 +142,28 @@ WebInspector.EventListenersView.prototype = {
     },
 
     /**
+     * @param {boolean} showFramework
+     */
+    showFrameworkListeners: function(showFramework)
+    {
+        var eventTypes = this._treeOutline.rootElement().children();
+        for (var eventType of eventTypes) {
+            var hiddenEventType = true;
+            for (var listenerElement of eventType.children()) {
+                var listenerType = listenerElement.eventListener().listenerType();
+                var hidden = false;
+                if (listenerType === "frameworkUser" && !showFramework)
+                    hidden = true;
+                if (listenerType === "frameworkInternal" && showFramework)
+                    hidden = true;
+                listenerElement.hidden = hidden;
+                hiddenEventType = hiddenEventType && hidden;
+            }
+            eventType.hidden = hiddenEventType;
+        }
+    },
+
+    /**
      * @param {string} type
      * @return {!WebInspector.EventListenersTreeElement}
      */
@@ -71,22 +173,29 @@ WebInspector.EventListenersView.prototype = {
         if (!treeItem) {
             treeItem = new WebInspector.EventListenersTreeElement(type, this._linkifier);
             this._treeItemMap.set(type, treeItem);
+            treeItem.hidden = true;
             this._treeOutline.appendChild(treeItem);
-            this._emptyHolder.remove();
         }
+        this._emptyHolder.remove();
         return treeItem;
     },
 
     addEmptyHolderIfNeeded: function()
     {
-        if (!this._treeOutline.firstChild() && !this._emptyHolder.parentNode)
+        var allHidden = true;
+        for (var eventType of this._treeOutline.rootElement().children()) {
+            eventType.hidden = !eventType.firstChild();
+            allHidden = allHidden && eventType.hidden;
+        }
+        if (allHidden && !this._emptyHolder.parentNode)
            this._element.appendChild(this._emptyHolder);
     },
 
     reset: function()
     {
-        this._treeItemMap = new Map();
-        this._treeOutline.removeChildren();
+        var eventTypes = this._treeOutline.rootElement().children();
+        for (var eventType of eventTypes)
+            eventType.removeChildren();
         this._linkifier.reset();
     },
 
@@ -170,8 +279,51 @@ WebInspector.ObjectEventListenerBar.prototype = {
     {
         var title = this.listItemElement.createChild("span");
         var subtitle = this.listItemElement.createChild("span", "event-listener-tree-subtitle");
-        subtitle.appendChild(linkifier.linkifyRawLocation(this._eventListener.location(), this._eventListener.sourceName()));
+        subtitle.appendChild(linkifier.linkifyRawLocation(this._eventListener.location(), this._eventListener.sourceURL()));
+
         title.appendChild(WebInspector.ObjectPropertiesSection.createValueElement(object, false));
+
+        if (this._eventListener.removeFunction()) {
+            var deleteButton = title.createChild("span", "event-listener-delete-button");
+            deleteButton.textContent = WebInspector.UIString("Remove");
+            deleteButton.title = WebInspector.UIString("Delete event listener");
+            deleteButton.addEventListener("click", removeListener.bind(this), false);
+            title.appendChild(deleteButton);
+        }
+
+        /**
+         * @param {!WebInspector.Event} event
+         * @this {WebInspector.ObjectEventListenerBar}
+         */
+        function removeListener(event)
+        {
+            event.consume();
+            this._removeListenerBar();
+            this._eventListener.remove();
+        }
+    },
+
+    _removeListenerBar: function()
+    {
+        var parent = this.parent;
+        parent.removeChild(this);
+        if (!parent.childCount()) {
+            parent.parent.removeChild(parent);
+            return;
+        }
+        var allHidden = true;
+        for (var i = 0; i < parent.childCount(); ++i)
+            if (!parent.childAt(i).hidden)
+                allHidden = false;
+        parent.hidden = allHidden;
+    },
+
+    /**
+     * @return {!WebInspector.EventListener}
+     */
+    eventListener: function()
+    {
+        return this._eventListener;
     },
 
     __proto__: TreeElement.prototype

@@ -132,12 +132,10 @@ bool PlatformWindowAndroid::KeyEvent(JNIEnv* env,
                                      jint unicode_character) {
   ui::KeyEvent key_event(pressed ? ui::ET_KEY_PRESSED : ui::ET_KEY_RELEASED,
                          ui::KeyboardCodeFromAndroidKeyCode(key_code), 0);
-  key_event.set_platform_keycode(key_code);
   delegate_->DispatchEvent(&key_event);
   if (pressed && unicode_character) {
     ui::KeyEvent char_event(unicode_character,
                             ui::KeyboardCodeFromAndroidKeyCode(key_code), 0);
-    char_event.set_platform_keycode(key_code);
     delegate_->DispatchEvent(&char_event);
   }
   return true;
@@ -158,7 +156,8 @@ void PlatformWindowAndroid::Show() {
   java_platform_window_android_ = JavaObjectWeakGlobalRef(
       env, Java_PlatformWindowAndroid_createForActivity(
                env, base::android::GetApplicationContext(),
-               reinterpret_cast<jlong>(this)).obj());
+               reinterpret_cast<jlong>(this),
+               reinterpret_cast<jlong>(&platform_ime_controller_)).obj());
 }
 
 void PlatformWindowAndroid::Hide() {
@@ -175,6 +174,10 @@ void PlatformWindowAndroid::SetBounds(const gfx::Rect& bounds) {
 
 gfx::Rect PlatformWindowAndroid::GetBounds() {
   return gfx::Rect(size_);
+}
+
+void PlatformWindowAndroid::SetTitle(const base::string16& title) {
+  NOTIMPLEMENTED();
 }
 
 void PlatformWindowAndroid::SetCapture() {
@@ -211,6 +214,10 @@ void PlatformWindowAndroid::MoveCursorTo(const gfx::Point& location) {
 
 void PlatformWindowAndroid::ConfineCursorToBounds(const gfx::Rect& bounds) {
   NOTIMPLEMENTED();
+}
+
+PlatformImeController* PlatformWindowAndroid::GetPlatformImeController() {
+  return &platform_ime_controller_;
 }
 
 }  // namespace ui

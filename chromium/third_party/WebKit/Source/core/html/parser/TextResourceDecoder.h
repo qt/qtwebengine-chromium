@@ -32,6 +32,8 @@ namespace blink {
 class HTMLMetaCharsetParser;
 
 class CORE_EXPORT TextResourceDecoder {
+    WTF_MAKE_FAST_ALLOCATED(TextResourceDecoder);
+    WTF_MAKE_NONCOPYABLE(TextResourceDecoder);
 public:
     enum EncodingSource {
         DefaultEncoding,
@@ -80,7 +82,6 @@ private:
     bool checkForCSSCharset(const char*, size_t, bool& movedDataToBuffer);
     bool checkForXMLCharset(const char*, size_t, bool& movedDataToBuffer);
     void checkForMetaCharset(const char*, size_t);
-    void detectJapaneseEncoding(const char*, size_t);
     bool shouldAutoDetect() const;
 
     ContentType m_contentType;

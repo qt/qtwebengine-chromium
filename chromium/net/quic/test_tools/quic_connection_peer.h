@@ -57,15 +57,14 @@ class QuicConnectionPeer {
 
   static QuicPacketEntropyHash GetSentEntropyHash(
       QuicConnection* connection,
-      QuicPacketSequenceNumber sequence_number);
+      QuicPacketNumber packet_number);
 
-  static QuicPacketEntropyHash PacketEntropy(
-      QuicConnection* connection,
-      QuicPacketSequenceNumber sequence_number);
+  static QuicPacketEntropyHash PacketEntropy(QuicConnection* connection,
+                                             QuicPacketNumber packet_number);
 
   static QuicPacketEntropyHash ReceivedEntropyHash(
       QuicConnection* connection,
-      QuicPacketSequenceNumber sequence_number);
+      QuicPacketNumber packet_number);
 
   static void SetPerspective(QuicConnection* connection,
                              Perspective perspective);
@@ -107,10 +106,17 @@ class QuicConnectionPeer {
 
   static QuicPacketHeader* GetLastHeader(QuicConnection* connection);
 
-  static void SetSequenceNumberOfLastSentPacket(
-      QuicConnection* connection, QuicPacketSequenceNumber number);
+  static void SetPacketNumberOfLastSentPacket(QuicConnection* connection,
+                                              QuicPacketNumber number);
 
   static QuicConnectionStats* GetStats(QuicConnection* connection);
+
+  static QuicPacketCount GetPacketsBetweenMtuProbes(QuicConnection* connection);
+
+  static void SetPacketsBetweenMtuProbes(QuicConnection* connection,
+                                         QuicPacketCount packets);
+  static void SetNextMtuProbeAt(QuicConnection* connection,
+                                QuicPacketNumber number);
 
  private:
   DISALLOW_COPY_AND_ASSIGN(QuicConnectionPeer);

@@ -79,8 +79,8 @@ public:
     void close() override;
     bool isClosed() const override;
     double duration() const override;
-    PassRefPtrWillBeRawPtr<TimeRanges> buffered() const override;
-    PassRefPtrWillBeRawPtr<TimeRanges> seekable() const override;
+    TimeRanges* buffered() const override;
+    TimeRanges* seekable() const override;
 #if !ENABLE(OILPAN)
     void refHTMLMediaSource() override { ref(); }
     void derefHTMLMediaSource() override { deref(); }
@@ -101,6 +101,7 @@ public:
     void openIfInEndedState();
     bool isOpen() const;
     void setSourceBufferActive(SourceBuffer*);
+    HTMLMediaElement* mediaElement() const;
 
     // Used by MediaSourceRegistry.
     void addedToRegistry();
@@ -116,7 +117,7 @@ private:
 
     bool isUpdating() const;
 
-    PassOwnPtr<WebSourceBuffer> createWebSourceBuffer(const String& type, const Vector<String>& codecs, ExceptionState&);
+    PassOwnPtr<WebSourceBuffer> createWebSourceBuffer(const String& type, const String& codecs, ExceptionState&);
     void scheduleEvent(const AtomicString& eventName);
     void endOfStreamInternal(const WebMediaSource::EndOfStreamStatus, ExceptionState&);
 

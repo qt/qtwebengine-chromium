@@ -1,5 +1,4 @@
-// Copyright 2008 Google Inc.
-// Author: Lincoln Smith
+// Copyright 2008 The open-vcdiff Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -29,10 +28,10 @@
 
 #include <config.h>
 #include "google/vcdecoder.h"
+#include <limits.h>  // NOLINT
 #include <stddef.h>  // size_t, ptrdiff_t
 #include <stdint.h>  // int32_t
 #include <string.h>  // memcpy, memset
-#include <memory>  // auto_ptr
 #include <string>
 #include "addrcache.h"
 #include "checksum.h"
@@ -41,8 +40,21 @@
 #include "headerparser.h"
 #include "logging.h"
 #include "google/output_string.h"
+#include "unique_ptr.h" // auto_ptr, unique_ptr
 #include "varint_bigendian.h"
 #include "vcdiff_defs.h"
+
+// The FALLTHROUGH_INTENDED macro can be used to annotate implicit fall-through
+// between switch labels.
+#if defined(__clang__) && __cplusplus >= 201103L && defined(__has_warning)
+#if __has_feature(cxx_attributes) && __has_warning("-Wimplicit-fallthrough")
+#define FALLTHROUGH_INTENDED [[clang::fallthrough]]  // NOLINT
+#endif
+#endif
+
+#ifndef FALLTHROUGH_INTENDED
+#define FALLTHROUGH_INTENDED do { } while (0)
+#endif
 
 namespace open_vcdiff {
 
@@ -290,7 +302,7 @@ class VCDiffDeltaFileWindow {
   VCDiffCodeTableReader reader_;
 
   // Making these private avoids implicit copy constructor & assignment operator
-  VCDiffDeltaFileWindow(const VCDiffDeltaFileWindow&);  // NOLINT
+  VCDiffDeltaFileWindow(const VCDiffDeltaFileWindow&);
   void operator=(const VCDiffDeltaFileWindow&);
 };
 
@@ -549,10 +561,10 @@ class VCDiffStreamingDecoderImpl {
 
   VCDiffDeltaFileWindow delta_window_;
 
-  std::auto_ptr<VCDiffAddressCache> addr_cache_;
+  UNIQUE_PTR<VCDiffAddressCache> addr_cache_;
 
   // Will be NULL unless a custom code table has been defined.
-  std::auto_ptr<VCDiffCodeTableData> custom_code_table_;
+  UNIQUE_PTR<VCDiffCodeTableData> custom_code_table_;
 
   // Used to receive the decoded custom code table.
   string custom_code_table_string_;
@@ -561,7 +573,7 @@ class VCDiffStreamingDecoderImpl {
   // as an embedded VCDIFF delta file which uses the default code table
   // as the source file (dictionary).  Use a child decoder object
   // to decode that delta file.
-  std::auto_ptr<VCDiffStreamingDecoderImpl> custom_code_table_decoder_;
+  UNIQUE_PTR<VCDiffStreamingDecoderImpl> custom_code_table_decoder_;
 
   // If set, then the decoder is expecting *exactly* this number of
   // target bytes to be decoded from one or more delta file windows.
@@ -602,7 +614,7 @@ class VCDiffStreamingDecoderImpl {
   bool allow_vcd_target_;
 
   // Making these private avoids implicit copy constructor & assignment operator
-  VCDiffStreamingDecoderImpl(const VCDiffStreamingDecoderImpl&);  // NOLINT
+  VCDiffStreamingDecoderImpl(const VCDiffStreamingDecoderImpl&);
   void operator=(const VCDiffStreamingDecoderImpl&);
 };
 
@@ -694,22 +706,22 @@ VCDiffResult VCDiffStreamingDecoderImpl::ReadDeltaFileHeader(
         VCD_ERROR << "Unrecognized VCDIFF format version" << VCD_ENDL;
         return RESULT_ERROR;
       }
-      // fall through
+      FALLTHROUGH_INTENDED;
     case 3:
       if (header->header3 != 0xC4) {  // magic value 'D' | 0x80
         wrong_magic_number = true;
       }
-      // fall through
+      FALLTHROUGH_INTENDED;
     case 2:
       if (header->header2 != 0xC3) {  // magic value 'C' | 0x80
         wrong_magic_number = true;
       }
-      // fall through
+      FALLTHROUGH_INTENDED;
     case 1:
       if (header->header1 != 0xD6) {  // magic value 'V' | 0x80
         wrong_magic_number = true;
       }
-      // fall through
+      FALLTHROUGH_INTENDED;
     case 0:
       if (wrong_magic_number) {
         VCD_ERROR << "Did not find VCDIFF header bytes; "
@@ -717,6 +729,7 @@ VCDiffResult VCDiffStreamingDecoderImpl::ReadDeltaFileHeader(
         return RESULT_ERROR;
       }
       if (data_size < sizeof(DeltaFileHeader)) return RESULT_END_OF_DATA;
+      break;
   }
   // Secondary compressor not supported.
   if (header->hdr_indicator & VCD_DECOMPRESS) {
@@ -750,16 +763,29 @@ int VCDiffStreamingDecoderImpl::InitCustomCodeTable(const char* data_start,
   // cache sizes and begin parsing the encoded custom code table.
   int32_t near_cache_size = 0, same_cache_size = 0;
   VCDiffHeaderParser header_parser(data_start, data_end);
-  if (!header_parser.ParseInt32("size of near cache", &near_cache_size)) {
+  if (!header_parser.ParseInt32("size of near cache", &near_cache_size) ||
+      !header_parser.ParseInt32("size of same cache", &same_cache_size)) {
     return header_parser.GetResult();
   }
-  if (!header_parser.ParseInt32("size of same cache", &same_cache_size)) {
-    return header_parser.GetResult();
+
+  // We need not check for negative values, ParseInt32() will never return them.
+  if (near_cache_size > UCHAR_MAX) {
+    VCD_DFATAL << "Near cache size " << near_cache_size << " is invalid"
+               << VCD_ENDL;
+    return RESULT_ERROR;
   }
+  if (same_cache_size > UCHAR_MAX) {
+    VCD_DFATAL << "Same cache size " << same_cache_size << " is invalid"
+               << VCD_ENDL;
+    return RESULT_ERROR;
+  }
+
   custom_code_table_.reset(new struct VCDiffCodeTableData);
   memset(custom_code_table_.get(), 0, sizeof(struct VCDiffCodeTableData));
   custom_code_table_string_.clear();
-  addr_cache_.reset(new VCDiffAddressCache(near_cache_size, same_cache_size));
+  addr_cache_.reset(new VCDiffAddressCache(
+      static_cast<unsigned char>(near_cache_size),
+      static_cast<unsigned char>(same_cache_size)));
   // addr_cache_->Init() will be called
   // from VCDiffStreamingDecoderImpl::DecodeChunk()
 
@@ -1351,7 +1377,7 @@ VCDiffResult VCDiffDeltaFileWindow::DecodeWindow(
       } else {
         VCD_ERROR << "End of data reached while decoding VCDIFF delta file"
                   << VCD_ENDL;
-        // fall through to RESULT_ERROR case
+        FALLTHROUGH_INTENDED;
       }
     case RESULT_ERROR:
       return RESULT_ERROR;

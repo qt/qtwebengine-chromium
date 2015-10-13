@@ -29,8 +29,7 @@
 
 namespace blink {
 
-class CORE_EXPORT SVGAElement final : public SVGGraphicsElement,
-                          public SVGURIReference {
+class CORE_EXPORT SVGAElement final : public SVGGraphicsElement, public SVGURIReference {
     DEFINE_WRAPPERTYPEINFO();
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(SVGAElement);
 public:
@@ -54,8 +53,8 @@ private:
 
     bool supportsFocus() const override;
     bool shouldHaveFocusAppearance() const final;
-    void dispatchFocusEvent(Element* oldFocusedElement, WebFocusType) override;
-    void dispatchBlurEvent(Element* newFocusedElement, WebFocusType) override;
+    void dispatchFocusEvent(Element* oldFocusedElement, WebFocusType, InputDeviceCapabilities* sourceCapabilities) override;
+    void dispatchBlurEvent(Element* newFocusedElement, WebFocusType, InputDeviceCapabilities* sourceCapabilities) override;
     bool isMouseFocusable() const override;
     bool isKeyboardFocusable() const override;
     bool isURLAttribute(const Attribute&) const override;

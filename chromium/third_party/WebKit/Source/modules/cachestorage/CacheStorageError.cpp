@@ -8,16 +8,11 @@
 #include "core/dom/DOMException.h"
 #include "core/dom/ExceptionCode.h"
 #include "modules/cachestorage/Cache.h"
-#include "public/platform/WebServiceWorkerCacheError.h"
+#include "public/platform/modules/serviceworker/WebServiceWorkerCacheError.h"
 
 namespace blink {
 
-DOMException* CacheStorageError::take(ScriptPromiseResolver*, PassOwnPtr<WebType> webError)
-{
-    return CacheStorageError::createException(*webError);
-}
-
-DOMException* CacheStorageError::createException(WebType webError)
+DOMException* CacheStorageError::createException(WebServiceWorkerCacheError webError)
 {
     switch (webError) {
     case WebServiceWorkerCacheErrorNotImplemented:

@@ -30,7 +30,7 @@
 #include "core/dom/CrossThreadTask.h"
 #include "core/dom/ExceptionCode.h"
 #include "modules/EventModules.h"
-#include "modules/webaudio/AudioContext.h"
+#include "modules/webaudio/AbstractAudioContext.h"
 #include "platform/audio/AudioUtilities.h"
 #include "wtf/MathExtras.h"
 #include <algorithm>
@@ -41,10 +41,10 @@ const double AudioScheduledSourceHandler::UnknownTime = -1;
 
 AudioScheduledSourceHandler::AudioScheduledSourceHandler(NodeType nodeType, AudioNode& node, float sampleRate)
     : AudioHandler(nodeType, node, sampleRate)
-    , m_playbackState(UNSCHEDULED_STATE)
     , m_startTime(0)
     , m_endTime(UnknownTime)
     , m_hasEndedListener(false)
+    , m_playbackState(UNSCHEDULED_STATE)
 {
 }
 
@@ -74,7 +74,9 @@ void AudioScheduledSourceHandler::updateSchedulingInfo(
     if (m_endTime != UnknownTime && endFrame <= quantumStartFrame)
         finish();
 
-    if (m_playbackState == UNSCHEDULED_STATE || m_playbackState == FINISHED_STATE || startFrame >= quantumEndFrame) {
+    PlaybackState state = playbackState();
+
+    if (state == UNSCHEDULED_STATE || state == FINISHED_STATE || startFrame >= quantumEndFrame) {
         // Output silence.
         outputBus->zero();
         nonSilentFramesToProcess = 0;
@@ -82,9 +84,9 @@ void AudioScheduledSourceHandler::updateSchedulingInfo(
     }
 
     // Check if it's time to start playing.
-    if (m_playbackState == SCHEDULED_STATE) {
+    if (state == SCHEDULED_STATE) {
         // Increment the active source count only if we're transitioning from SCHEDULED_STATE to PLAYING_STATE.
-        m_playbackState = PLAYING_STATE;
+        setPlaybackState(PLAYING_STATE);
     }
 
     quantumFrameOffset = startFrame > quantumStartFrame ? startFrame - quantumStartFrame : 0;
@@ -134,7 +136,7 @@ void AudioScheduledSourceHandler::start(double when, ExceptionState& exceptionSt
 {
     ASSERT(isMainThread());
 
-    if (m_playbackState != UNSCHEDULED_STATE) {
+    if (playbackState() != UNSCHEDULED_STATE) {
         exceptionState.throwDOMException(
             InvalidStateError,
             "cannot call start more than once.");
@@ -151,6 +153,10 @@ void AudioScheduledSourceHandler::start(double when, ExceptionState& exceptionSt
         return;
     }
 
+    // This synchronizes with process(). updateSchedulingInfo will read some of the variables being
+    // set here.
+    MutexLocker processLocker(m_processLock);
+
     // The node is started. Add a reference to keep us alive so that audio will eventually get
     // played even if Javascript should drop all references to this node. The reference will get
     // dropped when the source has finished playing.
@@ -160,14 +166,14 @@ void AudioScheduledSourceHandler::start(double when, ExceptionState& exceptionSt
     // So just set startTime to currentTime in this case to start the source now.
     m_startTime = std::max(when, context()->currentTime());
 
-    m_playbackState = SCHEDULED_STATE;
+    setPlaybackState(SCHEDULED_STATE);
 }
 
 void AudioScheduledSourceHandler::stop(double when, ExceptionState& exceptionState)
 {
     ASSERT(isMainThread());
 
-    if (m_playbackState == UNSCHEDULED_STATE) {
+    if (playbackState() == UNSCHEDULED_STATE) {
         exceptionState.throwDOMException(
             InvalidStateError,
             "cannot call stop without calling start first.");
@@ -184,6 +190,9 @@ void AudioScheduledSourceHandler::stop(double when, ExceptionState& exceptionSta
         return;
     }
 
+    // This synchronizes with process()
+    MutexLocker processLocker(m_processLock);
+
     // stop() can be called more than once, with the last call to stop taking effect, unless the
     // source has already stopped due to earlier calls to stop. No exceptions are thrown in any
     // case.
@@ -193,10 +202,10 @@ void AudioScheduledSourceHandler::stop(double when, ExceptionState& exceptionSta
 
 void AudioScheduledSourceHandler::finishWithoutOnEnded()
 {
-    if (m_playbackState != FINISHED_STATE) {
+    if (playbackState() != FINISHED_STATE) {
         // Let the context dereference this AudioNode.
         context()->notifySourceNodeFinishedProcessing(this);
-        m_playbackState = FINISHED_STATE;
+        setPlaybackState(FINISHED_STATE);
     }
 }
 void AudioScheduledSourceHandler::finish()
@@ -217,7 +226,7 @@ void AudioScheduledSourceHandler::notifyEnded()
 
 // ----------------------------------------------------------------
 
-AudioScheduledSourceNode::AudioScheduledSourceNode(AudioContext& context)
+AudioScheduledSourceNode::AudioScheduledSourceNode(AbstractAudioContext& context)
     : AudioSourceNode(context)
 {
 }
@@ -252,7 +261,7 @@ EventListener* AudioScheduledSourceNode::onended()
     return getAttributeEventListener(EventTypeNames::ended);
 }
 
-void AudioScheduledSourceNode::setOnended(PassRefPtr<EventListener> listener)
+void AudioScheduledSourceNode::setOnended(PassRefPtrWillBeRawPtr<EventListener> listener)
 {
     audioScheduledSourceHandler().setHasEndedListener();
     setAttributeEventListener(EventTypeNames::ended, listener);

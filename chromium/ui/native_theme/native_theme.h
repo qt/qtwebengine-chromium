@@ -239,6 +239,7 @@ class NATIVE_THEME_EXPORT NativeTheme {
     kColorId_WindowBackground,
     // Dialogs
     kColorId_DialogBackground,
+    kColorId_BubbleBackground,
     // FocusableBorder
     kColorId_FocusedBorderColor,
     kColorId_UnfocusedBorderColor,
@@ -272,6 +273,10 @@ class NATIVE_THEME_EXPORT NativeTheme {
     kColorId_LabelEnabledColor,
     kColorId_LabelDisabledColor,
     kColorId_LabelBackgroundColor,
+    // Link
+    kColorId_LinkDisabled,
+    kColorId_LinkEnabled,
+    kColorId_LinkPressed,
     // Textfield
     kColorId_TextfieldDefaultColor,
     kColorId_TextfieldDefaultBackground,

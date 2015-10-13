@@ -41,9 +41,9 @@ namespace blink {
 
 class TextTrack;
 
-class TextTrackCue : public EventTargetWithInlineData, public RefCountedWillBeNoBase<TextTrackCue> {
+class TextTrackCue : public RefCountedGarbageCollectedEventTargetWithInlineData<TextTrackCue> {
     DEFINE_WRAPPERTYPEINFO();
-    REFCOUNTED_EVENT_TARGET(TextTrackCue);
+    REFCOUNTED_GARBAGE_COLLECTED_EVENT_TARGET(TextTrackCue);
 public:
     static const AtomicString& cueShadowPseudoId()
     {
@@ -73,9 +73,6 @@ public:
     unsigned cueIndex();
     void updateCueIndex(unsigned cueIndex) { m_cueIndex = cueIndex; }
     void invalidateCueIndex();
-
-    using EventTarget::dispatchEvent;
-    bool dispatchEvent(PassRefPtrWillBeRawPtr<Event>) override;
 
     bool isActive() const { return m_isActive; }
     void setIsActive(bool active) { m_isActive = active; }
@@ -112,13 +109,14 @@ protected:
 
     void cueWillChange();
     virtual void cueDidChange();
+    bool dispatchEventInternal(PassRefPtrWillBeRawPtr<Event>) override;
 
 private:
     AtomicString m_id;
     double m_startTime;
     double m_endTime;
 
-    RawPtrWillBeMember<TextTrack> m_track;
+    Member<TextTrack> m_track;
 
     unsigned m_cueIndex;
 

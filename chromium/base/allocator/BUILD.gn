@@ -4,14 +4,47 @@
 
 import("//build/config/allocator.gni")
 
+declare_args() {
+  # Provide a way to force disable debugallocation in Debug builds,
+  # e.g. for profiling (it's more rare to profile Debug builds,
+  # but people sometimes need to do that).
+  enable_debugallocation = is_debug
+}
+
 # Only executables and not libraries should depend on the allocator target;
 # only the application (the final executable) knows what allocator makes sense.
 # This "allocator" meta-target will forward to the default allocator according
 # to the build settings.
 group("allocator") {
+  public_deps = []
   if (use_allocator == "tcmalloc") {
-    deps = [
-      ":tcmalloc",
+    public_deps += [ ":tcmalloc" ]
+  }
+
+  # This condition expresses the win_use_allocator_shim in the GYP build.
+  if (is_win && !is_component_build) {
+    public_deps += [ ":allocator_shim" ]
+  }
+}
+
+# This config defines ALLOCATOR_SHIM in the same conditions that the allocator
+# shim will be used by the allocator target.
+#
+# TODO(brettw) this is only used in one place and is kind of mess, because it
+# assumes that the library using it will eventually be linked with
+# //base/allocator in the default way. Clean this up and delete this.
+config("allocator_shim_define") {
+  if (is_win && !is_component_build) {
+    defines = [ "ALLOCATOR_SHIM" ]
+  }
+}
+
+config("tcmalloc_flags") {
+  if (enable_debugallocation) {
+    defines = [
+      # Use debugallocation for Debug builds to catch problems early
+      # and cleanly, http://crbug.com/30715 .
+      "TCMALLOC_FOR_DEBUGALLOCATION",
     ]
   }
 }
@@ -28,16 +61,31 @@ if (is_win) {
     libs = [ rebase_path("$target_gen_dir/allocator/libcmt.lib") ]
   }
 
-  action("prep_libc") {
-    script = "prep_libc.py"
-    outputs = [
-      "$target_gen_dir/allocator/libcmt.lib",
-    ]
-    args = [
-      visual_studio_path + "/vc/lib",
-      rebase_path("$target_gen_dir/allocator"),
-      current_cpu,
-    ]
+  if (!is_component_build) {
+    action("prep_libc") {
+      script = "prep_libc.py"
+      outputs = [
+        "$target_gen_dir/allocator/libcmt.lib",
+      ]
+      args = [
+        visual_studio_path + "/vc/lib",
+        rebase_path("$target_gen_dir/allocator"),
+        current_cpu,
+      ]
+    }
+
+    source_set("allocator_shim") {
+      sources = [
+        "allocator_shim_win.cc",
+      ]
+      configs -= [ "//build/config/compiler:chromium_code" ]
+      configs += [ "//build/config/compiler:no_chromium_code" ]
+
+      public_configs = [ ":nocmt" ]
+      deps = [
+        ":prep_libc",
+      ]
+    }
   }
 }
 
@@ -52,7 +100,7 @@ if (use_allocator == "tcmalloc") {
     check_includes = false
 
     sources = [
-      # Generated for our configuration from tcmalloc"s build
+      # Generated for our configuration from tcmalloc's build
       # and checked in.
       "$tcmalloc_dir/src/config.h",
       "$tcmalloc_dir/src/config_android.h",
@@ -103,8 +151,6 @@ if (use_allocator == "tcmalloc") {
 
       # #included by debugallocation_shim.cc
       #"$tcmalloc_dir/src/debugallocation.cc",
-      "$tcmalloc_dir/src/deep-heap-profile.cc",
-      "$tcmalloc_dir/src/deep-heap-profile.h",
       "$tcmalloc_dir/src/free_list.cc",
       "$tcmalloc_dir/src/free_list.h",
       "$tcmalloc_dir/src/heap-profile-table.cc",
@@ -149,7 +195,6 @@ if (use_allocator == "tcmalloc") {
       "$tcmalloc_dir/src/thread_cache.h",
       "$tcmalloc_dir/src/windows/port.cc",
       "$tcmalloc_dir/src/windows/port.h",
-      "allocator_shim.cc",
       "debugallocation_shim.cc",
 
       # These are both #included by allocator_shim for maximal linking.
@@ -167,7 +212,10 @@ if (use_allocator == "tcmalloc") {
     ]
 
     configs -= [ "//build/config/compiler:chromium_code" ]
-    configs += [ "//build/config/compiler:no_chromium_code" ]
+    configs += [
+      "//build/config/compiler:no_chromium_code",
+      ":tcmalloc_flags",
+    ]
 
     deps = []
 
@@ -184,9 +232,6 @@ if (use_allocator == "tcmalloc") {
         "$tcmalloc_dir/src/symbolize.h",
         "$tcmalloc_dir/src/system-alloc.cc",
         "$tcmalloc_dir/src/system-alloc.h",
-
-        # included by allocator_shim.cc
-        "debugallocation_shim.cc",
 
         # cpuprofiler
         "$tcmalloc_dir/src/base/thread_lister.c",
@@ -215,9 +260,6 @@ if (use_allocator == "tcmalloc") {
         "$tcmalloc_dir/src/system-alloc.h",
         "$tcmalloc_dir/src/windows/port.cc",
         "$tcmalloc_dir/src/windows/port.h",
-
-        # TODO(willchan): Support allocator shim later on.
-        "allocator_shim.cc",
       ]
 
       # We enable all warnings by default, but upstream disables a few.
@@ -245,7 +287,7 @@ if (use_allocator == "tcmalloc") {
     # Make sure the allocation library is optimized as much as possible when
     # we"re in release mode.
     if (!is_debug) {
-      configs -= [ "//build/config/compiler:optimize" ]
+      configs -= [ "//build/config/compiler:default_optimization" ]
       configs += [ "//build/config/compiler:optimize_max" ]
     }
 
@@ -264,7 +306,7 @@ source_set("allocator_extension_thunks") {
     "allocator_extension_thunks.h",
   ]
   if (is_android && !is_debug) {
-    configs -= [ "//build/config/compiler:optimize" ]
+    configs -= [ "//build/config/compiler:default_optimization" ]
     configs += [ "//build/config/compiler:optimize_max" ]
   }
 }

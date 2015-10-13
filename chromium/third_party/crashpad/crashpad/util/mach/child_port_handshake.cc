@@ -36,6 +36,7 @@
 #include "util/mach/mach_extensions.h"
 #include "util/mach/mach_message.h"
 #include "util/mach/mach_message_server.h"
+#include "util/misc/implicit_cast.h"
 
 namespace crashpad {
 
@@ -319,8 +320,8 @@ void ChildPortHandshake::RunClientInternal_ReadPipe(int pipe_read,
   DCHECK_LT(service_name_length,
             implicit_cast<uint32_t>(BOOTSTRAP_MAX_NAME_LEN));
 
-  if (service_name_length > 0) {
-    service_name->resize(service_name_length);
+  service_name->resize(service_name_length);
+  if (!service_name->empty()) {
     CheckedReadFile(pipe_read, &(*service_name)[0], service_name_length);
   }
 }

@@ -148,7 +148,7 @@ ShadowRoot& ElementShadow::addShadowRoot(Element& shadowHost, ShadowRootType typ
     EventDispatchForbiddenScope assertNoEventDispatch;
     ScriptForbiddenScope forbidScript;
 
-    if (type == ShadowRootType::Open) {
+    if (type == ShadowRootType::OpenByDefault) {
         if (!youngestShadowRoot()) {
             shadowHost.willAddFirstAuthorShadowRoot();
         } else if (youngestShadowRoot()->type() == ShadowRootType::UserAgent) {
@@ -157,6 +157,8 @@ ShadowRoot& ElementShadow::addShadowRoot(Element& shadowHost, ShadowRootType typ
         } else {
             UseCounter::countDeprecation(shadowHost.document(), UseCounter::ElementCreateShadowRootMultiple);
         }
+    } else if (type == ShadowRootType::Open || type == ShadowRootType::Closed) {
+        shadowHost.willAddFirstAuthorShadowRoot();
     }
 
     for (ShadowRoot* root = youngestShadowRoot(); root; root = root->olderShadowRoot())
@@ -352,10 +354,7 @@ void ElementShadow::collectSelectFeatureSetFrom(ShadowRoot& root)
         if (!isHTMLContentElement(element))
             continue;
         const CSSSelectorList& list = toHTMLContentElement(element).selectorList();
-        for (const CSSSelector* selector = list.first(); selector; selector = CSSSelectorList::next(*selector)) {
-            for (const CSSSelector* component = selector; component; component = component->tagHistory())
-                m_selectFeatures.collectFeaturesFromSelector(*component);
-        }
+        m_selectFeatures.collectFeaturesFromSelectorList(list);
     }
 }
 

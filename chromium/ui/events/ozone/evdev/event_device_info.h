@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "base/basictypes.h"
+#include "ui/events/devices/input_device.h"
 #include "ui/events/ozone/evdev/event_device_util.h"
 #include "ui/events/ozone/evdev/events_ozone_evdev_export.h"
 
@@ -23,6 +24,10 @@
 #define EVDEV_ABS_MT_FIRST ABS_MT_TOUCH_MAJOR
 #define EVDEV_ABS_MT_LAST ABS_MT_TOOL_Y
 #define EVDEV_ABS_MT_COUNT (EVDEV_ABS_MT_LAST - EVDEV_ABS_MT_FIRST + 1)
+
+namespace base {
+class FilePath;
+}
 
 namespace ui {
 
@@ -47,7 +52,7 @@ class EVENTS_OZONE_EVDEV_EXPORT EventDeviceInfo {
   ~EventDeviceInfo();
 
   // Initialize device information from an open device.
-  bool Initialize(int fd);
+  bool Initialize(int fd, const base::FilePath& path);
 
   // Manual initialization.
   void SetEventTypes(const unsigned long* ev_bits, size_t len);
@@ -61,6 +66,7 @@ class EVENTS_OZONE_EVDEV_EXPORT EventDeviceInfo {
   void SetAbsInfo(unsigned int code, const input_absinfo& absinfo);
   void SetAbsMtSlots(unsigned int code, const std::vector<int32_t>& values);
   void SetAbsMtSlot(unsigned int code, unsigned int slot, uint32_t value);
+  void SetDeviceType(InputDeviceType type);
 
   // Check events this device can generate.
   bool HasEventType(unsigned int type) const;
@@ -131,6 +137,9 @@ class EVENTS_OZONE_EVDEV_EXPORT EventDeviceInfo {
   // Determine whether there's a touchscreen on this device.
   bool HasTouchscreen() const;
 
+  // The device type (internal or external.)
+  InputDeviceType device_type() const { return device_type_; }
+
  private:
   enum class LegacyAbsoluteDeviceType {
     LADT_TOUCHPAD,
@@ -161,6 +170,9 @@ class EVENTS_OZONE_EVDEV_EXPORT EventDeviceInfo {
   std::string name_;
   uint16_t vendor_id_;
   uint16_t product_id_;
+
+  // Whether this is an internal or external device.
+  InputDeviceType device_type_ = InputDeviceType::INPUT_DEVICE_UNKNOWN;
 
   DISALLOW_COPY_AND_ASSIGN(EventDeviceInfo);
 };

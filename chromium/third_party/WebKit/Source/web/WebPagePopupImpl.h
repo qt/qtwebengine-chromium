@@ -93,6 +93,7 @@ private:
     bool handleMouseWheel(LocalFrame& mainFrame, const WebMouseWheelEvent&) override;
 
     bool isMouseEventInWindow(const WebMouseEvent&);
+    bool isGestureEventInWindow(const WebGestureEvent&);
 
     // PagePopup function
     AXObject* rootAXObject() override;
@@ -108,7 +109,7 @@ private:
     WebRect m_windowRectInScreen;
     WebViewImpl* m_webView;
     OwnPtrWillBePersistent<Page> m_page;
-    OwnPtr<PagePopupChromeClient> m_chromeClient;
+    OwnPtrWillBePersistent<PagePopupChromeClient> m_chromeClient;
     PagePopupClient* m_popupClient;
     bool m_closing;
 

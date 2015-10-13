@@ -22,21 +22,20 @@ namespace content {
 
 namespace {
 
-base::LazyInstance<base::ThreadLocalPointer<GeofencingDispatcher>>::Leaky
-    g_dispatcher_tls = LAZY_INSTANCE_INITIALIZER;
+base::LazyInstance<base::ThreadLocalPointer<void>>::Leaky g_dispatcher_tls =
+    LAZY_INSTANCE_INITIALIZER;
 
-GeofencingDispatcher* const kHasBeenDeleted =
-    reinterpret_cast<GeofencingDispatcher*>(0x1);
+void* const kHasBeenDeleted = reinterpret_cast<void*>(0x1);
 
 int CurrentWorkerId() {
-  return WorkerTaskRunner::Instance()->CurrentWorkerId();
+  return WorkerThread::GetCurrentId();
 }
 
 }  // namespace
 
 GeofencingDispatcher::GeofencingDispatcher(ThreadSafeSender* sender)
     : thread_safe_sender_(sender) {
-  g_dispatcher_tls.Pointer()->Set(this);
+  g_dispatcher_tls.Pointer()->Set(static_cast<void*>(this));
 }
 
 GeofencingDispatcher::~GeofencingDispatcher() {
@@ -141,19 +140,20 @@ GeofencingDispatcher* GeofencingDispatcher::GetOrCreateThreadSpecificInstance(
     g_dispatcher_tls.Pointer()->Set(NULL);
   }
   if (g_dispatcher_tls.Pointer()->Get())
-    return g_dispatcher_tls.Pointer()->Get();
+    return static_cast<GeofencingDispatcher*>(
+        g_dispatcher_tls.Pointer()->Get());
 
   GeofencingDispatcher* dispatcher =
       new GeofencingDispatcher(thread_safe_sender);
-  if (WorkerTaskRunner::Instance()->CurrentWorkerId())
-    WorkerTaskRunner::Instance()->AddStopObserver(dispatcher);
+  if (WorkerThread::GetCurrentId())
+    WorkerThread::AddObserver(dispatcher);
   return dispatcher;
 }
 
 GeofencingDispatcher* GeofencingDispatcher::GetThreadSpecificInstance() {
   if (g_dispatcher_tls.Pointer()->Get() == kHasBeenDeleted)
     return NULL;
-  return g_dispatcher_tls.Pointer()->Get();
+  return static_cast<GeofencingDispatcher*>(g_dispatcher_tls.Pointer()->Get());
 }
 
 void GeofencingDispatcher::OnRegisterRegionComplete(int thread_id,
@@ -166,7 +166,7 @@ void GeofencingDispatcher::OnRegisterRegionComplete(int thread_id,
   if (status == GEOFENCING_STATUS_OK) {
     callbacks->onSuccess();
   } else {
-    callbacks->onError(new WebGeofencingError(
+    callbacks->onError(WebGeofencingError(
         WebGeofencingError::ErrorTypeAbort,
         blink::WebString::fromUTF8(GeofencingStatusToString(status))));
   }
@@ -183,7 +183,7 @@ void GeofencingDispatcher::OnUnregisterRegionComplete(int thread_id,
   if (status == GEOFENCING_STATUS_OK) {
     callbacks->onSuccess();
   } else {
-    callbacks->onError(new WebGeofencingError(
+    callbacks->onError(WebGeofencingError(
         WebGeofencingError::ErrorTypeAbort,
         blink::WebString::fromUTF8(GeofencingStatusToString(status))));
   }
@@ -200,25 +200,24 @@ void GeofencingDispatcher::OnGetRegisteredRegionsComplete(
   DCHECK(callbacks);
 
   if (status == GEOFENCING_STATUS_OK) {
-    scoped_ptr<blink::WebVector<blink::WebGeofencingRegistration>> result(
-        new blink::WebVector<blink::WebGeofencingRegistration>(regions.size()));
+    blink::WebVector<blink::WebGeofencingRegistration> result(regions.size());
     size_t index = 0;
     for (GeofencingRegistrations::const_iterator it = regions.begin();
          it != regions.end();
          ++it, ++index) {
-      (*result)[index].id = blink::WebString::fromUTF8(it->first);
-      (*result)[index].region = it->second;
+      result[index].id = blink::WebString::fromUTF8(it->first);
+      result[index].region = it->second;
     }
-    callbacks->onSuccess(result.release());
+    callbacks->onSuccess(result);
   } else {
-    callbacks->onError(new WebGeofencingError(
+    callbacks->onError(WebGeofencingError(
         WebGeofencingError::ErrorTypeAbort,
         blink::WebString::fromUTF8(GeofencingStatusToString(status))));
   }
   get_registered_regions_requests_.Remove(request_id);
 }
 
-void GeofencingDispatcher::OnWorkerRunLoopStopped() {
+void GeofencingDispatcher::WillStopCurrentWorkerThread() {
   delete this;
 }
 

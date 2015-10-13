@@ -18,6 +18,7 @@
 #include "content/browser/site_instance_impl.h"
 #include "content/browser/webui/web_ui_controller_factory_registry.h"
 #include "content/common/frame_messages.h"
+#include "content/common/site_isolation_policy.h"
 #include "content/common/view_messages.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
@@ -35,6 +36,7 @@
 #include "content/public/common/url_utils.h"
 #include "content/public/test/mock_render_process_host.h"
 #include "content/public/test/test_notification_tracker.h"
+#include "content/public/test/test_utils.h"
 #include "content/test/test_content_browser_client.h"
 #include "content/test/test_content_client.h"
 #include "content/test/test_render_frame_host.h"
@@ -174,36 +176,6 @@ class RenderFrameHostCreatedObserver : public WebContentsObserver {
   DISALLOW_COPY_AND_ASSIGN(RenderFrameHostCreatedObserver);
 };
 
-// This observer keeps track of the last deleted RenderFrameHost to avoid
-// accessing it and causing use-after-free condition.
-class RenderFrameHostDeletedObserver : public WebContentsObserver {
- public:
-  RenderFrameHostDeletedObserver(RenderFrameHost* rfh)
-      : WebContentsObserver(WebContents::FromRenderFrameHost(rfh)),
-        process_id_(rfh->GetProcess()->GetID()),
-        routing_id_(rfh->GetRoutingID()),
-        deleted_(false) {
-  }
-
-  void RenderFrameDeleted(RenderFrameHost* render_frame_host) override {
-    if (render_frame_host->GetProcess()->GetID() == process_id_ &&
-        render_frame_host->GetRoutingID() == routing_id_) {
-      deleted_ = true;
-    }
-  }
-
-  bool deleted() {
-    return deleted_;
-  }
-
- private:
-  int process_id_;
-  int routing_id_;
-  bool deleted_;
-
-  DISALLOW_COPY_AND_ASSIGN(RenderFrameHostDeletedObserver);
-};
-
 // This WebContents observer keep track of its RVH change.
 class RenderViewHostChangedObserver : public WebContentsObserver {
  public:
@@ -323,7 +295,7 @@ class RenderFrameHostManagerTest : public RenderViewHostImplTestHarness {
 
     // Use an observer to avoid accessing a deleted renderer later on when the
     // state is being checked.
-    RenderFrameHostDeletedObserver rfh_observer(old_rfh);
+    RenderFrameDeletedObserver rfh_observer(old_rfh);
     RenderViewHostDeletedObserver rvh_observer(old_rfh->GetRenderViewHost());
     active_rfh->SendNavigate(max_page_id + 1, entry_id, true, url);
 
@@ -333,7 +305,7 @@ class RenderFrameHostManagerTest : public RenderViewHostImplTestHarness {
       EXPECT_EQ(RenderFrameHostImpl::STATE_PENDING_SWAP_OUT,
                 old_rfh->rfh_state());
       if (!old_rfh->GetSiteInstance()->active_frame_count() ||
-          RenderFrameHostManager::IsSwappedOutStateForbidden()) {
+          SiteIsolationPolicy::IsSwappedOutStateForbidden()) {
         expecting_rfh_shutdown = true;
         EXPECT_TRUE(
             old_rfh->frame_tree_node()->render_manager()->IsPendingDeletion(
@@ -347,7 +319,7 @@ class RenderFrameHostManagerTest : public RenderViewHostImplTestHarness {
       old_rfh->OnSwappedOut();
       if (expecting_rfh_shutdown) {
         EXPECT_TRUE(rfh_observer.deleted());
-        if (!RenderFrameHostManager::IsSwappedOutStateForbidden()) {
+        if (!SiteIsolationPolicy::IsSwappedOutStateForbidden()) {
           EXPECT_TRUE(rvh_observer.deleted());
         }
       } else {
@@ -448,6 +420,15 @@ class RenderFrameHostManagerTest : public RenderViewHostImplTestHarness {
       return manager->speculative_render_frame_host_.get();
     }
     return manager->pending_frame_host();
+  }
+
+  // Exposes RenderFrameHostManager::CollectOpenerFrameTrees for testing.
+  void CollectOpenerFrameTrees(
+      FrameTreeNode* node,
+      std::vector<FrameTree*>* opener_frame_trees,
+      base::hash_set<FrameTreeNode*>* nodes_with_back_links) {
+    node->render_manager()->CollectOpenerFrameTrees(opener_frame_trees,
+                                                    nodes_with_back_links);
   }
 
  private:
@@ -580,7 +561,7 @@ TEST_F(RenderFrameHostManagerTest, FilterMessagesWhileSwappedOut) {
 
   // In --site-per-process, the RenderFrameHost is deleted on cross-process
   // navigation, so the rest of the test case doesn't apply.
-  if (RenderFrameHostManager::IsSwappedOutStateForbidden()) {
+  if (SiteIsolationPolicy::IsSwappedOutStateForbidden()) {
     return;
   }
 
@@ -690,7 +671,7 @@ TEST_F(RenderFrameHostManagerTest, DropCreateChildFrameWhileSwappedOut) {
 
   // This test is invalid in --site-per-process mode, as swapped-out is no
   // longer used.
-  if (RenderFrameHostManager::IsSwappedOutStateForbidden()) {
+  if (SiteIsolationPolicy::IsSwappedOutStateForbidden()) {
     return;
   }
 
@@ -734,7 +715,7 @@ TEST_F(RenderFrameHostManagerTest, DropCreateChildFrameWhileSwappedOut) {
 TEST_F(RenderFrameHostManagerTest, WhiteListSwapCompositorFrame) {
   // TODO(nasko): Check with kenrb whether this test can be rewritten and
   // whether it makes sense when swapped out is replaced with proxies.
-  if (RenderFrameHostManager::IsSwappedOutStateForbidden()) {
+  if (SiteIsolationPolicy::IsSwappedOutStateForbidden()) {
     return;
   }
   TestRenderFrameHost* swapped_out_rfh = CreateSwappedOutRenderFrameHost();
@@ -759,7 +740,7 @@ TEST_F(RenderFrameHostManagerTest, WhiteListSwapCompositorFrame) {
 TEST_F(RenderFrameHostManagerTest, GetRenderWidgetHostsReturnsActiveViews) {
   // This test is invalid in --site-per-process mode, as swapped-out is no
   // longer used.
-  if (RenderFrameHostManager::IsSwappedOutStateForbidden()) {
+  if (SiteIsolationPolicy::IsSwappedOutStateForbidden()) {
     return;
   }
 
@@ -786,7 +767,7 @@ TEST_F(RenderFrameHostManagerTest,
        GetRenderWidgetHostsWithinGetAllRenderWidgetHosts) {
   // This test is invalid in --site-per-process mode, as swapped-out is no
   // longer used.
-  if (RenderFrameHostManager::IsSwappedOutStateForbidden()) {
+  if (SiteIsolationPolicy::IsSwappedOutStateForbidden()) {
     return;
   }
 
@@ -1246,6 +1227,21 @@ TEST_F(RenderFrameHostManagerTest, WebUIWasCleared) {
 // Also tests that only user-gesture navigations can interrupt cross-process
 // navigations. http://crbug.com/75195
 TEST_F(RenderFrameHostManagerTest, PageDoesBackAndReload) {
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableBrowserSideNavigation)) {
+    // PlzNavigate uses a significantly different logic for renderer initiated
+    // navigations and navigation cancellation. Adapting this test would make it
+    // full of special cases and almost unreadable.
+    // There are tests that exercise these concerns for PlzNavigate, all from
+    // NavigatorTestWithBrowserSideNavigation:
+    // - BrowserInitiatedNavigationCancel
+    // - RendererUserInitiatedNavigationCancel
+    // - RendererNonUserInitiatedNavigationDoesntCancelRendererUserInitiated
+    // - RendererNonUserInitiatedNavigationDoesntCancelBrowserInitiated
+    // - RendererNonUserInitiatedNavigationCancelSimilarNavigation
+    SUCCEED() << "Test is not applicable with browser side navigation enabled";
+    return;
+  }
   const GURL kUrl1("http://www.google.com/");
   const GURL kUrl2("http://www.evil-site.com/");
 
@@ -1280,8 +1276,9 @@ TEST_F(RenderFrameHostManagerTest, PageDoesBackAndReload) {
   params.is_post = false;
   params.page_state = PageState::CreateFromURL(kUrl2);
 
-  contents()->GetFrameTree()->root()->navigator()->DidNavigate(evil_rfh,
-                                                               params);
+  evil_rfh->SimulateNavigationStart(kUrl2);
+  evil_rfh->SendNavigateWithParams(&params);
+  evil_rfh->SimulateNavigationStop();
 
   // That should NOT have cancelled the pending RFH, because the reload did
   // not have a user gesture. Thus, the pending back navigation will still
@@ -1303,8 +1300,9 @@ TEST_F(RenderFrameHostManagerTest, PageDoesBackAndReload) {
 
   // Now do the same but as a user gesture.
   params.gesture = NavigationGestureUser;
-  contents()->GetFrameTree()->root()->navigator()->DidNavigate(evil_rfh,
-                                                               params);
+  evil_rfh->SimulateNavigationStart(kUrl2);
+  evil_rfh->SendNavigateWithParams(&params);
+  evil_rfh->SimulateNavigationStop();
 
   // User navigation should have cancelled the pending RFH.
   EXPECT_TRUE(contents()->GetRenderManagerForTesting()->
@@ -1363,7 +1361,7 @@ TEST_F(RenderFrameHostManagerTest, NavigateAfterMissingSwapOutACK) {
   contents()->GetPendingMainFrame()->SendNavigate(
       entry2->GetPageID(), entry2->GetUniqueID(), false, entry2->GetURL());
   EXPECT_EQ(RenderFrameHostImpl::STATE_DEFAULT, main_test_rfh()->rfh_state());
-  if (!RenderFrameHostManager::IsSwappedOutStateForbidden()) {
+  if (!SiteIsolationPolicy::IsSwappedOutStateForbidden()) {
     EXPECT_EQ(rfh2, main_test_rfh());
     EXPECT_EQ(RenderFrameHostImpl::STATE_PENDING_SWAP_OUT, rfh1->rfh_state());
     rfh1->OnSwappedOut();
@@ -1385,7 +1383,7 @@ TEST_F(RenderFrameHostManagerTest, CreateSwappedOutOpenerRFHs) {
   RenderFrameHostManager* manager = contents()->GetRenderManagerForTesting();
   TestRenderFrameHost* rfh1 = main_test_rfh();
   scoped_refptr<SiteInstanceImpl> site_instance1 = rfh1->GetSiteInstance();
-  RenderFrameHostDeletedObserver rfh1_deleted_observer(rfh1);
+  RenderFrameDeletedObserver rfh1_deleted_observer(rfh1);
   TestRenderViewHost* rvh1 = test_rvh();
 
   // Create 2 new tabs and simulate them being the opener chain for the main
@@ -1411,7 +1409,7 @@ TEST_F(RenderFrameHostManagerTest, CreateSwappedOutOpenerRFHs) {
   EXPECT_TRUE(site_instance1->IsRelatedSiteInstance(rfh2->GetSiteInstance()));
 
   // Ensure rvh1 is placed on swapped out list of the current tab.
-  if (!RenderFrameHostManager::IsSwappedOutStateForbidden()) {
+  if (!SiteIsolationPolicy::IsSwappedOutStateForbidden()) {
     EXPECT_TRUE(manager->IsRVHOnSwappedOutList(rvh1));
     EXPECT_FALSE(rfh1_deleted_observer.deleted());
     EXPECT_TRUE(manager->IsOnSwappedOutList(rfh1));
@@ -1431,7 +1429,7 @@ TEST_F(RenderFrameHostManagerTest, CreateSwappedOutOpenerRFHs) {
   RenderFrameHostImpl* opener1_rfh = opener1_proxy->render_frame_host();
   TestRenderViewHost* opener1_rvh = static_cast<TestRenderViewHost*>(
       opener1_manager->GetSwappedOutRenderViewHost(rvh2->GetSiteInstance()));
-  if (!RenderFrameHostManager::IsSwappedOutStateForbidden()) {
+  if (!SiteIsolationPolicy::IsSwappedOutStateForbidden()) {
     EXPECT_TRUE(opener1_manager->IsOnSwappedOutList(opener1_rfh));
     EXPECT_TRUE(opener1_manager->IsRVHOnSwappedOutList(opener1_rvh));
     EXPECT_TRUE(opener1_rfh->is_swapped_out());
@@ -1446,7 +1444,7 @@ TEST_F(RenderFrameHostManagerTest, CreateSwappedOutOpenerRFHs) {
   RenderFrameHostImpl* opener2_rfh = opener2_proxy->render_frame_host();
   TestRenderViewHost* opener2_rvh = static_cast<TestRenderViewHost*>(
       opener2_manager->GetSwappedOutRenderViewHost(rvh2->GetSiteInstance()));
-  if (!RenderFrameHostManager::IsSwappedOutStateForbidden()) {
+  if (!SiteIsolationPolicy::IsSwappedOutStateForbidden()) {
     EXPECT_TRUE(opener2_manager->IsOnSwappedOutList(opener2_rfh));
     EXPECT_TRUE(opener2_manager->IsRVHOnSwappedOutList(opener2_rvh));
     EXPECT_TRUE(opener2_rfh->is_swapped_out());
@@ -1496,7 +1494,7 @@ TEST_F(RenderFrameHostManagerTest, DisownOpener) {
   EXPECT_NE(site_instance1, rfh2->GetSiteInstance());
 
   // Disown the opener from rfh2.
-  rfh2->DidDisownOpener();
+  rfh2->DidChangeOpener(MSG_ROUTING_NONE);
 
   // Ensure the opener is cleared.
   EXPECT_FALSE(contents()->HasOpener());
@@ -1517,7 +1515,7 @@ TEST_F(RenderFrameHostManagerTest, DisownSameSiteOpener) {
   EXPECT_TRUE(contents()->HasOpener());
 
   // Disown the opener from rfh1.
-  rfh1->DidDisownOpener();
+  rfh1->DidChangeOpener(MSG_ROUTING_NONE);
 
   // Ensure the opener is cleared even if it is in the same process.
   EXPECT_FALSE(contents()->HasOpener());
@@ -1551,7 +1549,7 @@ TEST_F(RenderFrameHostManagerTest, DisownOpenerDuringNavigation) {
   contents()->GetMainFrame()->PrepareForCommit();
 
   // Disown the opener from rfh2.
-  rfh2->DidDisownOpener();
+  rfh2->DidChangeOpener(MSG_ROUTING_NONE);
 
   // Ensure the opener is cleared.
   EXPECT_FALSE(contents()->HasOpener());
@@ -1588,7 +1586,7 @@ TEST_F(RenderFrameHostManagerTest, DisownOpenerAfterNavigation) {
   TestRenderFrameHost* rfh2 = main_test_rfh();
   EXPECT_NE(site_instance1, rfh2->GetSiteInstance());
 
-  // Commit a back navigation before the DidDisownOpener message arrives.
+  // Commit a back navigation before the DidChangeOpener message arrives.
   contents()->GetController().GoBack();
   contents()->GetMainFrame()->PrepareForCommit();
   const NavigationEntry* entry1 = contents()->GetController().GetPendingEntry();
@@ -1596,7 +1594,7 @@ TEST_F(RenderFrameHostManagerTest, DisownOpenerAfterNavigation) {
       entry1->GetPageID(), entry1->GetUniqueID(), false, entry1->GetURL());
 
   // Disown the opener from rfh2.
-  rfh2->DidDisownOpener();
+  rfh2->DidChangeOpener(MSG_ROUTING_NONE);
   EXPECT_FALSE(contents()->HasOpener());
 }
 
@@ -1699,7 +1697,7 @@ TEST_F(RenderFrameHostManagerTest, EnableWebUIWithSwappedOutOpener) {
   RenderFrameHostImpl* opener1_rfh = opener1_proxy->render_frame_host();
   TestRenderViewHost* opener1_rvh = static_cast<TestRenderViewHost*>(
       opener1_manager->GetSwappedOutRenderViewHost(rvh2->GetSiteInstance()));
-  if (!RenderFrameHostManager::IsSwappedOutStateForbidden()) {
+  if (!SiteIsolationPolicy::IsSwappedOutStateForbidden()) {
     EXPECT_TRUE(opener1_manager->IsOnSwappedOutList(opener1_rfh));
     EXPECT_TRUE(opener1_manager->IsRVHOnSwappedOutList(opener1_rvh));
     EXPECT_TRUE(opener1_rfh->is_swapped_out());
@@ -1869,7 +1867,7 @@ TEST_F(RenderFrameHostManagerTest, DeleteFrameAfterSwapOutACK) {
   // Navigate to the first page.
   contents()->NavigateAndCommit(kUrl1);
   TestRenderFrameHost* rfh1 = contents()->GetMainFrame();
-  RenderFrameHostDeletedObserver rfh_deleted_observer(rfh1);
+  RenderFrameDeletedObserver rfh_deleted_observer(rfh1);
   EXPECT_EQ(RenderFrameHostImpl::STATE_DEFAULT, rfh1->rfh_state());
 
   // Navigate to new site, simulating onbeforeunload approval.
@@ -1915,7 +1913,7 @@ TEST_F(RenderFrameHostManagerTest, SwapOutFrameAfterSwapOutACK) {
   // Navigate to the first page.
   contents()->NavigateAndCommit(kUrl1);
   TestRenderFrameHost* rfh1 = contents()->GetMainFrame();
-  RenderFrameHostDeletedObserver rfh_deleted_observer(rfh1);
+  RenderFrameDeletedObserver rfh_deleted_observer(rfh1);
   EXPECT_EQ(RenderFrameHostImpl::STATE_DEFAULT, rfh1->rfh_state());
 
   // Increment the number of active frames in SiteInstanceImpl so that rfh1 is
@@ -1944,7 +1942,7 @@ TEST_F(RenderFrameHostManagerTest, SwapOutFrameAfterSwapOutACK) {
   rfh1->OnSwappedOut();
 
   // rfh1 should be swapped out or deleted in --site-per-process.
-  if (!RenderFrameHostManager::IsSwappedOutStateForbidden()) {
+  if (!SiteIsolationPolicy::IsSwappedOutStateForbidden()) {
     EXPECT_FALSE(rfh_deleted_observer.deleted());
     EXPECT_TRUE(rfh1->is_swapped_out());
   } else {
@@ -1964,7 +1962,7 @@ TEST_F(RenderFrameHostManagerTest,
   // Navigate to the first page.
   contents()->NavigateAndCommit(kUrl1);
   TestRenderFrameHost* rfh1 = contents()->GetMainFrame();
-  RenderFrameHostDeletedObserver rfh_deleted_observer(rfh1);
+  RenderFrameDeletedObserver rfh_deleted_observer(rfh1);
   EXPECT_EQ(RenderFrameHostImpl::STATE_DEFAULT, rfh1->rfh_state());
 
   // Increment the number of active frames in SiteInstanceImpl so that rfh1 is
@@ -1993,7 +1991,7 @@ TEST_F(RenderFrameHostManagerTest,
   rfh1->OnSwappedOut();
 
   // rfh1 should be swapped out.
-  if (RenderFrameHostManager::IsSwappedOutStateForbidden()) {
+  if (SiteIsolationPolicy::IsSwappedOutStateForbidden()) {
     EXPECT_TRUE(rfh_deleted_observer.deleted());
     EXPECT_TRUE(contents()->GetFrameTree()->root()->render_manager()
                 ->GetRenderFrameProxyHost(site_instance.get()));
@@ -2021,9 +2019,8 @@ TEST_F(RenderFrameHostManagerTest,
   controller().LoadURL(
       kUrl2, Referrer(), ui::PAGE_TRANSITION_LINK, std::string());
   {
-    pending_rfh = contents()->GetFrameTree()->root()->render_manager()
-        ->pending_frame_host();
-    RenderFrameHostDeletedObserver rfh_deleted_observer(pending_rfh);
+    pending_rfh = contents()->GetPendingMainFrame();
+    RenderFrameDeletedObserver rfh_deleted_observer(pending_rfh);
 
     // Cancel the navigation by simulating a declined beforeunload dialog.
     contents()->GetMainFrame()->OnMessageReceived(
@@ -2039,9 +2036,8 @@ TEST_F(RenderFrameHostManagerTest,
   controller().LoadURL(
       kUrl2, Referrer(), ui::PAGE_TRANSITION_LINK, std::string());
   {
-    pending_rfh = contents()->GetFrameTree()->root()->render_manager()
-        ->pending_frame_host();
-    RenderFrameHostDeletedObserver rfh_deleted_observer(pending_rfh);
+    pending_rfh = contents()->GetPendingMainFrame();
+    RenderFrameDeletedObserver rfh_deleted_observer(pending_rfh);
 
     // Increment the number of active frames in the new SiteInstance, which will
     // cause the pending RFH to be deleted and a RenderFrameProxyHost to be
@@ -2054,7 +2050,7 @@ TEST_F(RenderFrameHostManagerTest,
         FrameHostMsg_BeforeUnload_ACK(0, false, now, now));
     EXPECT_FALSE(contents()->CrossProcessNavigationPending());
 
-    if (RenderFrameHostManager::IsSwappedOutStateForbidden()) {
+    if (SiteIsolationPolicy::IsSwappedOutStateForbidden()) {
       EXPECT_TRUE(rfh_deleted_observer.deleted());
       EXPECT_TRUE(contents()->GetFrameTree()->root()->render_manager()
                   ->GetRenderFrameProxyHost(site_instance.get()));
@@ -2064,13 +2060,18 @@ TEST_F(RenderFrameHostManagerTest,
   }
 }
 
+class RenderFrameHostManagerTestWithSiteIsolation
+    : public RenderFrameHostManagerTest {
+ public:
+  RenderFrameHostManagerTestWithSiteIsolation() {
+    IsolateAllSitesForTesting(base::CommandLine::ForCurrentProcess());
+  }
+};
+
 // Test that a pending RenderFrameHost in a non-root frame tree node is properly
 // deleted when the node is detached. Motivated by http://crbug.com/441357 and
 // http://crbug.com/444955.
-TEST_F(RenderFrameHostManagerTest, DetachPendingChild) {
-  base::CommandLine::ForCurrentProcess()->AppendSwitch(
-      switches::kSitePerProcess);
-
+TEST_F(RenderFrameHostManagerTestWithSiteIsolation, DetachPendingChild) {
   const GURL kUrlA("http://www.google.com/");
   const GURL kUrlB("http://webkit.org/");
 
@@ -2135,8 +2136,8 @@ TEST_F(RenderFrameHostManagerTest, DetachPendingChild) {
   EXPECT_FALSE(contents()->CrossProcessNavigationPending())
     << "There should be no top-level pending navigation.";
 
-  RenderFrameHostDeletedObserver delete_watcher1(GetPendingFrameHost(iframe1));
-  RenderFrameHostDeletedObserver delete_watcher2(GetPendingFrameHost(iframe2));
+  RenderFrameDeletedObserver delete_watcher1(GetPendingFrameHost(iframe1));
+  RenderFrameDeletedObserver delete_watcher2(GetPendingFrameHost(iframe2));
   EXPECT_FALSE(delete_watcher1.deleted());
   EXPECT_FALSE(delete_watcher2.deleted());
 
@@ -2191,10 +2192,8 @@ TEST_F(RenderFrameHostManagerTest, DetachPendingChild) {
 // Two tabs in the same process crash. The first tab is reloaded, and the second
 // tab navigates away without reloading. The second tab's navigation shouldn't
 // mess with the first tab's content. Motivated by http://crbug.com/473714.
-TEST_F(RenderFrameHostManagerTest, TwoTabsCrashOneReloadsOneLeaves) {
-  base::CommandLine::ForCurrentProcess()->AppendSwitch(
-      switches::kSitePerProcess);
-
+TEST_F(RenderFrameHostManagerTestWithSiteIsolation,
+       TwoTabsCrashOneReloadsOneLeaves) {
   const GURL kUrl1("http://www.google.com/");
   const GURL kUrl2("http://webkit.org/");
   const GURL kUrl3("http://whatwg.org/");
@@ -2251,6 +2250,187 @@ TEST_F(RenderFrameHostManagerTest, TwoTabsCrashOneReloadsOneLeaves) {
             iframe->GetRenderFrameProxyHost(contents1->GetSiteInstance()));
   EXPECT_EQ(nullptr,
             iframe->GetRenderFrameProxyHost(contents2->GetSiteInstance()));
+}
+
+// Test that opener proxies are created properly with a cycle on the opener
+// chain.
+TEST_F(RenderFrameHostManagerTest, CreateOpenerProxiesWithCycleOnOpenerChain) {
+  const GURL kUrl1("http://www.google.com/");
+  const GURL kUrl2("http://www.chromium.org/");
+
+  // Navigate to an initial URL.
+  contents()->NavigateAndCommit(kUrl1);
+  TestRenderFrameHost* rfh1 = main_test_rfh();
+  scoped_refptr<SiteInstanceImpl> site_instance1 = rfh1->GetSiteInstance();
+
+  // Create 2 new tabs and construct the opener chain as follows:
+  //
+  //     tab2 <--- tab1 <---- contents()
+  //        |       ^
+  //        +-------+
+  //
+  scoped_ptr<TestWebContents> tab1(
+      TestWebContents::Create(browser_context(), site_instance1.get()));
+  RenderFrameHostManager* tab1_manager = tab1->GetRenderManagerForTesting();
+  scoped_ptr<TestWebContents> tab2(
+      TestWebContents::Create(browser_context(), site_instance1.get()));
+  RenderFrameHostManager* tab2_manager = tab2->GetRenderManagerForTesting();
+
+  contents()->SetOpener(tab1.get());
+  tab1->SetOpener(tab2.get());
+  tab2->SetOpener(tab1.get());
+
+  // Navigate main window to a cross-site URL.  This will call
+  // CreateOpenerProxies() to create proxies for the two opener tabs in the new
+  // SiteInstance.
+  contents()->NavigateAndCommit(kUrl2);
+  TestRenderFrameHost* rfh2 = main_test_rfh();
+  EXPECT_NE(site_instance1, rfh2->GetSiteInstance());
+
+  // Check that each tab now has a proxy in the new SiteInstance.
+  RenderFrameProxyHost* tab1_proxy =
+      tab1_manager->GetRenderFrameProxyHost(rfh2->GetSiteInstance());
+  EXPECT_TRUE(tab1_proxy);
+  RenderFrameProxyHost* tab2_proxy =
+      tab2_manager->GetRenderFrameProxyHost(rfh2->GetSiteInstance());
+  EXPECT_TRUE(tab2_proxy);
+
+  // Verify that the proxies' openers point to each other.
+  int tab1_opener_routing_id =
+      tab1_manager->GetOpenerRoutingID(rfh2->GetSiteInstance());
+  int tab2_opener_routing_id =
+      tab2_manager->GetOpenerRoutingID(rfh2->GetSiteInstance());
+  EXPECT_EQ(tab2_proxy->GetRoutingID(), tab1_opener_routing_id);
+  EXPECT_EQ(tab1_proxy->GetRoutingID(), tab2_opener_routing_id);
+
+  // Setting tab2_proxy's opener required an extra IPC message to be set, since
+  // the opener's routing ID wasn't available when tab2_proxy was created.
+  // Verify that this IPC was sent and that it passed correct routing ID.
+  const IPC::Message* message =
+      rfh2->GetProcess()->sink().GetUniqueMessageMatching(
+          FrameMsg_UpdateOpener::ID);
+  EXPECT_TRUE(message);
+  FrameMsg_UpdateOpener::Param params;
+  EXPECT_TRUE(FrameMsg_UpdateOpener::Read(message, &params));
+  EXPECT_EQ(tab2_opener_routing_id, base::get<0>(params));
+}
+
+// Test that opener proxies are created properly when the opener points
+// to itself.
+TEST_F(RenderFrameHostManagerTest, CreateOpenerProxiesWhenOpenerPointsToSelf) {
+  const GURL kUrl1("http://www.google.com/");
+  const GURL kUrl2("http://www.chromium.org/");
+
+  // Navigate to an initial URL.
+  contents()->NavigateAndCommit(kUrl1);
+  TestRenderFrameHost* rfh1 = main_test_rfh();
+  scoped_refptr<SiteInstanceImpl> site_instance1 = rfh1->GetSiteInstance();
+
+  // Create an opener tab, and simulate that its opener points to itself.
+  scoped_ptr<TestWebContents> opener(
+      TestWebContents::Create(browser_context(), site_instance1.get()));
+  RenderFrameHostManager* opener_manager = opener->GetRenderManagerForTesting();
+  contents()->SetOpener(opener.get());
+  opener->SetOpener(opener.get());
+
+  // Navigate main window to a cross-site URL.  This will call
+  // CreateOpenerProxies() to create proxies for the opener tab in the new
+  // SiteInstance.
+  contents()->NavigateAndCommit(kUrl2);
+  TestRenderFrameHost* rfh2 = main_test_rfh();
+  EXPECT_NE(site_instance1, rfh2->GetSiteInstance());
+
+  // Check that the opener now has a proxy in the new SiteInstance.
+  RenderFrameProxyHost* opener_proxy =
+      opener_manager->GetRenderFrameProxyHost(rfh2->GetSiteInstance());
+  EXPECT_TRUE(opener_proxy);
+
+  // Verify that the proxy's opener points to itself.
+  int opener_routing_id =
+      opener_manager->GetOpenerRoutingID(rfh2->GetSiteInstance());
+  EXPECT_EQ(opener_proxy->GetRoutingID(), opener_routing_id);
+
+  // Setting the opener in opener_proxy required an extra IPC message, since
+  // the opener's routing ID wasn't available when opener_proxy was created.
+  // Verify that this IPC was sent and that it passed correct routing ID.
+  const IPC::Message* message =
+      rfh2->GetProcess()->sink().GetUniqueMessageMatching(
+          FrameMsg_UpdateOpener::ID);
+  EXPECT_TRUE(message);
+  FrameMsg_UpdateOpener::Param params;
+  EXPECT_TRUE(FrameMsg_UpdateOpener::Read(message, &params));
+  EXPECT_EQ(opener_routing_id, base::get<0>(params));
+}
+
+// Build the following frame opener graph and see that it can be properly
+// traversed when creating opener proxies:
+//
+//     +-> root4 <--+   root3 <---- root2    +--- root1
+//     |     /      |     ^         /  \     |    /  \     .
+//     |    42      +-----|------- 22  23 <--+   12  13
+//     |     +------------+            |             | ^
+//     +-------------------------------+             +-+
+//
+// The test starts traversing openers from root1 and expects to discover all
+// four FrameTrees.  Nodes 13 (with cycle to itself) and 42 (with back link to
+// root3) should be put on the list of nodes that will need their frame openers
+// set separately in a second pass, since their opener routing IDs won't be
+// available during the first pass of CreateOpenerProxies.
+TEST_F(RenderFrameHostManagerTest, TraverseComplexOpenerChain) {
+  FrameTree* tree1 = contents()->GetFrameTree();
+  FrameTreeNode* root1 = tree1->root();
+  int process_id = root1->current_frame_host()->GetProcess()->GetID();
+  tree1->AddFrame(root1, process_id, 12, blink::WebTreeScopeType::Document,
+                  std::string(), blink::WebSandboxFlags::None);
+  tree1->AddFrame(root1, process_id, 13, blink::WebTreeScopeType::Document,
+                  std::string(), blink::WebSandboxFlags::None);
+
+  scoped_ptr<TestWebContents> tab2(
+      TestWebContents::Create(browser_context(), nullptr));
+  FrameTree* tree2 = tab2->GetFrameTree();
+  FrameTreeNode* root2 = tree2->root();
+  process_id = root2->current_frame_host()->GetProcess()->GetID();
+  tree2->AddFrame(root2, process_id, 22, blink::WebTreeScopeType::Document,
+                  std::string(), blink::WebSandboxFlags::None);
+  tree2->AddFrame(root2, process_id, 23, blink::WebTreeScopeType::Document,
+                  std::string(), blink::WebSandboxFlags::None);
+
+  scoped_ptr<TestWebContents> tab3(
+      TestWebContents::Create(browser_context(), nullptr));
+  FrameTree* tree3 = tab3->GetFrameTree();
+  FrameTreeNode* root3 = tree3->root();
+
+  scoped_ptr<TestWebContents> tab4(
+      TestWebContents::Create(browser_context(), nullptr));
+  FrameTree* tree4 = tab4->GetFrameTree();
+  FrameTreeNode* root4 = tree4->root();
+  process_id = root4->current_frame_host()->GetProcess()->GetID();
+  tree4->AddFrame(root4, process_id, 42, blink::WebTreeScopeType::Document,
+                  std::string(), blink::WebSandboxFlags::None);
+
+  root1->child_at(1)->SetOpener(root1->child_at(1));
+  root1->SetOpener(root2->child_at(1));
+  root2->SetOpener(root3);
+  root2->child_at(0)->SetOpener(root4);
+  root2->child_at(1)->SetOpener(root4);
+  root4->child_at(0)->SetOpener(root3);
+
+  std::vector<FrameTree*> opener_frame_trees;
+  base::hash_set<FrameTreeNode*> nodes_with_back_links;
+
+  CollectOpenerFrameTrees(root1, &opener_frame_trees, &nodes_with_back_links);
+
+  EXPECT_EQ(4U, opener_frame_trees.size());
+  EXPECT_EQ(tree1, opener_frame_trees[0]);
+  EXPECT_EQ(tree2, opener_frame_trees[1]);
+  EXPECT_EQ(tree3, opener_frame_trees[2]);
+  EXPECT_EQ(tree4, opener_frame_trees[3]);
+
+  EXPECT_EQ(2U, nodes_with_back_links.size());
+  EXPECT_TRUE(nodes_with_back_links.find(root1->child_at(1)) !=
+              nodes_with_back_links.end());
+  EXPECT_TRUE(nodes_with_back_links.find(root4->child_at(0)) !=
+              nodes_with_back_links.end());
 }
 
 }  // namespace content

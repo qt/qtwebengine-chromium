@@ -65,7 +65,8 @@ bool ProcessSnapshotMinidump::Initialize(FileReaderInterface* file_reader) {
   }
 
   stream_directory_.resize(header_.NumberOfStreams);
-  if (!file_reader_->ReadExactly(
+  if (!stream_directory_.empty() &&
+      !file_reader_->ReadExactly(
           &stream_directory_[0],
           header_.NumberOfStreams * sizeof(stream_directory_[0]))) {
     return false;
@@ -174,6 +175,13 @@ const ExceptionSnapshot* ProcessSnapshotMinidump::Exception() const {
   INITIALIZATION_STATE_DCHECK_VALID(initialized_);
   NOTREACHED();  // https://code.google.com/p/crashpad/issues/detail?id=10
   return nullptr;
+}
+
+std::vector<const MemorySnapshot*> ProcessSnapshotMinidump::ExtraMemory()
+    const {
+  INITIALIZATION_STATE_DCHECK_VALID(initialized_);
+  NOTREACHED();  // https://code.google.com/p/crashpad/issues/detail?id=10
+  return std::vector<const MemorySnapshot*>();
 }
 
 bool ProcessSnapshotMinidump::InitializeCrashpadInfo() {

@@ -33,7 +33,7 @@
 
 namespace blink {
 
-GIFImageDecoder::GIFImageDecoder(ImageSource::AlphaOption alphaOption, ImageSource::GammaAndColorProfileOption colorOptions, size_t maxDecodedBytes)
+GIFImageDecoder::GIFImageDecoder(AlphaOption alphaOption, GammaAndColorProfileOption colorOptions, size_t maxDecodedBytes)
     : ImageDecoder(alphaOption, colorOptions, maxDecodedBytes)
     , m_repetitionCount(cAnimationLoopOnce)
 {
@@ -43,12 +43,8 @@ GIFImageDecoder::~GIFImageDecoder()
 {
 }
 
-void GIFImageDecoder::setData(SharedBuffer* data, bool allDataReceived)
+void GIFImageDecoder::onSetData(SharedBuffer* data)
 {
-    if (failed())
-        return;
-
-    ImageDecoder::setData(data, allDataReceived);
     if (m_reader)
         m_reader->setData(data);
 }

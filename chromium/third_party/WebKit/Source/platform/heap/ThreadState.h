@@ -50,14 +50,14 @@ class Isolate;
 
 namespace blink {
 
+#define PRINT_HEAP_STATS 0 // Enable this macro to print heap stats to stderr.
+
 class BasePage;
 class CallbackStack;
 class CrossThreadPersistentRegion;
 struct GCInfo;
 class GarbageCollectedMixinConstructorMarker;
 class HeapObjectHeader;
-class PageMemoryRegion;
-class PageMemory;
 class PersistentRegion;
 class BaseHeap;
 class SafePointAwareMutexLocker;
@@ -187,6 +187,7 @@ public:
         IdleGCScheduled,
         PreciseGCScheduled,
         FullGCScheduled,
+        PageNavigationGCScheduled,
         GCRunning,
         EagerSweepScheduled,
         LazySweepScheduled,
@@ -226,6 +227,11 @@ public:
         MarkedAndUnmarked,
     };
 #endif
+
+    enum V8GCType {
+        V8MinorGC,
+        V8MajorGC,
+    };
 
     // The NoAllocationScope class is used in debug mode to catch unwanted
     // allocations. E.g. allocations during GC.
@@ -323,14 +329,15 @@ public:
     bool checkThread() const { return m_thread == currentThread(); }
 #endif
 
-    void didV8MajorGC();
-
     void performIdleGC(double deadlineSeconds);
     void performIdleLazySweep(double deadlineSeconds);
 
     void scheduleIdleGC();
     void scheduleIdleLazySweep();
     void schedulePreciseGC();
+    void scheduleV8FollowupGCIfNeeded(V8GCType);
+    void schedulePageNavigationGCIfNeeded(float estimatedRemovalRatio);
+    void schedulePageNavigationGC();
     void scheduleGCIfNeeded();
     void setGCState(GCState);
     GCState gcState() const;
@@ -387,7 +394,6 @@ public:
     }
     bool sweepForbidden() const { return m_sweepForbidden; }
 
-    void prepareRegionTree();
     void flushHeapDoesNotContainCacheIfNeeded();
 
     // Safepoint related functionality.
@@ -448,11 +454,8 @@ public:
         void onInterrupted();
     };
 
-    void addInterruptor(Interruptor*);
+    void addInterruptor(PassOwnPtr<Interruptor>);
     void removeInterruptor(Interruptor*);
-
-    // Should only be called under protection of threadAttachMutex().
-    const Vector<Interruptor*>& interruptors() const { return m_interruptors; }
 
     void recordStackEnd(intptr_t* endOfStack)
     {
@@ -479,7 +482,6 @@ public:
 
     // A region of PersistentNodes allocated on the given thread.
     PersistentRegion* persistentRegion() const { return m_persistentRegion.get(); }
-
     // A region of PersistentNodes not owned by any particular thread.
     static CrossThreadPersistentRegion& crossThreadPersistentRegion();
 
@@ -492,6 +494,16 @@ public:
 
     // Visit all persistents allocated on this thread.
     void visitPersistents(Visitor*);
+
+    struct GCSnapshotInfo {
+        GCSnapshotInfo(size_t numObjectTypes);
+
+        // Map from gcInfoIndex (vector-index) to count/size.
+        Vector<int> liveCount;
+        Vector<int> deadCount;
+        Vector<size_t> liveSize;
+        Vector<size_t> deadSize;
+    };
 
 #if ENABLE(GC_PROFILING)
     const GCInfo* findGCInfo(Address);
@@ -538,7 +550,6 @@ public:
     void threadLocalWeakProcessing();
 
     size_t objectPayloadSizeForTesting();
-    void prepareHeapForTermination();
 
     // Register the pre-finalizer for the |self| object. This method is normally
     // called in the constructor of the |self| object. The class T must have
@@ -565,8 +576,6 @@ public:
         ASSERT(m_orderedPreFinalizers.contains(PreFinalizer(self, T::invokePreFinalizer)));
         m_orderedPreFinalizers.remove(PreFinalizer(self, &T::invokePreFinalizer));
     }
-
-    Vector<PageMemoryRegion*>& allocatedRegionsSinceLastGC() { return m_allocatedRegionsSinceLastGC; }
 
     void shouldFlushHeapDoesNotContainCache() { m_shouldFlushHeapDoesNotContainCache = true; }
 
@@ -675,10 +684,30 @@ private:
     bool shouldScheduleIdleGC();
     bool shouldSchedulePreciseGC();
     bool shouldForceConservativeGC();
+    // V8 minor or major GC is likely to drop a lot of references to objects
+    // on Oilpan's heap. We give a chance to schedule a GC.
+    bool shouldScheduleV8FollowupGC();
+    // Page navigation is likely to drop a lot of references to objects
+    // on Oilpan's heap. We give a chance to schedule a GC.
+    // estimatedRemovalRatio is the estimated ratio of objects that will be no
+    // longer necessary due to the navigation.
+    bool shouldSchedulePageNavigationGC(float estimatedRemovalRatio);
 
-    // Internal helper for GC policy handling code. Returns true if
-    // an urgent conservative GC is now needed due to memory pressure.
+    // Internal helpers to handle memory pressure conditions.
+
+    // Returns true if memory use is in a near-OOM state
+    // (aka being under "memory pressure".)
     bool shouldForceMemoryPressureGC();
+
+    // Returns true if shouldForceMemoryPressureGC() held and a
+    // conservative GC was performed to handle the emergency.
+    bool forceMemoryPressureGCIfNeeded();
+
+    size_t estimatedLiveSize(size_t currentSize, size_t sizeAtLastGC);
+    size_t totalMemorySize();
+    double heapGrowingRate();
+    double partitionAllocGrowingRate();
+    bool judgeGCThreshold(size_t allocatedObjectSizeThreshold, double heapGrowingRateThreshold);
 
     void runScheduledGC(StackState);
 
@@ -699,6 +728,8 @@ private:
     void cleanup();
     void cleanupPages();
 
+    void prepareForThreadStateTermination();
+
     void invokePreFinalizers();
 
     void takeSnapshot(SnapshotType);
@@ -707,6 +738,11 @@ private:
 #endif
     void clearHeapAges();
     int heapIndexOfVectorHeapLeastRecentlyExpanded(int beginHeapIndex, int endHeapIndex);
+
+    using InterruptorVector = Vector<OwnPtr<Interruptor>>;
+
+    // Should only be called under protection of threadAttachMutex().
+    const InterruptorVector& interruptors() const { return m_interruptors; }
 
     friend class SafePointAwareMutexLocker;
     friend class SafePointBarrier;
@@ -734,7 +770,7 @@ private:
     void* m_safePointScopeMarker;
     Vector<Address> m_safePointStackCopy;
     bool m_atSafePoint;
-    Vector<Interruptor*> m_interruptors;
+    InterruptorVector m_interruptors;
     bool m_sweepForbidden;
     size_t m_noAllocationCount;
     size_t m_gcForbiddenCount;
@@ -763,8 +799,6 @@ private:
 #if defined(ADDRESS_SANITIZER)
     void* m_asanFakeStack;
 #endif
-
-    Vector<PageMemoryRegion*> m_allocatedRegionsSinceLastGC;
 
 #if ENABLE(GC_PROFILING)
     double m_nextFreeListSnapshotTime;

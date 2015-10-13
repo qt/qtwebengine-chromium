@@ -35,13 +35,13 @@ template <typename Strategy>
 class BackwardsCharacterIteratorAlgorithm {
     STACK_ALLOCATED();
 public:
-    BackwardsCharacterIteratorAlgorithm(const PositionAlgorithm<Strategy>&, const PositionAlgorithm<Strategy>&, TextIteratorBehaviorFlags = TextIteratorDefaultBehavior);
+    BackwardsCharacterIteratorAlgorithm(const PositionTemplate<Strategy>&, const PositionTemplate<Strategy>&, TextIteratorBehaviorFlags = TextIteratorDefaultBehavior);
 
     void advance(int);
 
     bool atEnd() const { return m_textIterator.atEnd(); }
 
-    PositionAlgorithm<Strategy> endPosition() const;
+    PositionTemplate<Strategy> endPosition() const;
 
 private:
     int m_offset;
@@ -52,6 +52,8 @@ private:
 };
 
 extern template class CORE_EXTERN_TEMPLATE_EXPORT BackwardsCharacterIteratorAlgorithm<EditingStrategy>;
+extern template class CORE_EXTERN_TEMPLATE_EXPORT BackwardsCharacterIteratorAlgorithm<EditingInComposedTreeStrategy>;
+
 using BackwardsCharacterIterator = BackwardsCharacterIteratorAlgorithm<EditingStrategy>;
 
 } // namespace blink

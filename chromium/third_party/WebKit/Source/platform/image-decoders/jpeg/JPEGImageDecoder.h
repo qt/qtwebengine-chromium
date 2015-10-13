@@ -40,11 +40,12 @@ class JPEGImageReader;
 class PLATFORM_EXPORT JPEGImageDecoder : public ImageDecoder {
     WTF_MAKE_NONCOPYABLE(JPEGImageDecoder);
 public:
-    JPEGImageDecoder(ImageSource::AlphaOption, ImageSource::GammaAndColorProfileOption, size_t maxDecodedBytes);
+    JPEGImageDecoder(AlphaOption, GammaAndColorProfileOption, size_t maxDecodedBytes);
     ~JPEGImageDecoder() override;
 
     // ImageDecoder:
     String filenameExtension() const override { return "jpg"; }
+    void onSetData(SharedBuffer* data) override;
     bool hasColorProfile() const override { return m_hasColorProfile; }
     IntSize decodedSize() const override { return m_decodedSize; }
     IntSize decodedYUVSize(int component, SizeType) const override;

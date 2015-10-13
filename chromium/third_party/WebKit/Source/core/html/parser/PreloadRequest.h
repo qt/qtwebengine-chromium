@@ -8,6 +8,8 @@
 #include "core/fetch/ClientHintsPreferences.h"
 #include "core/fetch/FetchRequest.h"
 #include "core/fetch/Resource.h"
+#include "platform/weborigin/SecurityPolicy.h"
+#include "wtf/Allocator.h"
 #include "wtf/text/TextPosition.h"
 
 namespace blink {
@@ -15,12 +17,13 @@ namespace blink {
 class Document;
 
 class PreloadRequest {
+    WTF_MAKE_FAST_ALLOCATED(PreloadRequest);
 public:
     enum RequestType { RequestTypePreload, RequestTypePreconnect };
 
-    static PassOwnPtr<PreloadRequest> create(const String& initiatorName, const TextPosition& initiatorPosition, const String& resourceURL, const KURL& baseURL, Resource::Type resourceType, const FetchRequest::ResourceWidth& resourceWidth = FetchRequest::ResourceWidth(), const ClientHintsPreferences& clientHintsPreferences = ClientHintsPreferences(), RequestType requestType = RequestTypePreload)
+    static PassOwnPtr<PreloadRequest> create(const String& initiatorName, const TextPosition& initiatorPosition, const String& resourceURL, const KURL& baseURL, Resource::Type resourceType, const ReferrerPolicy referrerPolicy, const FetchRequest::ResourceWidth& resourceWidth = FetchRequest::ResourceWidth(), const ClientHintsPreferences& clientHintsPreferences = ClientHintsPreferences(), RequestType requestType = RequestTypePreload)
     {
-        return adoptPtr(new PreloadRequest(initiatorName, initiatorPosition, resourceURL, baseURL, resourceType, resourceWidth, clientHintsPreferences, requestType));
+        return adoptPtr(new PreloadRequest(initiatorName, initiatorPosition, resourceURL, baseURL, resourceType, resourceWidth, clientHintsPreferences, requestType, referrerPolicy));
     }
 
     bool isSafeToSendToAnotherThread() const;
@@ -46,6 +49,7 @@ public:
     bool isCORS() const { return m_isCORSEnabled; }
     bool isAllowCredentials() const { return m_allowCredentials == AllowStoredCredentials; }
     const ClientHintsPreferences& preferences() const { return m_clientHintsPreferences; }
+    ReferrerPolicy referrerPolicy() const { return m_referrerPolicy; }
 
 private:
     PreloadRequest(const String& initiatorName,
@@ -55,7 +59,8 @@ private:
         Resource::Type resourceType,
         const FetchRequest::ResourceWidth& resourceWidth,
         const ClientHintsPreferences& clientHintsPreferences,
-        RequestType requestType)
+        RequestType requestType,
+        const ReferrerPolicy referrerPolicy)
         : m_initiatorName(initiatorName)
         , m_initiatorPosition(initiatorPosition)
         , m_resourceURL(resourceURL.isolatedCopy())
@@ -68,6 +73,7 @@ private:
         , m_resourceWidth(resourceWidth)
         , m_clientHintsPreferences(clientHintsPreferences)
         , m_requestType(requestType)
+        , m_referrerPolicy(referrerPolicy)
     {
     }
 
@@ -86,6 +92,7 @@ private:
     FetchRequest::ResourceWidth m_resourceWidth;
     ClientHintsPreferences m_clientHintsPreferences;
     RequestType m_requestType;
+    ReferrerPolicy m_referrerPolicy;
 };
 
 typedef Vector<OwnPtr<PreloadRequest>> PreloadRequestStream;

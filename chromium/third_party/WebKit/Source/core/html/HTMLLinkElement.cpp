@@ -45,12 +45,12 @@
 #include "core/frame/SubresourceIntegrity.h"
 #include "core/frame/UseCounter.h"
 #include "core/frame/csp/ContentSecurityPolicy.h"
-#include "core/html/LinkDefaultPresentation.h"
 #include "core/html/LinkManifest.h"
 #include "core/html/imports/LinkImport.h"
 #include "core/inspector/ConsoleMessage.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderClient.h"
+#include "core/loader/NetworkHintsInterface.h"
 #include "core/style/StyleInheritedData.h"
 #include "platform/RuntimeEnabledFeatures.h"
 #include "wtf/StdLibExtras.h"
@@ -204,7 +204,7 @@ bool HTMLLinkElement::shouldLoadLink()
 
 bool HTMLLinkElement::loadLink(const String& type, const String& as, const KURL& url)
 {
-    return m_linkLoader.loadLink(m_relAttribute, fastGetAttribute(HTMLNames::crossoriginAttr), type, as, url, document());
+    return m_linkLoader.loadLink(m_relAttribute, fastGetAttribute(HTMLNames::crossoriginAttr), type, as, url, document(), NetworkHintsInterfaceImpl());
 }
 
 LinkResource* HTMLLinkElement::linkResourceToProcess()
@@ -220,8 +220,6 @@ LinkResource* HTMLLinkElement::linkResourceToProcess()
             m_link = LinkImport::create(this);
         } else if (m_relAttribute.isManifest()) {
             m_link = LinkManifest::create(this);
-        } else if (m_relAttribute.isDefaultPresentation()) {
-            m_link = LinkDefaultPresentation::create(this);
         } else {
             OwnPtrWillBeRawPtr<LinkStyle> link = LinkStyle::create(this);
             if (fastHasAttribute(disabledAttr)) {
@@ -512,13 +510,23 @@ void LinkStyle::setCSSStyleSheet(const String& href, const KURL& baseURL, const 
         return;
     }
 
+    // See the comment in ScriptLoader.cpp about why this check is necessary
+    // here. https://crbug.com/500701.
     if (!cachedStyleSheet->errorOccurred() && !SubresourceIntegrity::CheckSubresourceIntegrity(*m_owner, cachedStyleSheet->sheetText(), KURL(baseURL, href), *cachedStyleSheet)) {
         m_loading = false;
         removePendingSheet();
         notifyLoadedSheetAndAllCriticalSubresources(Node::ErrorOccurredLoadingSubresource);
         return;
     }
-
+    // While the stylesheet is asynchronously loading, the owner can be moved under
+    // shadow tree.  In that case, cancel any processing on the loaded content.
+    if (m_owner->isInShadowTree()) {
+        m_loading = false;
+        removePendingSheet();
+        if (m_sheet)
+            clearSheet();
+        return;
+    }
     // Completing the sheet load may cause scripts to execute.
     RefPtrWillBeRawPtr<Node> protector(m_owner.get());
 

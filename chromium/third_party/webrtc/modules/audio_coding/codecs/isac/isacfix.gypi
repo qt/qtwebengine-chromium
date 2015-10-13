@@ -14,6 +14,7 @@
       'dependencies': [
         '<(webrtc_root)/common_audio/common_audio.gyp:common_audio',
         '<(webrtc_root)/system_wrappers/system_wrappers.gyp:system_wrappers',
+        'isac_common',
       ],
       'include_dirs': [
         'fix/interface',
@@ -26,13 +27,13 @@
         ],
       },
       'sources': [
-        'audio_encoder_isac_t.h',
-        'audio_encoder_isac_t_impl.h',
+        'fix/interface/audio_decoder_isacfix.h',
         'fix/interface/audio_encoder_isacfix.h',
         'fix/interface/isacfix.h',
         'fix/source/arith_routines.c',
         'fix/source/arith_routines_hist.c',
         'fix/source/arith_routines_logist.c',
+        'fix/source/audio_decoder_isacfix.cc',
         'fix/source/audio_encoder_isacfix.cc',
         'fix/source/bandwidth_estimator.c',
         'fix/source/decode.c',
@@ -45,6 +46,7 @@
         'fix/source/filterbanks.c',
         'fix/source/filters.c',
         'fix/source/initialize.c',
+        'fix/source/isac_fix_type.h',
         'fix/source/isacfix.c',
         'fix/source/lattice.c',
         'fix/source/lattice_c.c',
@@ -137,17 +139,10 @@
           ],
           'sources': [
             'fix/source/entropy_coding_neon.c',
+            'fix/source/filterbanks_neon.c',
             'fix/source/filters_neon.c',
             'fix/source/lattice_neon.c',
             'fix/source/transform_neon.c',
-          ],
-          'conditions': [
-            # Disable AllpassFilter2FixDec16Neon function due to a clang bug.
-            # For more details refer to:
-            # https://code.google.com/p/webrtc/issues/detail?id=4567
-            ['target_arch!="arm64" or clang==0', {
-              'sources': ['fix/source/filterbanks_neon.c',],
-            }]
           ],
         },
       ],

@@ -37,7 +37,7 @@ a {
 
 .icon {
   -webkit-user-select: none;
-  content: '';
+  display: inline-block;
 }
 
 .icon-generic {
@@ -230,7 +230,7 @@ a {
     margin-bottom: 0;
   }
   .error-code {
-    margin-top: 10px;
+    margin: 10px 0;
   }
 }
 

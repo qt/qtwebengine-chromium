@@ -48,6 +48,7 @@ class CORE_EXPORT Fullscreen final
     : public NoBaseWillBeGarbageCollectedFinalized<Fullscreen>
     , public WillBeHeapSupplement<Document>
     , public DocumentLifecycleObserver {
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(Fullscreen);
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(Fullscreen);
 public:
     virtual ~Fullscreen();
@@ -60,9 +61,11 @@ public:
     static bool isActiveFullScreenElement(const Element&);
 
     enum RequestType {
-        UnprefixedRequest, // Element.requestFullscreen()
-        PrefixedRequest, // Element.webkitRequestFullscreen() and webkitRequestFullScreen()
-        PrefixedVideoRequest, // HTMLVideoElement.webkitEnterFullscreen() and webkitEnterFullScreen()
+        // Element.requestFullscreen()
+        UnprefixedRequest,
+        // Element.webkitRequestFullscreen()/webkitRequestFullScreen() and
+        // HTMLVideoElement.webkitEnterFullscreen()/webkitEnterFullScreen()
+        PrefixedRequest,
     };
 
     void requestFullscreen(Element&, RequestType);

@@ -136,13 +136,14 @@ URLLoaderImpl::URLLoaderImpl(NetworkContext* context,
                              InterfaceRequest<URLLoader> request,
                              scoped_ptr<mojo::AppRefCount> app_refcount)
     : context_(context),
+      handle_watcher_(12),
       response_body_buffer_size_(0),
       auto_follow_redirects_(true),
       connected_(true),
       binding_(this, request.Pass()),
       app_refcount_(app_refcount.Pass()),
       weak_ptr_factory_(this) {
-  binding_.set_error_handler(this);
+  binding_.set_connection_error_handler([this]() { OnConnectionError(); });
   context_->RegisterURLLoader(this);
 }
 

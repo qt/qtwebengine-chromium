@@ -24,6 +24,7 @@
 #define LayoutTextInfo_h
 
 #include "platform/text/TextBreakIterator.h"
+#include "wtf/Allocator.h"
 
 namespace blink {
 
@@ -31,13 +32,14 @@ class Font;
 class LayoutText;
 
 struct LayoutTextInfo {
+    STACK_ALLOCATED();
     LayoutTextInfo()
         : m_text(nullptr)
         , m_font(nullptr)
     {
     }
 
-    LayoutText* m_text;
+    LineLayoutText m_text;
     LazyLineBreakIterator m_lineBreakIterator;
     const Font* m_font;
 };

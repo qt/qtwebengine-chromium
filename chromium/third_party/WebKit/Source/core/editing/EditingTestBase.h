@@ -5,8 +5,7 @@
 #ifndef EditingTestBase_h
 #define EditingTestBase_h
 
-#include "core/dom/Position.h"
-#include "core/testing/CoreTestHelpers.h"
+#include "core/editing/Position.h"
 #include "wtf/Forward.h"
 #include <gtest/gtest.h>
 
@@ -15,6 +14,7 @@ namespace blink {
 class DummyPageHolder;
 
 class EditingTestBase : public ::testing::Test {
+    WTF_MAKE_FAST_ALLOCATED(EditingTestBase);
 protected:
     EditingTestBase();
     ~EditingTestBase() override;
@@ -26,11 +26,8 @@ protected:
     static PassRefPtrWillBeRawPtr<ShadowRoot> createShadowRootForElementWithIDAndSetInnerHTML(TreeScope&, const char* hostElementID, const char* shadowRootContent);
 
     void setBodyContent(const char*);
-    PassRefPtrWillBeRawPtr<ShadowRoot> setShadowContent(const char* shadowContent, const char* host = "host");
+    PassRefPtrWillBeRawPtr<ShadowRoot> setShadowContent(const char* shadowContent, const char* shadowHostId);
     void updateLayoutAndStyleForPainting();
-
-    static Position positionInDOMTree(Node& anchor, int offset);
-    static PositionInComposedTree positionInComposedTree(Node& anchor, int offset);
 
 private:
     OwnPtr<DummyPageHolder> m_dummyPageHolder;

@@ -41,8 +41,8 @@
 #include "core/animation/animatable/AnimatableValue.h"
 #include "core/layout/LayoutBoxModelObject.h"
 #include "core/layout/LayoutObject.h"
-#include "core/layout/compositing/CompositedDeprecatedPaintLayerMapping.h"
-#include "core/paint/DeprecatedPaintLayer.h"
+#include "core/layout/compositing/CompositedLayerMapping.h"
+#include "core/paint/PaintLayer.h"
 #include "platform/RuntimeEnabledFeatures.h"
 #include "platform/geometry/FloatBox.h"
 #include "public/platform/Platform.h"
@@ -116,6 +116,7 @@ bool hasIncompatibleAnimations(const Element& targetElement, const Animation& an
     const bool affectsOpacity = effectToAdd.affects(PropertyHandle(CSSPropertyOpacity));
     const bool affectsTransform = effectToAdd.isTransformRelatedEffect();
     const bool affectsFilter = effectToAdd.affects(PropertyHandle(CSSPropertyWebkitFilter));
+    const bool affectsBackdropFilter = effectToAdd.affects(PropertyHandle(CSSPropertyBackdropFilter));
 
     if (!targetElement.hasAnimations())
         return false;
@@ -130,13 +131,27 @@ bool hasIncompatibleAnimations(const Element& targetElement, const Animation& an
 
         if ((affectsOpacity && attachedAnimation->affects(targetElement, CSSPropertyOpacity))
             || (affectsTransform && isTransformRelatedAnimation(targetElement, attachedAnimation))
-            || (affectsFilter && attachedAnimation->affects(targetElement, CSSPropertyWebkitFilter)))
+            || (affectsFilter && attachedAnimation->affects(targetElement, CSSPropertyWebkitFilter))
+            || (affectsBackdropFilter && attachedAnimation->affects(targetElement, CSSPropertyBackdropFilter)))
             return true;
     }
 
     return false;
 }
 
+}
+
+CompositorAnimations::CompositorAnimations()
+{
+}
+
+CompositorAnimations* CompositorAnimations::instance(CompositorAnimations* newInstance)
+{
+    static CompositorAnimations* instance = new CompositorAnimations();
+    if (newInstance) {
+        instance = newInstance;
+    }
+    return instance;
 }
 
 bool CompositorAnimations::isCompositableProperty(CSSPropertyID property)
@@ -148,13 +163,14 @@ bool CompositorAnimations::isCompositableProperty(CSSPropertyID property)
     return false;
 }
 
-const CSSPropertyID CompositorAnimations::compositableProperties[6] = {
+const CSSPropertyID CompositorAnimations::compositableProperties[7] = {
     CSSPropertyOpacity,
     CSSPropertyRotate,
     CSSPropertyScale,
     CSSPropertyTransform,
     CSSPropertyTranslate,
-    CSSPropertyWebkitFilter
+    CSSPropertyWebkitFilter,
+    CSSPropertyBackdropFilter
 };
 
 bool CompositorAnimations::getAnimatedBoundingBox(FloatBox& box, const EffectModel& effect, double minValue, double maxValue) const
@@ -258,7 +274,8 @@ bool CompositorAnimations::isCandidateForAnimationOnCompositor(const Timing& tim
                 if (toAnimatableTransform(keyframe->getAnimatableValue().get())->transformOperations().dependsOnBoxSize())
                     return false;
                 break;
-            case CSSPropertyWebkitFilter: {
+            case CSSPropertyWebkitFilter:
+            case CSSPropertyBackdropFilter: {
                 const FilterOperations& operations = toAnimatableFilterOperations(keyframe->getAnimatableValue().get())->operations();
                 if (operations.hasFilterThatMovesPixels())
                     return false;
@@ -288,8 +305,9 @@ bool CompositorAnimations::isCandidateForAnimationOnCompositor(const Timing& tim
 void CompositorAnimations::cancelIncompatibleAnimationsOnCompositor(const Element& targetElement, const Animation& animationToAdd, const EffectModel& effectToAdd)
 {
     const bool affectsOpacity = effectToAdd.affects(PropertyHandle(CSSPropertyOpacity));
-    const bool affectsTransform =  effectToAdd.isTransformRelatedEffect();
+    const bool affectsTransform = effectToAdd.isTransformRelatedEffect();
     const bool affectsFilter = effectToAdd.affects(PropertyHandle(CSSPropertyWebkitFilter));
+    const bool affectsBackdropFilter = effectToAdd.affects(PropertyHandle(CSSPropertyBackdropFilter));
 
     if (!targetElement.hasAnimations())
         return;
@@ -304,13 +322,16 @@ void CompositorAnimations::cancelIncompatibleAnimationsOnCompositor(const Elemen
 
         if ((affectsOpacity && attachedAnimation->affects(targetElement, CSSPropertyOpacity))
             || (affectsTransform && isTransformRelatedAnimation(targetElement, attachedAnimation))
-            || (affectsFilter && attachedAnimation->affects(targetElement, CSSPropertyWebkitFilter)))
+            || (affectsFilter && attachedAnimation->affects(targetElement, CSSPropertyWebkitFilter))
+            || (affectsBackdropFilter && attachedAnimation->affects(targetElement, CSSPropertyBackdropFilter)))
             attachedAnimation->cancelAnimationOnCompositor();
     }
 }
 
 bool CompositorAnimations::canStartAnimationOnCompositor(const Element& element)
 {
+    if (!Platform::current()->isThreadedAnimationEnabled())
+        return false;
     return element.layoutObject() && element.layoutObject()->compositingState() == PaintsIntoOwnBacking;
 }
 
@@ -322,7 +343,7 @@ bool CompositorAnimations::startAnimationOnCompositor(const Element& element, in
 
     const KeyframeEffectModelBase& keyframeEffect = toKeyframeEffectModelBase(effect);
 
-    DeprecatedPaintLayer* layer = toLayoutBoxModelObject(element.layoutObject())->layer();
+    PaintLayer* layer = toLayoutBoxModelObject(element.layoutObject())->layer();
     ASSERT(layer);
 
     Vector<OwnPtr<WebCompositorAnimation>> animations;
@@ -334,7 +355,7 @@ bool CompositorAnimations::startAnimationOnCompositor(const Element& element, in
             WebCompositorAnimationPlayer* compositorPlayer = animation.compositorPlayer();
             ASSERT(compositorPlayer);
             compositorPlayer->addAnimation(compositorAnimation.leakPtr());
-        } else if (!layer->compositedDeprecatedPaintLayerMapping()->mainGraphicsLayer()->addAnimation(compositorAnimation.release())) {
+        } else if (!layer->compositedLayerMapping()->mainGraphicsLayer()->addAnimation(compositorAnimation.release())) {
             // FIXME: We should know ahead of time whether these animations can be started.
             for (int startedAnimationId : startedAnimationIds)
                 cancelAnimationOnCompositor(element, animation, startedAnimationId);
@@ -362,7 +383,7 @@ void CompositorAnimations::cancelAnimationOnCompositor(const Element& element, c
         ASSERT(compositorPlayer);
         compositorPlayer->removeAnimation(id);
     } else {
-        toLayoutBoxModelObject(element.layoutObject())->layer()->compositedDeprecatedPaintLayerMapping()->mainGraphicsLayer()->removeAnimation(id);
+        toLayoutBoxModelObject(element.layoutObject())->layer()->compositedLayerMapping()->mainGraphicsLayer()->removeAnimation(id);
     }
 }
 
@@ -381,7 +402,7 @@ void CompositorAnimations::pauseAnimationForTestingOnCompositor(const Element& e
         ASSERT(compositorPlayer);
         compositorPlayer->pauseAnimation(id, pauseTime);
     } else {
-        toLayoutBoxModelObject(element.layoutObject())->layer()->compositedDeprecatedPaintLayerMapping()->mainGraphicsLayer()->pauseAnimation(id, pauseTime);
+        toLayoutBoxModelObject(element.layoutObject())->layer()->compositedLayerMapping()->mainGraphicsLayer()->pauseAnimation(id, pauseTime);
     }
 }
 
@@ -396,14 +417,14 @@ bool CompositorAnimations::canAttachCompositedLayers(const Element& element, con
     if (!element.layoutObject() || !element.layoutObject()->isBoxModelObject())
         return false;
 
-    DeprecatedPaintLayer* layer = toLayoutBoxModelObject(element.layoutObject())->layer();
+    PaintLayer* layer = toLayoutBoxModelObject(element.layoutObject())->layer();
 
     if (!layer || !layer->isAllowedToQueryCompositingState()
-        || !layer->compositedDeprecatedPaintLayerMapping()
-        || !layer->compositedDeprecatedPaintLayerMapping()->mainGraphicsLayer())
+        || !layer->compositedLayerMapping()
+        || !layer->compositedLayerMapping()->mainGraphicsLayer())
         return false;
 
-    if (!layer->compositedDeprecatedPaintLayerMapping()->mainGraphicsLayer()->platformLayer())
+    if (!layer->compositedLayerMapping()->mainGraphicsLayer()->platformLayer())
         return false;
 
     return true;
@@ -413,14 +434,14 @@ void CompositorAnimations::attachCompositedLayers(const Element& element, const 
 {
     ASSERT(element.layoutObject());
 
-    DeprecatedPaintLayer* layer = toLayoutBoxModelObject(element.layoutObject())->layer();
+    PaintLayer* layer = toLayoutBoxModelObject(element.layoutObject())->layer();
     ASSERT(layer);
 
     WebCompositorAnimationPlayer* compositorPlayer = animation.compositorPlayer();
     ASSERT(compositorPlayer);
 
-    ASSERT(layer->compositedDeprecatedPaintLayerMapping());
-    compositorPlayer->attachLayer(layer->compositedDeprecatedPaintLayerMapping()->mainGraphicsLayer()->platformLayer());
+    ASSERT(layer->compositedLayerMapping());
+    compositorPlayer->attachLayer(layer->compositedLayerMapping()->mainGraphicsLayer()->platformLayer());
 }
 
 // -----------------------------------------------------------------------
@@ -665,7 +686,8 @@ void CompositorAnimationsImpl::getAnimationOnCompositor(const Timing& timing, in
             curve = adoptPtr(floatCurve);
             break;
         }
-        case CSSPropertyWebkitFilter: {
+        case CSSPropertyWebkitFilter:
+        case CSSPropertyBackdropFilter: {
             targetProperty = WebCompositorAnimation::TargetPropertyFilter;
             WebFilterAnimationCurve* filterCurve = Platform::current()->compositorSupport()->createFilterAnimationCurve();
             addKeyframesToCurve(*filterCurve, values, timing);

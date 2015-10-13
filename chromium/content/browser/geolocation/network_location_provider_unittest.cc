@@ -14,6 +14,7 @@
 #include "content/browser/geolocation/location_arbitrator_impl.h"
 #include "content/browser/geolocation/network_location_provider.h"
 #include "content/browser/geolocation/wifi_data_provider.h"
+#include "net/base/net_errors.h"
 #include "net/url_request/test_url_fetcher_factory.h"
 #include "net/url_request/url_request_status.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -258,9 +259,8 @@ class GeolocationNetworkProviderTest : public testing::Test {
     const std::string& upload_data = request.upload_data();
     ASSERT_FALSE(upload_data.empty());
     std::string json_parse_error_msg;
-    scoped_ptr<base::Value> parsed_json(
-        base::JSONReader::DeprecatedReadAndReturnError(
-            upload_data, base::JSON_PARSE_RFC, NULL, &json_parse_error_msg));
+    scoped_ptr<base::Value> parsed_json = base::JSONReader::ReadAndReturnError(
+        upload_data, base::JSON_PARSE_RFC, NULL, &json_parse_error_msg);
     EXPECT_TRUE(json_parse_error_msg.empty());
     ASSERT_TRUE(parsed_json.get() != NULL);
 
@@ -437,7 +437,7 @@ TEST_F(GeolocationNetworkProviderTest, MultipleWifiScansComplete) {
   // ...reply with a network error.
 
   fetcher->set_url(test_server_url_);
-  fetcher->set_status(net::URLRequestStatus(net::URLRequestStatus::FAILED, -1));
+  fetcher->set_status(net::URLRequestStatus::FromError(net::ERR_FAILED));
   fetcher->set_response_code(200);  // should be ignored
   fetcher->SetResponseString(std::string());
   fetcher->delegate()->OnURLFetchComplete(fetcher);

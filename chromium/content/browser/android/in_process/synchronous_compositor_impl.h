@@ -10,11 +10,11 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
-#include "cc/input/layer_scroll_offset_delegate.h"
 #include "content/browser/android/in_process/synchronous_compositor_output_surface.h"
 #include "content/common/input/input_event_ack_state.h"
 #include "content/public/browser/android/synchronous_compositor.h"
 #include "content/public/browser/web_contents_user_data.h"
+#include "content/renderer/input/synchronous_input_handler_proxy.h"
 #include "ipc/ipc_message.h"
 
 namespace cc {
@@ -37,7 +37,7 @@ struct DidOverscrollParams;
 // This class is created on the main thread but most of the APIs are called
 // from the Compositor thread.
 class SynchronousCompositorImpl
-    : public cc::LayerScrollOffsetDelegate,
+    : public SynchronousInputHandler,
       public SynchronousCompositor,
       public WebContentsUserData<SynchronousCompositorImpl> {
  public:
@@ -53,7 +53,7 @@ class SynchronousCompositorImpl
   void DidInitializeRendererObjects(
       SynchronousCompositorOutputSurface* output_surface,
       SynchronousCompositorExternalBeginFrameSource* begin_frame_source,
-      cc::InputHandler* input_handler);
+      SynchronousInputHandlerProxy* synchronous_input_handler_proxy);
   void DidDestroyRendererObjects();
 
   // Called by SynchronousCompositorExternalBeginFrameSource.
@@ -76,19 +76,19 @@ class SynchronousCompositorImpl
   bool DemandDrawSw(SkCanvas* canvas) override;
   void ReturnResources(const cc::CompositorFrameAck& frame_ack) override;
   void SetMemoryPolicy(size_t bytes_limit) override;
-  void DidChangeRootLayerScrollOffset() override;
+  void DidChangeRootLayerScrollOffset(
+      const gfx::ScrollOffset& root_offset) override;
   void SetIsActive(bool is_active) override;
+  void OnComputeScroll(base::TimeTicks animation_time) override;
 
-  // LayerScrollOffsetDelegate
-  gfx::ScrollOffset GetTotalScrollOffset() override;
+  // SynchronousInputHandler
+  void SetNeedsSynchronousAnimateInput() override;
   void UpdateRootLayerState(const gfx::ScrollOffset& total_scroll_offset,
                             const gfx::ScrollOffset& max_scroll_offset,
                             const gfx::SizeF& scrollable_size,
                             float page_scale_factor,
                             float min_page_scale_factor,
                             float max_page_scale_factor) override;
-  bool IsExternalScrollActive() const override;
-  void SetNeedsAnimate(const AnimationCallback& scroll_animation) override;
 
   void DidOverscroll(const DidOverscrollParams& params);
   void DidStopFlinging();
@@ -112,10 +112,11 @@ class SynchronousCompositorImpl
   SynchronousCompositorExternalBeginFrameSource* begin_frame_source_;
   WebContents* contents_;
   const int routing_id_;
-  cc::InputHandler* input_handler_;
+  SynchronousInputHandlerProxy* synchronous_input_handler_proxy_;
   bool registered_with_client_;
   bool is_active_;
   bool renderer_needs_begin_frames_;
+  bool need_animate_input_;
 
   base::WeakPtrFactory<SynchronousCompositorImpl> weak_ptr_factory_;
 

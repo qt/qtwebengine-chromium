@@ -115,7 +115,7 @@ class BlobURLRequestJobTest : public testing::Test {
         net::URLRequest* request,
         net::NetworkDelegate* network_delegate) const override {
       return new BlobURLRequestJob(request, network_delegate,
-                                   test_->GetSnapshotFromBuilder(),
+                                   test_->GetHandleFromBuilder(),
                                    test_->file_system_context_.get(),
                                    base::ThreadTaskRunnerHandle::Get().get());
     }
@@ -150,13 +150,14 @@ class BlobURLRequestJobTest : public testing::Test {
     disk_cache_entry_ = CreateDiskCacheEntry(
         disk_cache_backend_.get(), kTestDiskCacheKey, kTestDiskCacheData);
 
-    url_request_job_factory_.SetProtocolHandler("blob",
-                                                new MockProtocolHandler(this));
+    url_request_job_factory_.SetProtocolHandler(
+        "blob", make_scoped_ptr(new MockProtocolHandler(this)));
     url_request_context_.set_job_factory(&url_request_job_factory_);
   }
 
   void TearDown() override {
     blob_handle_.reset();
+    request_.reset();
     // Clean up for ASAN
     base::RunLoop run_loop;
     run_loop.RunUntilIdle();
@@ -282,18 +283,19 @@ class BlobURLRequestJobTest : public testing::Test {
     *expected_result += std::string(kTestFileSystemFileData2 + 6, 7);
   }
 
-  scoped_ptr<BlobDataSnapshot> GetSnapshotFromBuilder() {
+  storage::BlobDataHandle* GetHandleFromBuilder() {
     if (!blob_handle_) {
       blob_handle_ = blob_context_.AddFinishedBlob(blob_data_.get()).Pass();
     }
-    return blob_handle_->CreateSnapshot().Pass();
+    return blob_handle_.get();
   }
 
   // This only works if all the Blob items have a definite pre-computed length.
   // Otherwise, this will fail a CHECK.
   int64 GetTotalBlobLength() {
     int64 total = 0;
-    scoped_ptr<BlobDataSnapshot> data = GetSnapshotFromBuilder();
+    scoped_ptr<BlobDataSnapshot> data =
+        GetHandleFromBuilder()->CreateSnapshot();
     const auto& items = data->items();
     for (const auto& item : items) {
       int64 length = base::checked_cast<int64>(item->length());
@@ -489,6 +491,27 @@ TEST_F(BlobURLRequestJobTest, TestGetRangeRequest2) {
   EXPECT_EQ(total - 10, first);
   EXPECT_EQ(total - 1, last);
   EXPECT_EQ(total, length);
+}
+
+TEST_F(BlobURLRequestJobTest, TestGetRangeRequest3) {
+  SetUpFileSystem();
+  std::string result;
+  BuildComplicatedData(&result);
+  net::HttpRequestHeaders extra_headers;
+  extra_headers.SetHeader(net::HttpRequestHeaders::kRange,
+                          net::HttpByteRange::Bounded(0, 2).GetHeaderValue());
+  expected_status_code_ = 206;
+  expected_response_ = result.substr(0, 3);
+  TestRequest("GET", extra_headers);
+
+  EXPECT_EQ(3, request_->response_headers()->GetContentLength());
+
+  int64 first = 0, last = 0, length = 0;
+  EXPECT_TRUE(
+      request_->response_headers()->GetContentRange(&first, &last, &length));
+  EXPECT_EQ(0, first);
+  EXPECT_EQ(2, last);
+  EXPECT_EQ(GetTotalBlobLength(), length);
 }
 
 TEST_F(BlobURLRequestJobTest, TestExtraHeaders) {

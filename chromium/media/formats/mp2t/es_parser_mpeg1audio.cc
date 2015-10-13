@@ -4,16 +4,15 @@
 
 #include "media/formats/mp2t/es_parser_mpeg1audio.h"
 
-
 #include "base/basictypes.h"
 #include "base/bind.h"
 #include "base/logging.h"
 #include "base/strings/string_number_conversions.h"
 #include "media/base/audio_timestamp_helper.h"
 #include "media/base/bit_reader.h"
-#include "media/base/buffers.h"
 #include "media/base/channel_layout.h"
 #include "media/base/stream_parser_buffer.h"
+#include "media/base/timestamp_constants.h"
 #include "media/formats/common/offset_byte_queue.h"
 #include "media/formats/mp2t/mp2t_common.h"
 #include "media/formats/mpeg/mpeg1_audio_stream_parser.h"
@@ -38,10 +37,10 @@ struct EsParserMpeg1Audio::Mpeg1AudioFrame {
 EsParserMpeg1Audio::EsParserMpeg1Audio(
     const NewAudioConfigCB& new_audio_config_cb,
     const EmitBufferCB& emit_buffer_cb,
-    const LogCB& log_cb)
-  : log_cb_(log_cb),
-    new_audio_config_cb_(new_audio_config_cb),
-    emit_buffer_cb_(emit_buffer_cb) {
+    const scoped_refptr<MediaLog>& media_log)
+    : media_log_(media_log),
+      new_audio_config_cb_(new_audio_config_cb),
+      emit_buffer_cb_(emit_buffer_cb) {
 }
 
 EsParserMpeg1Audio::~EsParserMpeg1Audio() {
@@ -122,7 +121,7 @@ bool EsParserMpeg1Audio::LookForMpeg1AudioFrame(
     int remaining_size = es_size - offset;
     DCHECK_GE(remaining_size, MPEG1AudioStreamParser::kHeaderSize);
     MPEG1AudioStreamParser::Header header;
-    if (!MPEG1AudioStreamParser::ParseHeader(log_cb_, cur_buf, &header))
+    if (!MPEG1AudioStreamParser::ParseHeader(media_log_, cur_buf, &header))
       continue;
 
     if (remaining_size < header.frame_size) {
@@ -162,8 +161,7 @@ bool EsParserMpeg1Audio::LookForMpeg1AudioFrame(
 bool EsParserMpeg1Audio::UpdateAudioConfiguration(
     const uint8* mpeg1audio_header) {
   MPEG1AudioStreamParser::Header header;
-  if (!MPEG1AudioStreamParser::ParseHeader(log_cb_,
-                                           mpeg1audio_header,
+  if (!MPEG1AudioStreamParser::ParseHeader(media_log_, mpeg1audio_header,
                                            &header)) {
     return false;
   }

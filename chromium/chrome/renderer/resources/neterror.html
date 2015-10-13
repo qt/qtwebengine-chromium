@@ -5,17 +5,17 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0,
                                  maximum-scale=1.0, user-scalable=no">
   <title i18n-content="title"></title>
-  <link rel="stylesheet" href="../../browser/resources/security_warnings/interstitial_v2.css">
+  <link rel="stylesheet" href="../../../components/security_interstitials/core/browser/resources/interstitial_v2.css">
   <link rel="stylesheet" href="neterror.css">
-  <script src="../../browser/resources/security_warnings/interstitial_v2_mobile.js"></script>
+  <script src="../../../components/security_interstitials/core/browser/resources/interstitial_v2_mobile.js"></script>
   <script src="neterror.js"></script>
   <script src="offline.js"></script>
 </head>
 <body id="t" i18n-values=".style.fontFamily:fontfamily;.style.fontSize:fontsize">
   <div id="main-frame-error" class="interstitial-wrapper">
     <div id="main-content">
-      <img class="icon"
-          jseval="updateIconClass(this.classList, iconClass)">
+      <div class="icon"
+          jseval="updateIconClass(this.classList, iconClass)"></div>
       <div id="main-message">
         <h1 i18n-content="heading"></h1>
         <p hidden></p>

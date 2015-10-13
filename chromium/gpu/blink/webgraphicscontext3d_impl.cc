@@ -258,6 +258,9 @@ DELEGATE_TO_GL_5(renderbufferStorageMultisampleCHROMIUM,
 
 DELEGATE_TO_GL_1(activeTexture, ActiveTexture, WGC3Denum)
 
+DELEGATE_TO_GL(applyScreenSpaceAntialiasingCHROMIUM,
+               ApplyScreenSpaceAntialiasingCHROMIUM);
+
 DELEGATE_TO_GL_2(attachShader, AttachShader, WebGLId, WebGLId)
 
 DELEGATE_TO_GL_3(bindAttribLocation, BindAttribLocation, WebGLId,
@@ -826,6 +829,13 @@ DELEGATE_TO_GL_3(getQueryivEXT, GetQueryivEXT, WGC3Denum, WGC3Denum, WGC3Dint*)
 DELEGATE_TO_GL_3(getQueryObjectuivEXT, GetQueryObjectuivEXT,
                  WebGLId, WGC3Denum, WGC3Duint*)
 
+DELEGATE_TO_GL_2(queryCounterEXT, QueryCounterEXT, WebGLId, WGC3Denum)
+DELEGATE_TO_GL_3(getQueryObjectui64vEXT,
+                 GetQueryObjectui64vEXT,
+                 WebGLId,
+                 WGC3Denum,
+                 WGC3Duint64*)
+
 DELEGATE_TO_GL_8(copyTextureCHROMIUM,
                  CopyTextureCHROMIUM,
                  WGC3Denum,
@@ -965,16 +975,6 @@ DELEGATE_TO_GL_2R(mapBufferCHROMIUM, MapBufferCHROMIUM, WGC3Denum, WGC3Denum,
                   void*)
 DELEGATE_TO_GL_1R(unmapBufferCHROMIUM, UnmapBufferCHROMIUM, WGC3Denum,
                   WGC3Dboolean)
-
-DELEGATE_TO_GL_9(asyncTexImage2DCHROMIUM, AsyncTexImage2DCHROMIUM, WGC3Denum,
-                 WGC3Dint, WGC3Denum, WGC3Dsizei, WGC3Dsizei, WGC3Dint,
-                 WGC3Denum, WGC3Denum, const void*)
-DELEGATE_TO_GL_9(asyncTexSubImage2DCHROMIUM, AsyncTexSubImage2DCHROMIUM,
-                 WGC3Denum, WGC3Dint, WGC3Dint, WGC3Dint, WGC3Dsizei,
-                 WGC3Dsizei, WGC3Denum, WGC3Denum, const void*)
-
-DELEGATE_TO_GL_1(waitAsyncTexImage2DCHROMIUM, WaitAsyncTexImage2DCHROMIUM,
-                 WGC3Denum)
 
 DELEGATE_TO_GL_2(drawBuffersEXT, DrawBuffersEXT, WGC3Dsizei, const WGC3Denum*)
 
@@ -1254,7 +1254,21 @@ void WebGraphicsContext3DImpl::ConvertAttributes(
   output_attribs->fail_if_major_perf_caveat =
       attributes.failIfMajorPerformanceCaveat;
   output_attribs->bind_generates_resource = false;
-  output_attribs->webgl_version = attributes.webGLVersion;
+  switch (attributes.webGLVersion) {
+    case 0:
+      output_attribs->context_type = ::gpu::gles2::CONTEXT_TYPE_OPENGLES2;
+      break;
+    case 1:
+      output_attribs->context_type = ::gpu::gles2::CONTEXT_TYPE_WEBGL1;
+      break;
+    case 2:
+      output_attribs->context_type = ::gpu::gles2::CONTEXT_TYPE_WEBGL2;
+      break;
+    default:
+      NOTREACHED();
+      output_attribs->context_type = ::gpu::gles2::CONTEXT_TYPE_OPENGLES2;
+      break;
+  }
 }
 
 }  // namespace gpu_blink

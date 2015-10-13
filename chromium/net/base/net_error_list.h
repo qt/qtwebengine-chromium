@@ -347,6 +347,16 @@ NET_ERROR(SSL_FALLBACK_BEYOND_MINIMUM_VERSION, -165)
 // problem.
 NET_ERROR(ICANN_NAME_COLLISION, -166)
 
+// The SSL server presented a certificate which could not be decoded. This is
+// not a certificate error code as no X509Certificate object is available. This
+// error is fatal.
+NET_ERROR(SSL_SERVER_CERT_BAD_FORMAT, -167)
+// Certificate Transparency: Received a signed tree head that failed to parse.
+NET_ERROR(CT_STH_PARSING_FAILED, -168)
+// Certificate Transparency: Received a signed tree head whose JSON parsing was
+// OK but was missing some of the fields.
+NET_ERROR(CT_STH_INCOMPLETE, -169)
+
 // Certificate error codes
 //
 // The values of certificate error codes must be consecutive.
@@ -641,6 +651,10 @@ NET_ERROR(PAC_SCRIPT_TERMINATED, -367)
 // origin, a violation of HTTP Alternative Services specification Section 2.1,
 // https://tools.ietf.org/id/draft-ietf-httpbis-alt-svc-06.html#host_auth.
 NET_ERROR(ALTERNATIVE_CERT_NOT_VALID_FOR_ORIGIN, -368)
+
+// Request is throttled because of a Backoff header.
+// See: crbug.com/486891.
+NET_ERROR(TEMPORARY_BACKOFF, -369)
 
 // The cache does not have the requested entry.
 NET_ERROR(CACHE_MISS, -400)

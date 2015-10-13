@@ -42,11 +42,11 @@ int VideoFrame::CreateEmptyFrame(int width,
                                  int stride_u,
                                  int stride_v) {
   const int half_width = (width + 1) / 2;
-  DCHECK_GT(width, 0);
-  DCHECK_GT(height, 0);
-  DCHECK_GE(stride_y, width);
-  DCHECK_GE(stride_u, half_width);
-  DCHECK_GE(stride_v, half_width);
+  RTC_DCHECK_GT(width, 0);
+  RTC_DCHECK_GT(height, 0);
+  RTC_DCHECK_GE(stride_y, width);
+  RTC_DCHECK_GE(stride_u, half_width);
+  RTC_DCHECK_GE(stride_v, half_width);
 
   // Creating empty frame - reset all values.
   timestamp_ = 0;
@@ -152,13 +152,12 @@ void VideoFrame::Reset() {
 }
 
 uint8_t* VideoFrame::buffer(PlaneType type) {
-  return video_frame_buffer_ ? video_frame_buffer_->data(type) : nullptr;
+  return video_frame_buffer_ ? video_frame_buffer_->MutableData(type)
+                             : nullptr;
 }
 
 const uint8_t* VideoFrame::buffer(PlaneType type) const {
-  // Const cast to call the correct const-version of data.
-  const VideoFrameBuffer* const_buffer = video_frame_buffer_.get();
-  return const_buffer ? const_buffer->data(type) : nullptr;
+  return video_frame_buffer_ ? video_frame_buffer_->data(type) : nullptr;
 }
 
 int VideoFrame::allocated_size(PlaneType type) const {
@@ -196,7 +195,7 @@ void VideoFrame::set_video_frame_buffer(
 }
 
 VideoFrame VideoFrame::ConvertNativeToI420Frame() const {
-  DCHECK(native_handle());
+  RTC_DCHECK(native_handle());
   VideoFrame frame;
   frame.ShallowCopy(*this);
   frame.set_video_frame_buffer(video_frame_buffer_->NativeToI420Buffer());

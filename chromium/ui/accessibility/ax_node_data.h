@@ -82,12 +82,15 @@ struct AX_EXPORT AXNodeData {
 
   // Convenience functions, mainly for writing unit tests.
   // Equivalent to AddStringAttribute(ATTR_NAME, name).
-  void SetName(std::string name);
+  void SetName(const std::string& name);
   // Equivalent to AddStringAttribute(ATTR_VALUE, value).
-  void SetValue(std::string value);
+  void SetValue(const std::string& value);
 
   // Return a string representation of this data, for debugging.
-  std::string ToString() const;
+  virtual std::string ToString() const;
+
+  bool IsRoot() const;
+  void SetRoot();
 
   // This is a simple serializable struct. All member variables should be
   // public and copyable.

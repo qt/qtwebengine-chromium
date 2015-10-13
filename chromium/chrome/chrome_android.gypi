@@ -5,17 +5,13 @@
   'variables': {
     'chromium_code': 1,
     'conditions': [
-      ['component != "shared_library" and target_arch != "arm64" and target_arch != "x64" and profiling_full_stack_frames != 1', {
+      ['android_must_copy_system_libraries == 0 and target_arch != "arm64" and target_arch != "x64" and profiling_full_stack_frames != 1', {
         # Only enable the chromium linker on regular builds, since the
         # component build crashes on Android 4.4. See b/11379966
         'use_chromium_linker': '1',
       }],
     ],
   },
-  'includes': [
-    'chrome_android_paks.gypi', # Included for the list of pak resources.
-    'chrome_shell.gypi', # Built atop chrome_android_core (defined here)
-  ],
   'targets': [
     {
       # GN: //chrome:chrome_android_core

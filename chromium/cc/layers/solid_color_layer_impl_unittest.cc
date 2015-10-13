@@ -113,7 +113,7 @@ TEST(SolidColorLayerImplTest, VerifyCorrectBlendModeInQuad) {
   scoped_ptr<SolidColorLayerImpl> layer =
       SolidColorLayerImpl::Create(host_impl.active_tree(), 1);
   layer->SetBounds(layer_size);
-  layer->draw_properties().blend_mode = blend_mode;
+  layer->set_draw_blend_mode(blend_mode);
 
   AppendQuadsData data;
   layer->AppendQuads(render_pass.get(), &data);
@@ -143,9 +143,8 @@ TEST(SolidColorLayerImplTest, VerifyOpaqueRect) {
       FakeLayerTreeHost::Create(&client, &task_graph_runner);
   host->SetRootLayer(root);
 
-  RenderSurfaceLayerList render_surface_layer_list;
-  LayerTreeHostCommon::CalcDrawPropsMainInputsForTesting inputs(
-      root.get(), gfx::Size(500, 500), &render_surface_layer_list);
+  LayerTreeHostCommon::CalcDrawPropsMainInputs inputs(root.get(),
+                                                      gfx::Size(500, 500));
   LayerTreeHostCommon::CalculateDrawProperties(&inputs);
 
   EXPECT_FALSE(layer->contents_opaque());

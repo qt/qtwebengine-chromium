@@ -42,7 +42,7 @@
 #include "core/dom/shadow/InsertionPoint.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/editing/FrameSelection.h"
-#include "core/editing/SpellChecker.h"
+#include "core/editing/spellcheck/SpellChecker.h"
 #include "core/events/BeforeTextInsertedEvent.h"
 #include "core/events/KeyboardEvent.h"
 #include "core/events/MouseEvent.h"
@@ -119,6 +119,7 @@ HTMLInputElement::HTMLInputElement(Document& document, HTMLFormElement* form, bo
     , m_hasTouchEventHandler(false)
     , m_shouldRevealPassword(false)
     , m_needsToUpdateViewValue(true)
+    , m_isPlaceholderVisible(false)
     // |m_inputType| is lazily created when constructed by the parser to avoid
     // constructing unnecessarily a text inputType and its shadow subtree, just
     // to destroy them when the |type| attribute gets set by the parser to
@@ -385,11 +386,11 @@ void HTMLInputElement::handleFocusEvent(Element* oldFocusedElement, WebFocusType
     m_inputType->enableSecureTextInput();
 }
 
-void HTMLInputElement::dispatchFocusInEvent(const AtomicString& eventType, Element* oldFocusedElement, WebFocusType type)
+void HTMLInputElement::dispatchFocusInEvent(const AtomicString& eventType, Element* oldFocusedElement, WebFocusType type, InputDeviceCapabilities* sourceCapabilities)
 {
     if (eventType == EventTypeNames::DOMFocusIn)
         m_inputTypeView->handleFocusInEvent(oldFocusedElement, type);
-    HTMLFormControlElementWithState::dispatchFocusInEvent(eventType, oldFocusedElement, type);
+    HTMLFormControlElementWithState::dispatchFocusInEvent(eventType, oldFocusedElement, type, sourceCapabilities);
 }
 
 void HTMLInputElement::handleBlurEvent()
@@ -462,7 +463,7 @@ void HTMLInputElement::updateType()
     lazyReattachIfAttached();
 
     m_inputType = newType.release();
-    if (hasOpenShadowRoot())
+    if (openShadowRoot())
         m_inputTypeView = InputTypeView::create(*this);
     else
         m_inputTypeView = m_inputType;
@@ -700,7 +701,7 @@ void HTMLInputElement::parseAttribute(const QualifiedName& name, const AtomicStr
     } else if (name == valueAttr) {
         // We only need to setChanged if the form is looking at the default value right now.
         if (!hasDirtyValue()) {
-            updatePlaceholderVisibility(false);
+            updatePlaceholderVisibility();
             setNeedsStyleRecalc(SubtreeStyleChange, StyleChangeReasonForTracing::fromAttribute(valueAttr));
         }
         m_needsToUpdateViewValue = true;
@@ -871,9 +872,10 @@ void HTMLInputElement::setActivatedSubmit(bool flag)
     m_isActivatedSubmit = flag;
 }
 
-bool HTMLInputElement::appendFormData(FormDataList& encoding, bool multipart)
+void HTMLInputElement::appendToFormData(FormData& formData)
 {
-    return m_inputType->isFormDataAppendable() && m_inputType->appendFormData(encoding, multipart);
+    if (m_inputType->isFormDataAppendable())
+        m_inputType->appendToFormData(formData);
 }
 
 String HTMLInputElement::resultForDialogSubmit()
@@ -900,7 +902,13 @@ bool HTMLInputElement::isTextField() const
 void HTMLInputElement::dispatchChangeEventIfNeeded()
 {
     if (inDocument() && m_inputType->shouldSendChangeEventAfterCheckedChanged())
-        dispatchFormControlChangeEvent();
+        dispatchChangeEvent();
+}
+
+bool HTMLInputElement::checked() const
+{
+    m_inputType->readingChecked();
+    return m_isChecked;
 }
 
 void HTMLInputElement::setChecked(bool nowChecked, TextFieldEventBehavior eventBehavior)
@@ -1173,6 +1181,8 @@ void HTMLInputElement::postDispatchEventHandler(Event* event, void* dataFromPreD
     OwnPtrWillBeRawPtr<ClickHandlingState> state = adoptPtrWillBeNoop(static_cast<ClickHandlingState*>(dataFromPreDispatch));
     if (!state)
         return;
+    // m_inputTypeView could be freed if the type attribute is modified through a change event handler.
+    RefPtrWillBeRawPtr<InputTypeView> protect(m_inputTypeView.get());
     m_inputTypeView->didDispatchClick(event, *state);
 }
 
@@ -1523,6 +1533,7 @@ Node::InsertionNotificationRequest HTMLInputElement::insertedInto(ContainerNode*
 
 void HTMLInputElement::removedFrom(ContainerNode* insertionPoint)
 {
+    m_inputTypeView->closePopupView();
     if (insertionPoint->inDocument() && !form())
         removeFromRadioButtonGroup();
     HTMLTextFormControlElement::removedFrom(insertionPoint);
@@ -1656,6 +1667,11 @@ bool HTMLInputElement::supportLabels() const
 bool HTMLInputElement::shouldAppearChecked() const
 {
     return checked() && m_inputType->isCheckable();
+}
+
+void HTMLInputElement::setPlaceholderVisibility(bool visible)
+{
+    m_isPlaceholderVisible = visible;
 }
 
 bool HTMLInputElement::supportsPlaceholder() const

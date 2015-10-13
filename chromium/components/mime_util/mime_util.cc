@@ -151,25 +151,25 @@ MimeUtil::MimeUtil() {
 }
 
 bool MimeUtil::IsSupportedImageMimeType(const std::string& mime_type) const {
-  return image_types_.find(base::StringToLowerASCII(mime_type)) !=
-         image_types_.end();
+  return image_types_.find(base::ToLowerASCII(mime_type)) != image_types_.end();
 }
 
 bool MimeUtil::IsSupportedNonImageMimeType(const std::string& mime_type) const {
-  return non_image_types_.find(base::StringToLowerASCII(mime_type)) !=
+  return non_image_types_.find(base::ToLowerASCII(mime_type)) !=
              non_image_types_.end() ||
 #if !defined(OS_IOS)
          media::IsSupportedMediaMimeType(mime_type) ||
 #endif
-         (base::StartsWithASCII(mime_type, "text/",
-                                false /* case insensitive */) &&
+         (base::StartsWith(mime_type, "text/",
+                           base::CompareCase::INSENSITIVE_ASCII) &&
           !IsUnsupportedTextMimeType(mime_type)) ||
-         (base::StartsWithASCII(mime_type, "application/", false) &&
+         (base::StartsWith(mime_type, "application/",
+                           base::CompareCase::INSENSITIVE_ASCII) &&
           net::MatchesMimeType("application/*+json", mime_type));
 }
 
 bool MimeUtil::IsUnsupportedTextMimeType(const std::string& mime_type) const {
-  return unsupported_text_types_.find(base::StringToLowerASCII(mime_type)) !=
+  return unsupported_text_types_.find(base::ToLowerASCII(mime_type)) !=
          unsupported_text_types_.end();
 }
 
@@ -179,7 +179,8 @@ bool MimeUtil::IsSupportedJavascriptMimeType(
 }
 
 bool MimeUtil::IsSupportedMimeType(const std::string& mime_type) const {
-  return (base::StartsWithASCII(mime_type, "image/", false) &&
+  return (base::StartsWith(mime_type, "image/",
+                           base::CompareCase::INSENSITIVE_ASCII) &&
           IsSupportedImageMimeType(mime_type)) ||
          IsSupportedNonImageMimeType(mime_type);
 }
@@ -221,8 +222,8 @@ net::CertificateMimeType GetCertificateMimeTypeForMimeType(
   // Don't create a map, there is only one entry in the table,
   // except on Android.
   for (size_t i = 0; i < arraysize(kSupportedCertificateTypes); ++i) {
-    if (base::strcasecmp(mime_type.c_str(),
-                         kSupportedCertificateTypes[i].mime_type) == 0) {
+    if (base::EqualsCaseInsensitiveASCII(
+            mime_type, kSupportedCertificateTypes[i].mime_type)) {
       return kSupportedCertificateTypes[i].cert_type;
     }
   }

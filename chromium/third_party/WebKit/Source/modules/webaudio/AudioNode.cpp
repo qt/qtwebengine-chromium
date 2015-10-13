@@ -29,7 +29,7 @@
 #include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/inspector/InstanceCounters.h"
-#include "modules/webaudio/AudioContext.h"
+#include "modules/webaudio/AbstractAudioContext.h"
 #include "modules/webaudio/AudioNodeInput.h"
 #include "modules/webaudio/AudioNodeOutput.h"
 #include "modules/webaudio/AudioParam.h"
@@ -113,7 +113,7 @@ AudioNode* AudioHandler::node() const
     return m_node;
 }
 
-AudioContext* AudioHandler::context() const
+AbstractAudioContext* AudioHandler::context() const
 {
     return m_context;
 }
@@ -211,9 +211,9 @@ unsigned long AudioHandler::channelCount()
 void AudioHandler::setChannelCount(unsigned long channelCount, ExceptionState& exceptionState)
 {
     ASSERT(isMainThread());
-    AudioContext::AutoLocker locker(context());
+    AbstractAudioContext::AutoLocker locker(context());
 
-    if (channelCount > 0 && channelCount <= AudioContext::maxNumberOfChannels()) {
+    if (channelCount > 0 && channelCount <= AbstractAudioContext::maxNumberOfChannels()) {
         if (m_channelCount != channelCount) {
             m_channelCount = channelCount;
             if (m_channelCountMode != Max)
@@ -227,7 +227,7 @@ void AudioHandler::setChannelCount(unsigned long channelCount, ExceptionState& e
                 channelCount,
                 1,
                 ExceptionMessages::InclusiveBound,
-                AudioContext::maxNumberOfChannels(),
+                AbstractAudioContext::maxNumberOfChannels(),
                 ExceptionMessages::InclusiveBound));
     }
 }
@@ -249,7 +249,7 @@ String AudioHandler::channelCountMode()
 void AudioHandler::setChannelCountMode(const String& mode, ExceptionState& exceptionState)
 {
     ASSERT(isMainThread());
-    AudioContext::AutoLocker locker(context());
+    AbstractAudioContext::AutoLocker locker(context());
 
     ChannelCountMode oldMode = m_channelCountMode;
 
@@ -282,7 +282,7 @@ String AudioHandler::channelInterpretation()
 void AudioHandler::setChannelInterpretation(const String& interpretation, ExceptionState& exceptionState)
 {
     ASSERT(isMainThread());
-    AudioContext::AutoLocker locker(context());
+    AbstractAudioContext::AutoLocker locker(context());
 
     if (interpretation == "speakers") {
         m_channelInterpretation = AudioBus::Speakers;
@@ -390,7 +390,7 @@ void AudioHandler::enableOutputsIfNecessary()
 {
     if (m_isDisabled && m_connectionRefCount > 0) {
         ASSERT(isMainThread());
-        AudioContext::AutoLocker locker(context());
+        AbstractAudioContext::AutoLocker locker(context());
 
         m_isDisabled = false;
         for (auto& output : m_outputs)
@@ -412,11 +412,14 @@ void AudioHandler::disableOutputsIfNecessary()
         // But internally our outputs should be disabled from the inputs they're connected to.
         // disable() can recursively deref connections (and call disable()) down a whole chain of connected nodes.
 
-        // FIXME: we special case the convolver and delay since they have a significant tail-time and shouldn't be disconnected simply
-        // because they no longer have any input connections. This needs to be handled more generally where AudioNodes have
-        // a tailTime attribute. Then the AudioNode only needs to remain "active" for tailTime seconds after there are no
-        // longer any active connections.
-        if (nodeType() != NodeTypeConvolver && nodeType() != NodeTypeDelay) {
+        // TODO(rtoy,hongchan): we special case the convolver, delay, and biquad since they have a
+        // significant tail-time and shouldn't be disconnected simply because they no longer have
+        // any input connections. This needs to be handled more generally where AudioNodes have a
+        // tailTime attribute. Then the AudioNode only needs to remain "active" for tailTime seconds
+        // after there are no longer any active connections.
+        if (nodeType() != NodeTypeConvolver
+            && nodeType() != NodeTypeDelay
+            && nodeType() != NodeTypeBiquadFilter) {
             m_isDisabled = true;
             clearInternalStateWhenDisabled();
             for (auto& output : m_outputs)
@@ -513,7 +516,7 @@ unsigned AudioHandler::numberOfOutputChannels() const
 }
 // ----------------------------------------------------------------
 
-AudioNode::AudioNode(AudioContext& context)
+AudioNode::AudioNode(AbstractAudioContext& context)
     : m_context(context)
     , m_handler(nullptr)
 {
@@ -523,9 +526,9 @@ AudioNode::AudioNode(AudioContext& context)
 void AudioNode::dispose()
 {
     ASSERT(isMainThread());
-    AudioContext::AutoLocker locker(context());
+    AbstractAudioContext::AutoLocker locker(context());
     handler().dispose();
-    if (context()->contextState() == AudioContext::Running)
+    if (context()->contextState() == AbstractAudioContext::Running)
         context()->deferredTaskHandler().addRenderingOrphanHandler(m_handler.release());
 }
 
@@ -548,7 +551,7 @@ DEFINE_TRACE(AudioNode)
     RefCountedGarbageCollectedEventTargetWithInlineData<AudioNode>::trace(visitor);
 }
 
-AudioContext* AudioNode::context() const
+AbstractAudioContext* AudioNode::context() const
 {
     return m_context;
 }
@@ -556,7 +559,7 @@ AudioContext* AudioNode::context() const
 void AudioNode::connect(AudioNode* destination, unsigned outputIndex, unsigned inputIndex, ExceptionState& exceptionState)
 {
     ASSERT(isMainThread());
-    AudioContext::AutoLocker locker(context());
+    AbstractAudioContext::AutoLocker locker(context());
 
     if (context()->isContextClosed()) {
         exceptionState.throwDOMException(
@@ -616,7 +619,7 @@ void AudioNode::connect(AudioNode* destination, unsigned outputIndex, unsigned i
 void AudioNode::connect(AudioParam* param, unsigned outputIndex, ExceptionState& exceptionState)
 {
     ASSERT(isMainThread());
-    AudioContext::AutoLocker locker(context());
+    AbstractAudioContext::AutoLocker locker(context());
 
     if (context()->isContextClosed()) {
         exceptionState.throwDOMException(
@@ -683,7 +686,7 @@ bool AudioNode::disconnectFromOutputIfConnected(unsigned outputIndex, AudioParam
 void AudioNode::disconnect()
 {
     ASSERT(isMainThread());
-    AudioContext::AutoLocker locker(context());
+    AbstractAudioContext::AutoLocker locker(context());
 
     // Disconnect all outgoing connections.
     for (unsigned i = 0; i < numberOfOutputs(); ++i)
@@ -693,7 +696,7 @@ void AudioNode::disconnect()
 void AudioNode::disconnect(unsigned outputIndex, ExceptionState& exceptionState)
 {
     ASSERT(isMainThread());
-    AudioContext::AutoLocker locker(context());
+    AbstractAudioContext::AutoLocker locker(context());
 
     // Sanity check on the output index.
     if (outputIndex >= numberOfOutputs()) {
@@ -715,7 +718,7 @@ void AudioNode::disconnect(unsigned outputIndex, ExceptionState& exceptionState)
 void AudioNode::disconnect(AudioNode* destination, ExceptionState& exceptionState)
 {
     ASSERT(isMainThread());
-    AudioContext::AutoLocker locker(context());
+    AbstractAudioContext::AutoLocker locker(context());
 
     unsigned numberOfDisconnections = 0;
 
@@ -740,7 +743,7 @@ void AudioNode::disconnect(AudioNode* destination, ExceptionState& exceptionStat
 void AudioNode::disconnect(AudioNode* destination, unsigned outputIndex, ExceptionState& exceptionState)
 {
     ASSERT(isMainThread());
-    AudioContext::AutoLocker locker(context());
+    AbstractAudioContext::AutoLocker locker(context());
 
     if (outputIndex >= numberOfOutputs()) {
         // The output index is out of range. Throw an exception.
@@ -775,7 +778,7 @@ void AudioNode::disconnect(AudioNode* destination, unsigned outputIndex, Excepti
 void AudioNode::disconnect(AudioNode* destination, unsigned outputIndex, unsigned inputIndex, ExceptionState& exceptionState)
 {
     ASSERT(isMainThread());
-    AudioContext::AutoLocker locker(context());
+    AbstractAudioContext::AutoLocker locker(context());
 
     if (outputIndex >= numberOfOutputs()) {
         exceptionState.throwDOMException(
@@ -815,7 +818,7 @@ void AudioNode::disconnect(AudioNode* destination, unsigned outputIndex, unsigne
 void AudioNode::disconnect(AudioParam* destinationParam, ExceptionState& exceptionState)
 {
     ASSERT(isMainThread());
-    AudioContext::AutoLocker locker(context());
+    AbstractAudioContext::AutoLocker locker(context());
 
     // The number of disconnection made.
     unsigned numberOfDisconnections = 0;
@@ -839,7 +842,7 @@ void AudioNode::disconnect(AudioParam* destinationParam, ExceptionState& excepti
 void AudioNode::disconnect(AudioParam* destinationParam, unsigned outputIndex, ExceptionState& exceptionState)
 {
     ASSERT(isMainThread());
-    AudioContext::AutoLocker locker(context());
+    AbstractAudioContext::AutoLocker locker(context());
 
     if (outputIndex >= handler().numberOfOutputs()) {
         // The output index is out of range. Throw an exception.
@@ -867,7 +870,7 @@ void AudioNode::disconnect(AudioParam* destinationParam, unsigned outputIndex, E
 void AudioNode::disconnectWithoutException(unsigned outputIndex)
 {
     ASSERT(isMainThread());
-    AudioContext::AutoLocker locker(context());
+    AbstractAudioContext::AutoLocker locker(context());
 
     // Sanity check input and output indices.
     if (outputIndex >= handler().numberOfOutputs())

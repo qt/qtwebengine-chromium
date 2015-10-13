@@ -54,8 +54,8 @@
     '<(webrtc_p2p)/base/transportchannel.cc',
     '<(webrtc_p2p)/base/transportchannel.h',
     '<(webrtc_p2p)/base/transportchannelimpl.h',
-    '<(webrtc_p2p)/base/transportchannelproxy.cc',
-    '<(webrtc_p2p)/base/transportchannelproxy.h',
+    '<(webrtc_p2p)/base/transportcontroller.cc',
+    '<(webrtc_p2p)/base/transportcontroller.h',
     '<(webrtc_p2p)/base/transportdescription.cc',
     '<(webrtc_p2p)/base/transportdescription.h',
     '<(webrtc_p2p)/base/transportdescriptionfactory.cc',
@@ -113,11 +113,6 @@
       'sources/': [
         ['exclude', '/mac[a-z]+\\.(h|cc)$'],
         ['exclude', '/scoped_autorelease_pool\\.(h|mm)$'],
-      ],
-    }],
-    ['use_openssl!=1', {
-      'sources/': [
-        ['exclude', '/openssl[a-z]+\\.(h|cc)$'],
       ],
     }],
   ],

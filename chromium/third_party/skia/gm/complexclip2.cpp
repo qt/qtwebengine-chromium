@@ -10,6 +10,8 @@
 #include "SkCanvas.h"
 #include "SkPath.h"
 #include "SkRandom.h"
+#include "SkRect.h"
+#include "SkRRect.h"
 
 namespace skiagm {
 
@@ -118,7 +120,7 @@ protected:
         return "";
     }
 
-    virtual SkString onShortName() {
+    SkString onShortName() override {
         if (kRect_Clip == fClip && !fAntiAlias) {
             return SkString("complexclip2");
         }
@@ -130,12 +132,12 @@ protected:
         return str;
     }
 
-    virtual SkISize onISize() {
+    SkISize onISize() override {
         return SkISize::Make(SkScalarRoundToInt(fTotalWidth),
                              SkScalarRoundToInt(fTotalHeight));
     }
 
-    virtual void onDraw(SkCanvas* canvas) {
+    void onDraw(SkCanvas* canvas) override {
         SkPaint rectPaint;
         rectPaint.setStyle(SkPaint::kStroke_Style);
         rectPaint.setStrokeWidth(-1);

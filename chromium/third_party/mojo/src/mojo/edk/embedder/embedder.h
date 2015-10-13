@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef MOJO_EDK_EMBEDDER_EMBEDDER_H_
-#define MOJO_EDK_EMBEDDER_EMBEDDER_H_
+#ifndef THIRD_PARTY_MOJO_SRC_MOJO_EDK_EMBEDDER_EMBEDDER_H_
+#define THIRD_PARTY_MOJO_SRC_MOJO_EDK_EMBEDDER_EMBEDDER_H_
 
 #include <string>
 
@@ -11,18 +11,16 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/task_runner.h"
-#include "mojo/edk/embedder/channel_info_forward.h"
-#include "mojo/edk/embedder/process_type.h"
-#include "mojo/edk/embedder/scoped_platform_handle.h"
-#include "mojo/edk/embedder/slave_info.h"
-#include "mojo/edk/system/system_impl_export.h"
 #include "mojo/public/cpp/system/message_pipe.h"
+#include "third_party/mojo/src/mojo/edk/embedder/channel_info_forward.h"
+#include "third_party/mojo/src/mojo/edk/embedder/process_type.h"
+#include "third_party/mojo/src/mojo/edk/embedder/scoped_platform_handle.h"
+#include "third_party/mojo/src/mojo/edk/embedder/slave_info.h"
+#include "third_party/mojo/src/mojo/edk/system/system_impl_export.h"
 
 namespace mojo {
 namespace embedder {
 
-struct Configuration;
-class PlatformSupport;
 class ProcessDelegate;
 
 // Basic configuration/initialization ------------------------------------------
@@ -31,13 +29,12 @@ class ProcessDelegate;
 // functions available and functional. This is never shut down (except in tests
 // -- see test_embedder.h).
 
-// Returns the global configuration. In general, you should not need to change
-// the configuration, but if you do you must do it before calling |Init()|.
-MOJO_SYSTEM_IMPL_EXPORT Configuration* GetConfiguration();
+// Allows changing the default max message size. Must be called before Init.
+MOJO_SYSTEM_IMPL_EXPORT void SetMaxMessageSize(size_t bytes);
 
 // Must be called first, or just after setting configuration parameters, to
 // initialize the (global, singleton) system.
-MOJO_SYSTEM_IMPL_EXPORT void Init(scoped_ptr<PlatformSupport> platform_support);
+MOJO_SYSTEM_IMPL_EXPORT void Init();
 
 // Basic functions -------------------------------------------------------------
 
@@ -240,4 +237,4 @@ MOJO_SYSTEM_IMPL_EXPORT void WillDestroyChannelSoon(ChannelInfo* channel_info);
 }  // namespace embedder
 }  // namespace mojo
 
-#endif  // MOJO_EDK_EMBEDDER_EMBEDDER_H_
+#endif  // THIRD_PARTY_MOJO_SRC_MOJO_EDK_EMBEDDER_EMBEDDER_H_

@@ -34,9 +34,12 @@ devtools_extensions_js_files = gypi_values.devtools_extensions_js_files -
 devtools_modules_js_files =
   gypi_values.devtools_accessibility_js_files +
   gypi_values.devtools_audits_js_files +
+  gypi_values.devtools_animation_js_files +
   gypi_values.devtools_cm_modes_js_files +
   gypi_values.devtools_components_lazy_js_files +
   gypi_values.devtools_console_js_files +
+  gypi_values.devtools_devices_js_files +
+  gypi_values.devtools_diff_js_files +
   gypi_values.devtools_elements_js_files +
   gypi_values.devtools_emulated_devices_js_files +
   devtools_extensions_js_files +
@@ -79,9 +82,10 @@ generated_scripts = [
 visibility = [ "//third_party/WebKit/*" ]
 
 group("devtools_frontend_resources") {
-  deps = [
+  public_deps = [
     ":copy_compatibility_scripts",
     ":copy_inspector_images",
+    ":copy_emulated_devices_images",
     ":devtools_extension_api",
     ":frontend_protocol_sources",
     ":supported_css_properties",
@@ -91,7 +95,7 @@ group("devtools_frontend_resources") {
   if (!debug_devtools) {
     # This overwrites application-specific core CSS (devtools.css),
     # and thus should be guarded out in Debug builds.
-    deps += [
+    public_deps += [
       ":concatenated_inspector_css",
       ":concatenated_toolbox_css",
     ]
@@ -106,6 +110,11 @@ copy("copy_compatibility_scripts") {
 copy("copy_inspector_images") {
   sources = gypi_values.devtools_image_files
   outputs = [ resources_out_dir + "Images/{{source_file_part}}" ]
+}
+
+copy("copy_emulated_devices_images") {
+  sources = gypi_values.devtools_emulated_devices_images
+  outputs = [ resources_out_dir + "emulated_devices/{{source_file_part}}" ]
 }
 
 action("generate_devtools_grd") {
@@ -137,8 +146,11 @@ action("generate_devtools_grd") {
       resources_out_dir + "toolbox.js",
       resources_out_dir + "accessibility_module.js",
       resources_out_dir + "audits_module.js",
+      resources_out_dir + "animation_module.js",
       resources_out_dir + "components_lazy_module.js",
       resources_out_dir + "console_module.js",
+      resources_out_dir + "devices_module.js",
+      resources_out_dir + "diff_module.js",
       resources_out_dir + "elements_module.js",
       resources_out_dir + "heap_snapshot_worker_module.js",
       resources_out_dir + "layers_module.js",
@@ -248,9 +260,12 @@ action("build_applications") {
       resources_out_dir + "toolbox.js",
       resources_out_dir + "accessibility_module.js",
       resources_out_dir + "audits_module.js",
+      resources_out_dir + "animation_module.js",
       resources_out_dir + "cm_modes_module.js",
       resources_out_dir + "components_lazy_module.js",
       resources_out_dir + "console_module.js",
+      resources_out_dir + "devices_module.js",
+      resources_out_dir + "diff_module.js",
       resources_out_dir + "elements_module.js",
       resources_out_dir + "emulated_devices_module.js",
       resources_out_dir + "heap_snapshot_worker_module.js",
@@ -285,7 +300,7 @@ action("build_applications") {
 if (debug_devtools) {
   # Debug: copy non-module directories and core into resources_out_dir as-is.
   group("copy_debug_non_modules") {
-    deps = [
+    public_deps = [
       ":copy_runtime_core",
       ":copy_acorn_js_files",
       ":copy_codemirror_files",

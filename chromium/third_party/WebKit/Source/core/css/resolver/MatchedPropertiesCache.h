@@ -37,13 +37,13 @@ class ComputedStyle;
 class StyleResolverState;
 
 class CachedMatchedProperties final : public NoBaseWillBeGarbageCollectedFinalized<CachedMatchedProperties> {
-
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(CachedMatchedProperties);
 public:
     WillBeHeapVector<MatchedProperties> matchedProperties;
     RefPtr<ComputedStyle> computedStyle;
     RefPtr<ComputedStyle> parentComputedStyle;
 
-    void set(const ComputedStyle&, const ComputedStyle& parentStyle, const MatchResult&);
+    void set(const ComputedStyle&, const ComputedStyle& parentStyle, const MatchedPropertiesVector&);
     void clear();
     DEFINE_INLINE_TRACE()
     {
@@ -95,19 +95,19 @@ class MatchedPropertiesCache {
 public:
     MatchedPropertiesCache();
 
-    const CachedMatchedProperties* find(unsigned hash, const StyleResolverState&, const MatchResult&);
-    void add(const ComputedStyle&, const ComputedStyle& parentStyle, unsigned hash, const MatchResult&);
+    const CachedMatchedProperties* find(unsigned hash, const StyleResolverState&, const MatchedPropertiesVector&);
+    void add(const ComputedStyle&, const ComputedStyle& parentStyle, unsigned hash, const MatchedPropertiesVector&);
 
     void clear();
     void clearViewportDependent();
 
-    static bool isCacheable(const Element*, const ComputedStyle&, const ComputedStyle& parentStyle);
+    static bool isCacheable(const ComputedStyle&, const ComputedStyle& parentStyle);
 
     DECLARE_TRACE();
 
 private:
 #if ENABLE(OILPAN)
-    typedef HeapHashMap<unsigned, Member<CachedMatchedProperties>, DefaultHash<unsigned>::Hash, HashTraits<unsigned>, CachedMatchedPropertiesHashTraits > Cache;
+    using Cache = HeapHashMap<unsigned, Member<CachedMatchedProperties>, DefaultHash<unsigned>::Hash, HashTraits<unsigned>, CachedMatchedPropertiesHashTraits>;
 #else
     // Every N additions to the matched declaration cache trigger a sweep where entries holding
     // the last reference to a style declaration are garbage collected.
@@ -115,7 +115,7 @@ private:
 
     unsigned m_additionsSinceLastSweep;
 
-    typedef HashMap<unsigned, OwnPtr<CachedMatchedProperties>> Cache;
+    using Cache = HashMap<unsigned, OwnPtr<CachedMatchedProperties>>;
     Timer<MatchedPropertiesCache> m_sweepTimer;
 #endif
     Cache m_cache;

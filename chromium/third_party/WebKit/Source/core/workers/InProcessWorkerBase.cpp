@@ -51,7 +51,7 @@ bool InProcessWorkerBase::initialize(ExecutionContext* context, const String& ur
     if (scriptURL.isEmpty())
         return false;
 
-    m_scriptLoader = adoptPtr(new WorkerScriptLoader());
+    m_scriptLoader = WorkerScriptLoader::create();
     m_scriptLoader->loadAsynchronously(
         *context,
         scriptURL,
@@ -81,11 +81,11 @@ bool InProcessWorkerBase::hasPendingActivity() const
     return (m_contextProxy && m_contextProxy->hasPendingActivity()) || m_scriptLoader;
 }
 
-PassRefPtr<ContentSecurityPolicy> InProcessWorkerBase::contentSecurityPolicy()
+ContentSecurityPolicy* InProcessWorkerBase::contentSecurityPolicy()
 {
     if (m_scriptLoader)
         return m_scriptLoader->contentSecurityPolicy();
-    return m_contentSecurityPolicy;
+    return m_contentSecurityPolicy.get();
 }
 
 void InProcessWorkerBase::onResponse()
@@ -111,6 +111,7 @@ void InProcessWorkerBase::onFinished()
 
 DEFINE_TRACE(InProcessWorkerBase)
 {
+    visitor->trace(m_contentSecurityPolicy);
     AbstractWorker::trace(visitor);
 }
 

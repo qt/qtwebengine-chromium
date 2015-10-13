@@ -79,7 +79,6 @@
 #include "ppapi/shared_impl/socket_option_data.h"
 #include "ppapi/shared_impl/url_request_info_data.h"
 #include "ppapi/shared_impl/url_response_info_data.h"
-#include "ui/events/ipc/latency_info_param_traits.h"
 
 #undef IPC_MESSAGE_EXPORT
 #define IPC_MESSAGE_EXPORT PPAPI_PROXY_EXPORT
@@ -115,7 +114,6 @@ IPC_ENUM_TRAITS(PP_PrintOutputFormat_Dev)
 IPC_ENUM_TRAITS(PP_PrintScalingOption_Dev)
 IPC_ENUM_TRAITS_MAX_VALUE(PP_PrivateDuplexMode_Dev, PP_PRIVATEDUPLEXMODE_LAST)
 IPC_ENUM_TRAITS(PP_PrivateFontCharset)
-IPC_ENUM_TRAITS(PP_ResourceString)
 IPC_ENUM_TRAITS_MAX_VALUE(PP_SessionType, PP_SESSIONTYPE_PERSISTENT_RELEASE)
 IPC_ENUM_TRAITS_MAX_VALUE(PP_TCPSocket_Option,
                           PP_TCPSOCKET_OPTION_RECV_BUFFER_SIZE)
@@ -377,7 +375,6 @@ IPC_STRUCT_TRAITS_BEGIN(ppapi::InputEventData)
   IPC_STRUCT_TRAITS_MEMBER(touches)
   IPC_STRUCT_TRAITS_MEMBER(changed_touches)
   IPC_STRUCT_TRAITS_MEMBER(target_touches)
-  IPC_STRUCT_TRAITS_MEMBER(latency_info)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(ppapi::HostPortPair)
@@ -899,13 +896,14 @@ IPC_MESSAGE_ROUTED1(PpapiHostMsg_PPBCore_ReleaseResource,
                     ppapi::HostResource)
 
 // PPB_Graphics3D.
-IPC_SYNC_MESSAGE_ROUTED3_3(PpapiHostMsg_PPBGraphics3D_Create,
+IPC_SYNC_MESSAGE_ROUTED3_4(PpapiHostMsg_PPBGraphics3D_Create,
                            PP_Instance /* instance */,
                            ppapi::HostResource /* share_context */,
                            std::vector<int32_t> /* attrib_list */,
                            ppapi::HostResource /* result */,
                            gpu::Capabilities /* capabilities */,
-                           ppapi::proxy::SerializedHandle /* shared_state */)
+                           ppapi::proxy::SerializedHandle /* shared_state */,
+                           uint64_t /* command_buffer_id */)
 IPC_SYNC_MESSAGE_ROUTED2_0(PpapiHostMsg_PPBGraphics3D_SetGetBuffer,
                            ppapi::HostResource /* context */,
                            int32 /* transfer_buffer_id */)
@@ -1006,8 +1004,6 @@ IPC_MESSAGE_ROUTED3(PpapiHostMsg_PPBInstance_RequestInputEvents,
 IPC_MESSAGE_ROUTED2(PpapiHostMsg_PPBInstance_ClearInputEvents,
                     PP_Instance /* instance */,
                     uint32_t /* event_classes */)
-IPC_MESSAGE_ROUTED1(PpapiHostMsg_PPBInstance_StartTrackingLatency,
-                    PP_Instance /* instance */)
 IPC_MESSAGE_ROUTED2(PpapiHostMsg_PPBInstance_PostMessage,
                     PP_Instance /* instance */,
                     ppapi::proxy::SerializedVar /* message */)
@@ -1555,8 +1551,7 @@ IPC_MESSAGE_CONTROL1(PpapiHostMsg_Graphics2D_SetScale,
                      float /* scale */)
 
 // Graphics2D, plugin -> host -> plugin
-IPC_MESSAGE_CONTROL1(PpapiHostMsg_Graphics2D_Flush,
-                     std::vector<ui::LatencyInfo> /* latency_info */)
+IPC_MESSAGE_CONTROL0(PpapiHostMsg_Graphics2D_Flush)
 IPC_MESSAGE_CONTROL0(PpapiPluginMsg_Graphics2D_FlushAck)
 
 IPC_MESSAGE_CONTROL2(PpapiHostMsg_Graphics2D_ReadImageData,
@@ -1975,10 +1970,11 @@ IPC_MESSAGE_CONTROL2(PpapiPluginMsg_OutputProtection_QueryStatusReply,
 // VideoDecoder ------------------------------------------------------
 
 IPC_MESSAGE_CONTROL0(PpapiHostMsg_VideoDecoder_Create)
-IPC_MESSAGE_CONTROL3(PpapiHostMsg_VideoDecoder_Initialize,
+IPC_MESSAGE_CONTROL4(PpapiHostMsg_VideoDecoder_Initialize,
                      ppapi::HostResource /* graphics_context */,
                      PP_VideoProfile /* profile */,
-                     PP_HardwareAcceleration /* acceleration */)
+                     PP_HardwareAcceleration /* acceleration */,
+                     uint32_t /* min_picture_count */)
 IPC_MESSAGE_CONTROL0(PpapiPluginMsg_VideoDecoder_InitializeReply)
 IPC_MESSAGE_CONTROL2(PpapiHostMsg_VideoDecoder_GetShm,
                      uint32_t /* shm_id */,
@@ -2274,14 +2270,6 @@ IPC_SYNC_MESSAGE_ROUTED1_0(PpapiHostMsg_PPBFlashMessageLoop_Quit,
 
 // Creates the PDF resource.
 IPC_MESSAGE_CONTROL0(PpapiHostMsg_PDF_Create)
-
-// Requests the localized string for the given ID.
-IPC_MESSAGE_CONTROL1(PpapiHostMsg_PDF_GetLocalizedString,
-                     PP_ResourceString /* string_id */)
-// Reply for PpapiHostMsg_PDF_GetLocalizedString containing the localized
-// string.
-IPC_MESSAGE_CONTROL1(PpapiPluginMsg_PDF_GetLocalizedStringReply,
-                     std::string /* localized_string*/)
 
 // Notifies the renderer that the PDF started loading.
 IPC_MESSAGE_CONTROL0(PpapiHostMsg_PDF_DidStartLoading)

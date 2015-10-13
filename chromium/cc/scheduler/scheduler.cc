@@ -19,6 +19,13 @@
 
 namespace cc {
 
+namespace {
+// This is a fudge factor we subtract from the deadline to account
+// for message latency and kernel scheduling variability.
+const base::TimeDelta kDeadlineFudgeFactor =
+    base::TimeDelta::FromMicroseconds(1000);
+}
+
 scoped_ptr<Scheduler> Scheduler::Create(
     SchedulerClient* client,
     const SchedulerSettings& settings,
@@ -162,8 +169,8 @@ void Scheduler::SetThrottleFrameProduction(bool throttle) {
   ProcessScheduledActions();
 }
 
-void Scheduler::SetNeedsCommit() {
-  state_machine_.SetNeedsCommit();
+void Scheduler::SetNeedsBeginMainFrame() {
+  state_machine_.SetNeedsBeginMainFrame();
   ProcessScheduledActions();
 }
 
@@ -180,11 +187,6 @@ void Scheduler::SetNeedsAnimate() {
 void Scheduler::SetNeedsPrepareTiles() {
   DCHECK(!IsInsideAction(SchedulerStateMachine::ACTION_PREPARE_TILES));
   state_machine_.SetNeedsPrepareTiles();
-  ProcessScheduledActions();
-}
-
-void Scheduler::SetWaitForReadyToDraw() {
-  state_machine_.SetWaitForReadyToDraw();
   ProcessScheduledActions();
 }
 
@@ -450,15 +452,16 @@ void Scheduler::PostBeginRetroFrameIfNeeded() {
 
 void Scheduler::BeginImplFrameWithDeadline(const BeginFrameArgs& args) {
   bool main_thread_is_in_high_latency_mode =
-      state_machine_.MainThreadIsInHighLatencyMode();
+      state_machine_.main_thread_missed_last_deadline();
   TRACE_EVENT2("cc,benchmark", "Scheduler::BeginImplFrame", "args",
-               args.AsValue(), "main_thread_is_high_latency",
+               args.AsValue(), "main_thread_missed_last_deadline",
                main_thread_is_in_high_latency_mode);
   TRACE_COUNTER1(TRACE_DISABLED_BY_DEFAULT("cc.debug.scheduler"),
                  "MainThreadLatency", main_thread_is_in_high_latency_mode);
 
   BeginFrameArgs adjusted_args = args;
   adjusted_args.deadline -= compositor_timing_history_->DrawDurationEstimate();
+  adjusted_args.deadline -= kDeadlineFudgeFactor;
 
   if (ShouldRecoverMainLatency(adjusted_args)) {
     TRACE_EVENT_INSTANT0("cc", "SkipBeginMainFrameToReduceLatency",
@@ -632,17 +635,18 @@ void Scheduler::ProcessScheduledActions() {
                  "SchedulerStateMachine",
                  "state",
                  AsValue());
-    state_machine_.UpdateState(action);
     base::AutoReset<SchedulerStateMachine::Action>
         mark_inside_action(&inside_action_, action);
     switch (action) {
       case SchedulerStateMachine::ACTION_NONE:
         break;
       case SchedulerStateMachine::ACTION_ANIMATE:
+        state_machine_.WillAnimate();
         client_->ScheduledActionAnimate();
         break;
       case SchedulerStateMachine::ACTION_SEND_BEGIN_MAIN_FRAME:
         compositor_timing_history_->WillBeginMainFrame();
+        state_machine_.WillSendBeginMainFrame();
         client_->ScheduledActionSendBeginMainFrame();
         break;
       case SchedulerStateMachine::ACTION_COMMIT: {
@@ -651,11 +655,14 @@ void Scheduler::ProcessScheduledActions() {
         tracked_objects::ScopedTracker tracking_profile4(
             FROM_HERE_WITH_EXPLICIT_FUNCTION(
                 "461509 Scheduler::ProcessScheduledActions4"));
+        bool commit_has_no_updates = false;
+        state_machine_.WillCommit(commit_has_no_updates);
         client_->ScheduledActionCommit();
         break;
       }
       case SchedulerStateMachine::ACTION_ACTIVATE_SYNC_TREE:
         compositor_timing_history_->WillActivate();
+        state_machine_.WillActivate();
         client_->ScheduledActionActivateSyncTree();
         compositor_timing_history_->DidActivate();
         break;
@@ -665,23 +672,34 @@ void Scheduler::ProcessScheduledActions() {
         tracked_objects::ScopedTracker tracking_profile6(
             FROM_HERE_WITH_EXPLICIT_FUNCTION(
                 "461509 Scheduler::ProcessScheduledActions6"));
+        bool did_request_swap = true;
+        state_machine_.WillDraw(did_request_swap);
         DrawAndSwapIfPossible();
         break;
       }
-      case SchedulerStateMachine::ACTION_DRAW_AND_SWAP_FORCED:
+      case SchedulerStateMachine::ACTION_DRAW_AND_SWAP_FORCED: {
+        bool did_request_swap = true;
+        state_machine_.WillDraw(did_request_swap);
         DrawAndSwapForced();
         break;
-      case SchedulerStateMachine::ACTION_DRAW_AND_SWAP_ABORT:
+      }
+      case SchedulerStateMachine::ACTION_DRAW_AND_SWAP_ABORT: {
         // No action is actually performed, but this allows the state machine to
         // advance out of its waiting to draw state without actually drawing.
+        bool did_request_swap = false;
+        state_machine_.WillDraw(did_request_swap);
         break;
+      }
       case SchedulerStateMachine::ACTION_BEGIN_OUTPUT_SURFACE_CREATION:
+        state_machine_.WillBeginOutputSurfaceCreation();
         client_->ScheduledActionBeginOutputSurfaceCreation();
         break;
       case SchedulerStateMachine::ACTION_PREPARE_TILES:
+        state_machine_.WillPrepareTiles();
         client_->ScheduledActionPrepareTiles();
         break;
       case SchedulerStateMachine::ACTION_INVALIDATE_OUTPUT_SURFACE: {
+        state_machine_.WillInvalidateOutputSurface();
         client_->ScheduledActionInvalidateOutputSurface();
         break;
       }
@@ -754,7 +772,7 @@ void Scheduler::UpdateCompositorTimingHistoryRecordingEnabled() {
 bool Scheduler::ShouldRecoverMainLatency(const BeginFrameArgs& args) const {
   DCHECK(!settings_.using_synchronous_renderer_compositor);
 
-  if (!state_machine_.MainThreadIsInHighLatencyMode())
+  if (!state_machine_.main_thread_missed_last_deadline())
     return false;
 
   // When prioritizing impl thread latency, we currently put the
@@ -767,6 +785,12 @@ bool Scheduler::ShouldRecoverMainLatency(const BeginFrameArgs& args) const {
 
 bool Scheduler::ShouldRecoverImplLatency(const BeginFrameArgs& args) const {
   DCHECK(!settings_.using_synchronous_renderer_compositor);
+
+  // Disable impl thread latency recovery when using the unthrottled
+  // begin frame source since we will always get a BeginFrame before
+  // the swap ack and our heuristics below will not work.
+  if (!throttle_frame_production_)
+    return false;
 
   // If we are swap throttled at the BeginFrame, that means the impl thread is
   // very likely in a high latency mode.
@@ -808,10 +832,10 @@ bool Scheduler::CanCommitAndActivateBeforeDeadline(
 }
 
 bool Scheduler::IsBeginMainFrameSentOrStarted() const {
-  return (state_machine_.commit_state() ==
-              SchedulerStateMachine::COMMIT_STATE_BEGIN_MAIN_FRAME_SENT ||
-          state_machine_.commit_state() ==
-              SchedulerStateMachine::COMMIT_STATE_BEGIN_MAIN_FRAME_STARTED);
+  return (state_machine_.begin_main_frame_state() ==
+              SchedulerStateMachine::BEGIN_MAIN_FRAME_STATE_SENT ||
+          state_machine_.begin_main_frame_state() ==
+              SchedulerStateMachine::BEGIN_MAIN_FRAME_STATE_STARTED);
 }
 
 }  // namespace cc

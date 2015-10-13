@@ -86,7 +86,6 @@ APITest::APITest(const Config& config)
       _dotMoveDirectionA(1),
       _dotPositionB(39),
       _dotMoveDirectionB(-1),
-      _dtmfCallback(NULL),
       _vadCallbackA(NULL),
       _vadCallbackB(NULL),
       _apiTestRWLock(*RWLockWrapper::CreateRWLock()),
@@ -125,7 +124,6 @@ APITest::~APITest() {
   _inFileB.Close();
   _outFileB.Close();
 
-  DELETE_POINTER(_dtmfCallback);
   DELETE_POINTER(_vadCallbackA);
   DELETE_POINTER(_vadCallbackB);
 
@@ -290,9 +288,6 @@ int16_t APITest::SetUp() {
     }
   }
 
-#ifdef WEBRTC_DTMF_DETECTION
-  _dtmfCallback = new DTMFDetector;
-#endif
   _vadCallbackA = new VADCallback;
   _vadCallbackB = new VADCallback;
 
@@ -429,7 +424,7 @@ void APITest::RunTest(char thread) {
   {
     WriteLockScoped cs(_apiTestRWLock);
     if (thread == 'A') {
-      _testNumA = (_testNumB + 1 + (rand() % 4)) % 5;
+      _testNumA = (_testNumB + 1 + (rand() % 3)) % 4;
       testNum = _testNumA;
 
       _movingDot[_dotPositionA] = ' ';
@@ -442,7 +437,7 @@ void APITest::RunTest(char thread) {
       _dotPositionA += _dotMoveDirectionA;
       _movingDot[_dotPositionA] = (_dotMoveDirectionA > 0) ? '>' : '<';
     } else {
-      _testNumB = (_testNumA + 1 + (rand() % 4)) % 5;
+      _testNumB = (_testNumA + 1 + (rand() % 3)) % 4;
       testNum = _testNumB;
 
       _movingDot[_dotPositionB] = ' ';
@@ -464,18 +459,15 @@ void APITest::RunTest(char thread) {
       ChangeCodec('A');
       break;
     case 1:
-      TestPlayout('B');
-      break;
-    case 2:
       if (!_randomTest) {
         fprintf(stdout, "\nTesting Delay ...\n");
       }
       TestDelay('A');
       break;
-    case 3:
+    case 2:
       TestSendVAD('A');
       break;
-    case 4:
+    case 3:
       TestRegisteration('A');
       break;
     default:
@@ -498,7 +490,6 @@ bool APITest::APIRunA() {
   } else {
     CurrentCodec('A');
     ChangeCodec('A');
-    TestPlayout('B');
     if (_codecCntrA == 0) {
       fprintf(stdout, "\nTesting Delay ...\n");
       TestDelay('A');
@@ -927,67 +918,6 @@ void APITest::TestRegisteration(char sendSide) {
   }
 }
 
-// Playout Mode, background noise mode.
-// Receiver Frequency, playout frequency.
-void APITest::TestPlayout(char receiveSide) {
-  AudioCodingModule* receiveACM;
-  AudioPlayoutMode* playoutMode = NULL;
-  switch (receiveSide) {
-    case 'A': {
-      receiveACM = _acmA.get();
-      playoutMode = &_playoutModeA;
-      break;
-    }
-    case 'B': {
-      receiveACM = _acmB.get();
-      playoutMode = &_playoutModeB;
-      break;
-    }
-    default:
-      receiveACM = _acmA.get();
-  }
-
-  int32_t receiveFreqHz = receiveACM->ReceiveFrequency();
-  int32_t playoutFreqHz = receiveACM->PlayoutFrequency();
-
-  CHECK_ERROR_MT(receiveFreqHz);
-  CHECK_ERROR_MT(playoutFreqHz);
-
-
-  char playoutString[25];
-  switch (*playoutMode) {
-    case voice: {
-      *playoutMode = fax;
-      strncpy(playoutString, "FAX", 25);
-      break;
-    }
-    case fax: {
-      *playoutMode = streaming;
-      strncpy(playoutString, "Streaming", 25);
-      break;
-    }
-    case streaming: {
-      *playoutMode = voice;
-      strncpy(playoutString, "Voice", 25);
-      break;
-    }
-    default:
-      *playoutMode = voice;
-      strncpy(playoutString, "Voice", 25);
-  }
-  CHECK_ERROR_MT(receiveACM->SetPlayoutMode(*playoutMode));
-  playoutString[24] = '\0';
-
-  if (!_randomTest) {
-    fprintf(stdout, "\n");
-    fprintf(stdout, "In Side %c\n", receiveSide);
-    fprintf(stdout, "---------------------------------\n");
-    fprintf(stdout, "Receive Frequency....... %d Hz\n", receiveFreqHz);
-    fprintf(stdout, "Playout Frequency....... %d Hz\n", playoutFreqHz);
-    fprintf(stdout, "Audio Playout Mode...... %s\n", playoutString);
-  }
-}
-
 void APITest::TestSendVAD(char side) {
   if (_randomTest) {
     return;
@@ -1129,7 +1059,6 @@ void APITest::ChangeCodec(char side) {
     myChannel = _channel_B2A;
   }
 
-  myACM->ResetEncoder();
   Wait(100);
 
   // Register the next codec

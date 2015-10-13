@@ -40,8 +40,8 @@ extern "C" {
 #endif
 }
 
-using cricket::CS_AES_CM_128_HMAC_SHA1_80;
-using cricket::CS_AES_CM_128_HMAC_SHA1_32;
+using rtc::CS_AES_CM_128_HMAC_SHA1_80;
+using rtc::CS_AES_CM_128_HMAC_SHA1_32;
 using cricket::CryptoParams;
 using cricket::CS_LOCAL;
 using cricket::CS_REMOTE;
@@ -797,7 +797,7 @@ class SrtpStatTest
   cricket::SrtpFilter::Error error_;
 
  private:
-  DISALLOW_COPY_AND_ASSIGN(SrtpStatTest);
+  RTC_DISALLOW_COPY_AND_ASSIGN(SrtpStatTest);
 };
 
 TEST_F(SrtpStatTest, TestProtectRtpError) {

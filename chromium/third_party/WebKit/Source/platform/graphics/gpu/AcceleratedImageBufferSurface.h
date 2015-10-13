@@ -44,10 +44,10 @@ public:
     AcceleratedImageBufferSurface(const IntSize&, OpacityMode = NonOpaque);
     ~AcceleratedImageBufferSurface() override { }
 
-    SkCanvas* canvas() const override { return m_surface ? m_surface->getCanvas() : 0; }
+    SkCanvas* canvas() override { return m_surface ? m_surface->getCanvas() : nullptr; }
     bool isValid() const override { return m_surface; }
     bool isAccelerated() const override { return true; }
-    PassRefPtr<SkImage> newImageSnapshot() const override;
+    PassRefPtr<SkImage> newImageSnapshot(AccelerationHint) override;
     Platform3DObject getBackingTextureHandleForOverwrite() override;
 
 private:

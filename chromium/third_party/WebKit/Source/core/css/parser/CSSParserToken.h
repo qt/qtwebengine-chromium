@@ -8,6 +8,7 @@
 #include "core/CoreExport.h"
 #include "core/css/CSSPrimitiveValue.h"
 #include "core/css/parser/CSSParserString.h"
+#include "wtf/Allocator.h"
 
 namespace blink {
 
@@ -64,6 +65,7 @@ enum HashTokenType {
 };
 
 class CORE_EXPORT CSSParserToken {
+    WTF_MAKE_FAST_ALLOCATED(CSSParserToken);
 public:
     enum BlockType {
         NotBlock,
@@ -104,6 +106,8 @@ public:
     CSSPrimitiveValue::UnitType unitType() const { return static_cast<CSSPrimitiveValue::UnitType>(m_unit); }
     UChar32 unicodeRangeStart() const { ASSERT(m_type == UnicodeRangeToken); return m_unicodeRange.start; }
     UChar32 unicodeRangeEnd() const { ASSERT(m_type == UnicodeRangeToken); return m_unicodeRange.end; }
+    CSSValueID id() const;
+    CSSValueID functionId() const;
 
     CSSPropertyID parseAsUnresolvedCSSPropertyID() const;
 
@@ -132,6 +136,7 @@ private:
         UChar m_delimiter;
         HashTokenType m_hashTokenType;
         double m_numericValue;
+        mutable int m_id;
 
         struct {
             UChar32 start;
@@ -145,6 +150,7 @@ private:
 namespace WTF {
 template <>
 struct IsTriviallyMoveAssignable<blink::CSSParserToken> {
+    STATIC_ONLY(IsTriviallyMoveAssignable);
     static const bool value = true;
 };
 }

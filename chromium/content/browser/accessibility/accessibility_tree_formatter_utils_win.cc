@@ -11,6 +11,7 @@
 
 #include "base/memory/singleton.h"
 #include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "third_party/iaccessible2/ia2_api_all.h"
 
 namespace content {
@@ -30,15 +31,16 @@ class AccessibilityEnumMap {
   AccessibilityEnumMap();
   virtual ~AccessibilityEnumMap() {}
 
-  friend struct DefaultSingletonTraits<AccessibilityEnumMap>;
+  friend struct base::DefaultSingletonTraits<AccessibilityEnumMap>;
 
   DISALLOW_COPY_AND_ASSIGN(AccessibilityEnumMap);
 };
 
 // static
 AccessibilityEnumMap* AccessibilityEnumMap::GetInstance() {
-  return Singleton<AccessibilityEnumMap,
-                   LeakySingletonTraits<AccessibilityEnumMap> >::get();
+  return base::Singleton<
+      AccessibilityEnumMap,
+      base::LeakySingletonTraits<AccessibilityEnumMap>>::get();
 }
 
 AccessibilityEnumMap::AccessibilityEnumMap() {
@@ -314,7 +316,7 @@ void IAccessibleStateToStringVector(int32 ia_state,
 base::string16 IAccessibleStateToString(int32 ia_state) {
   std::vector<base::string16> strings;
   IAccessibleStateToStringVector(ia_state, &strings);
-  return JoinString(strings, ',');
+  return base::JoinString(strings, base::ASCIIToUTF16(","));
 }
 
 void IAccessible2StateToStringVector(int32 ia2_state,
@@ -331,7 +333,7 @@ void IAccessible2StateToStringVector(int32 ia2_state,
 base::string16 IAccessible2StateToString(int32 ia2_state) {
   std::vector<base::string16> strings;
   IAccessible2StateToStringVector(ia2_state, &strings);
-  return JoinString(strings, ',');
+  return base::JoinString(strings, base::ASCIIToUTF16(","));
 }
 
 base::string16 AccessibilityEventToString(int32 event_id) {

@@ -80,8 +80,10 @@ row, const LayoutTableCell* cell)
 
 void CellSpan::ensureConsistency(const unsigned maximumSpanSize)
 {
-    RELEASE_ASSERT(m_start >= 0 && m_start <= maximumSpanSize);
-    RELEASE_ASSERT(m_end >= 0 && m_end <= maximumSpanSize);
+    static_assert(WTF::IsSameType<decltype(m_start), unsigned>::value, "Asserts below assume m_start is unsigned");
+    static_assert(WTF::IsSameType<decltype(m_end), unsigned>::value, "Asserts below assume m_end is unsigned");
+    RELEASE_ASSERT(m_start <= maximumSpanSize);
+    RELEASE_ASSERT(m_end <= maximumSpanSize);
     RELEASE_ASSERT(m_start <= m_end);
 }
 
@@ -322,7 +324,7 @@ void LayoutTableSection::distributeExtraRowSpanHeightToPercentRows(LayoutTableCe
                 // FIXME: Note that this is wrong if we have a percentage above 100% and may make us grow
                 // above the available space.
 
-                toAdd = std::min(toAdd, extraRowSpanningHeight);
+                toAdd = std::max(std::min(toAdd, extraRowSpanningHeight), 0);
                 accumulatedPositionIncrease += toAdd;
                 extraRowSpanningHeight -= toAdd;
                 percent -= m_grid[row].logicalHeight.percent();
@@ -1065,7 +1067,7 @@ void LayoutTableSection::layoutRows()
                 if (oldLogicalHeight > rHeight)
                     rowHeightIncreaseForPagination = std::max<int>(rowHeightIncreaseForPagination, oldLogicalHeight - rHeight);
                 cell->setLogicalHeight(rHeight);
-                cell->computeOverflow(oldLogicalHeight, false);
+                cell->computeOverflow(oldLogicalHeight);
             }
 
             if (rowLayoutObject)
@@ -1088,7 +1090,7 @@ void LayoutTableSection::layoutRows()
                 for (size_t i = 0; i < cells.size(); ++i) {
                     LayoutUnit oldLogicalHeight = cells[i]->logicalHeight();
                     cells[i]->setLogicalHeight(oldLogicalHeight + rowHeightIncreaseForPagination);
-                    cells[i]->computeOverflow(oldLogicalHeight, false);
+                    cells[i]->computeOverflow(oldLogicalHeight);
                 }
             }
         }
@@ -1275,7 +1277,7 @@ int LayoutTableSection::firstLineBoxBaseline() const
     return firstLineBaseline;
 }
 
-void LayoutTableSection::paint(const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
+void LayoutTableSection::paint(const PaintInfo& paintInfo, const LayoutPoint& paintOffset) const
 {
     TableSectionPainter(*this).paint(paintInfo, paintOffset);
 }

@@ -6,7 +6,7 @@
 #define DisplayItem_h
 
 #include "platform/PlatformExport.h"
-#include "platform/graphics/ListContainer.h"
+#include "platform/graphics/ContiguousContainer.h"
 #include "platform/graphics/paint/DisplayItemClient.h"
 #include "wtf/Assertions.h"
 #include "wtf/PassOwnPtr.h"
@@ -26,7 +26,7 @@ class PLATFORM_EXPORT DisplayItem {
 public:
     enum {
         // Must be kept in sync with core/paint/PaintPhase.h.
-        PaintPhaseMax = 12,
+        PaintPhaseMax = 11,
     };
 
     // A display item type uniquely identifies a display item of a client.
@@ -90,14 +90,21 @@ public:
         ScrollbarVertical, // For ScrollbarThemeMacNonOverlayAPI only.
         SelectionGap,
         SelectionTint,
-        TableCellBackgroundFromSelfPaintingRow, // FIXME: To be deprecated.
+        TableCellBackgroundFromContainers,
+        TableCellBackgroundFromSelfPaintingRow,
+        // Table collapsed borders can be painted together (e.g., left & top) but there are at most 4 phases of collapsed
+        // border painting for a single cell. To disambiguate these phases of collapsed border painting, a mask is used.
+        // TableCollapsedBorderBase can be larger than TableCollapsedBorderUnalignedBase to ensure the base lower bits are 0's.
+        TableCollapsedBorderUnalignedBase,
+        TableCollapsedBorderBase = (((TableCollapsedBorderUnalignedBase - 1) >> 4) + 1) << 4,
+        TableCollapsedBorderLast = TableCollapsedBorderBase + 0x0f,
         VideoBitmap,
         WebPlugin,
         WebFont,
         DrawingLast = WebFont,
 
-        CachedFirst,
-        CachedLast = CachedFirst + DrawingLast - DrawingFirst,
+        CachedDrawingFirst,
+        CachedDrawingLast = CachedDrawingFirst + DrawingLast - DrawingFirst,
 
         ClipFirst,
         ClipBoxPaintPhaseFirst = ClipFirst,
@@ -119,7 +126,6 @@ public:
         ClipPopupListBoxFrame,
         ClipSelectionImage,
         PageWidgetDelegateClip,
-        TransparencyClip,
         ClipPrintedPage,
         ClipLast = ClipPrintedPage,
 
@@ -159,44 +165,53 @@ public:
         BeginFixedPositionContainer,
         EndFixedPositionContainer,
 
-        SubtreeCachedFirst,
-        SubtreeCachedPaintPhaseFirst = SubtreeCachedFirst,
-        SubtreeCachedPaintPhaseLast = SubtreeCachedPaintPhaseFirst + PaintPhaseMax,
-        SubtreeCachedLast = SubtreeCachedPaintPhaseLast,
-
-        BeginSubtreeFirst,
-        BeginSubtreePaintPhaseFirst = BeginSubtreeFirst,
-        BeginSubtreePaintPhaseLast = BeginSubtreePaintPhaseFirst + PaintPhaseMax,
-        BeginSubtreeLast = BeginSubtreePaintPhaseLast,
-
-        EndSubtreeFirst,
-        EndSubtreePaintPhaseFirst = EndSubtreeFirst,
-        EndSubtreePaintPhaseLast = EndSubtreePaintPhaseFirst + PaintPhaseMax,
-        EndSubtreeLast = EndSubtreePaintPhaseLast,
+        SubsequenceFirst,
+        SubsequenceNegativeZOrder = SubsequenceFirst,
+        SubsequenceNormalFlowAndPositiveZOrder,
+        SubsequenceLast = SubsequenceNormalFlowAndPositiveZOrder,
+        EndSubsequenceFirst,
+        EndSubsequenceLast = EndSubsequenceFirst + SubsequenceLast - SubsequenceFirst,
+        CachedSubsequenceFirst,
+        CachedSubsequenceLast = CachedSubsequenceFirst + SubsequenceLast - SubsequenceFirst,
 
         UninitializedType,
         TypeLast = UninitializedType
     };
 
-    DisplayItem(const DisplayItemClientWrapper& client, Type type)
+    static_assert(TableCollapsedBorderBase >= TableCollapsedBorderUnalignedBase, "TableCollapsedBorder types overlap with other types");
+    static_assert((TableCollapsedBorderBase & 0xf) == 0, "The lowest 4 bits of TableCollapsedBorderBase should be zero");
+    // Bits or'ed onto TableCollapsedBorderBase to generate a real table collapsed border type.
+    enum TableCollspaedBorderSides {
+        TableCollapsedBorderTop = 1 << 0,
+        TableCollapsedBorderRight = 1 << 1,
+        TableCollapsedBorderBottom = 1 << 2,
+        TableCollapsedBorderLeft = 1 << 3,
+    };
+
+    DisplayItem(const DisplayItemClientWrapper& client, Type type, size_t derivedSize)
         : m_client(client.displayItemClient())
-        , m_scopeContainer(nullptr)
-        , m_scopeId(0)
+        , m_scope(0)
         , m_type(type)
+        , m_derivedSize(derivedSize)
         , m_skippedCache(false)
-        , m_ignoredFromList(false)
 #ifndef NDEBUG
         , m_clientDebugString(client.debugName())
 #endif
-    { }
+    {
+        // derivedSize must fit in m_derivedSize.
+        // If it doesn't, enlarge m_derivedSize and fix this assert.
+        ASSERT_WITH_SECURITY_IMPLICATION(derivedSize < (1 << 8));
+        ASSERT_WITH_SECURITY_IMPLICATION(derivedSize >= sizeof(*this));
+    }
+
+    virtual ~DisplayItem() { }
 
     // Ids are for matching new DisplayItems with existing DisplayItems.
     struct Id {
-        Id(const DisplayItemClient client, const Type type, const int scopeId, const DisplayItemClient scopeContainer)
+        Id(const DisplayItemClient client, const Type type, const unsigned scope)
             : client(client)
             , type(type)
-            , scopeId(scopeId)
-            , scopeContainer(scopeContainer) { }
+            , scope(scope) { }
 
         bool matches(const DisplayItem& item) const
         {
@@ -205,35 +220,43 @@ public:
             ASSERT(!isCachedType(type));
             return client == item.m_client
                 && type == item.m_type
-                && scopeId == item.m_scopeId
-                && scopeContainer == item.m_scopeContainer;
+                && scope == item.m_scope;
         }
 
         const DisplayItemClient client;
         const Type type;
-        const int scopeId;
-        const DisplayItemClient scopeContainer;
+        const unsigned scope;
     };
 
-    // Return the Id with cached types converted to non-cached types
-    // (e.g., Type::CachedSVGImage -> Type::SVGImage).
-    Id nonCachedId() const
+    // Convert cached type to non-cached type (e.g., Type::CachedSVGImage -> Type::SVGImage).
+    static Type nonCachedType(Type type)
     {
-        return Id(m_client, isCachedType(m_type) ? cachedTypeToDrawingType(m_type) : m_type, m_scopeId, m_scopeContainer);
+        if (isCachedDrawingType(type))
+            return cachedDrawingTypeToDrawingType(type);
+        if (isCachedSubsequenceType(type))
+            return cachedSubsequenceTypeToSubsequenceType(type);
+        return type;
     }
 
-    virtual ~DisplayItem() { }
+    // Return the Id with cached type converted to non-cached type.
+    Id nonCachedId() const
+    {
+        return Id(m_client, nonCachedType(m_type), m_scope);
+    }
 
     virtual void replay(GraphicsContext&) { }
 
     DisplayItemClient client() const { return m_client; }
     Type type() const { return m_type; }
 
-    void setScope(int scopeId, DisplayItemClient scopeContainer)
-    {
-        m_scopeId = scopeId;
-        m_scopeContainer = scopeContainer;
-    }
+    void setScope(unsigned scope) { m_scope = scope; }
+    unsigned scope() { return m_scope; }
+
+    // Size of this object in memory, used to move it with memcpy.
+    // This is not sizeof(*this), because it needs to account for the size of
+    // the derived class (i.e. runtime type). Derived classes are expected to
+    // supply this to the DisplayItem constructor.
+    size_t derivedSize() const { return m_derivedSize; }
 
     // For DisplayItemList only. Painters should use DisplayItemCacheSkipper instead.
     void setSkippedCache() { m_skippedCache = true; }
@@ -275,8 +298,8 @@ public:
 
     DEFINE_CATEGORY_METHODS(Drawing)
     DEFINE_PAINT_PHASE_CONVERSION_METHOD(Drawing)
-    DEFINE_CATEGORY_METHODS(Cached)
-    DEFINE_CONVERSION_METHODS(Drawing, drawing, Cached, cached)
+    DEFINE_CATEGORY_METHODS(CachedDrawing)
+    DEFINE_CONVERSION_METHODS(Drawing, drawing, CachedDrawing, cachedDrawing)
 
     DEFINE_PAIRED_CATEGORY_METHODS(Clip, clip)
     DEFINE_PAINT_PHASE_CONVERSION_METHOD(ClipLayerFragment)
@@ -289,60 +312,64 @@ public:
     DEFINE_PAIRED_CATEGORY_METHODS(Scroll, scroll)
     DEFINE_PAINT_PHASE_CONVERSION_METHOD(Scroll)
 
-    DEFINE_PAIRED_CATEGORY_METHODS(Transform3D, transform3D);
+    DEFINE_PAIRED_CATEGORY_METHODS(Transform3D, transform3D)
 
-    DEFINE_CATEGORY_METHODS(SubtreeCached)
-    DEFINE_PAINT_PHASE_CONVERSION_METHOD(SubtreeCached)
-    DEFINE_CATEGORY_METHODS(BeginSubtree)
-    DEFINE_PAINT_PHASE_CONVERSION_METHOD(BeginSubtree)
-    DEFINE_CATEGORY_METHODS(EndSubtree)
-    DEFINE_PAINT_PHASE_CONVERSION_METHOD(EndSubtree)
-    DEFINE_CONVERSION_METHODS(SubtreeCached, subtreeCached, BeginSubtree, beginSubtree)
-    DEFINE_CONVERSION_METHODS(SubtreeCached, subtreeCached, EndSubtree, endSubtree)
-    DEFINE_CONVERSION_METHODS(BeginSubtree, beginSubtree, EndSubtree, endSubtree)
+    DEFINE_PAIRED_CATEGORY_METHODS(Subsequence, subsequence)
+    DEFINE_CATEGORY_METHODS(CachedSubsequence)
+    DEFINE_CONVERSION_METHODS(Subsequence, subsequence, CachedSubsequence, cachedSubsequence)
+
+    static bool isCachedType(Type type) { return isCachedDrawingType(type) || isCachedSubsequenceType(type); }
+    bool isCached() const { return isCachedType(m_type); }
+    static bool isCacheableType(Type type) { return isDrawingType(type) || isSubsequenceType(type); }
+    bool isCacheable() const { return !skippedCache() && isCacheableType(m_type); }
 
     virtual bool isBegin() const { return false; }
     virtual bool isEnd() const { return false; }
 
 #if ENABLE(ASSERT)
     virtual bool isEndAndPairedWith(DisplayItem::Type otherType) const { return false; }
+    virtual bool equals(const DisplayItem& other) const
+    {
+        return m_client == other.m_client
+            && m_scope == other.m_scope
+            && m_type == other.m_type
+            && m_derivedSize == other.m_derivedSize
+            && m_skippedCache == other.m_skippedCache;
+    }
 #endif
 
     virtual bool drawsContent() const { return false; }
 
-    bool ignoreFromDisplayList() const { return m_ignoredFromList; }
-    void setIgnoredFromDisplayList() { m_ignoredFromList = true; }
+    bool isValid() const { return m_client; }
 
 #ifndef NDEBUG
     static WTF::String typeAsDebugString(DisplayItem::Type);
     const WTF::String& clientDebugString() const { return m_clientDebugString; }
+    void setClientDebugString(const WTF::String& s) { m_clientDebugString = s; }
     WTF::String asDebugString() const;
     virtual void dumpPropertiesAsDebugString(WTF::StringBuilder&) const;
 #endif
 
 private:
-    // The default DisplayItem constructor is only used by ListContainer::appendByMoving
-    // where an inavlid DisplaItem is constructed at the source location.
-    friend DisplayItem* ListContainer<DisplayItem>::appendByMoving<DisplayItem>(DisplayItem*);
+    // The default DisplayItem constructor is only used by
+    // ContiguousContainer::appendByMoving where an invalid DisplaItem is
+    // constructed at the source location.
+    template <typename T, unsigned alignment> friend class ContiguousContainer;
+
     DisplayItem()
         : m_client(nullptr)
-        , m_scopeContainer(nullptr)
-        , m_scopeId(0)
+        , m_scope(0)
         , m_type(UninitializedType)
+        , m_derivedSize(sizeof(*this))
         , m_skippedCache(false)
-        , m_ignoredFromList(true)
-#ifndef NDEBUG
-        , m_clientDebugString("invalid")
-#endif
     { }
 
     const DisplayItemClient m_client;
-    DisplayItemClient m_scopeContainer;
-    int m_scopeId;
+    unsigned m_scope;
     static_assert(TypeLast < (1 << 16), "DisplayItem::Type should fit in 16 bits");
     const Type m_type : 16;
+    const unsigned m_derivedSize : 8; // size of the actual derived class
     unsigned m_skippedCache : 1;
-    unsigned m_ignoredFromList : 1;
 
 #ifndef NDEBUG
     WTF::String m_clientDebugString;
@@ -351,7 +378,7 @@ private:
 
 class PLATFORM_EXPORT PairedBeginDisplayItem : public DisplayItem {
 protected:
-    PairedBeginDisplayItem(const DisplayItemClientWrapper& client, Type type) : DisplayItem(client, type) { }
+    PairedBeginDisplayItem(const DisplayItemClientWrapper& client, Type type, size_t derivedSize) : DisplayItem(client, type, derivedSize) { }
 
 private:
     bool isBegin() const final { return true; }
@@ -359,7 +386,7 @@ private:
 
 class PLATFORM_EXPORT PairedEndDisplayItem : public DisplayItem {
 protected:
-    PairedEndDisplayItem(const DisplayItemClientWrapper& client, Type type) : DisplayItem(client, type) { }
+    PairedEndDisplayItem(const DisplayItemClientWrapper& client, Type type, size_t derivedSize) : DisplayItem(client, type, derivedSize) { }
 
 #if ENABLE(ASSERT)
     bool isEndAndPairedWith(DisplayItem::Type otherType) const override = 0;

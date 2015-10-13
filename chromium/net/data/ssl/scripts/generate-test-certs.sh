@@ -107,6 +107,17 @@ CA_COMMON_NAME="Test Root CA" \
     -out out/localhost_cert.pem \
     -config ca.cnf
 
+CA_COMMON_NAME="Test Root CA" \
+  try openssl ca \
+    -batch \
+    -extensions user_cert \
+    -subj "/CN=Leaf Certificate/" \
+    -startdate 00010101000000Z \
+    -enddate   00010101000000Z \
+    -in out/ok_cert.req \
+    -out out/bad_validity.pem \
+    -config ca.cnf
+
 try /bin/sh -c "cat out/ok_cert.key out/ok_cert.pem \
     > ../certificates/ok_cert.pem"
 try /bin/sh -c "cat out/localhost_cert.key out/localhost_cert.pem \
@@ -119,6 +130,8 @@ try /bin/sh -c "cat out/ok_cert.key out/name_constraint_bad.pem \
     > ../certificates/name_constraint_bad.pem"
 try /bin/sh -c "cat out/ok_cert.key out/name_constraint_good.pem \
     > ../certificates/name_constraint_good.pem"
+try /bin/sh -c "cat out/ok_cert.key out/bad_validity.pem \
+    > ../certificates/bad_validity.pem"
 
 # Now generate the one-off certs
 ## SHA-256 general test cert
@@ -156,6 +169,19 @@ try openssl req -x509 -days 3650 \
     -config ../scripts/ee.cnf -newkey rsa:4104 -text \
     -sha256 \
     -out ../certificates/large_key.pem
+
+## SHA1 certificate expiring in 2016.
+try openssl req -config ../scripts/ee.cnf -sha1 \
+  -newkey rsa:2048 -text -out out/sha1_2016.req
+CA_COMMON_NAME="Test Root CA" \
+  try openssl ca \
+    -batch \
+    -extensions user_cert \
+    -startdate 081030000000Z \
+    -enddate   161230000000Z \
+    -in out/sha1_2016.req \
+    -out ../certificates/sha1_2016.pem \
+    -config ca.cnf
 
 ## Validity too long unit test support.
 try openssl req -config ../scripts/ee.cnf \

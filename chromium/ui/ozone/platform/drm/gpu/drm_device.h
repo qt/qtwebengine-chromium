@@ -14,7 +14,6 @@
 #include "base/files/file_path.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
-#include "base/memory/scoped_vector.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/geometry/rect_f.h"
 #include "ui/gfx/overlay_transform.h"
@@ -100,7 +99,6 @@ class OZONE_EXPORT DrmDevice : public base::RefCountedThreadSafe<DrmDevice> {
   // queued on |fd_|.
   virtual bool PageFlip(uint32_t crtc_id,
                         uint32_t framebuffer,
-                        bool is_sync,
                         const PageFlipCallback& callback);
 
   // Schedule an overlay to be show during the page flip for CRTC |crtc_id|.
@@ -156,10 +154,9 @@ class OZONE_EXPORT DrmDevice : public base::RefCountedThreadSafe<DrmDevice> {
 
   virtual bool CloseBufferHandle(uint32_t handle);
 
-  virtual bool CommitProperties(drmModePropertySet* properties,
+  virtual bool CommitProperties(drmModeAtomicReq* properties,
                                 uint32_t flags,
-                                bool is_sync,
-                                bool test_only,
+                                uint32_t crtc_count,
                                 const PageFlipCallback& callback);
 
   // Set the gamma ramp for |crtc_id| to reflect the ramps in |lut|.

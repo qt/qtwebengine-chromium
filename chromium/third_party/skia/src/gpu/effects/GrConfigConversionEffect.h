@@ -10,7 +10,6 @@
 
 #include "GrSingleTextureEffect.h"
 
-class GrFragmentStage;
 class GrInvariantOutput;
 
 /**
@@ -39,10 +38,6 @@ public:
 
     const char* name() const override { return "Config Conversion"; }
 
-    void getGLProcessorKey(const GrGLSLCaps&, GrProcessorKeyBuilder*) const override;
-
-    GrGLFragmentProcessor* createGLInstance() const override;
-
     bool swapsRedAndBlue() const { return fSwapRedAndBlue; }
     PMConversion  pmConversion() const { return fPMConversion; }
 
@@ -61,6 +56,10 @@ private:
                              bool swapRedAndBlue,
                              PMConversion pmConversion,
                              const SkMatrix& matrix);
+
+    GrGLFragmentProcessor* onCreateGLInstance() const override;
+
+    void onGetGLProcessorKey(const GrGLSLCaps&, GrProcessorKeyBuilder*) const override;
 
     bool onIsEqual(const GrFragmentProcessor&) const override;
 

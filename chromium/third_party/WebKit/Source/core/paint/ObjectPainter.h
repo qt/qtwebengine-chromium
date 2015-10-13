@@ -6,6 +6,7 @@
 #define ObjectPainter_h
 
 #include "core/style/ComputedStyleConstants.h"
+#include "wtf/Allocator.h"
 #include "wtf/Vector.h"
 
 namespace blink {
@@ -14,21 +15,21 @@ class Color;
 class GraphicsContext;
 class LayoutPoint;
 class LayoutRect;
+class LayoutSize;
 struct PaintInfo;
 class LayoutObject;
 class ComputedStyle;
 
 class ObjectPainter {
+    STACK_ALLOCATED();
 public:
-    ObjectPainter(LayoutObject& layoutObject) : m_layoutObject(layoutObject) { }
+    ObjectPainter(const LayoutObject& layoutObject) : m_layoutObject(layoutObject) { }
 
-    void paintOutline(const PaintInfo&, const LayoutRect& objectBounds, const LayoutRect& visualOverflowBounds);
-    void paintFocusRing(const PaintInfo&, const ComputedStyle&, const Vector<LayoutRect>& focusRingRects);
+    void paintOutline(const PaintInfo&, const LayoutPoint& paintOffset);
+    void paintInlineChildrenOutlines(const PaintInfo&, const LayoutPoint& paintOffset);
     void addPDFURLRectIfNeeded(const PaintInfo&, const LayoutPoint& paintOffset);
 
     static void drawLineForBoxSide(GraphicsContext*, int x1, int y1, int x2, int y2, BoxSide, Color, EBorderStyle, int adjbw1, int adjbw2, bool antialias = false);
-
-    static LayoutRect outlineBounds(const LayoutRect& objectBounds, const ComputedStyle&);
 
 private:
     static void drawDashedOrDottedBoxSide(GraphicsContext*, int x1, int y1, int x2, int y2,
@@ -40,7 +41,7 @@ private:
     static void drawSolidBoxSide(GraphicsContext*, int x1, int y1, int x2, int y2,
         BoxSide, Color, int adjacentWidth1, int adjacentWidth2, bool antialias);
 
-    LayoutObject& m_layoutObject;
+    const LayoutObject& m_layoutObject;
 };
 
 } // namespace blink

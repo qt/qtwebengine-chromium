@@ -1,8 +1,7 @@
 ## Process this file with automake to produce Makefile.in
 
 # Make sure that when we re-make ./configure, we get the macros we need
-ACLOCAL_AMFLAGS = -I m4 \
-                  -I gflags/m4
+ACLOCAL_AMFLAGS = -I m4 -I gflags/m4
 
 # This is so we can #include <google/vcencoder.h> or <gtest/gtest.h>
 AM_CPPFLAGS = -I$(top_srcdir)/src \
@@ -12,7 +11,7 @@ AM_CPPFLAGS = -I$(top_srcdir)/src \
               -I$(top_srcdir)/gtest/include
 
 # For a non-optimized (debug) build, change "-DNDEBUG" to "-DDEBUG".
-AM_CXXFLAGS = -DNDEBUG -DNO_THREADS
+AM_CXXFLAGS = -DNDEBUG -DNO_THREADS -DGTEST_HAS_TR1_TUPLE=0
 
 # Enable verbose gcc warnings.  We use the older option name "-W" to be
 # compatible with gcc v3.3 and earlier.  That option should be changed to
@@ -110,6 +109,7 @@ libvcdcom_la_SOURCES = src/google/format_extension_flags.h \
 		       src/checksum.h \
 		       src/codetable.h \
 		       src/logging.h \
+		       src/unique_ptr.h \
 		       src/varint_bigendian.h \
 		       src/vcdiff_defs.h \
 		       src/zlib/zlib.h \
@@ -229,7 +229,11 @@ jsonwriter_test_LDADD = libvcdenc.la libvcdcom.la libgtest_main.la
 check_SCRIPTS += src/vcdiff_test.sh
 dist_noinst_DATA = testdata/configure.ac.v0.1 \
                    testdata/configure.ac.v0.2 \
-                   testdata/allocates_4gb.vcdiff
+                   testdata/allocates_4gb.vcdiff \
+                   testdata/size-overflow-delta \
+                   testdata/size-overflow-dictionary \
+                   testdata/size-overflow-error-32 \
+                   testdata/size-overflow-error-64
 
 ## ^^^^ END OF RULES TO MAKE THE LIBRARIES, BINARIES, AND UNITTESTS
 

@@ -18,7 +18,6 @@ static_library("leveldatabase") {
   sources = [
     "env_chromium.cc",
     "env_chromium.h",
-    "env_idb.h",
     "port/port_chromium.cc",
     "port/port_chromium.h",
     "src/db/builder.cc",
@@ -114,6 +113,10 @@ static_library("leveldatabase") {
     "//third_party/re2",
     "//third_party/snappy",
   ]
+
+  if (is_win) {
+    cflags = [ "/wd4018" ]  # Signed/unsigned mismatch in comparison.
+  }
 }
 
 if (!is_android) {

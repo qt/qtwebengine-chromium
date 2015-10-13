@@ -4,8 +4,10 @@
 
 #include "content/browser/devtools/protocol/input_handler.h"
 
+#include "base/message_loop/message_loop.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/trace_event/trace_event.h"
 #include "cc/output/compositor_frame_metadata.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/common/input/synthetic_pinch_gesture_params.h"
@@ -345,7 +347,10 @@ Response InputHandler::SynthesizeScrollGesture(
     const int* y_overscroll,
     const bool* prevent_fling,
     const int* speed,
-    const std::string* gesture_source_type) {
+    const std::string* gesture_source_type,
+    const int* repeat_count,
+    const int* repeat_delay_ms,
+    const std::string* interaction_marker_name) {
   if (!host_)
     return Response::ServerError("Could not connect to view");
 
@@ -378,12 +383,56 @@ Response InputHandler::SynthesizeScrollGesture(
     return Response::InvalidParams("gestureSourceType");
   }
 
-  host_->QueueSyntheticGesture(
-      SyntheticGesture::Create(gesture_params),
-      base::Bind(&InputHandler::SendSynthesizeScrollGestureResponse,
-                 weak_factory_.GetWeakPtr(), command_id));
+  SynthesizeRepeatingScroll(
+      gesture_params, repeat_count ? *repeat_count : 0,
+      base::TimeDelta::FromMilliseconds(repeat_delay_ms ? *repeat_delay_ms
+                                                        : 250),
+      interaction_marker_name ? *interaction_marker_name : "", command_id);
 
   return Response::OK();
+}
+
+void InputHandler::SynthesizeRepeatingScroll(
+    SyntheticSmoothScrollGestureParams gesture_params,
+    int repeat_count,
+    base::TimeDelta repeat_delay,
+    std::string interaction_marker_name,
+    DevToolsCommandId command_id) {
+  if (!interaction_marker_name.empty()) {
+    // TODO(alexclarke): Can we move this elsewhere? It doesn't really fit here.
+    TRACE_EVENT_COPY_ASYNC_BEGIN0("benchmark",
+                                  interaction_marker_name.c_str(), command_id);
+  }
+
+  host_->QueueSyntheticGesture(
+      SyntheticGesture::Create(gesture_params),
+      base::Bind(&InputHandler::OnScrollFinished, weak_factory_.GetWeakPtr(),
+                 gesture_params, repeat_count, repeat_delay,
+                 interaction_marker_name, command_id));
+}
+
+void InputHandler::OnScrollFinished(
+    SyntheticSmoothScrollGestureParams gesture_params,
+    int repeat_count,
+    base::TimeDelta repeat_delay,
+    std::string interaction_marker_name,
+    DevToolsCommandId command_id,
+    SyntheticGesture::Result result) {
+  if (!interaction_marker_name.empty()) {
+    TRACE_EVENT_COPY_ASYNC_END0("benchmark",
+                                interaction_marker_name.c_str(), command_id);
+  }
+
+  if (repeat_count > 0) {
+    base::MessageLoop::current()->task_runner()->PostDelayedTask(
+        FROM_HERE,
+        base::Bind(&InputHandler::SynthesizeRepeatingScroll,
+                   weak_factory_.GetWeakPtr(), gesture_params, repeat_count - 1,
+                   repeat_delay, interaction_marker_name, command_id),
+        repeat_delay);
+  } else {
+    SendSynthesizeScrollGestureResponse(command_id, result);
+  }
 }
 
 Response InputHandler::SynthesizeTapGesture(

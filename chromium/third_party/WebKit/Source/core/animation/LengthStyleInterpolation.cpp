@@ -5,6 +5,7 @@
 #include "config.h"
 #include "core/animation/LengthStyleInterpolation.h"
 
+#include "core/animation/LengthPropertyFunctions.h"
 #include "core/animation/css/CSSAnimatableValueFactory.h"
 #include "core/css/CSSCalculationValue.h"
 #include "core/css/resolver/StyleBuilder.h"
@@ -13,70 +14,21 @@
 
 namespace blink {
 
-namespace {
-
-bool pixelsForKeyword(CSSPropertyID property, CSSValueID valueID, double& result)
-{
-    switch (property) {
-    case CSSPropertyBorderBottomWidth:
-    case CSSPropertyBorderLeftWidth:
-    case CSSPropertyBorderRightWidth:
-    case CSSPropertyBorderTopWidth:
-    case CSSPropertyWebkitColumnRuleWidth:
-    case CSSPropertyOutlineWidth:
-        if (valueID == CSSValueThin) {
-            result = 1;
-            return true;
-        }
-        if (valueID == CSSValueMedium) {
-            result = 3;
-            return true;
-        }
-        if (valueID == CSSValueThick) {
-            result = 5;
-            return true;
-        }
-        return false;
-    case CSSPropertyLetterSpacing:
-    case CSSPropertyWordSpacing:
-        if (valueID == CSSValueNormal) {
-            result = 0;
-            return true;
-        }
-        return false;
-    default:
-        return false;
-    }
-}
-
-} // namespace
-
 bool LengthStyleInterpolation::canCreateFrom(const CSSValue& value, CSSPropertyID property)
 {
-    if (value.isPrimitiveValue()) {
-        const CSSPrimitiveValue& primitiveValue = toCSSPrimitiveValue(value);
-        if (primitiveValue.cssCalcValue())
-            return true;
+    if (!value.isPrimitiveValue())
+        return false;
 
-        if (primitiveValue.isValueID()) {
-            CSSValueID valueID = primitiveValue.getValueID();
-            double pixels;
-            return pixelsForKeyword(property, valueID, pixels);
-        }
-
-        CSSPrimitiveValue::LengthUnitType type;
-        // Only returns true if the type is a primitive length unit.
-        return CSSPrimitiveValue::unitTypeToLengthUnitType(primitiveValue.primitiveType(), type);
-    }
-    return value.isCalcValue();
+    const CSSPrimitiveValue& primitiveValue = toCSSPrimitiveValue(value);
+    return primitiveValue.isLength() || primitiveValue.isPercentage() || primitiveValue.isCalculatedPercentageWithLength();
 }
 
-PassOwnPtrWillBeRawPtr<InterpolableValue> LengthStyleInterpolation::toInterpolableValue(const CSSValue& value, CSSPropertyID id)
+PassOwnPtr<InterpolableValue> LengthStyleInterpolation::toInterpolableValue(const CSSValue& value, CSSPropertyID id)
 {
     ASSERT(canCreateFrom(value, id));
-    OwnPtrWillBeRawPtr<InterpolableList> listOfValuesAndTypes = InterpolableList::create(2);
-    OwnPtrWillBeRawPtr<InterpolableList> listOfValues = InterpolableList::create(CSSPrimitiveValue::LengthUnitTypeCount);
-    OwnPtrWillBeRawPtr<InterpolableList> listOfTypes = InterpolableList::create(CSSPrimitiveValue::LengthUnitTypeCount);
+    OwnPtr<InterpolableList> listOfValuesAndTypes = InterpolableList::create(2);
+    OwnPtr<InterpolableList> listOfValues = InterpolableList::create(CSSPrimitiveValue::LengthUnitTypeCount);
+    OwnPtr<InterpolableList> listOfTypes = InterpolableList::create(CSSPrimitiveValue::LengthUnitTypeCount);
 
     const CSSPrimitiveValue& primitive = toCSSPrimitiveValue(value);
 
@@ -84,17 +36,8 @@ PassOwnPtrWillBeRawPtr<InterpolableValue> LengthStyleInterpolation::toInterpolab
     CSSPrimitiveValue::CSSLengthTypeArray arrayOfTypes;
     for (size_t i = 0; i < CSSPrimitiveValue::LengthUnitTypeCount; i++)
         arrayOfValues.append(0);
-
     arrayOfTypes.ensureSize(CSSPrimitiveValue::LengthUnitTypeCount);
-    if (primitive.isValueID()) {
-        CSSValueID valueID = primitive.getValueID();
-        double pixels;
-        pixelsForKeyword(id, valueID, pixels);
-        arrayOfTypes.set(CSSPrimitiveValue::UnitTypePixels);
-        arrayOfValues[CSSPrimitiveValue::UnitTypePixels] = pixels;
-    } else {
-        primitive.accumulateLengthArray(arrayOfValues, arrayOfTypes);
-    }
+    primitive.accumulateLengthArray(arrayOfValues, arrayOfTypes);
 
     for (size_t i = 0; i < CSSPrimitiveValue::LengthUnitTypeCount; i++) {
         listOfValues->set(i, InterpolableNumber::create(arrayOfValues.at(i)));
@@ -107,7 +50,9 @@ PassOwnPtrWillBeRawPtr<InterpolableValue> LengthStyleInterpolation::toInterpolab
     return listOfValuesAndTypes.release();
 }
 
-bool LengthStyleInterpolation::isPixelsOrPercentOnly(const InterpolableValue& value)
+namespace {
+
+bool isPixelsOrPercentOnly(const InterpolableValue& value)
 {
     const InterpolableList& types = *toInterpolableList(toInterpolableList(value).get(1));
     bool result = false;
@@ -122,106 +67,6 @@ bool LengthStyleInterpolation::isPixelsOrPercentOnly(const InterpolableValue& va
     }
     return result;
 }
-
-LengthStyleInterpolation::LengthSetter LengthStyleInterpolation::lengthSetterForProperty(CSSPropertyID property)
-{
-    switch (property) {
-    case CSSPropertyBottom:
-        return &ComputedStyle::setBottom;
-    case CSSPropertyCx:
-        return &ComputedStyle::setCx;
-    case CSSPropertyCy:
-        return &ComputedStyle::setCy;
-    case CSSPropertyFlexBasis:
-        return &ComputedStyle::setFlexBasis;
-    case CSSPropertyHeight:
-        return &ComputedStyle::setHeight;
-    case CSSPropertyLeft:
-        return &ComputedStyle::setLeft;
-    case CSSPropertyLineHeight:
-        return &ComputedStyle::setLineHeight;
-    case CSSPropertyMarginBottom:
-        return &ComputedStyle::setMarginBottom;
-    case CSSPropertyMarginLeft:
-        return &ComputedStyle::setMarginLeft;
-    case CSSPropertyMarginRight:
-        return &ComputedStyle::setMarginRight;
-    case CSSPropertyMarginTop:
-        return &ComputedStyle::setMarginTop;
-    case CSSPropertyMaxHeight:
-        return &ComputedStyle::setMaxHeight;
-    case CSSPropertyMaxWidth:
-        return &ComputedStyle::setMaxWidth;
-    case CSSPropertyMinHeight:
-        return &ComputedStyle::setMinHeight;
-    case CSSPropertyMinWidth:
-        return &ComputedStyle::setMinWidth;
-    case CSSPropertyMotionOffset:
-        return &ComputedStyle::setMotionOffset;
-    case CSSPropertyPaddingBottom:
-        return &ComputedStyle::setPaddingBottom;
-    case CSSPropertyPaddingLeft:
-        return &ComputedStyle::setPaddingLeft;
-    case CSSPropertyPaddingRight:
-        return &ComputedStyle::setPaddingRight;
-    case CSSPropertyPaddingTop:
-        return &ComputedStyle::setPaddingTop;
-    case CSSPropertyR:
-        return &ComputedStyle::setR;
-    case CSSPropertyRx:
-        return &ComputedStyle::setRx;
-    case CSSPropertyRy:
-        return &ComputedStyle::setRy;
-    case CSSPropertyRight:
-        return &ComputedStyle::setRight;
-    case CSSPropertyShapeMargin:
-        return &ComputedStyle::setShapeMargin;
-    case CSSPropertyStrokeDashoffset:
-        return &ComputedStyle::setStrokeDashOffset;
-    case CSSPropertyTop:
-        return &ComputedStyle::setTop;
-    case CSSPropertyWidth:
-        return &ComputedStyle::setWidth;
-    case CSSPropertyWebkitPerspectiveOriginX:
-        return &ComputedStyle::setPerspectiveOriginX;
-    case CSSPropertyWebkitPerspectiveOriginY:
-        return &ComputedStyle::setPerspectiveOriginY;
-    case CSSPropertyWebkitTransformOriginX:
-        return &ComputedStyle::setTransformOriginX;
-    case CSSPropertyWebkitTransformOriginY:
-        return &ComputedStyle::setTransformOriginY;
-    case CSSPropertyX:
-        return &ComputedStyle::setX;
-    case CSSPropertyY:
-        return &ComputedStyle::setY;
-    // These properties don't have a ComputedStyle setter with the signature void(*)(const Length&).
-    case CSSPropertyBaselineShift:
-    case CSSPropertyBorderBottomWidth:
-    case CSSPropertyBorderLeftWidth:
-    case CSSPropertyBorderRightWidth:
-    case CSSPropertyBorderTopWidth:
-    case CSSPropertyFontSize:
-    case CSSPropertyLetterSpacing:
-    case CSSPropertyOutlineOffset:
-    case CSSPropertyOutlineWidth:
-    case CSSPropertyPerspective:
-    case CSSPropertyStrokeWidth:
-    case CSSPropertyVerticalAlign:
-    case CSSPropertyWebkitBorderHorizontalSpacing:
-    case CSSPropertyWebkitBorderVerticalSpacing:
-    case CSSPropertyWebkitColumnGap:
-    case CSSPropertyWebkitColumnRuleWidth:
-    case CSSPropertyWebkitColumnWidth:
-    case CSSPropertyWebkitTransformOriginZ:
-    case CSSPropertyWordSpacing:
-        return nullptr;
-    default:
-        ASSERT_NOT_REACHED();
-        return nullptr;
-    }
-}
-
-namespace {
 
 static CSSPrimitiveValue::UnitType toUnitType(int lengthUnitType)
 {
@@ -294,7 +139,7 @@ PassRefPtrWillBeRawPtr<CSSPrimitiveValue> LengthStyleInterpolation::fromInterpol
     switch (unitTypeCount) {
     case 0:
         // TODO: this case should never be reached. This issue should be fixed once we have multiple interpolators.
-        return CSSPrimitiveValue::create(0, CSSPrimitiveValue::CSS_PX);
+        return CSSPrimitiveValue::create(0, CSSPrimitiveValue::UnitType::Pixels);
     case 1:
         for (size_t i = 0; i < CSSPrimitiveValue::LengthUnitTypeCount; i++) {
             const InterpolableNumber *subValueType = toInterpolableNumber(listOfTypes->get(i));
@@ -312,24 +157,27 @@ PassRefPtrWillBeRawPtr<CSSPrimitiveValue> LengthStyleInterpolation::fromInterpol
     }
 }
 
-void LengthStyleInterpolation::apply(StyleResolverState& state) const
+void LengthStyleInterpolation::applyInterpolableValue(CSSPropertyID property, const InterpolableValue& value, InterpolationRange range, StyleResolverState& state)
 {
-    if (m_lengthSetter) {
-        (state.style()->*m_lengthSetter)(lengthFromInterpolableValue(*m_cachedValue, m_range, state.style()->effectiveZoom()));
+    if (isPixelsOrPercentOnly(value)) {
+        Length length = lengthFromInterpolableValue(value, range, state.style()->effectiveZoom());
+        if (LengthPropertyFunctions::setLength(property, *state.style(), length)) {
 #if ENABLE(ASSERT)
-        RefPtrWillBeRawPtr<AnimatableValue> before = CSSAnimatableValueFactory::create(m_id, *state.style());
-        StyleBuilder::applyProperty(m_id, state, fromInterpolableValue(*m_cachedValue, m_range).get());
-        RefPtrWillBeRawPtr<AnimatableValue> after = CSSAnimatableValueFactory::create(m_id, *state.style());
-        ASSERT(before->equals(*after));
+            // Assert that setting the length on ComputedStyle directly is identical to the AnimatableValue code path.
+            RefPtr<AnimatableValue> before = CSSAnimatableValueFactory::create(property, *state.style());
+            StyleBuilder::applyProperty(property, state, fromInterpolableValue(value, range).get());
+            RefPtr<AnimatableValue> after = CSSAnimatableValueFactory::create(property, *state.style());
+            ASSERT(before->equals(*after));
 #endif
-    } else {
-        StyleBuilder::applyProperty(m_id, state, fromInterpolableValue(*m_cachedValue, m_range).get());
+            return;
+        }
     }
+    StyleBuilder::applyProperty(property, state, fromInterpolableValue(value, range).get());
 }
 
-DEFINE_TRACE(LengthStyleInterpolation)
+void LengthStyleInterpolation::apply(StyleResolverState& state) const
 {
-    StyleInterpolation::trace(visitor);
+    applyInterpolableValue(m_id, *m_cachedValue, m_range, state);
 }
 
 }

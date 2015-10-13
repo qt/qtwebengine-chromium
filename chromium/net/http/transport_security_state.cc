@@ -19,6 +19,7 @@
 
 #include "base/base64.h"
 #include "base/build_time.h"
+#include "base/json/json_writer.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/metrics/histogram_macros.h"
@@ -26,11 +27,13 @@
 #include "base/sha1.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
 #include "base/values.h"
 #include "crypto/sha2.h"
 #include "net/base/dns_util.h"
+#include "net/base/host_port_pair.h"
 #include "net/cert/x509_cert_types.h"
 #include "net/cert/x509_certificate.h"
 #include "net/http/http_security_headers.h"
@@ -46,6 +49,137 @@ namespace net {
 namespace {
 
 #include "net/http/transport_security_state_static.h"
+
+std::string TimeToISO8601(const base::Time& t) {
+  base::Time::Exploded exploded;
+  t.UTCExplode(&exploded);
+  return base::StringPrintf(
+      "%04d-%02d-%02dT%02d:%02d:%02d.%03dZ", exploded.year, exploded.month,
+      exploded.day_of_month, exploded.hour, exploded.minute, exploded.second,
+      exploded.millisecond);
+}
+
+scoped_ptr<base::ListValue> GetPEMEncodedChainAsList(
+    const net::X509Certificate* cert_chain) {
+  if (!cert_chain)
+    return make_scoped_ptr(new base::ListValue());
+
+  scoped_ptr<base::ListValue> result(new base::ListValue());
+  std::vector<std::string> pem_encoded_chain;
+  cert_chain->GetPEMEncodedChain(&pem_encoded_chain);
+  for (const std::string& cert : pem_encoded_chain)
+    result->Append(make_scoped_ptr(new base::StringValue(cert)));
+
+  return result.Pass();
+}
+
+bool GetHPKPReport(const HostPortPair& host_port_pair,
+                   const TransportSecurityState::PKPState& pkp_state,
+                   const X509Certificate* served_certificate_chain,
+                   const X509Certificate* validated_certificate_chain,
+                   std::string* serialized_report) {
+  // TODO(estark): keep track of reports already sent and rate-limit,
+  // break loops
+  if (pkp_state.report_uri.is_empty())
+    return false;
+
+  base::DictionaryValue report;
+  base::Time now = base::Time::Now();
+  report.SetString("date-time", TimeToISO8601(now));
+  report.SetString("hostname", host_port_pair.host());
+  report.SetInteger("port", host_port_pair.port());
+  report.SetString("effective-expiration-date",
+                   TimeToISO8601(pkp_state.expiry));
+  report.SetBoolean("include-subdomains", pkp_state.include_subdomains);
+  report.SetString("noted-hostname", pkp_state.domain);
+
+  scoped_ptr<base::ListValue> served_certificate_chain_list =
+      GetPEMEncodedChainAsList(served_certificate_chain);
+  scoped_ptr<base::ListValue> validated_certificate_chain_list =
+      GetPEMEncodedChainAsList(validated_certificate_chain);
+  report.Set("served-certificate-chain", served_certificate_chain_list.Pass());
+  report.Set("validated-certificate-chain",
+             validated_certificate_chain_list.Pass());
+
+  scoped_ptr<base::ListValue> known_pin_list(new base::ListValue());
+  for (const auto& hash_value : pkp_state.spki_hashes) {
+    std::string known_pin;
+
+    switch (hash_value.tag) {
+      case HASH_VALUE_SHA1:
+        known_pin += "pin-sha1=";
+        break;
+      case HASH_VALUE_SHA256:
+        known_pin += "pin-sha256=";
+        break;
+    }
+
+    std::string base64_value;
+    base::Base64Encode(
+        base::StringPiece(reinterpret_cast<const char*>(hash_value.data()),
+                          hash_value.size()),
+        &base64_value);
+    known_pin += "\"" + base64_value + "\"";
+
+    known_pin_list->Append(
+        scoped_ptr<base::Value>(new base::StringValue(known_pin)));
+  }
+
+  report.Set("known-pins", known_pin_list.Pass());
+
+  if (!base::JSONWriter::Write(report, serialized_report)) {
+    LOG(ERROR) << "Failed to serialize HPKP violation report.";
+    return false;
+  }
+
+  return true;
+}
+
+// Do not send a report over HTTPS to the same host that set the
+// pin. Such report URIs will result in loops. (A.com has a pinning
+// violation which results in a report being sent to A.com, which
+// results in a pinning violation which results in a report being sent
+// to A.com, etc.)
+bool IsReportUriValidForHost(const GURL& report_uri, const std::string& host) {
+  return (report_uri.host_piece() != host ||
+          !report_uri.SchemeIsCryptographic());
+}
+
+bool CheckPinsAndMaybeSendReport(
+    const HostPortPair& host_port_pair,
+    const TransportSecurityState::PKPState& pkp_state,
+    const HashValueVector& hashes,
+    const X509Certificate* served_certificate_chain,
+    const X509Certificate* validated_certificate_chain,
+    const TransportSecurityState::PublicKeyPinReportStatus report_status,
+    TransportSecurityState::ReportSender* report_sender,
+    std::string* failure_log) {
+  if (pkp_state.CheckPublicKeyPins(hashes, failure_log))
+    return true;
+
+  if (!report_sender ||
+      report_status != TransportSecurityState::ENABLE_PIN_REPORTS ||
+      pkp_state.report_uri.is_empty()) {
+    return false;
+  }
+
+  DCHECK(pkp_state.report_uri.is_valid());
+  // Report URIs should not be used if they are the same host as the pin
+  // and are HTTPS, to avoid going into a report-sending loop.
+  if (!IsReportUriValidForHost(pkp_state.report_uri, host_port_pair.host()))
+    return false;
+
+  std::string serialized_report;
+
+  if (!GetHPKPReport(host_port_pair, pkp_state, served_certificate_chain,
+                     validated_certificate_chain, &serialized_report)) {
+    return false;
+  }
+
+  report_sender->Send(pkp_state.report_uri, serialized_report);
+
+  return false;
+}
 
 std::string HashesToBase64String(const HashValueVector& hashes) {
   std::string str;
@@ -313,8 +447,7 @@ bool DecodeHSTSPreloadRaw(const std::string& search_hostname,
   // |hostname| has already undergone IDN conversion, so should be
   // entirely A-Labels. The preload data is entirely normalized to
   // lower case.
-  base::StringToLowerASCII(&hostname);
-
+  hostname = base::ToLowerASCII(hostname);
   if (hostname.empty()) {
     return true;
   }
@@ -473,7 +606,7 @@ bool DecodeHSTSPreload(const std::string& hostname, PreloadResult* out) {
 }  // namespace
 
 TransportSecurityState::TransportSecurityState()
-    : delegate_(NULL), enable_static_pins_(true) {
+    : delegate_(nullptr), report_sender_(nullptr), enable_static_pins_(true) {
 // Static pinning is only enabled for official builds to make sure that
 // others don't end up with pins that cannot be easily updated.
 #if !defined(OFFICIAL_BUILD) || defined(OS_ANDROID) || defined(OS_IOS)
@@ -510,24 +643,28 @@ bool TransportSecurityState::ShouldUpgradeToSSL(const std::string& host) {
 }
 
 bool TransportSecurityState::CheckPublicKeyPins(
-    const std::string& host,
+    const HostPortPair& host_port_pair,
     bool is_issued_by_known_root,
     const HashValueVector& public_key_hashes,
+    const X509Certificate* served_certificate_chain,
+    const X509Certificate* validated_certificate_chain,
+    const PublicKeyPinReportStatus report_status,
     std::string* pinning_failure_log) {
   // Perform pin validation if, and only if, all these conditions obtain:
   //
   // * the server's certificate chain chains up to a known root (i.e. not a
   //   user-installed trust anchor); and
   // * the server actually has public key pins.
-  if (!is_issued_by_known_root || !HasPublicKeyPins(host)) {
+  if (!is_issued_by_known_root || !HasPublicKeyPins(host_port_pair.host())) {
     return true;
   }
 
-  bool pins_are_valid =
-      CheckPublicKeyPinsImpl(host, public_key_hashes, pinning_failure_log);
+  bool pins_are_valid = CheckPublicKeyPinsImpl(
+      host_port_pair, public_key_hashes, served_certificate_chain,
+      validated_certificate_chain, report_status, pinning_failure_log);
   if (!pins_are_valid) {
     LOG(ERROR) << *pinning_failure_log;
-    ReportUMAOnPinFailure(host);
+    ReportUMAOnPinFailure(host_port_pair.host());
   }
 
   UMA_HISTOGRAM_BOOLEAN("Net.PublicKeyPinSuccess", pins_are_valid);
@@ -555,6 +692,12 @@ void TransportSecurityState::SetDelegate(
   delegate_ = delegate;
 }
 
+void TransportSecurityState::SetReportSender(
+    TransportSecurityState::ReportSender* report_sender) {
+  DCHECK(CalledOnValidThread());
+  report_sender_ = report_sender;
+}
+
 void TransportSecurityState::AddHSTSInternal(
     const std::string& host,
     TransportSecurityState::STSState::UpgradeMode upgrade_mode,
@@ -575,7 +718,8 @@ void TransportSecurityState::AddHPKPInternal(const std::string& host,
                                              const base::Time& last_observed,
                                              const base::Time& expiry,
                                              bool include_subdomains,
-                                             const HashValueVector& hashes) {
+                                             const HashValueVector& hashes,
+                                             const GURL& report_uri) {
   DCHECK(CalledOnValidThread());
 
   PKPState pkp_state;
@@ -583,6 +727,7 @@ void TransportSecurityState::AddHPKPInternal(const std::string& host,
   pkp_state.expiry = expiry;
   pkp_state.include_subdomains = include_subdomains;
   pkp_state.spki_hashes = hashes;
+  pkp_state.report_uri = report_uri;
 
   EnablePKPHost(host, pkp_state);
 }
@@ -742,14 +887,17 @@ bool TransportSecurityState::AddHPKPHeader(const std::string& host,
   base::TimeDelta max_age;
   bool include_subdomains;
   HashValueVector spki_hashes;
+  GURL report_uri;
+
   if (!ParseHPKPHeader(value, ssl_info.public_key_hashes, &max_age,
-                       &include_subdomains, &spki_hashes)) {
+                       &include_subdomains, &spki_hashes, &report_uri)) {
     return false;
   }
   // Handle max-age == 0.
   if (max_age.InSeconds() == 0)
     spki_hashes.clear();
-  AddHPKPInternal(host, now, now + max_age, include_subdomains, spki_hashes);
+  AddHPKPInternal(host, now, now + max_age, include_subdomains, spki_hashes,
+                  report_uri);
   return true;
 }
 
@@ -763,9 +911,48 @@ void TransportSecurityState::AddHSTS(const std::string& host,
 void TransportSecurityState::AddHPKP(const std::string& host,
                                      const base::Time& expiry,
                                      bool include_subdomains,
-                                     const HashValueVector& hashes) {
+                                     const HashValueVector& hashes,
+                                     const GURL& report_uri) {
   DCHECK(CalledOnValidThread());
-  AddHPKPInternal(host, base::Time::Now(), expiry, include_subdomains, hashes);
+  AddHPKPInternal(host, base::Time::Now(), expiry, include_subdomains, hashes,
+                  report_uri);
+}
+
+bool TransportSecurityState::ProcessHPKPReportOnlyHeader(
+    const std::string& value,
+    const HostPortPair& host_port_pair,
+    const SSLInfo& ssl_info) {
+  DCHECK(CalledOnValidThread());
+
+  base::Time now = base::Time::Now();
+  bool include_subdomains;
+  HashValueVector spki_hashes;
+  GURL report_uri;
+  std::string unused_failure_log;
+
+  if (!ParseHPKPReportOnlyHeader(value, &include_subdomains, &spki_hashes,
+                                 &report_uri) ||
+      !report_uri.is_valid() || report_uri.is_empty()) {
+    return false;
+  }
+
+  PKPState pkp_state;
+  pkp_state.last_observed = now;
+  pkp_state.expiry = now;
+  pkp_state.include_subdomains = include_subdomains;
+  pkp_state.spki_hashes = spki_hashes;
+  pkp_state.report_uri = report_uri;
+  pkp_state.domain = DNSDomainToString(CanonicalizeHost(host_port_pair.host()));
+
+  // Only perform pin validation if the cert chains up to a known root.
+  if (!ssl_info.is_issued_by_known_root)
+    return true;
+
+  CheckPinsAndMaybeSendReport(
+      host_port_pair, pkp_state, ssl_info.public_key_hashes,
+      ssl_info.unverified_cert.get(), ssl_info.cert.get(), ENABLE_PIN_REPORTS,
+      report_sender_, &unused_failure_log);
+  return true;
 }
 
 // static
@@ -806,21 +993,25 @@ bool TransportSecurityState::IsBuildTimely() {
 }
 
 bool TransportSecurityState::CheckPublicKeyPinsImpl(
-    const std::string& host,
+    const HostPortPair& host_port_pair,
     const HashValueVector& hashes,
+    const X509Certificate* served_certificate_chain,
+    const X509Certificate* validated_certificate_chain,
+    const PublicKeyPinReportStatus report_status,
     std::string* failure_log) {
-  PKPState dynamic_state;
-  if (GetDynamicPKPState(host, &dynamic_state))
-    return dynamic_state.CheckPublicKeyPins(hashes, failure_log);
-
-  PKPState static_pkp_state;
+  PKPState pkp_state;
   STSState unused;
-  if (GetStaticDomainState(host, &unused, &static_pkp_state))
-    return static_pkp_state.CheckPublicKeyPins(hashes, failure_log);
 
-  // HasPublicKeyPins should have returned true in order for this method
-  // to have been called, so if we fall through to here, it's an error.
-  return false;
+  if (!GetDynamicPKPState(host_port_pair.host(), &pkp_state) &&
+      !GetStaticDomainState(host_port_pair.host(), &unused, &pkp_state)) {
+    // HasPublicKeyPins should have returned true in order for this method
+    // to have been called, so if we fall through to here, it's an error.
+    return false;
+  }
+
+  return CheckPinsAndMaybeSendReport(
+      host_port_pair, pkp_state, hashes, served_certificate_chain,
+      validated_certificate_chain, report_status, report_sender_, failure_log);
 }
 
 bool TransportSecurityState::GetStaticDomainState(const std::string& host,
@@ -855,6 +1046,9 @@ bool TransportSecurityState::GetStaticDomainState(const std::string& host,
     if (result.pinset_id >= arraysize(kPinsets))
       return false;
     const Pinset *pinset = &kPinsets[result.pinset_id];
+
+    if (pinset->report_uri != kNoReportURI)
+      pkp_state->report_uri = GURL(pinset->report_uri);
 
     if (pinset->accepted_pins) {
       const char* const* sha1_hash = pinset->accepted_pins;

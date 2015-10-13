@@ -33,7 +33,7 @@
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/fetch/ImageResource.h"
 #include "core/frame/Settings.h"
-#include "core/html/FormDataList.h"
+#include "core/html/FormData.h"
 #include "core/html/HTMLDocument.h"
 #include "core/html/HTMLImageLoader.h"
 #include "core/html/HTMLMetaElement.h"
@@ -411,8 +411,6 @@ bool HTMLObjectElement::containsJavaApplet() const
             return true;
         if (isHTMLObjectElement(child) && toHTMLObjectElement(child).containsJavaApplet())
             return true;
-        if (isHTMLAppletElement(child))
-            return true;
     }
 
     return false;
@@ -424,21 +422,17 @@ void HTMLObjectElement::didMoveToNewDocument(Document& oldDocument)
     HTMLPlugInElement::didMoveToNewDocument(oldDocument);
 }
 
-bool HTMLObjectElement::appendFormData(FormDataList& encoding, bool)
+void HTMLObjectElement::appendToFormData(FormData& formData)
 {
     if (name().isEmpty())
-        return false;
+        return;
 
-    // Widget is needed immediately to satisfy cases like
-    // LayoutTests/plugins/form-value.html.
-    Widget* widget = pluginWidgetForJSBindings();
+    Widget* widget = pluginWidget();
     if (!widget || !widget->isPluginView())
-        return false;
+        return;
     String value;
-    if (!toPluginView(widget)->getFormValue(value))
-        return false;
-    encoding.appendData(name(), value);
-    return true;
+    if (toPluginView(widget)->getFormValue(value))
+        formData.append(name(), value);
 }
 
 HTMLFormElement* HTMLObjectElement::formOwner() const

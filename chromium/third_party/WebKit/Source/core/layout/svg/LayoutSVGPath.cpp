@@ -32,7 +32,6 @@
 #include "core/layout/svg/LayoutSVGResourceMarker.h"
 #include "core/layout/svg/SVGResources.h"
 #include "core/layout/svg/SVGResourcesCache.h"
-#include "core/layout/svg/SVGSubpathData.h"
 #include "core/svg/SVGGeometryElement.h"
 #include "wtf/MathExtras.h"
 
@@ -47,27 +46,13 @@ LayoutSVGPath::~LayoutSVGPath()
 {
 }
 
+
 void LayoutSVGPath::updateShapeFromElement()
 {
     LayoutSVGShape::updateShapeFromElement();
-    updateZeroLengthSubpaths();
-}
-
-void LayoutSVGPath::updateStrokeAndFillBoundingBoxes()
-{
-    LayoutSVGShape::updateStrokeAndFillBoundingBoxes();
-
-    // TODO(pdr): We should only call this in updateShapeFromElement.
     processMarkerPositions();
-    if (!m_markerPositions.isEmpty())
-        m_strokeBoundingBox.unite(markerRect(strokeWidth()));
 
-    if (style()->svgStyle().hasStroke()) {
-        // FIXME: zero-length subpaths do not respect vector-effect = non-scaling-stroke.
-        float strokeWidth = this->strokeWidth();
-        for (size_t i = 0; i < m_zeroLengthLinecapLocations.size(); ++i)
-            m_strokeBoundingBox.unite(zeroLengthSubpathRect(m_zeroLengthLinecapLocations[i], strokeWidth));
-    }
+    m_strokeBoundingBox = calculateUpdatedStrokeBoundingBox();
 }
 
 FloatRect LayoutSVGPath::hitTestStrokeBoundingBox() const
@@ -98,57 +83,15 @@ FloatRect LayoutSVGPath::hitTestStrokeBoundingBox() const
     }
 
     box.inflate(delta);
-
-    for (size_t i = 0; i < m_zeroLengthLinecapLocations.size(); ++i)
-        box.unite(zeroLengthSubpathRect(m_zeroLengthLinecapLocations[i], strokeWidth));
-
     return box;
 }
 
-bool LayoutSVGPath::shapeDependentStrokeContains(const FloatPoint& point)
+FloatRect LayoutSVGPath::calculateUpdatedStrokeBoundingBox() const
 {
-    if (LayoutSVGShape::shapeDependentStrokeContains(point))
-        return true;
-
-    const SVGComputedStyle& svgStyle = style()->svgStyle();
-    const float strokeWidth = this->strokeWidth();
-    for (size_t i = 0; i < m_zeroLengthLinecapLocations.size(); ++i) {
-        ASSERT(svgStyle.hasStroke());
-        if (svgStyle.capStyle() == SquareCap) {
-            if (zeroLengthSubpathRect(m_zeroLengthLinecapLocations[i], strokeWidth).contains(point))
-                return true;
-        } else {
-            ASSERT(svgStyle.capStyle() == RoundCap);
-            FloatPoint radiusVector(point.x() - m_zeroLengthLinecapLocations[i].x(), point.y() -  m_zeroLengthLinecapLocations[i].y());
-            if (radiusVector.lengthSquared() < strokeWidth * strokeWidth * .25f)
-                return true;
-        }
-    }
-    return false;
-}
-
-bool LayoutSVGPath::shouldStrokeZeroLengthSubpath() const
-{
-    // Spec(11.4): Any zero length subpath shall not be stroked if the "stroke-linecap" property has a value of butt
-    // but shall be stroked if the "stroke-linecap" property has a value of round or square
-    return style()->svgStyle().hasStroke() && style()->svgStyle().capStyle() != ButtCap;
-}
-
-FloatRect LayoutSVGPath::zeroLengthSubpathRect(const FloatPoint& linecapPosition, float strokeWidth)
-{
-    return FloatRect(linecapPosition.x() - strokeWidth / 2, linecapPosition.y() - strokeWidth / 2, strokeWidth, strokeWidth);
-}
-
-void LayoutSVGPath::updateZeroLengthSubpaths()
-{
-    m_zeroLengthLinecapLocations.clear();
-
-    if (!strokeWidth() || !shouldStrokeZeroLengthSubpath())
-        return;
-
-    SVGSubpathData subpathData(m_zeroLengthLinecapLocations);
-    path().apply(&subpathData, SVGSubpathData::updateFromPathElement);
-    subpathData.pathIsDone();
+    FloatRect strokeBoundingBox = m_strokeBoundingBox;
+    if (!m_markerPositions.isEmpty())
+        strokeBoundingBox.unite(markerRect(strokeWidth()));
+    return strokeBoundingBox;
 }
 
 FloatRect LayoutSVGPath::markerRect(float strokeWidth) const

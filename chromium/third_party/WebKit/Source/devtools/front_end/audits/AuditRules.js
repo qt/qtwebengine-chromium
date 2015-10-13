@@ -747,7 +747,7 @@ WebInspector.AuditRules.CacheControlRule.prototype = {
     _isExplicitlyNonCacheable: function(request)
     {
         var hasExplicitExp = this.hasExplicitExpiration(request);
-        return !!this.responseHeaderMatch(request, "Cache-Control", "(no-cache|no-store|must-revalidate)") ||
+        return !!this.responseHeaderMatch(request, "Cache-Control", "(no-cache|no-store)") ||
             !!this.responseHeaderMatch(request, "Pragma", "no-cache") ||
             (hasExplicitExp && !this.freshnessLifetimeGreaterThan(request, 0)) ||
             (!hasExplicitExp && !!request.url && request.url.indexOf("?") >= 0) ||
@@ -837,46 +837,6 @@ WebInspector.AuditRules.BrowserCacheControlRule.prototype = {
 
 /**
  * @constructor
- * @extends {WebInspector.AuditRules.CacheControlRule}
- */
-WebInspector.AuditRules.ProxyCacheControlRule = function() {
-    WebInspector.AuditRules.CacheControlRule.call(this, "http-proxycache", WebInspector.UIString("Leverage proxy caching"));
-}
-
-WebInspector.AuditRules.ProxyCacheControlRule.prototype = {
-    runChecks: function(requests, result, callback)
-    {
-        this.execCheck(WebInspector.UIString("Resources with a \"?\" in the URL are not cached by most proxy caching servers:"),
-            this._questionMarkCheck, requests, result);
-        this.execCheck(WebInspector.UIString("Consider adding a \"Cache-Control: public\" header to the following resources:"),
-            this._publicCachingCheck, requests, result);
-        this.execCheck(WebInspector.UIString("The following publicly cacheable resources contain a Set-Cookie header. This security vulnerability can cause cookies to be shared by multiple users."),
-            this._setCookieCacheableCheck, requests, result);
-    },
-
-    _questionMarkCheck: function(request)
-    {
-        return request.url.indexOf("?") >= 0 && !this.hasResponseHeader(request, "Set-Cookie") && this.isPubliclyCacheable(request);
-    },
-
-    _publicCachingCheck: function(request)
-    {
-        return this.isCacheableResource(request) &&
-            !this.isCompressible(request) &&
-            !this.responseHeaderMatch(request, "Cache-Control", "public") &&
-            !this.hasResponseHeader(request, "Set-Cookie");
-    },
-
-    _setCookieCacheableCheck: function(request)
-    {
-        return this.hasResponseHeader(request, "Set-Cookie") && this.isPubliclyCacheable(request);
-    },
-
-    __proto__: WebInspector.AuditRules.CacheControlRule.prototype
-}
-
-/**
- * @constructor
  * @extends {WebInspector.AuditRule}
  */
 WebInspector.AuditRules.ImageDimensionsRule = function()
@@ -937,24 +897,13 @@ WebInspector.AuditRules.ImageDimensionsRule.prototype = {
             if (completeSrc)
                 src = completeSrc;
 
-            if (styles.computedStyle.getPropertyValue("position") === "absolute")
+            if (styles.computedStyle.get("position") === "absolute")
                 return;
 
-            if (styles.attributesStyle) {
-                var widthFound = !!styles.attributesStyle.getLiveProperty("width");
-                var heightFound = !!styles.attributesStyle.getLiveProperty("height");
-            }
-
-            var inlineStyle = styles.inlineStyle;
-            if (inlineStyle) {
-                if (inlineStyle.getPropertyValue("width") !== "")
-                    widthFound = true;
-                if (inlineStyle.getPropertyValue("height") !== "")
-                    heightFound = true;
-            }
-
-            for (var i = styles.matchedCSSRules.length - 1; i >= 0 && !(widthFound && heightFound); --i) {
-                var style = styles.matchedCSSRules[i].style;
+            var widthFound = false;
+            var heightFound = false;
+            for (var i = 0; !(widthFound && heightFound) && i < styles.nodeStyles.length; ++i) {
+                var style = styles.nodeStyles[i];
                 if (style.getPropertyValue("width") !== "")
                     widthFound = true;
                 if (style.getPropertyValue("height") !== "")
@@ -981,27 +930,17 @@ WebInspector.AuditRules.ImageDimensionsRule.prototype = {
             var targetResult = {};
 
             /**
-             * @param {?WebInspector.CSSStyleModel.InlineStyleResult} inlineStyleResult
-             */
-            function inlineCallback(inlineStyleResult)
-            {
-                if (!inlineStyleResult)
-                    return;
-                targetResult.inlineStyle = inlineStyleResult.inlineStyle;
-                targetResult.attributesStyle = inlineStyleResult.attributesStyle;
-            }
-
-            /**
              * @param {?WebInspector.CSSStyleModel.MatchedStyleResult} matchedStyleResult
              */
             function matchedCallback(matchedStyleResult)
             {
-                if (matchedStyleResult)
-                    targetResult.matchedCSSRules = matchedStyleResult.matchedCSSRules;
+                if (!matchedStyleResult)
+                    return;
+                targetResult.nodeStyles = matchedStyleResult.nodeStyles();
             }
 
             /**
-             * @param {?WebInspector.CSSStyleDeclaration} computedStyle
+             * @param {?Map.<string, string>} computedStyle
              */
             function computedCallback(computedStyle)
             {
@@ -1014,8 +953,7 @@ WebInspector.AuditRules.ImageDimensionsRule.prototype = {
             var nodePromises = [];
             for (var i = 0; nodeIds && i < nodeIds.length; ++i) {
                 var stylePromises = [
-                    cssModel.matchedStylesPromise(nodeIds[i], false, false).then(matchedCallback),
-                    cssModel.inlineStylesPromise(nodeIds[i]).then(inlineCallback),
+                    cssModel.matchedStylesPromise(nodeIds[i]).then(matchedCallback),
                     cssModel.computedStylePromise(nodeIds[i]).then(computedCallback)
                 ];
                 var nodePromise = Promise.all(stylePromises).then(imageStylesReady.bind(null, nodeIds[i], targetResult));

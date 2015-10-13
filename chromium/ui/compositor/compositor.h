@@ -58,10 +58,10 @@ namespace ui {
 
 class Compositor;
 class CompositorVSyncManager;
+class LatencyInfo;
 class Layer;
 class Reflector;
 class Texture;
-struct LatencyInfo;
 
 const int kCompositorLockTimeoutMs = 67;
 
@@ -96,8 +96,8 @@ class COMPOSITOR_EXPORT ContextFactory {
   virtual bool DoesCreateTestContexts() = 0;
 
   // Returns the OpenGL target to use for image textures.
-  virtual uint32 GetImageTextureTarget(gfx::GpuMemoryBuffer::Format format,
-                                       gfx::GpuMemoryBuffer::Usage usage) = 0;
+  virtual uint32 GetImageTextureTarget(gfx::BufferFormat format,
+                                       gfx::BufferUsage usage) = 0;
 
   // Gets the shared bitmap manager for software mode.
   virtual cc::SharedBitmapManager* GetSharedBitmapManager() = 0;
@@ -158,8 +158,7 @@ class COMPOSITOR_EXPORT Compositor
     : NON_EXPORTED_BASE(public cc::LayerTreeHostClient),
       NON_EXPORTED_BASE(public cc::LayerTreeHostSingleThreadClient) {
  public:
-  Compositor(gfx::AcceleratedWidget widget,
-             ui::ContextFactory* context_factory,
+  Compositor(ui::ContextFactory* context_factory,
              scoped_refptr<base::SingleThreadTaskRunner> task_runner);
   ~Compositor() override;
 
@@ -230,7 +229,8 @@ class COMPOSITOR_EXPORT Compositor
   // context.
   void SetAuthoritativeVSyncInterval(const base::TimeDelta& interval);
 
-  // Returns the widget for this compositor.
+  // Sets the widget for the compositor to render into.
+  void SetAcceleratedWidgetAndStartCompositor(gfx::AcceleratedWidget widget);
   gfx::AcceleratedWidget widget() const { return widget_; }
 
   // Returns the vsync manager for this compositor.

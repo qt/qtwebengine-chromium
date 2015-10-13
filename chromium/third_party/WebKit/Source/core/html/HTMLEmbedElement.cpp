@@ -79,8 +79,8 @@ void HTMLEmbedElement::collectStyleForPresentationAttribute(const QualifiedName&
 {
     if (name == hiddenAttr) {
         if (equalIgnoringCase(value, "yes") || equalIgnoringCase(value, "true")) {
-            addPropertyToPresentationAttributeStyle(style, CSSPropertyWidth, 0, CSSPrimitiveValue::CSS_PX);
-            addPropertyToPresentationAttributeStyle(style, CSSPropertyHeight, 0, CSSPrimitiveValue::CSS_PX);
+            addPropertyToPresentationAttributeStyle(style, CSSPropertyWidth, 0, CSSPrimitiveValue::UnitType::Pixels);
+            addPropertyToPresentationAttributeStyle(style, CSSPropertyHeight, 0, CSSPrimitiveValue::UnitType::Pixels);
         }
     } else {
         HTMLPlugInElement::collectStyleForPresentationAttribute(name, value, style);
@@ -94,9 +94,13 @@ void HTMLEmbedElement::parseAttribute(const QualifiedName& name, const AtomicStr
         size_t pos = m_serviceType.find(";");
         if (pos != kNotFound)
             m_serviceType = m_serviceType.left(pos);
-        if (!layoutObject())
+        if (layoutObject()) {
+            setNeedsWidgetUpdate(true);
+            layoutObject()->setNeedsLayoutAndFullPaintInvalidation("Embed type changed");
+        } else {
             requestPluginCreationWithoutLayoutObjectIfPossible();
-    } else if (name == codeAttr) {
+        }
+    } else if (name == codeAttr) { // TODO(schenney): Remove this? It's not in the spec and we're not in the HTMLAppletElement hierarchy
         m_url = stripLeadingAndTrailingHTMLSpaces(value);
     } else if (name == srcAttr) {
         m_url = stripLeadingAndTrailingHTMLSpaces(value);

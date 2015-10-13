@@ -10,10 +10,7 @@
 #include "SkRegion.h"
 #include "SkShader.h"
 #include "SkUtils.h"
-#include "SkColorPriv.h"
 #include "SkColorFilter.h"
-#include "SkTypeface.h"
-#include "SkBlurMask.h"
 
 // effects
 #include "SkGradientShader.h"
@@ -48,13 +45,9 @@ static const SkColorType gColorTypes[] = {
 };
 
 class ScaledTilingGM : public skiagm::GM {
-    SkAutoTUnref<SkBlurDrawLooper> fLooper;
 public:
     ScaledTilingGM(bool powerOfTwoSize)
-            : fLooper(SkBlurDrawLooper::Create(0x88000000,
-                                               SkBlurMask::ConvertRadiusToSigma(SkIntToScalar(1)),
-                                               SkIntToScalar(2), SkIntToScalar(2)))
-            , fPowerOfTwoSize(powerOfTwoSize) {
+            : fPowerOfTwoSize(powerOfTwoSize) {
     }
 
     SkBitmap    fTexture[SK_ARRAY_COUNT(gColorTypes)];
@@ -110,8 +103,6 @@ protected:
                 SkString str;
                 p.setAntiAlias(true);
                 sk_tool_utils::set_portable_typeface(&p);
-                p.setDither(true);
-                p.setLooper(fLooper);
                 str.printf("[%s,%s]", gModeNames[kx], gModeNames[ky]);
 
                 p.setTextAlign(SkPaint::kCenter_Align);
@@ -152,7 +143,6 @@ protected:
                     SkString str;
                     p.setAntiAlias(true);
                     sk_tool_utils::set_portable_typeface(&p);
-                    p.setLooper(fLooper);
                     str.printf("%s, %s", gColorTypeNames[i], gFilterNames[j]);
                     canvas->drawText(str.c_str(), str.size(), scale*x, scale*(y + r.height() * 2 / 3), p);
                 }
@@ -180,19 +170,19 @@ static SkShader* make_grad(SkShader::TileMode tx, SkShader::TileMode ty) {
     SkPoint pts[] = { { 0, 0 }, { SkIntToScalar(gWidth), SkIntToScalar(gHeight)} };
     SkPoint center = { SkIntToScalar(gWidth)/2, SkIntToScalar(gHeight)/2 };
     SkScalar rad = SkIntToScalar(gWidth)/2;
-    SkColor colors[] = { 0xFFFF0000, 0xFF0044FF };
+    SkColor colors[] = { 0xFFFF0000, sk_tool_utils::color_to_565(0xFF0044FF) };
 
     int index = (int)ty;
     switch (index % 3) {
         case 0:
-            return SkGradientShader::CreateLinear(pts, colors, NULL, SK_ARRAY_COUNT(colors), tx);
+            return SkGradientShader::CreateLinear(pts, colors, nullptr, SK_ARRAY_COUNT(colors), tx);
         case 1:
-            return SkGradientShader::CreateRadial(center, rad, colors, NULL, SK_ARRAY_COUNT(colors), tx);
+            return SkGradientShader::CreateRadial(center, rad, colors, nullptr, SK_ARRAY_COUNT(colors), tx);
         case 2:
-            return SkGradientShader::CreateSweep(center.fX, center.fY, colors, NULL, SK_ARRAY_COUNT(colors));
+            return SkGradientShader::CreateSweep(center.fX, center.fY, colors, nullptr, SK_ARRAY_COUNT(colors));
     }
 
-    return NULL;
+    return nullptr;
 }
 
 typedef SkShader* (*ShaderProc)(SkShader::TileMode, SkShader::TileMode);

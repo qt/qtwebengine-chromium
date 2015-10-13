@@ -28,10 +28,10 @@ WebInspector.AccessibilitySidebarView.prototype = {
 
     /**
      * @override
-     * @param {!WebInspector.Throttler.FinishCallback} finishCallback
      * @protected
+     * @return {!Promise.<?>}
      */
-    doUpdate: function(finishCallback)
+    doUpdate: function()
     {
         /**
          * @param {?AccessibilityAgent.AXNode} accessibilityNode
@@ -43,10 +43,10 @@ WebInspector.AccessibilitySidebarView.prototype = {
                 this._computedTextSubPane.setAXNode(accessibilityNode);
             if (this._axNodeSubPane)
                 this._axNodeSubPane.setAXNode(accessibilityNode);
-            finishCallback();
         }
         var node = this.node();
-        WebInspector.AccessibilityModel.fromTarget(node.target()).getAXNode(node.id, accessibilityNodeCallback.bind(this));
+        return WebInspector.AccessibilityModel.fromTarget(node.target()).getAXNode(node.id)
+            .then(accessibilityNodeCallback.bind(this))
     },
 
     /**
@@ -461,7 +461,7 @@ WebInspector.AXNodePropertyTreeElement.createNameElement = function(name)
     var AXAttributes = WebInspector.AccessibilityStrings.AXAttributes;
     if (name in AXAttributes) {
         nameElement.textContent = WebInspector.UIString(AXAttributes[name].name);
-        nameElement.title = WebInspector.UIString(AXAttributes[name].description);
+        nameElement.title = AXAttributes[name].description;
         nameElement.classList.add("ax-readable-name");
     } else {
         nameElement.textContent = name;

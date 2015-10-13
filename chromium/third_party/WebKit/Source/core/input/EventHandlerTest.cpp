@@ -13,7 +13,6 @@
 #include "core/html/HTMLDocument.h"
 #include "core/page/AutoscrollController.h"
 #include "core/page/Page.h"
-#include "core/testing/CoreTestHelpers.h"
 #include "core/testing/DummyPageHolder.h"
 #include "platform/PlatformMouseEvent.h"
 #include <gtest/gtest.h>
@@ -92,7 +91,7 @@ TEST_F(EventHandlerTest, dragSelectionAfterScroll)
 
     FrameSelection& selection = document().frame()->selection();
     ASSERT_TRUE(selection.isRange());
-    RefPtrWillBeRawPtr<Range> range = selection.toNormalizedRange();
+    RefPtrWillBeRawPtr<Range> range = createRange(selection.selection().toNormalizedEphemeralRange());
     ASSERT_TRUE(range.get());
     EXPECT_EQ("Line 1\nLine 2", range->text());
 }

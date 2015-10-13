@@ -55,7 +55,7 @@ protected:
             SkRect r = SkRect::MakeWH(w, h);
             canvas->drawRect(r, p);
 
-            canvas->saveLayer(&r, NULL);
+            canvas->saveLayer(&r, nullptr);
 
             p.setShader(fDst);
             canvas->drawRect(r, p);
@@ -67,8 +67,8 @@ protected:
 
             r.inset(-SK_ScalarHalf, -SK_ScalarHalf);
             p.setStyle(SkPaint::kStroke_Style);
-            p.setShader(NULL);
-            p.setXfermode(NULL);
+            p.setShader(nullptr);
+            p.setXfermode(nullptr);
             canvas->drawRect(r, p);
 
             canvas->restore();
@@ -88,10 +88,10 @@ protected:
 private:
     void onOnceBeforeDraw() override {
         static const uint32_t kCheckData[] = {
-            SkPackARGB32(0xFF, 0x40, 0x40, 0x40),
-            SkPackARGB32(0xFF, 0xD0, 0xD0, 0xD0),
-            SkPackARGB32(0xFF, 0xD0, 0xD0, 0xD0),
-            SkPackARGB32(0xFF, 0x40, 0x40, 0x40)
+            SkPackARGB32(0xFF, 0x42, 0x41, 0x42),
+            SkPackARGB32(0xFF, 0xD6, 0xD3, 0xD6),
+            SkPackARGB32(0xFF, 0xD6, 0xD3, 0xD6),
+            SkPackARGB32(0xFF, 0x42, 0x41, 0x42)
         };
         SkBitmap bg;
         bg.allocN32Pixels(2, 2, true);

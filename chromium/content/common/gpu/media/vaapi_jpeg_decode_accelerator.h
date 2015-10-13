@@ -38,6 +38,7 @@ class CONTENT_EXPORT VaapiJpegDecodeAccelerator
   bool Initialize(media::JpegDecodeAccelerator::Client* client) override;
   void Decode(const media::BitstreamBuffer& bitstream_buffer,
               const scoped_refptr<media::VideoFrame>& video_frame) override;
+  bool IsSupported() override;
 
  private:
   // An input buffer and the corresponding output video frame awaiting
@@ -101,6 +102,8 @@ class CONTENT_EXPORT VaapiJpegDecodeAccelerator
   VASurfaceID va_surface_id_;
   // The coded size associated with |va_surface_id_|.
   gfx::Size coded_size_;
+  // The VA RT format associated with |va_surface_id_|.
+  unsigned int va_rt_format_;
 
   // The WeakPtrFactory for |weak_this_|.
   base::WeakPtrFactory<VaapiJpegDecodeAccelerator> weak_this_factory_;

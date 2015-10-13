@@ -35,6 +35,7 @@
 #include "core/StylePropertyShorthand.h"
 #include "core/animation/AnimationTimeline.h"
 #include "core/animation/ElementAnimations.h"
+#include "core/animation/InvalidatableStyleInterpolation.h"
 #include "core/animation/KeyframeEffect.h"
 #include "core/animation/StyleInterpolation.h"
 #include "core/animation/animatable/AnimatableValue.h"
@@ -95,8 +96,8 @@ void setAnimationUpdateIfNeeded(StyleResolverState& state, Element& element)
 {
     // If any changes to CSS Animations were detected, stash the update away for application after the
     // layout object is updated if we're in the appropriate scope.
-    if (state.animationUpdate())
-        element.ensureElementAnimations().cssAnimations().setPendingUpdate(state.takeAnimationUpdate());
+    if (!state.animationUpdate().isEmpty())
+        element.ensureElementAnimations().cssAnimations().setPendingUpdate(state.animationUpdate());
 }
 
 } // namespace
@@ -109,7 +110,7 @@ ComputedStyle* StyleResolver::s_styleNotYetAvailable;
 
 static StylePropertySet* leftToRightDeclaration()
 {
-    DEFINE_STATIC_REF_WILL_BE_PERSISTENT(MutableStylePropertySet, leftToRightDecl, (MutableStylePropertySet::create()));
+    DEFINE_STATIC_REF_WILL_BE_PERSISTENT(MutableStylePropertySet, leftToRightDecl, (MutableStylePropertySet::create(HTMLQuirksMode)));
     if (leftToRightDecl->isEmpty())
         leftToRightDecl->setProperty(CSSPropertyDirection, CSSValueLtr);
     return leftToRightDecl;
@@ -117,7 +118,7 @@ static StylePropertySet* leftToRightDeclaration()
 
 static StylePropertySet* rightToLeftDeclaration()
 {
-    DEFINE_STATIC_REF_WILL_BE_PERSISTENT(MutableStylePropertySet, rightToLeftDecl, (MutableStylePropertySet::create()));
+    DEFINE_STATIC_REF_WILL_BE_PERSISTENT(MutableStylePropertySet, rightToLeftDecl, (MutableStylePropertySet::create(HTMLQuirksMode)));
     if (rightToLeftDecl->isEmpty())
         rightToLeftDecl->setProperty(CSSPropertyDirection, CSSValueRtl);
     return rightToLeftDecl;
@@ -187,13 +188,18 @@ void StyleResolver::removePendingAuthorStyleSheets(const WillBeHeapVector<RefPtr
 void StyleResolver::appendCSSStyleSheet(CSSStyleSheet& cssSheet)
 {
     ASSERT(!cssSheet.disabled());
+    ASSERT(cssSheet.ownerDocument());
+    ASSERT(cssSheet.ownerNode());
+    ASSERT(isHTMLStyleElement(cssSheet.ownerNode()) || isSVGStyleElement(cssSheet.ownerNode()) || cssSheet.ownerNode()->treeScope() == cssSheet.ownerDocument());
+
     if (cssSheet.mediaQueries() && !m_medium->eval(cssSheet.mediaQueries(), &m_viewportDependentMediaQueryResults))
         return;
 
-    TreeScope* treeScope = ScopedStyleResolver::treeScopeFor(document(), &cssSheet);
-    if (!treeScope)
-        return;
-
+    TreeScope* treeScope = &cssSheet.ownerNode()->treeScope();
+    // Sheets in the document scope of HTML imports apply to the main document
+    // (m_document), so we override it for all document scoped sheets.
+    if (treeScope->rootNode().isDocumentNode())
+        treeScope = m_document;
     treeScope->ensureScopedStyleResolver().appendCSSStyleSheet(cssSheet, *m_medium);
 }
 
@@ -300,6 +306,7 @@ bool StyleResolver::hasRulesForId(const AtomicString& id) const
 
 void StyleResolver::addToStyleSharingList(Element& element)
 {
+    ASSERT(RuntimeEnabledFeatures::styleSharingEnabled());
     // Never add elements to the style sharing list if we're not in a recalcStyle,
     // otherwise we could leave stale pointers in there.
     if (!document().inStyleRecalc())
@@ -408,6 +415,7 @@ void StyleResolver::matchUARules(ElementRuleCollector& collector)
     if (document().isViewSource())
         matchRuleSet(collector, defaultStyleSheets.defaultViewSourceStyle());
 
+    collector.finishAddingUARules();
     collector.setMatchingUARules(false);
 }
 
@@ -454,6 +462,8 @@ void StyleResolver::matchAllRules(StyleResolverState& state, ElementRuleCollecto
         if (includeSMILProperties && state.element()->isSVGElement())
             collector.addElementStyleProperties(toSVGElement(state.element())->animatedSMILStyleProperties(), false /* isCacheable */);
     }
+
+    collector.finishAddingAuthorRulesForTreeScope();
 }
 
 PassRefPtr<ComputedStyle> StyleResolver::styleForDocument(Document& document)
@@ -470,7 +480,6 @@ PassRefPtr<ComputedStyle> StyleResolver::styleForDocument(Document& document)
     // so that the common case doesn't need to create a new ComputedStyle in
     // Document::inheritHtmlAndBodyElementStyles.
     documentStyle->setDisplay(BLOCK);
-    documentStyle->setScrollBlocksOn(WebScrollBlocksOnStartTouch | WebScrollBlocksOnWheelEvent);
     documentStyle->setPosition(AbsolutePosition);
 
     document.setupFontBuilder(*documentStyle);
@@ -478,32 +487,10 @@ PassRefPtr<ComputedStyle> StyleResolver::styleForDocument(Document& document)
     return documentStyle.release();
 }
 
-AuthorStyleInfo StyleResolver::authorStyleInfo(StyleResolverState& state)
-{
-    const CachedUAStyle* cachedUAStyle = state.cachedUAStyle();
-
-    if (!cachedUAStyle)
-        return AuthorStyleInfo();
-
-    // Exclude background-repeat from comparison by resetting it.
-    FillLayer backgroundCopy = cachedUAStyle->backgroundLayers;
-    FillLayer backgroundLayersCopy = state.style()->backgroundLayers();
-    backgroundCopy.setRepeatX(NoRepeatFill);
-    backgroundCopy.setRepeatY(NoRepeatFill);
-    backgroundLayersCopy.setRepeatX(NoRepeatFill);
-    backgroundLayersCopy.setRepeatY(NoRepeatFill);
-
-    bool backgroundChanged = backgroundLayersCopy != backgroundCopy
-        || state.style()->backgroundColor() != cachedUAStyle->backgroundColor;
-    bool borderChanged = state.style()->border() != cachedUAStyle->border;
-
-    return AuthorStyleInfo(backgroundChanged, borderChanged);
-}
-
 void StyleResolver::adjustComputedStyle(StyleResolverState& state, Element* element)
 {
     StyleAdjuster adjuster(document().inQuirksMode());
-    adjuster.adjustComputedStyle(state.mutableStyleRef(), *state.parentStyle(), element, authorStyleInfo(state));
+    adjuster.adjustComputedStyle(state.mutableStyleRef(), *state.parentStyle(), element);
 }
 
 // Start loading resources referenced by this style.
@@ -535,12 +522,13 @@ PassRefPtr<ComputedStyle> StyleResolver::styleForElement(Element* element, const
     }
 
     didAccess();
+    INCREMENT_STYLE_STATS_COUNTER(*this, elementsStyled, 1);
 
     StyleResolverParentScope::ensureParentStackIsPushed();
 
     ElementResolveContext elementContext(*element);
 
-    if (sharingBehavior == AllowStyleSharing && (defaultParent || elementContext.parentStyle())) {
+    if (RuntimeEnabledFeatures::styleSharingEnabled() && sharingBehavior == AllowStyleSharing && (defaultParent || elementContext.parentStyle())) {
         SharedStyleFinder styleFinder(elementContext, m_features, m_siblingRuleSet.get(), m_uncommonAttributeRuleSet.get(), *this);
         if (RefPtr<ComputedStyle> sharedStyle = styleFinder.findSharedStyle())
             return sharedStyle.release();
@@ -617,13 +605,17 @@ PassRefPtr<ComputedStyle> StyleResolver::styleForElement(Element* element, const
 
         if (elementAnimations)
             elementAnimations->updateBaseComputedStyle(state.style());
+    } else {
+        INCREMENT_STYLE_STATS_COUNTER(*this, baseStylesUsed, 1);
     }
 
     // FIXME: The CSSWG wants to specify that the effects of animations are applied before
     // important rules, but this currently happens here as we require adjustment to have happened
     // before deciding which properties to transition.
-    if (applyAnimatedProperties(state, element))
+    if (applyAnimatedProperties(state, element)) {
+        INCREMENT_STYLE_STATS_COUNTER(*this, stylesAnimated, 1);
         adjustComputedStyle(state, element);
+    }
 
     if (isHTMLBodyElement(*element))
         document().textLinkColors().setTextColor(state.style()->color());
@@ -633,20 +625,23 @@ PassRefPtr<ComputedStyle> StyleResolver::styleForElement(Element* element, const
     if (state.style()->hasViewportUnits())
         document().setHasViewportUnits();
 
+    if (state.style()->hasRemUnits())
+        document().styleEngine().setUsesRemUnit(true);
+
     // Now return the style.
     return state.takeStyle();
 }
 
 // This function is used by the WebAnimations JavaScript API method animate().
 // FIXME: Remove this when animate() switches away from resolution-dependent parsing.
-PassRefPtrWillBeRawPtr<AnimatableValue> StyleResolver::createAnimatableValueSnapshot(Element& element, const ComputedStyle* baseStyle, CSSPropertyID property, CSSValue* value)
+PassRefPtr<AnimatableValue> StyleResolver::createAnimatableValueSnapshot(Element& element, const ComputedStyle* baseStyle, CSSPropertyID property, CSSValue* value)
 {
     StyleResolverState state(element.document(), &element);
     state.setStyle(baseStyle ? ComputedStyle::clone(*baseStyle) : ComputedStyle::create());
     return createAnimatableValueSnapshot(state, property, value);
 }
 
-PassRefPtrWillBeRawPtr<AnimatableValue> StyleResolver::createAnimatableValueSnapshot(StyleResolverState& state, CSSPropertyID property, CSSValue* value)
+PassRefPtr<AnimatableValue> StyleResolver::createAnimatableValueSnapshot(StyleResolverState& state, CSSPropertyID property, CSSValue* value)
 {
     if (value) {
         StyleBuilder::applyProperty(property, state, value);
@@ -744,8 +739,9 @@ bool StyleResolver::pseudoStyleForElementInternal(Element& element, const Pseudo
 
         matchUARules(collector);
         matchAuthorRules(state.element(), collector, false);
+        collector.finishAddingAuthorRulesForTreeScope();
 
-        if (collector.matchedResult().matchedProperties.isEmpty())
+        if (!collector.matchedResult().hasMatchedProperties())
             return false;
 
         applyMatchedProperties(state, collector.matchedResult());
@@ -769,6 +765,7 @@ bool StyleResolver::pseudoStyleForElementInternal(Element& element, const Pseudo
         adjustComputedStyle(state, 0);
 
     didAccess();
+    INCREMENT_STYLE_STATS_COUNTER(*this, pseudoElementsStyled, 1);
 
     if (state.style()->hasViewportUnits())
         document().setHasViewportUnits();
@@ -817,12 +814,12 @@ PassRefPtr<ComputedStyle> StyleResolver::styleForPage(int pageIndex)
     bool inheritedOnly = false;
 
     const MatchResult& result = collector.matchedResult();
-    applyMatchedProperties<HighPropertyPriority>(state, result, false, result.begin(), result.end(), inheritedOnly);
+    applyMatchedProperties<HighPropertyPriority>(state, result.allRules(), false, inheritedOnly);
 
     // If our font got dirtied, go ahead and update it now.
     updateFont(state);
 
-    applyMatchedProperties<LowPropertyPriority>(state, result, false, result.begin(), result.end(), inheritedOnly);
+    applyMatchedProperties<LowPropertyPriority>(state, result.allRules(), false, inheritedOnly);
 
     loadPendingResources(state);
 
@@ -913,24 +910,31 @@ bool StyleResolver::applyAnimatedProperties(StyleResolverState& state, const Ele
         && !state.style()->transitions() && !state.style()->animations())
         return false;
 
-    state.setAnimationUpdate(CSSAnimations::calculateUpdate(animatingElement, *element, *state.style(), state.parentStyle(), this));
-    if (!state.animationUpdate())
+    CSSAnimations::calculateUpdate(animatingElement, *element, *state.style(), state.parentStyle(), state.animationUpdate(), this);
+    if (state.animationUpdate().isEmpty())
         return false;
 
-    const ActiveInterpolationMap& activeInterpolationsForAnimations = state.animationUpdate()->activeInterpolationsForAnimations();
-    const ActiveInterpolationMap& activeInterpolationsForTransitions = state.animationUpdate()->activeInterpolationsForTransitions();
-    applyAnimatedProperties<HighPropertyPriority>(state, activeInterpolationsForAnimations);
-    applyAnimatedProperties<HighPropertyPriority>(state, activeInterpolationsForTransitions);
+    if (state.style()->insideLink() != NotInsideLink) {
+        ASSERT(state.applyPropertyToRegularStyle());
+        state.setApplyPropertyToVisitedLinkStyle(true);
+    }
+
+    const ActiveInterpolationsMap& activeInterpolationsMapForAnimations = state.animationUpdate().activeInterpolationsForAnimations();
+    const ActiveInterpolationsMap& activeInterpolationsMapForTransitions = state.animationUpdate().activeInterpolationsForTransitions();
+    applyAnimatedProperties<HighPropertyPriority>(state, activeInterpolationsMapForAnimations);
+    applyAnimatedProperties<HighPropertyPriority>(state, activeInterpolationsMapForTransitions);
 
     updateFont(state);
 
-    applyAnimatedProperties<LowPropertyPriority>(state, activeInterpolationsForAnimations);
-    applyAnimatedProperties<LowPropertyPriority>(state, activeInterpolationsForTransitions);
+    applyAnimatedProperties<LowPropertyPriority>(state, activeInterpolationsMapForAnimations);
+    applyAnimatedProperties<LowPropertyPriority>(state, activeInterpolationsMapForTransitions);
 
     // Start loading resources used by animations.
     loadPendingResources(state);
 
     ASSERT(!state.fontBuilder().fontDirty());
+
+    state.setApplyPropertyToVisitedLinkStyle(false);
 
     return true;
 }
@@ -950,16 +954,21 @@ StyleRuleKeyframes* StyleResolver::findKeyframesRule(const Element* element, con
 }
 
 template <CSSPropertyPriority priority>
-void StyleResolver::applyAnimatedProperties(StyleResolverState& state, const WillBeHeapHashMap<PropertyHandle, RefPtrWillBeMember<Interpolation>>& activeInterpolations)
+void StyleResolver::applyAnimatedProperties(StyleResolverState& state, const ActiveInterpolationsMap& activeInterpolationsMap)
 {
-    for (const auto& interpolationEntry : activeInterpolations) {
-        if (!interpolationEntry.key.isCSSProperty())
+    for (const auto& interpolationsVectorEntry : activeInterpolationsMap) {
+        if (!interpolationsVectorEntry.key.isCSSProperty())
             continue;
-        CSSPropertyID property = interpolationEntry.key.cssProperty();
+        CSSPropertyID property = interpolationsVectorEntry.key.cssProperty();
         if (!CSSPropertyPriorityData<priority>::propertyHasPriority(property))
             continue;
-        const StyleInterpolation* interpolation = toStyleInterpolation(interpolationEntry.value.get());
-        interpolation->apply(state);
+        const Interpolation& interpolation = *interpolationsVectorEntry.value.first();
+        if (interpolation.isInvalidatableStyleInterpolation()) {
+            InvalidatableStyleInterpolation::applyStack(interpolationsVectorEntry.value, state);
+        } else {
+            // TODO(alancutter): Remove this old code path once animations have completely migrated to InterpolationTypes.
+            toStyleInterpolation(interpolation).apply(state);
+        }
     }
 }
 
@@ -1124,7 +1133,6 @@ static inline bool isValidFirstLetterStyleProperty(CSSPropertyID id)
     // http://www.w3.org/TR/css3-background/#placement
     case CSSPropertyBoxShadow:
     // Properties that we currently support outside of spec.
-    case CSSPropertyWebkitLineBoxContain:
     case CSSPropertyVisibility:
         return true;
 
@@ -1133,7 +1141,7 @@ static inline bool isValidFirstLetterStyleProperty(CSSPropertyID id)
     }
 }
 
-static bool shouldIgnoreTextTrackAuthorStyle(Document& document)
+static bool shouldIgnoreTextTrackAuthorStyle(const Document& document)
 {
     Settings* settings = document.settings();
     if (!settings)
@@ -1150,10 +1158,25 @@ static bool shouldIgnoreTextTrackAuthorStyle(Document& document)
     return false;
 }
 
+static inline bool isPropertyInWhitelist(PropertyWhitelistType propertyWhitelistType, CSSPropertyID property, const Document& document)
+{
+    if (propertyWhitelistType == PropertyWhitelistNone)
+        return true; // Early bail for the by far most common case.
+
+    if (propertyWhitelistType == PropertyWhitelistFirstLetter)
+        return isValidFirstLetterStyleProperty(property);
+
+    if (propertyWhitelistType == PropertyWhitelistCue)
+        return isValidCueStyleProperty(property) && !shouldIgnoreTextTrackAuthorStyle(document);
+
+    ASSERT_NOT_REACHED();
+    return true;
+}
+
 // This method expands the 'all' shorthand property to longhand properties
 // and applies the expanded longhand properties.
 template <CSSPropertyPriority priority>
-void StyleResolver::applyAllProperty(StyleResolverState& state, CSSValue* allValue, bool inheritedOnly)
+void StyleResolver::applyAllProperty(StyleResolverState& state, CSSValue* allValue, bool inheritedOnly, PropertyWhitelistType propertyWhitelistType)
 {
     unsigned startCSSProperty = CSSPropertyPriorityData<priority>::first();
     unsigned endCSSProperty = CSSPropertyPriorityData<priority>::last();
@@ -1172,6 +1195,9 @@ void StyleResolver::applyAllProperty(StyleResolverState& state, CSSValue* allVal
         // We skip applyProperty when a given property is unicode-bidi or
         // direction.
         if (!CSSProperty::isAffectedByAllProperty(propertyId))
+            continue;
+
+        if (!isPropertyInWhitelist(propertyWhitelistType, propertyId, document()))
             continue;
 
         // When hitting matched properties' cache, only inherited properties will be
@@ -1194,14 +1220,11 @@ void StyleResolver::applyProperties(StyleResolverState& state, const StyleProper
 
         CSSPropertyID property = current.id();
         if (property == CSSPropertyAll) {
-            applyAllProperty<priority>(state, current.value(), inheritedOnly);
+            applyAllProperty<priority>(state, current.value(), inheritedOnly, propertyWhitelistType);
             continue;
         }
 
-        if (propertyWhitelistType == PropertyWhitelistCue && (!isValidCueStyleProperty(property) || shouldIgnoreTextTrackAuthorStyle(document())))
-            continue;
-
-        if (propertyWhitelistType == PropertyWhitelistFirstLetter && !isValidFirstLetterStyleProperty(property))
+        if (!isPropertyInWhitelist(propertyWhitelistType, property, document()))
             continue;
 
         if (inheritedOnly && !current.isInherited()) {
@@ -1220,16 +1243,13 @@ void StyleResolver::applyProperties(StyleResolverState& state, const StyleProper
 }
 
 template <CSSPropertyPriority priority>
-void StyleResolver::applyMatchedProperties(StyleResolverState& state, const MatchResult& matchResult, bool isImportant, unsigned startIndex, unsigned endIndex, bool inheritedOnly)
+void StyleResolver::applyMatchedProperties(StyleResolverState& state, const MatchedPropertiesRange& range, bool isImportant, bool inheritedOnly)
 {
-    if (startIndex == endIndex)
+    if (range.isEmpty())
         return;
 
-    ASSERT_WITH_SECURITY_IMPLICATION(endIndex <= matchResult.matchedProperties.size());
-
     if (state.style()->insideLink() != NotInsideLink) {
-        for (unsigned i = startIndex; i < endIndex; ++i) {
-            const MatchedProperties& matchedProperties = matchResult.matchedProperties[i];
+        for (const auto& matchedProperties : range) {
             unsigned linkMatchType = matchedProperties.m_types.linkMatchType;
             // FIXME: It would be nicer to pass these as arguments but that requires changes in many places.
             state.setApplyPropertyToRegularStyle(linkMatchType & CSSSelector::MatchLink);
@@ -1241,10 +1261,8 @@ void StyleResolver::applyMatchedProperties(StyleResolverState& state, const Matc
         state.setApplyPropertyToVisitedLinkStyle(false);
         return;
     }
-    for (unsigned i = startIndex; i < endIndex; ++i) {
-        const MatchedProperties& matchedProperties = matchResult.matchedProperties[i];
+    for (const auto& matchedProperties : range)
         applyProperties<priority>(state, matchedProperties.properties.get(), isImportant, inheritedOnly, static_cast<PropertyWhitelistType>(matchedProperties.m_types.whitelistType));
-    }
 }
 
 static unsigned computeMatchedPropertiesHash(const MatchedProperties* properties, unsigned size)
@@ -1270,11 +1288,11 @@ void StyleResolver::applyMatchedProperties(StyleResolverState& state, const Matc
 
     INCREMENT_STYLE_STATS_COUNTER(*this, matchedPropertyApply, 1);
 
-    unsigned cacheHash = matchResult.isCacheable ? computeMatchedPropertiesHash(matchResult.matchedProperties.data(), matchResult.matchedProperties.size()) : 0;
+    unsigned cacheHash = RuntimeEnabledFeatures::styleMatchedPropertiesCacheEnabled() && matchResult.isCacheable() ? computeMatchedPropertiesHash(matchResult.matchedProperties().data(), matchResult.matchedProperties().size()) : 0;
     bool applyInheritedOnly = false;
-    const CachedMatchedProperties* cachedMatchedProperties = cacheHash ? m_matchedPropertiesCache.find(cacheHash, state, matchResult) : 0;
+    const CachedMatchedProperties* cachedMatchedProperties = cacheHash ? m_matchedPropertiesCache.find(cacheHash, state, matchResult.matchedProperties()) : nullptr;
 
-    if (cachedMatchedProperties && MatchedPropertiesCache::isCacheable(element, *state.style(), *state.parentStyle())) {
+    if (cachedMatchedProperties && MatchedPropertiesCache::isCacheable(*state.style(), *state.parentStyle())) {
         INCREMENT_STYLE_STATS_COUNTER(*this, matchedPropertyCacheHit, 1);
         // We can build up the style by copying non-inherited properties from an earlier style object built using the same exact
         // style declarations. We then only need to apply the inherited properties, if any, as their values can depend on the
@@ -1303,9 +1321,10 @@ void StyleResolver::applyMatchedProperties(StyleResolverState& state, const Matc
     // high-priority properties first, i.e., those properties that other properties depend on.
     // The order is (1) high-priority not important, (2) high-priority important, (3) normal not important
     // and (4) normal important.
-    applyMatchedProperties<HighPropertyPriority>(state, matchResult, false, matchResult.begin(), matchResult.end(), applyInheritedOnly);
-    applyMatchedProperties<HighPropertyPriority>(state, matchResult, true, matchResult.beginAuthor(), matchResult.endAuthor(), applyInheritedOnly);
-    applyMatchedProperties<HighPropertyPriority>(state, matchResult, true, matchResult.beginUA(), matchResult.endUA(), applyInheritedOnly);
+    applyMatchedProperties<HighPropertyPriority>(state, matchResult.allRules(), false, applyInheritedOnly);
+    for (auto range : ImportantAuthorRanges(matchResult))
+        applyMatchedProperties<HighPropertyPriority>(state, range, true, applyInheritedOnly);
+    applyMatchedProperties<HighPropertyPriority>(state, matchResult.uaRules(), true, applyInheritedOnly);
 
     if (UNLIKELY(isSVGForeignObjectElement(element))) {
         // LayoutSVGRoot handles zooming for the whole SVG subtree, so foreignObject content should not be scaled again.
@@ -1331,24 +1350,58 @@ void StyleResolver::applyMatchedProperties(StyleResolverState& state, const Matc
         applyInheritedOnly = false;
 
     // Now do the normal priority UA properties.
-    applyMatchedProperties<LowPropertyPriority>(state, matchResult, false, matchResult.beginUA(), matchResult.endUA(), applyInheritedOnly);
+    applyMatchedProperties<LowPropertyPriority>(state, matchResult.uaRules(), false, applyInheritedOnly);
 
     // Cache the UA properties to pass them to LayoutTheme in adjustComputedStyle.
     state.cacheUserAgentBorderAndBackground();
 
     // Now do the author and user normal priority properties and all the !important properties.
-    applyMatchedProperties<LowPropertyPriority>(state, matchResult, false, matchResult.beginAuthor(), matchResult.endAuthor(), applyInheritedOnly);
-    applyMatchedProperties<LowPropertyPriority>(state, matchResult, true, matchResult.beginAuthor(), matchResult.endAuthor(), applyInheritedOnly);
-    applyMatchedProperties<LowPropertyPriority>(state, matchResult, true, matchResult.beginUA(), matchResult.endUA(), applyInheritedOnly);
+    applyMatchedProperties<LowPropertyPriority>(state, matchResult.authorRules(), false, applyInheritedOnly);
+    for (auto range : ImportantAuthorRanges(matchResult))
+        applyMatchedProperties<LowPropertyPriority>(state, range, true, applyInheritedOnly);
+    applyMatchedProperties<LowPropertyPriority>(state, matchResult.uaRules(), true, applyInheritedOnly);
+
+    if (state.style()->hasAppearance() && !applyInheritedOnly) {
+        // Check whether the final border and background differs from the cached UA ones.
+        // When there is a partial match in the MatchedPropertiesCache, these flags will already be set correctly
+        // and the value stored in cacheUserAgentBorderAndBackground is incorrect, so doing this check again
+        // would give the wrong answer.
+        state.style()->setHasAuthorBackground(hasAuthorBackground(state));
+        state.style()->setHasAuthorBorder(hasAuthorBorder(state));
+    }
 
     loadPendingResources(state);
 
-    if (!cachedMatchedProperties && cacheHash && MatchedPropertiesCache::isCacheable(element, *state.style(), *state.parentStyle())) {
+    if (!cachedMatchedProperties && cacheHash && MatchedPropertiesCache::isCacheable(*state.style(), *state.parentStyle())) {
+        ASSERT(RuntimeEnabledFeatures::styleMatchedPropertiesCacheEnabled());
         INCREMENT_STYLE_STATS_COUNTER(*this, matchedPropertyCacheAdded, 1);
-        m_matchedPropertiesCache.add(*state.style(), *state.parentStyle(), cacheHash, matchResult);
+        m_matchedPropertiesCache.add(*state.style(), *state.parentStyle(), cacheHash, matchResult.matchedProperties());
     }
 
     ASSERT(!state.fontBuilder().fontDirty());
+}
+
+bool StyleResolver::hasAuthorBackground(const StyleResolverState& state)
+{
+    const CachedUAStyle* cachedUAStyle = state.cachedUAStyle();
+    if (!cachedUAStyle)
+        return false;
+
+    FillLayer oldFill = cachedUAStyle->backgroundLayers;
+    FillLayer newFill = state.style()->backgroundLayers();
+    // Exclude background-repeat from comparison by resetting it.
+    oldFill.setRepeatX(NoRepeatFill);
+    oldFill.setRepeatY(NoRepeatFill);
+    newFill.setRepeatX(NoRepeatFill);
+    newFill.setRepeatY(NoRepeatFill);
+
+    return (oldFill != newFill || cachedUAStyle->backgroundColor != state.style()->backgroundColor());
+}
+
+bool StyleResolver::hasAuthorBorder(const StyleResolverState& state)
+{
+    const CachedUAStyle* cachedUAStyle = state.cachedUAStyle();
+    return cachedUAStyle && (cachedUAStyle->border != state.style()->border());
 }
 
 void StyleResolver::applyCallbackSelectors(StyleResolverState& state)
@@ -1396,7 +1449,7 @@ void StyleResolver::computeFont(ComputedStyle* style, const StylePropertySet& pr
     };
 
     // TODO(timloh): This is weird, the style is being used as its own parent
-    StyleResolverState state(document(), document().documentElement(), style);
+    StyleResolverState state(document(), nullptr, style);
     state.setStyle(style);
 
     for (CSSPropertyID property : properties) {

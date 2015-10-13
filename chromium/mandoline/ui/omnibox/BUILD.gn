@@ -11,35 +11,32 @@ mojo_native_application("omnibox") {
 
   deps = [
     ":lib",
-    "//mandoline/services/navigation/public/interfaces",
     "//mandoline/ui/common/resources",
     "//mojo/application/public/cpp",
-    "//third_party/icu:icudata",
   ]
 
-  resources = [
-    "$root_out_dir/icudtl.dat",
-    "$root_out_dir/mandoline_ui.pak",
-  ]
+  resources = [ "$root_out_dir/mandoline_ui.pak" ]
 }
 
 source_set("lib") {
   sources = [
-    "omnibox_impl.cc",
-    "omnibox_impl.h",
+    "omnibox_application.cc",
+    "omnibox_application.h",
   ]
 
   deps = [
     "//base",
-    "//components/view_manager/public/cpp",
-    "//mandoline/services/navigation/public/interfaces",
+    "//components/mus/public/cpp",
+    "//components/url_formatter",
     "//mandoline/ui/aura",
-    "//mandoline/ui/browser/public/interfaces",
-    "//mojo/application/public/interfaces",
+    "//mandoline/ui/desktop_ui/public/interfaces",
+    "//mojo/application/public/cpp:sources",
+    "//mojo/common",
     "//mojo/converters/geometry",
     "//skia",
     "//third_party/mojo/src/mojo/public/cpp/bindings",
     "//ui/gfx/geometry",
     "//ui/mojo/events:interfaces",
+    "//ui/views",
   ]
 }

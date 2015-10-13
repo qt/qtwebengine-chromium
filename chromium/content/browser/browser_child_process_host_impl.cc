@@ -18,6 +18,7 @@
 #include "base/synchronization/waitable_event.h"
 #include "content/browser/histogram_message_filter.h"
 #include "content/browser/loader/resource_message_filter.h"
+#include "content/browser/memory/memory_message_filter.h"
 #include "content/browser/profiler_message_filter.h"
 #include "content/browser/tracing/trace_message_filter.h"
 #include "content/common/child_process_host_impl.h"
@@ -58,6 +59,11 @@ void NotifyProcessCrashed(const ChildProcessData& data, int exit_code) {
                     BrowserChildProcessCrashed(data, exit_code));
 }
 
+void NotifyProcessKilled(const ChildProcessData& data, int exit_code) {
+  FOR_EACH_OBSERVER(BrowserChildProcessObserver, g_observers.Get(),
+                    BrowserChildProcessKilled(data, exit_code));
+}
+
 }  // namespace
 
 BrowserChildProcessHost* BrowserChildProcessHost::Create(
@@ -78,7 +84,7 @@ BrowserChildProcessHost* BrowserChildProcessHost::FromID(int child_process_id) {
 }
 
 #if defined(OS_MACOSX)
-base::ProcessMetrics::PortProvider* BrowserChildProcessHost::GetPortProvider() {
+base::PortProvider* BrowserChildProcessHost::GetPortProvider() {
   return MachBroker::GetInstance();
 }
 #endif
@@ -115,6 +121,7 @@ BrowserChildProcessHostImpl::BrowserChildProcessHostImpl(
   AddFilter(new TraceMessageFilter(data_.id));
   AddFilter(new ProfilerMessageFilter(process_type));
   AddFilter(new HistogramMessageFilter);
+  AddFilter(new MemoryMessageFilter);
 
   g_child_process_list.Get().push_back(this);
   GetContentClient()->browser()->BrowserChildProcessHostCreated(this);
@@ -157,6 +164,7 @@ void BrowserChildProcessHostImpl::Launch(
     switches::kTraceToConsole,
     switches::kV,
     switches::kVModule,
+    "use-new-edk",  // TODO(use_chrome_edk): temporary.
   };
   cmd_line->CopySwitchesFrom(browser_command_line, kForwardSwitches,
                              arraysize(kForwardSwitches));
@@ -306,11 +314,17 @@ void BrowserChildProcessHostImpl::OnChildDisconnected() {
                                   PROCESS_TYPE_MAX);
         break;
       }
+#if defined(OS_ANDROID)
+      case base::TERMINATION_STATUS_OOM_PROTECTED:
+#endif
 #if defined(OS_CHROMEOS)
       case base::TERMINATION_STATUS_PROCESS_WAS_KILLED_BY_OOM:
 #endif
       case base::TERMINATION_STATUS_PROCESS_WAS_KILLED: {
         delegate_->OnProcessCrashed(exit_code);
+        BrowserThread::PostTask(
+            BrowserThread::UI, FROM_HERE,
+            base::Bind(&NotifyProcessKilled, data_, exit_code));
         // Report that this child process was killed.
         UMA_HISTOGRAM_ENUMERATION("ChildProcess.Killed2",
                                   data_.process_type,
@@ -365,7 +379,7 @@ void BrowserChildProcessHostImpl::OnProcessLaunched() {
   // connected and the exit of the child process is detecter by an error on the
   // IPC channel thereafter.
   DCHECK(!early_exit_watcher_.GetWatchedObject());
-  early_exit_watcher_.StartWatching(process.Handle(), this);
+  early_exit_watcher_.StartWatchingOnce(process.Handle(), this);
 #endif
 
   // TODO(rvargas) crbug.com/417532: Don't store a handle.

@@ -8,10 +8,10 @@
 # Do NOT CHANGE this if you don't know what you're doing -- see
 # https://code.google.com/p/chromium/wiki/UpdatingClang
 # Reverting problematic clang rolls is safe, though.
-CLANG_REVISION=241602
+CLANG_REVISION=247874
 
 # This is incremented when pushing a new build of Clang at the same revision.
-CLANG_SUB_REVISION=2
+CLANG_SUB_REVISION=1
 
 PACKAGE_VERSION="${CLANG_REVISION}-${CLANG_SUB_REVISION}"
 
@@ -48,6 +48,9 @@ if [[ -z "$GYP_DEFINES" ]]; then
 fi
 if [[ -z "$GYP_GENERATORS" ]]; then
   GYP_GENERATORS=
+fi
+if [[ -z "$LLVM_DOWNLOAD_GOLD_PLUGIN" ]]; then
+  LLVM_DOWNLOAD_GOLD_PLUGIN=
 fi
 
 
@@ -267,6 +270,11 @@ if [[ -z "$force_local_build" ]]; then
     echo clang "${PACKAGE_VERSION}" unpacked
     echo "${PACKAGE_VERSION}" > "${STAMP_FILE}"
     rm -rf "${CDS_OUT_DIR}"
+    # Download the gold plugin if requested to by an environment variable.
+    # This is used by the CFI ClusterFuzz bot.
+    if [[ -n "${LLVM_DOWNLOAD_GOLD_PLUGIN}" ]]; then
+      ${THIS_DIR}/../../../build/download_gold_plugin.py
+    fi
     exit 0
   else
     echo Did not find prebuilt clang "${PACKAGE_VERSION}", building
@@ -366,75 +374,8 @@ if [ "${OS}" = "Darwin" ]; then
 fi
 
 if [[ -n "$with_patches" ]]; then
-
-  # Apply patch for tests failing with --disable-pthreads (llvm.org/PR11974)
-  pushd "${CLANG_DIR}"
-  cat << 'EOF' |
---- test/Index/crash-recovery-modules.m	(revision 202554)
-+++ test/Index/crash-recovery-modules.m	(working copy)
-@@ -12,6 +12,8 @@
- 
- // REQUIRES: crash-recovery
- // REQUIRES: shell
-+// XFAIL: *
-+//    (PR11974)
- 
- @import Crash;
-EOF
-patch -p0
-popd
-
-pushd "${CLANG_DIR}"
-cat << 'EOF' |
---- unittests/libclang/LibclangTest.cpp (revision 215949)
-+++ unittests/libclang/LibclangTest.cpp (working copy)
-@@ -431,7 +431,7 @@
-   EXPECT_EQ(0U, clang_getNumDiagnostics(ClangTU));
- }
-
--TEST_F(LibclangReparseTest, ReparseWithModule) {
-+TEST_F(LibclangReparseTest, DISABLED_ReparseWithModule) {
-   const char *HeaderTop = "#ifndef H\n#define H\nstruct Foo { int bar;";
-   const char *HeaderBottom = "\n};\n#endif\n";
-   const char *MFile = "#include \"HeaderFile.h\"\nint main() {"
-EOF
-  patch -p0
-  popd
-
-  # This Go bindings test doesn't work after the bootstrap build on Linux. (PR21552)
-  pushd "${LLVM_DIR}"
-  cat << 'EOF' |
---- test/Bindings/Go/go.test    (revision 223109)
-+++ test/Bindings/Go/go.test    (working copy)
-@@ -1,3 +1,3 @@
--; RUN: llvm-go test llvm.org/llvm/bindings/go/llvm
-+; RUN: true
- 
- ; REQUIRES: shell
-EOF
-  patch -p0
-  popd
-
-  # The UBSan run-time, which is now bundled with the ASan run-time, doesn't work
-  # on Mac OS X 10.8 (PR23539).
-  pushd "${COMPILER_RT_DIR}"
-  cat << 'EOF' |
-Index: CMakeLists.txt
-===================================================================
---- CMakeLists.txt	(revision 241602)
-+++ CMakeLists.txt	(working copy)
-@@ -305,6 +305,7 @@
-       list(APPEND SANITIZER_COMMON_SUPPORTED_OS iossim)
-     endif()
-   endif()
-+  set(SANITIZER_MIN_OSX_VERSION "10.7")
-   if(SANITIZER_MIN_OSX_VERSION VERSION_LESS "10.7")
-     message(FATAL_ERROR "Too old OS X version: ${SANITIZER_MIN_OSX_VERSION}")
-   endif()
-EOF
-  patch -p0
-  popd
-
+  # No patches.
+  true
 fi
 
 # Echo all commands.
@@ -515,7 +456,7 @@ if [[ -n "${bootstrap}" ]]; then
 
   if [[ -n "${gcc_toolchain}" ]]; then
     # Tell the bootstrap compiler to use a specific gcc prefix to search
-    # for standard library headers and shared object file.
+    # for standard library headers and shared object files.
     CFLAGS="--gcc-toolchain=${gcc_toolchain}"
     CXXFLAGS="--gcc-toolchain=${gcc_toolchain}"
   fi
@@ -601,6 +542,7 @@ MACOSX_DEPLOYMENT_TARGET=${deployment_target} cmake -GNinja \
     -DCMAKE_BUILD_TYPE=Release \
     -DLLVM_ENABLE_ASSERTIONS=ON \
     -DLLVM_ENABLE_THREADS=OFF \
+    -DLLVM_EXPERIMENTAL_TARGETS_TO_BUILD=WebAssembly \
     -DLLVM_BINUTILS_INCDIR="${BINUTILS_INCDIR}" \
     -DCMAKE_C_COMPILER="${CC}" \
     -DCMAKE_CXX_COMPILER="${CXX}" \
@@ -648,6 +590,7 @@ MACOSX_DEPLOYMENT_TARGET=${deployment_target} cmake -GNinja \
     -DLLVM_ENABLE_THREADS=OFF \
     -DCMAKE_C_COMPILER="${CC}" \
     -DCMAKE_CXX_COMPILER="${CXX}" \
+    -DSANITIZER_MIN_OSX_VERSION="10.7" \
     -DLLVM_CONFIG_PATH="${ABS_LLVM_BUILD_DIR}/bin/llvm-config" \
     "${ABS_COMPILER_RT_DIR}"
 
@@ -672,35 +615,45 @@ if [[ -n "${with_android}" ]]; then
   # Make a standalone Android toolchain.
   ${ANDROID_NDK_DIR}/build/tools/make-standalone-toolchain.sh \
       --platform=android-19 \
-      --install-dir="${LLVM_BUILD_DIR}/android-toolchain" \
+      --install-dir="${LLVM_BUILD_DIR}/android-toolchain-arm" \
       --system=linux-x86_64 \
       --stl=stlport \
       --toolchain=arm-linux-androideabi-4.9
 
-  # Android NDK r9d copies a broken unwind.h into the toolchain, see
-  # http://crbug.com/357890
-  rm -v "${LLVM_BUILD_DIR}"/android-toolchain/include/c++/*/unwind.h
+  # Do the same for x86.
+  ${ANDROID_NDK_DIR}/build/tools/make-standalone-toolchain.sh \
+      --platform=android-19 \
+      --install-dir="${LLVM_BUILD_DIR}/android-toolchain-i686" \
+      --system=linux-x86_64 \
+      --stl=stlport \
+      --toolchain=x86-4.9
 
-  # Build ASan runtime for Android in a separate build tree.
-  mkdir -p ${LLVM_BUILD_DIR}/android
-  pushd ${LLVM_BUILD_DIR}/android
-  rm -fv CMakeCache.txt
-  MACOSX_DEPLOYMENT_TARGET=${deployment_target} cmake -GNinja \
-      -DCMAKE_BUILD_TYPE=Release \
-      -DLLVM_ENABLE_ASSERTIONS=ON \
-      -DLLVM_ENABLE_THREADS=OFF \
-      -DCMAKE_C_COMPILER=${PWD}/../bin/clang \
-      -DCMAKE_CXX_COMPILER=${PWD}/../bin/clang++ \
-      -DLLVM_CONFIG_PATH=${PWD}/../bin/llvm-config \
-      -DCMAKE_C_FLAGS="--target=arm-linux-androideabi --sysroot=${PWD}/../android-toolchain/sysroot -B${PWD}/../android-toolchain" \
-      -DCMAKE_CXX_FLAGS="--target=arm-linux-androideabi --sysroot=${PWD}/../android-toolchain/sysroot -B${PWD}/../android-toolchain" \
-      -DANDROID=1 \
-      "${ABS_COMPILER_RT_DIR}"
-  ninja libclang_rt.asan-arm-android.so
+  for target_arch in "arm" "i686"; do
+    # Android NDK r9d copies a broken unwind.h into the toolchain, see
+    # http://crbug.com/357890
+    rm -v "${LLVM_BUILD_DIR}"/android-toolchain-${target_arch}/include/c++/*/unwind.h
 
-  # And copy it into the main build tree.
-  cp "$(find -name libclang_rt.asan-arm-android.so)" "${ABS_LLVM_CLANG_LIB_DIR}/lib/linux/"
-  popd
+    # Build ASan runtime for Android in a separate build tree.
+    mkdir -p ${LLVM_BUILD_DIR}/android-${target_arch}
+    pushd ${LLVM_BUILD_DIR}/android-${target_arch}
+    rm -fv CMakeCache.txt
+    MACOSX_DEPLOYMENT_TARGET=${deployment_target} cmake -GNinja \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DLLVM_ENABLE_ASSERTIONS=ON \
+        -DLLVM_ENABLE_THREADS=OFF \
+        -DCMAKE_C_COMPILER=${PWD}/../bin/clang \
+        -DCMAKE_CXX_COMPILER=${PWD}/../bin/clang++ \
+        -DLLVM_CONFIG_PATH=${PWD}/../bin/llvm-config \
+        -DCMAKE_C_FLAGS="--target=${target_arch}-linux-androideabi --sysroot=${PWD}/../android-toolchain-${target_arch}/sysroot -B${PWD}/../android-toolchain-${target_arch}" \
+        -DCMAKE_CXX_FLAGS="--target=${target_arch}-linux-androideabi --sysroot=${PWD}/../android-toolchain-${target_arch}/sysroot -B${PWD}/../android-toolchain-${target_arch}" \
+        -DANDROID=1 \
+        "${ABS_COMPILER_RT_DIR}"
+    ninja libclang_rt.asan-${target_arch}-android.so
+
+    # And copy it into the main build tree.
+    cp "$(find -name libclang_rt.asan-${target_arch}-android.so)" "${ABS_LLVM_CLANG_LIB_DIR}/lib/linux/"
+    popd
+  done
 fi
 
 if [[ -n "$run_tests" || -n "${LLVM_FORCE_HEAD_REVISION:-''}" ]]; then

@@ -297,16 +297,14 @@ typedef long long      GLint64;
     const GLenum MAX_ELEMENT_INDEX                             = 0x8D6B;
     const GLenum NUM_SAMPLE_COUNTS                             = 0x9380;
     const GLenum TEXTURE_IMMUTABLE_LEVELS                      = 0x82DF;
-
-    // FIXME: This currently differs from the WebGL2 spec.
-    const GLuint TIMEOUT_IGNORED                               = 0xFFFFFFFF;
+    const GLint TIMEOUT_IGNORED                                = -1;
 
     /* WebGL-specific enums */
     const GLenum MAX_CLIENT_WAIT_TIMEOUT_WEBGL                 = 0x9247;
 
     /* Buffer objects */
     void copyBufferSubData(GLenum readTarget, GLenum writeTarget, GLintptr readOffset, GLintptr writeOffset, GLsizeiptr size);
-    void getBufferSubData(GLenum target, GLintptr offset, ArrayBuffer returnedData);
+    void getBufferSubData(GLenum target, GLintptr offset, ArrayBuffer? returnedData);
 
     /* Framebuffer objects */
     void blitFramebuffer(GLint srcX0, GLint srcY0, GLint srcX1, GLint srcY1, GLint dstX0, GLint dstY0, GLint dstX1, GLint dstY1, GLbitfield mask, GLenum filter);
@@ -323,8 +321,8 @@ typedef long long      GLint64;
     void texStorage2D(GLenum target, GLsizei levels, GLenum internalformat, GLsizei width, GLsizei height);
     void texStorage3D(GLenum target, GLsizei levels, GLenum internalformat, GLsizei width, GLsizei height, GLsizei depth);
     void texImage3D(GLenum target, GLint level, GLint internalformat, GLsizei width, GLsizei height, GLsizei depth, GLint border, GLenum format, GLenum type, ArrayBufferView? pixels);
-    [RaisesException] void texSubImage3D(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLsizei width, GLsizei height, GLsizei depth, GLenum format, GLenum type, ArrayBufferView? pixels);
-    [RaisesException] void texSubImage3D(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLenum format, GLenum type, ImageData? data);
+    void texSubImage3D(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLsizei width, GLsizei height, GLsizei depth, GLenum format, GLenum type, ArrayBufferView? pixels);
+    void texSubImage3D(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLenum format, GLenum type, ImageData? data);
     [RaisesException] void texSubImage3D(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLenum format, GLenum type, HTMLImageElement? image);
     [RaisesException] void texSubImage3D(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLenum format, GLenum type, HTMLCanvasElement? canvas);
     [RaisesException] void texSubImage3D(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLenum format, GLenum type, HTMLVideoElement? video);
@@ -340,10 +338,14 @@ typedef long long      GLint64;
     void uniform2ui(WebGLUniformLocation? location, GLuint v0, GLuint v1);
     void uniform3ui(WebGLUniformLocation? location, GLuint v0, GLuint v1, GLuint v2);
     void uniform4ui(WebGLUniformLocation? location, GLuint v0, GLuint v1, GLuint v2, GLuint v3);
-    void uniform1uiv(WebGLUniformLocation? location, sequence<GLuint> value);
-    void uniform2uiv(WebGLUniformLocation? location, sequence<GLuint> value);
-    void uniform3uiv(WebGLUniformLocation? location, sequence<GLuint> value);
-    void uniform4uiv(WebGLUniformLocation? location, sequence<GLuint> value);
+    void uniform1uiv(WebGLUniformLocation? location, [FlexibleArrayBufferView] Uint32Array v);
+    void uniform1uiv(WebGLUniformLocation? location, sequence<GLuint> v);
+    void uniform2uiv(WebGLUniformLocation? location, [FlexibleArrayBufferView] Uint32Array v);
+    void uniform2uiv(WebGLUniformLocation? location, sequence<GLuint> v);
+    void uniform3uiv(WebGLUniformLocation? location, [FlexibleArrayBufferView] Uint32Array v);
+    void uniform3uiv(WebGLUniformLocation? location, sequence<GLuint> v);
+    void uniform4uiv(WebGLUniformLocation? location, [FlexibleArrayBufferView] Uint32Array v);
+    void uniform4uiv(WebGLUniformLocation? location, sequence<GLuint> v);
     void uniformMatrix2x3fv(WebGLUniformLocation? location, GLboolean transpose, Float32Array value);
     void uniformMatrix2x3fv(WebGLUniformLocation? location, GLboolean transpose, sequence<GLfloat> value);
     void uniformMatrix3x2fv(WebGLUniformLocation? location, GLboolean transpose, Float32Array value);
@@ -358,8 +360,10 @@ typedef long long      GLint64;
     void uniformMatrix4x3fv(WebGLUniformLocation? location, GLboolean transpose, sequence<GLfloat> value);
 
     void vertexAttribI4i(GLuint index, GLint x, GLint y, GLint z, GLint w);
+    void vertexAttribI4iv(GLuint index, Int32Array v);
     void vertexAttribI4iv(GLuint index, sequence<GLint> v);
     void vertexAttribI4ui(GLuint index, GLuint x, GLuint y, GLuint z, GLuint w);
+    void vertexAttribI4uiv(GLuint index, Uint32Array v);
     void vertexAttribI4uiv(GLuint index, sequence<GLuint> v);
     void vertexAttribIPointer(GLuint index, GLint size, GLenum type, GLsizei stride, GLintptr offset);
 
@@ -401,8 +405,8 @@ typedef long long      GLint64;
     WebGLSync fenceSync(GLenum condition, GLbitfield flags);
     GLboolean isSync(WebGLSync? sync);
     void deleteSync(WebGLSync? sync);
-    GLenum clientWaitSync(WebGLSync? sync, GLbitfield flags, GLuint timeout);
-    void waitSync(WebGLSync? sync, GLbitfield flags, GLuint timeout);
+    GLenum clientWaitSync(WebGLSync? sync, GLbitfield flags, GLint64 timeout);
+    void waitSync(WebGLSync? sync, GLbitfield flags, GLint64 timeout);
 
     [CallWith=ScriptState] any getSyncParameter(WebGLSync sync, GLenum pname);
 
@@ -434,5 +438,8 @@ typedef long long      GLint64;
     void deleteVertexArray(WebGLVertexArrayObject? vertexArray);
     GLboolean isVertexArray(WebGLVertexArrayObject? vertexArray);
     void bindVertexArray(WebGLVertexArrayObject? vertexArray);
+
+    /* Reading */
+    void readPixels(GLint x, GLint y, GLsizei width, GLsizei height, GLenum format, GLenum type, GLintptr offset);
 };
 WebGL2RenderingContextBase implements WebGLRenderingContextBase;

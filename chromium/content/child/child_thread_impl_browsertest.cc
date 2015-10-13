@@ -16,6 +16,7 @@
 #include "content/public/test/content_browser_test.h"
 #include "content/public/test/content_browser_test_utils.h"
 #include "content/shell/browser/shell.h"
+#include "ui/gfx/buffer_format_util.h"
 #include "url/gurl.h"
 
 namespace content {
@@ -129,7 +130,7 @@ enum NativeBufferFlag { kDisableNativeBuffers, kEnableNativeBuffers };
 class ChildThreadImplGpuMemoryBufferBrowserTest
     : public ChildThreadImplBrowserTest,
       public testing::WithParamInterface<
-          ::testing::tuple<NativeBufferFlag, gfx::GpuMemoryBuffer::Format>> {
+          ::testing::tuple<NativeBufferFlag, gfx::BufferFormat>> {
  public:
   // Overridden from BrowserTestBase:
   void SetUpCommandLine(base::CommandLine* command_line) override {
@@ -140,6 +141,7 @@ class ChildThreadImplGpuMemoryBufferBrowserTest
         command_line->AppendSwitch(switches::kEnableNativeGpuMemoryBuffers);
         break;
       case kDisableNativeBuffers:
+        command_line->AppendSwitch(switches::kDisableNativeGpuMemoryBuffers);
         break;
     }
   }
@@ -147,17 +149,16 @@ class ChildThreadImplGpuMemoryBufferBrowserTest
 
 IN_PROC_BROWSER_TEST_P(ChildThreadImplGpuMemoryBufferBrowserTest,
                        DISABLED_Map) {
-  gfx::GpuMemoryBuffer::Format format = ::testing::get<1>(GetParam());
+  gfx::BufferFormat format = ::testing::get<1>(GetParam());
   gfx::Size buffer_size(4, 4);
 
   scoped_ptr<gfx::GpuMemoryBuffer> buffer =
       child_gpu_memory_buffer_manager()->AllocateGpuMemoryBuffer(
-          buffer_size, format, gfx::GpuMemoryBuffer::MAP);
+          buffer_size, format, gfx::BufferUsage::MAP);
   ASSERT_TRUE(buffer);
   EXPECT_EQ(format, buffer->GetFormat());
 
-  size_t num_planes =
-      GpuMemoryBufferImpl::NumberOfPlanesForGpuMemoryBufferFormat(format);
+  size_t num_planes = gfx::NumberOfPlanesForBufferFormat(format);
 
   // Map buffer planes.
   scoped_ptr<void* []> planes(new void* [num_planes]);
@@ -172,13 +173,13 @@ IN_PROC_BROWSER_TEST_P(ChildThreadImplGpuMemoryBufferBrowserTest,
   // Write to buffer and check result.
   for (size_t plane = 0; plane < num_planes; ++plane) {
     size_t row_size_in_bytes = 0;
-    EXPECT_TRUE(GpuMemoryBufferImpl::RowSizeInBytes(buffer_size.width(), format,
-                                                    plane, &row_size_in_bytes));
+    EXPECT_TRUE(gfx::RowSizeForBufferFormatChecked(buffer_size.width(), format,
+                                                   plane, &row_size_in_bytes));
 
     scoped_ptr<char[]> data(new char[row_size_in_bytes]);
     memset(data.get(), 0x2a + plane, row_size_in_bytes);
     size_t height = buffer_size.height() /
-                    GpuMemoryBufferImpl::SubsamplingFactor(format, plane);
+                    gfx::SubsamplingFactorForBufferFormat(format, plane);
     for (size_t y = 0; y < height; ++y) {
       // Copy |data| to row |y| of |plane| and verify result.
       memcpy(static_cast<char*>(planes[plane]) + y * strides[plane], data.get(),
@@ -199,11 +200,11 @@ INSTANTIATE_TEST_CASE_P(
     ::testing::Combine(::testing::Values(kDisableNativeBuffers,
                                          kEnableNativeBuffers),
                        // These formats are guaranteed to work on all platforms.
-                       ::testing::Values(gfx::GpuMemoryBuffer::R_8,
-                                         gfx::GpuMemoryBuffer::RGBA_4444,
-                                         gfx::GpuMemoryBuffer::RGBA_8888,
-                                         gfx::GpuMemoryBuffer::BGRA_8888,
-                                         gfx::GpuMemoryBuffer::YUV_420)));
+                       ::testing::Values(gfx::BufferFormat::R_8,
+                                         gfx::BufferFormat::RGBA_4444,
+                                         gfx::BufferFormat::RGBA_8888,
+                                         gfx::BufferFormat::BGRA_8888,
+                                         gfx::BufferFormat::YUV_420)));
 
 }  // namespace
 }  // namespace content

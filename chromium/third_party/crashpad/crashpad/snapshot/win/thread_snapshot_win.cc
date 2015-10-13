@@ -14,63 +14,22 @@
 
 #include "snapshot/win/thread_snapshot_win.h"
 
+#include <vector>
+
 #include "base/logging.h"
+#include "snapshot/win/cpu_context_win.h"
 #include "snapshot/win/process_reader_win.h"
 
 namespace crashpad {
 namespace internal {
 
-namespace {
-
-void InitializeX64Context(const CONTEXT& context,
-                          CPUContextX86_64* out) {
-  out->rax = context.Rax;
-  out->rbx = context.Rbx;
-  out->rcx = context.Rcx;
-  out->rdx = context.Rdx;
-  out->rdi = context.Rdi;
-  out->rsi = context.Rsi;
-  out->rbp = context.Rbp;
-  out->rsp = context.Rsp;
-  out->r8 = context.R8;
-  out->r9 = context.R9;
-  out->r10 = context.R10;
-  out->r11 = context.R11;
-  out->r12 = context.R12;
-  out->r13 = context.R13;
-  out->r14 = context.R14;
-  out->r15 = context.R15;
-  out->rip = context.Rip;
-  out->rflags = context.EFlags;
-  out->cs = context.SegCs;
-  out->fs = context.SegFs;
-  out->gs = context.SegGs;
-
-  out->dr0 = context.Dr0;
-  out->dr1 = context.Dr1;
-  out->dr2 = context.Dr2;
-  out->dr3 = context.Dr3;
-  // DR4 and DR5 are obsolete synonyms for DR6 and DR7, see
-  // http://en.wikipedia.org/wiki/X86_debug_register.
-  out->dr4 = context.Dr6;
-  out->dr5 = context.Dr7;
-  out->dr6 = context.Dr6;
-  out->dr7 = context.Dr7;
-
-  static_assert(sizeof(out->fxsave) == sizeof(context.FltSave),
-                "types must be equivalent");
-  memcpy(&out->fxsave, &context.FltSave.ControlWord, sizeof(out->fxsave));
-}
-
-void InitializeX86Context(const CONTEXT& context,
-                          CPUContextX86* out) {
-  CHECK(false) << "TODO(scottmg) InitializeX86Context()";
-}
-
-}  // namespace
-
 ThreadSnapshotWin::ThreadSnapshotWin()
-    : ThreadSnapshot(), context_(), stack_(), thread_(), initialized_() {
+    : ThreadSnapshot(),
+      context_(),
+      stack_(),
+      teb_(),
+      thread_(),
+      initialized_() {
 }
 
 ThreadSnapshotWin::~ThreadSnapshotWin() {
@@ -82,20 +41,27 @@ bool ThreadSnapshotWin::Initialize(
   INITIALIZATION_STATE_SET_INITIALIZING(initialized_);
 
   thread_ = process_reader_thread;
+  // TODO(scottmg): Ensure these regions are readable
+  // https://code.google.com/p/crashpad/issues/detail?id=59
   stack_.Initialize(
       process_reader, thread_.stack_region_address, thread_.stack_region_size);
+  teb_.Initialize(process_reader, thread_.teb_address, thread_.teb_size);
 
-#if defined(ARCH_CPU_X86_FAMILY)
+#if defined(ARCH_CPU_X86_64)
   if (process_reader->Is64Bit()) {
     context_.architecture = kCPUArchitectureX86_64;
     context_.x86_64 = &context_union_.x86_64;
-    InitializeX64Context(process_reader_thread.context, context_.x86_64);
+    InitializeX64Context(process_reader_thread.context.native, context_.x86_64);
   } else {
     context_.architecture = kCPUArchitectureX86;
     context_.x86 = &context_union_.x86;
-    InitializeX86Context(process_reader_thread.context, context_.x86);
+    InitializeX86Context(process_reader_thread.context.wow64, context_.x86);
   }
-#endif
+#else
+  context_.architecture = kCPUArchitectureX86;
+  context_.x86 = &context_union_.x86;
+  InitializeX86Context(process_reader_thread.context.native, context_.x86);
+#endif  // ARCH_CPU_X86_64
 
   INITIALIZATION_STATE_SET_VALID(initialized_);
   return true;
@@ -128,7 +94,15 @@ int ThreadSnapshotWin::Priority() const {
 
 uint64_t ThreadSnapshotWin::ThreadSpecificDataAddress() const {
   INITIALIZATION_STATE_DCHECK_VALID(initialized_);
-  return thread_.teb;
+  return thread_.teb_address;
+}
+
+std::vector<const MemorySnapshot*> ThreadSnapshotWin::ExtraMemory() const {
+  INITIALIZATION_STATE_DCHECK_VALID(initialized_);
+  // TODO(scottmg): Ensure this region is readable, and make sure we don't
+  // discard the entire dump if it isn't.
+  // https://code.google.com/p/crashpad/issues/detail?id=59
+  return std::vector<const MemorySnapshot*>(1, &teb_);
 }
 
 }  // namespace internal

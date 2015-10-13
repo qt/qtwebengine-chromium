@@ -14,9 +14,6 @@
 
 #define IPC_MESSAGE_START ManifestManagerMsgStart
 
-IPC_ENUM_TRAITS_MAX_VALUE(content::Manifest::DisplayMode,
-                          content::Manifest::DISPLAY_MODE_BROWSER)
-
 IPC_STRUCT_TRAITS_BEGIN(content::Manifest::Icon)
   IPC_STRUCT_TRAITS_MEMBER(src)
   IPC_STRUCT_TRAITS_MEMBER(type)
@@ -39,6 +36,8 @@ IPC_STRUCT_TRAITS_BEGIN(content::Manifest)
   IPC_STRUCT_TRAITS_MEMBER(icons)
   IPC_STRUCT_TRAITS_MEMBER(related_applications)
   IPC_STRUCT_TRAITS_MEMBER(prefer_related_applications)
+  IPC_STRUCT_TRAITS_MEMBER(theme_color)
+  IPC_STRUCT_TRAITS_MEMBER(background_color)
   IPC_STRUCT_TRAITS_MEMBER(gcm_sender_id)
 IPC_STRUCT_TRAITS_END()
 

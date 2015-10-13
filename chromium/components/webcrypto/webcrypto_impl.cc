@@ -19,7 +19,6 @@
 #include "components/webcrypto/crypto_data.h"
 #include "components/webcrypto/generate_key_result.h"
 #include "components/webcrypto/status.h"
-#include "components/webcrypto/webcrypto_util.h"
 #include "third_party/WebKit/public/platform/WebCryptoKeyAlgorithm.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 
@@ -63,7 +62,7 @@ namespace {
 //                 threads is silly.
 //
 // * WebCryptoAlgorithm and WebCryptoKey are threadsafe (however the key's
-//   handle(), which wraps an NSS/OpenSSL type, may not be and should only be
+//   handle(), which wraps an OpenSSL type, may not be and should only be
 //   used from the webcrypto thread).
 //
 // * blink::WebCryptoResult is not threadsafe and should only be operated on

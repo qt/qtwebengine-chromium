@@ -48,9 +48,11 @@ class GraphicsLayer;
 class Page;
 class Region;
 class ScrollableArea;
+class WebCompositorAnimationTimeline;
 
 class CORE_EXPORT ScrollingCoordinator final : public NoBaseWillBeGarbageCollectedFinalized<ScrollingCoordinator> {
     WTF_MAKE_NONCOPYABLE(ScrollingCoordinator);
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(ScrollingCoordinator);
 public:
     static PassOwnPtrWillBeRawPtr<ScrollingCoordinator> create(Page*);
 
@@ -64,6 +66,8 @@ public:
 
     // Called when any frame has done its layout.
     void notifyLayoutUpdated();
+    // Called when any frame recalculates its overflows after style change.
+    void notifyOverflowUpdated();
 
     void updateAfterCompositingChangeIfNeeded();
 
@@ -103,12 +107,12 @@ public:
     bool scrollableAreaScrollLayerDidChange(ScrollableArea*);
     void scrollableAreaScrollbarLayerDidChange(ScrollableArea*, ScrollbarOrientation);
     void setLayerIsContainerForFixedPositionLayers(GraphicsLayer*, bool);
-    void updateLayerPositionConstraint(DeprecatedPaintLayer*);
+    void updateLayerPositionConstraint(PaintLayer*);
     void touchEventTargetRectsDidChange();
-    void willDestroyLayer(DeprecatedPaintLayer*);
+    void willDestroyLayer(PaintLayer*);
 
-    void updateScrollParentForGraphicsLayer(GraphicsLayer* child, DeprecatedPaintLayer* parent);
-    void updateClipParentForGraphicsLayer(GraphicsLayer* child, DeprecatedPaintLayer* parent);
+    void updateScrollParentForGraphicsLayer(GraphicsLayer* child, PaintLayer* parent);
+    void updateClipParentForGraphicsLayer(GraphicsLayer* child, PaintLayer* parent);
 
     static String mainThreadScrollingReasonsAsText(MainThreadScrollingReasons);
     String mainThreadScrollingReasonsAsText() const;
@@ -151,10 +155,12 @@ private:
 
     bool frameViewIsDirty() const;
 
+    OwnPtr<WebCompositorAnimationTimeline> m_programmaticScrollAnimatorTimeline;
+
     using ScrollbarMap = WillBeHeapHashMap<RawPtrWillBeMember<ScrollableArea>, OwnPtr<WebScrollbarLayer>>;
     ScrollbarMap m_horizontalScrollbars;
     ScrollbarMap m_verticalScrollbars;
-    HashSet<const DeprecatedPaintLayer*> m_layersWithTouchRects;
+    HashSet<const PaintLayer*> m_layersWithTouchRects;
     bool m_wasFrameScrollable;
 
     MainThreadScrollingReasons m_lastMainThreadScrollingReasons;

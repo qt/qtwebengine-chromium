@@ -22,19 +22,19 @@ namespace webrtc {
 class SendStatisticsProxyTest : public ::testing::Test {
  public:
   SendStatisticsProxyTest()
-      : fake_clock_(1234), avg_delay_ms_(0), max_delay_ms_(0) {}
+      : fake_clock_(1234), config_(GetTestConfig()), avg_delay_ms_(0),
+        max_delay_ms_(0) {}
   virtual ~SendStatisticsProxyTest() {}
 
  protected:
   virtual void SetUp() {
     statistics_proxy_.reset(
         new SendStatisticsProxy(&fake_clock_, GetTestConfig()));
-    config_ = GetTestConfig();
     expected_ = VideoSendStream::Stats();
   }
 
   VideoSendStream::Config GetTestConfig() {
-    VideoSendStream::Config config;
+    VideoSendStream::Config config(nullptr);
     config.rtp.ssrcs.push_back(17);
     config.rtp.ssrcs.push_back(42);
     config.rtp.rtx.ssrcs.push_back(18);
@@ -129,11 +129,10 @@ TEST_F(SendStatisticsProxyTest, RtcpStatistics) {
 }
 
 TEST_F(SendStatisticsProxyTest, EncodedBitrateAndFramerate) {
-  const int media_bitrate_bps = 500;
-  const int encode_fps = 29;
+  int media_bitrate_bps = 500;
+  int encode_fps = 29;
 
-  ViEEncoderObserver* encoder_observer = statistics_proxy_.get();
-  encoder_observer->OutgoingRate(0, encode_fps, media_bitrate_bps);
+  statistics_proxy_->OnOutgoingRate(encode_fps, media_bitrate_bps);
 
   VideoSendStream::Stats stats = statistics_proxy_->GetStats();
   EXPECT_EQ(media_bitrate_bps, stats.media_bitrate_bps);
@@ -145,12 +144,11 @@ TEST_F(SendStatisticsProxyTest, Suspended) {
   EXPECT_FALSE(statistics_proxy_->GetStats().suspended);
 
   // Verify that we can set it to true.
-  ViEEncoderObserver* encoder_observer = statistics_proxy_.get();
-  encoder_observer->SuspendChange(0, true);
+  statistics_proxy_->OnSuspendChange(true);
   EXPECT_TRUE(statistics_proxy_->GetStats().suspended);
 
   // Verify that we can set it back to false again.
-  encoder_observer->SuspendChange(0, false);
+  statistics_proxy_->OnSuspendChange(false);
   EXPECT_FALSE(statistics_proxy_->GetStats().suspended);
 }
 

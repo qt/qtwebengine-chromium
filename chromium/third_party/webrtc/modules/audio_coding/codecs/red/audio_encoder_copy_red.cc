@@ -19,48 +19,37 @@ namespace webrtc {
 AudioEncoderCopyRed::AudioEncoderCopyRed(const Config& config)
     : speech_encoder_(config.speech_encoder),
       red_payload_type_(config.payload_type) {
-  CHECK(speech_encoder_) << "Speech encoder not provided.";
+  RTC_CHECK(speech_encoder_) << "Speech encoder not provided.";
 }
 
-AudioEncoderCopyRed::~AudioEncoderCopyRed() {
+AudioEncoderCopyRed::~AudioEncoderCopyRed() = default;
+
+size_t AudioEncoderCopyRed::MaxEncodedBytes() const {
+  return 2 * speech_encoder_->MaxEncodedBytes();
 }
 
 int AudioEncoderCopyRed::SampleRateHz() const {
   return speech_encoder_->SampleRateHz();
 }
 
-int AudioEncoderCopyRed::RtpTimestampRateHz() const {
-  return speech_encoder_->RtpTimestampRateHz();
-}
-
 int AudioEncoderCopyRed::NumChannels() const {
   return speech_encoder_->NumChannels();
 }
 
-size_t AudioEncoderCopyRed::MaxEncodedBytes() const {
-  return 2 * speech_encoder_->MaxEncodedBytes();
+int AudioEncoderCopyRed::RtpTimestampRateHz() const {
+  return speech_encoder_->RtpTimestampRateHz();
 }
 
-int AudioEncoderCopyRed::Num10MsFramesInNextPacket() const {
+size_t AudioEncoderCopyRed::Num10MsFramesInNextPacket() const {
   return speech_encoder_->Num10MsFramesInNextPacket();
 }
 
-int AudioEncoderCopyRed::Max10MsFramesInAPacket() const {
+size_t AudioEncoderCopyRed::Max10MsFramesInAPacket() const {
   return speech_encoder_->Max10MsFramesInAPacket();
 }
 
 int AudioEncoderCopyRed::GetTargetBitrate() const {
   return speech_encoder_->GetTargetBitrate();
-}
-
-void AudioEncoderCopyRed::SetTargetBitrate(int bits_per_second) {
-  speech_encoder_->SetTargetBitrate(bits_per_second);
-}
-
-void AudioEncoderCopyRed::SetProjectedPacketLossRate(double fraction) {
-  DCHECK_GE(fraction, 0.0);
-  DCHECK_LE(fraction, 1.0);
-  speech_encoder_->SetProjectedPacketLossRate(fraction);
 }
 
 AudioEncoder::EncodedInfo AudioEncoderCopyRed::EncodeInternal(
@@ -71,27 +60,26 @@ AudioEncoder::EncodedInfo AudioEncoderCopyRed::EncodeInternal(
   EncodedInfo info = speech_encoder_->Encode(
       rtp_timestamp, audio, static_cast<size_t>(SampleRateHz() / 100),
       max_encoded_bytes, encoded);
-  CHECK_GE(max_encoded_bytes,
-           info.encoded_bytes + secondary_info_.encoded_bytes);
-  CHECK(info.redundant.empty()) << "Cannot use nested redundant encoders.";
+  RTC_CHECK_GE(max_encoded_bytes,
+               info.encoded_bytes + secondary_info_.encoded_bytes);
+  RTC_CHECK(info.redundant.empty()) << "Cannot use nested redundant encoders.";
 
   if (info.encoded_bytes > 0) {
     // |info| will be implicitly cast to an EncodedInfoLeaf struct, effectively
     // discarding the (empty) vector of redundant information. This is
     // intentional.
     info.redundant.push_back(info);
-    DCHECK_EQ(info.redundant.size(), 1u);
+    RTC_DCHECK_EQ(info.redundant.size(), 1u);
     if (secondary_info_.encoded_bytes > 0) {
       memcpy(&encoded[info.encoded_bytes], secondary_encoded_.data(),
              secondary_info_.encoded_bytes);
       info.redundant.push_back(secondary_info_);
-      DCHECK_EQ(info.redundant.size(), 2u);
+      RTC_DCHECK_EQ(info.redundant.size(), 2u);
     }
     // Save primary to secondary.
-    secondary_encoded_.SetSize(info.encoded_bytes);
-    memcpy(secondary_encoded_.data(), encoded, info.encoded_bytes);
+    secondary_encoded_.SetData(encoded, info.encoded_bytes);
     secondary_info_ = info;
-    DCHECK_EQ(info.speech, info.redundant[0].speech);
+    RTC_DCHECK_EQ(info.speech, info.redundant[0].speech);
   }
   // Update main EncodedInfo.
   info.payload_type = red_payload_type_;
@@ -101,6 +89,36 @@ AudioEncoder::EncodedInfo AudioEncoderCopyRed::EncodeInternal(
     info.encoded_bytes += it->encoded_bytes;
   }
   return info;
+}
+
+void AudioEncoderCopyRed::Reset() {
+  speech_encoder_->Reset();
+  secondary_encoded_.Clear();
+  secondary_info_.encoded_bytes = 0;
+}
+
+bool AudioEncoderCopyRed::SetFec(bool enable) {
+  return speech_encoder_->SetFec(enable);
+}
+
+bool AudioEncoderCopyRed::SetDtx(bool enable) {
+  return speech_encoder_->SetDtx(enable);
+}
+
+bool AudioEncoderCopyRed::SetApplication(Application application) {
+  return speech_encoder_->SetApplication(application);
+}
+
+void AudioEncoderCopyRed::SetMaxPlaybackRate(int frequency_hz) {
+  speech_encoder_->SetMaxPlaybackRate(frequency_hz);
+}
+
+void AudioEncoderCopyRed::SetProjectedPacketLossRate(double fraction) {
+  speech_encoder_->SetProjectedPacketLossRate(fraction);
+}
+
+void AudioEncoderCopyRed::SetTargetBitrate(int bits_per_second) {
+  speech_encoder_->SetTargetBitrate(bits_per_second);
 }
 
 }  // namespace webrtc

@@ -46,14 +46,16 @@ const char* paintInvalidationReasonToString(PaintInvalidationReason reason)
         return "scroll";
     case PaintInvalidationSelection:
         return "selection";
-    case PaintInvalidationFocusRing:
-        return "focus ring";
+    case PaintInvalidationOutline:
+        return "outline";
     case PaintInvalidationLayer:
         return "layer";
     case PaintInvalidationLayoutObjectInsertion:
         return "layoutObject insertion";
     case PaintInvalidationLayoutObjectRemoval:
         return "layoutObject removal";
+    case PaintInvalidationSVGResourceChange:
+        return "SVG resource change";
     case PaintInvalidationDelayedFull:
         return "delayed full";
     }

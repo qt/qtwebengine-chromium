@@ -7,25 +7,28 @@
 #include "base/logging.h"
 #include "base/trace_event/trace_event.h"
 #include "content/common/android/surface_texture_manager.h"
+#include "ui/gfx/buffer_format_util.h"
 #include "ui/gl/gl_bindings.h"
 
 namespace content {
 namespace {
 
-int WindowFormat(gfx::GpuMemoryBuffer::Format format) {
+int WindowFormat(gfx::BufferFormat format) {
   switch (format) {
-    case gfx::GpuMemoryBuffer::RGBA_8888:
+    case gfx::BufferFormat::RGBA_8888:
       return WINDOW_FORMAT_RGBA_8888;
-    case gfx::GpuMemoryBuffer::ATC:
-    case gfx::GpuMemoryBuffer::ATCIA:
-    case gfx::GpuMemoryBuffer::DXT1:
-    case gfx::GpuMemoryBuffer::DXT5:
-    case gfx::GpuMemoryBuffer::ETC1:
-    case gfx::GpuMemoryBuffer::R_8:
-    case gfx::GpuMemoryBuffer::RGBA_4444:
-    case gfx::GpuMemoryBuffer::RGBX_8888:
-    case gfx::GpuMemoryBuffer::BGRA_8888:
-    case gfx::GpuMemoryBuffer::YUV_420:
+    case gfx::BufferFormat::ATC:
+    case gfx::BufferFormat::ATCIA:
+    case gfx::BufferFormat::DXT1:
+    case gfx::BufferFormat::DXT5:
+    case gfx::BufferFormat::ETC1:
+    case gfx::BufferFormat::R_8:
+    case gfx::BufferFormat::RGBA_4444:
+    case gfx::BufferFormat::BGRX_8888:
+    case gfx::BufferFormat::BGRA_8888:
+    case gfx::BufferFormat::YUV_420:
+    case gfx::BufferFormat::YUV_420_BIPLANAR:
+    case gfx::BufferFormat::UYVY_422:
       NOTREACHED();
       return 0;
   }
@@ -39,13 +42,12 @@ int WindowFormat(gfx::GpuMemoryBuffer::Format format) {
 GpuMemoryBufferImplSurfaceTexture::GpuMemoryBufferImplSurfaceTexture(
     gfx::GpuMemoryBufferId id,
     const gfx::Size& size,
-    Format format,
+    gfx::BufferFormat format,
     const DestructionCallback& callback,
     ANativeWindow* native_window)
     : GpuMemoryBufferImpl(id, size, format, callback),
       native_window_(native_window),
-      stride_(0) {
-}
+      stride_(0) {}
 
 GpuMemoryBufferImplSurfaceTexture::~GpuMemoryBufferImplSurfaceTexture() {
   ANativeWindow_release(native_window_);
@@ -56,10 +58,11 @@ scoped_ptr<GpuMemoryBufferImpl>
 GpuMemoryBufferImplSurfaceTexture::CreateFromHandle(
     const gfx::GpuMemoryBufferHandle& handle,
     const gfx::Size& size,
-    Format format,
+    gfx::BufferFormat format,
     const DestructionCallback& callback) {
-  ANativeWindow* native_window = SurfaceTextureManager::GetInstance()->
-      AcquireNativeWidgetForSurfaceTexture(handle.id);
+  ANativeWindow* native_window =
+      SurfaceTextureManager::GetInstance()
+          ->AcquireNativeWidgetForSurfaceTexture(handle.id.id);
   if (!native_window)
     return scoped_ptr<GpuMemoryBufferImpl>();
 
@@ -84,12 +87,7 @@ bool GpuMemoryBufferImplSurfaceTexture::Map(void** data) {
   }
 
   DCHECK_LE(size_.width(), buffer.stride);
-  size_t row_size_in_bytes = 0;
-  bool valid_row_size =
-      RowSizeInBytes(buffer.stride, format_, 0, &row_size_in_bytes);
-  DCHECK(valid_row_size);
-
-  stride_ = row_size_in_bytes;
+  stride_ = gfx::RowSizeForBufferFormat(buffer.stride, format_, 0);
   mapped_ = true;
   *data = buffer.bits;
   return true;

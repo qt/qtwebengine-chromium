@@ -255,11 +255,25 @@
     FT_Face     root   = (FT_Face)&face->root;
     FT_Fixed    temp[6];
     FT_Fixed    temp_scale;
+    FT_Int      result;
 
 
-    (void)T1_ToFixedArray( parser, 6, temp, 3 );
+    result = T1_ToFixedArray( parser, 6, temp, 3 );
+
+    if ( result < 6 )
+    {
+      parser->root.error = T42_Err_Invalid_File_Format;
+      return;
+    }
 
     temp_scale = FT_ABS( temp[3] );
+
+    if ( temp_scale == 0 )
+    {
+      FT_ERROR(( "t1_parse_font_matrix: invalid font matrix\n" ));
+      parser->root.error = T42_Err_Invalid_File_Format;
+      return;
+    }
 
     /* Set Units per EM based on FontMatrix values.  We set the value to */
     /* 1000 / temp_scale, because temp_scale was already multiplied by   */
@@ -276,7 +290,7 @@
       temp[2] = FT_DivFix( temp[2], temp_scale );
       temp[4] = FT_DivFix( temp[4], temp_scale );
       temp[5] = FT_DivFix( temp[5], temp_scale );
-      temp[3] = 0x10000L;
+      temp[3] = temp[3] < 0 ? -0x10000L : 0x10000L;
     }
 
     matrix->xx = temp[0];
@@ -315,7 +329,7 @@
     if ( ft_isdigit( *cur ) || *cur == '[' )
     {
       T1_Encoding  encode          = &face->type1.encoding;
-      FT_UInt      count, n;
+      FT_Int       count, n;
       PS_Table     char_table      = &loader->encoding_table;
       FT_Memory    memory          = parser->root.memory;
       FT_Error     error;
@@ -330,7 +344,7 @@
         parser->root.cursor++;
       }
       else
-        count = (FT_UInt)T1_ToInt( parser );
+        count = (FT_Int)T1_ToInt( parser );
 
       T1_Skip_Spaces( parser );
       if ( parser->root.cursor >= limit )
@@ -418,7 +432,7 @@
 
           cur = parser->root.cursor;
 
-          if ( *cur == '/' && cur + 2 < limit && n < count )
+          if ( cur + 2 < limit && *cur == '/' && n < count )
           {
             FT_PtrDist  len;
 
@@ -427,6 +441,8 @@
 
             parser->root.cursor = cur;
             T1_Skip_PS_Token( parser );
+            if ( parser->root.cursor >= limit )
+              return;
             if ( parser->root.error )
               return;
 
@@ -440,6 +456,19 @@
 
             n++;
           }
+          else if ( only_immediates )
+          {
+            /* Since the current position is not updated for           */
+            /* immediates-only mode we would get an infinite loop if   */
+            /* we don't do anything here.                              */
+            /*                                                         */
+            /* This encoding array is not valid according to the type1 */
+            /* specification (it might be an encoding for a CID type1  */
+            /* font, however), so we conclude that this font is NOT a  */
+            /* type1 font.                                             */
+            parser->root.error = T42_Err_Unknown_File_Format;
+            return;
+          }
         }
         else
         {
@@ -451,8 +480,8 @@
         T1_Skip_Spaces( parser );
       }
 
-      face->type1.encoding_type  = T1_ENCODING_TYPE_ARRAY;
-      parser->root.cursor        = cur;
+      face->type1.encoding_type = T1_ENCODING_TYPE_ARRAY;
+      parser->root.cursor       = cur;
     }
 
     /* Otherwise, we should have either `StandardEncoding', */
@@ -472,10 +501,7 @@
         face->type1.encoding_type = T1_ENCODING_TYPE_ISOLATIN1;
 
       else
-      {
-        FT_ERROR(( "t42_parse_encoding: invalid token\n" ));
-        parser->root.error = T42_Err_Invalid_File_Format;
-      }
+        parser->root.error = T42_Err_Ignore;
     }
   }
 

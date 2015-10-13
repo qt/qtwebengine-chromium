@@ -18,6 +18,10 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
 
+#if defined(OS_IOS)
+#include "base/ios/ios_util.h"
+#endif
+
 // This file declares unittest templates that can be used to test common
 // behavior of any CookieStore implementation.
 // See cookie_monster_unittest.cc for an example of an implementation.
@@ -54,9 +58,9 @@ const char kValidDomainCookieLine[] = "A=B; path=/; domain=google.izzle";
 //   // and the "com" domains.
 //   static const bool supports_non_dotted_domains;
 //
-//   // The cookie store handles the domains with trailing dots (such as "com.")
-//   // correctly.
-//   static const bool supports_trailing_dots;
+//   // The cookie store does not fold domains with trailing dots (so "com." and
+//   "com" are different domains).
+//   static const bool preserves_trailing_dots;
 //
 //   // The cookie store rejects cookies for invalid schemes such as ftp.
 //   static const bool filters_schemes;
@@ -506,16 +510,12 @@ TYPED_TEST_P(CookieStoreTest, TestNonDottedAndTLD) {
     // http://com. should be treated the same as http://com.
     scoped_refptr<CookieStore> cs(this->GetCookieStore());
     GURL url("http://com./index.html");
-    if (TypeParam::supports_trailing_dots) {
-      EXPECT_TRUE(this->SetCookie(cs.get(), url, "a=1"));
-      this->MatchCookieLines("a=1", this->GetCookies(cs.get(), url));
-      this->MatchCookieLines(
-          std::string(),
-          this->GetCookies(cs.get(),
-                           GURL("http://hopefully-no-cookies.com./")));
-    } else {
-      EXPECT_FALSE(this->SetCookie(cs.get(), url, "a=1"));
-    }
+    EXPECT_TRUE(this->SetCookie(cs.get(), url, "a=1"));
+    this->MatchCookieLines("a=1", this->GetCookies(cs.get(), url));
+    this->MatchCookieLines(
+        std::string(),
+        this->GetCookies(cs.get(),
+                         GURL("http://hopefully-no-cookies.com./")));
   }
 
   {  // Should not be able to set host cookie from a subdomain.
@@ -567,18 +567,21 @@ TYPED_TEST_P(CookieStoreTest, TestHostEndsWithDot) {
   EXPECT_TRUE(this->SetCookie(cs.get(), url, "a=1"));
   this->MatchCookieLines("a=1", this->GetCookies(cs.get(), url));
 
-  if (TypeParam::supports_trailing_dots) {
-    // Do not share cookie space with the dot version of domain.
-    // Note: this is not what FireFox does, but it _is_ what IE+Safari do.
+  // Do not share cookie space with the dot version of domain.
+  // Note: this is not what FireFox does, but it _is_ what IE+Safari do.
+  if (TypeParam::preserves_trailing_dots) {
     EXPECT_FALSE(
         this->SetCookie(cs.get(), url, "b=2; domain=.www.google.com."));
     this->MatchCookieLines("a=1", this->GetCookies(cs.get(), url));
-
     EXPECT_TRUE(
         this->SetCookie(cs.get(), url_with_dot, "b=2; domain=.google.com."));
     this->MatchCookieLines("b=2", this->GetCookies(cs.get(), url_with_dot));
   } else {
-    EXPECT_TRUE(this->SetCookie(cs.get(), url, "b=2; domain=.www.google.com."));
+    EXPECT_TRUE(
+        this->SetCookie(cs.get(), url, "b=2; domain=.www.google.com."));
+    this->MatchCookieLines("a=1 b=2", this->GetCookies(cs.get(), url));
+    // Setting this cookie should fail, since the trailing dot on the domain
+    // isn't preserved, and then the domain mismatches the URL.
     EXPECT_FALSE(
         this->SetCookie(cs.get(), url_with_dot, "b=2; domain=.google.com."));
   }

@@ -157,7 +157,9 @@ void BackgroundHTMLParser::updateDocument(const String& decodedData)
         m_lastSeenEncodingData = encodingData;
 
         m_xssAuditor->setEncoding(encodingData.encoding());
-        Platform::current()->mainThread()->postTask(FROM_HERE, threadSafeBind(&HTMLDocumentParser::didReceiveEncodingDataFromBackgroundParser, AllowCrossThreadAccess(m_parser), encodingData));
+        m_scheduler->loadingTaskRunner()->postTask(
+            FROM_HERE,
+            threadSafeBind(&HTMLDocumentParser::didReceiveEncodingDataFromBackgroundParser, AllowCrossThreadAccess(m_parser), encodingData));
     }
 
     if (decodedData.isEmpty())
@@ -221,13 +223,17 @@ void BackgroundHTMLParser::pumpTokenizer()
         return;
 
     while (true) {
-        m_sourceTracker.start(m_input.current(), m_tokenizer.get(), *m_token);
+        if (m_xssAuditor->isEnabled())
+            m_sourceTracker.start(m_input.current(), m_tokenizer.get(), *m_token);
+
         if (!m_tokenizer->nextToken(m_input.current(), *m_token)) {
             // We've reached the end of our current input.
             sendTokensToMainThread();
             break;
         }
-        m_sourceTracker.end(m_input.current(), m_tokenizer.get(), *m_token);
+
+        if (m_xssAuditor->isEnabled())
+            m_sourceTracker.end(m_input.current(), m_tokenizer.get(), *m_token);
 
         {
             TextPosition position = TextPosition(m_input.current().currentLine(), m_input.current().currentColumn());
@@ -237,7 +243,7 @@ void BackgroundHTMLParser::pumpTokenizer()
                 m_pendingXSSInfos.append(xssInfo.release());
             }
 
-            CompactHTMLToken token(m_token.get(), TextPosition(m_input.current().currentLine(), m_input.current().currentColumn()));
+            CompactHTMLToken token(m_token.get(), position);
 
             m_preloadScanner->scan(token, m_input.current(), m_pendingPreloads);
             simulatedToken = m_treeBuilderSimulator.simulate(token, m_tokenizer.get());
@@ -285,7 +291,7 @@ void BackgroundHTMLParser::sendTokensToMainThread()
     chunk->startingScript = m_startingScript;
     m_startingScript = false;
 
-    m_scheduler->postLoadingTask(
+    m_scheduler->loadingTaskRunner()->postTask(
         FROM_HERE,
         new Task(threadSafeBind(&HTMLDocumentParser::didReceiveParsedChunkFromBackgroundParser, AllowCrossThreadAccess(m_parser), chunk.release())));
 

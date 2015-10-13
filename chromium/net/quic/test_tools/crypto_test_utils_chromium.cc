@@ -6,8 +6,10 @@
 
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "net/base/net_errors.h"
 #include "net/base/test_data_directory.h"
 #include "net/cert/cert_verifier.h"
+#include "net/cert/mock_cert_verifier.h"
 #include "net/cert/test_root_certs.h"
 #include "net/cert/x509_certificate.h"
 #include "net/http/transport_security_state.h"
@@ -23,12 +25,15 @@ namespace {
 
 class TestProofVerifierChromium : public ProofVerifierChromium {
  public:
-  TestProofVerifierChromium(CertVerifier* cert_verifier,
-                            TransportSecurityState* transport_security_state,
-                            const std::string& cert_file)
-      : ProofVerifierChromium(cert_verifier, transport_security_state),
-        cert_verifier_(cert_verifier),
-        transport_security_state_(transport_security_state) {
+  TestProofVerifierChromium(
+      scoped_ptr<CertVerifier> cert_verifier,
+      scoped_ptr<TransportSecurityState> transport_security_state,
+      const std::string& cert_file)
+      : ProofVerifierChromium(cert_verifier.get(),
+                              nullptr,
+                              transport_security_state.get()),
+        cert_verifier_(cert_verifier.Pass()),
+        transport_security_state_(transport_security_state.Pass()) {
     // Load and install the root for the validated chain.
     scoped_refptr<X509Certificate> root_cert =
         ImportCertFromFile(GetTestCertsDirectory(), cert_file);
@@ -108,15 +113,30 @@ class FakeProofVerifier : public ProofVerifier {
 
 // static
 ProofSource* CryptoTestUtils::ProofSourceForTesting() {
-  return new ProofSourceChromium();
+  ProofSourceChromium* source = new ProofSourceChromium();
+  base::FilePath certs_dir = GetTestCertsDirectory();
+  CHECK(source->Initialize(
+      certs_dir.AppendASCII("quic_chain.crt"),
+      certs_dir.AppendASCII("quic_test.example.com.key.pkcs8")));
+  return source;
 }
 
 // static
 ProofVerifier* CryptoTestUtils::ProofVerifierForTesting() {
-  TestProofVerifierChromium* proof_verifier = new TestProofVerifierChromium(
-      CertVerifier::CreateDefault(), new TransportSecurityState,
+  // TODO(rch): use a real cert verifier?
+  scoped_ptr<MockCertVerifier> cert_verifier(new MockCertVerifier());
+  net::CertVerifyResult verify_result;
+  verify_result.verified_cert =
+      ImportCertFromFile(GetTestCertsDirectory(), "quic_test.example.com.crt");
+  cert_verifier->AddResultForCertAndHost(verify_result.verified_cert.get(),
+                                         "test.example.com", verify_result, OK);
+  verify_result.verified_cert = ImportCertFromFile(
+      GetTestCertsDirectory(), "quic_test_ecc.example.com.crt");
+  cert_verifier->AddResultForCertAndHost(verify_result.verified_cert.get(),
+                                         "test.example.com", verify_result, OK);
+  return new TestProofVerifierChromium(
+      cert_verifier.Pass(), make_scoped_ptr(new TransportSecurityState),
       "quic_root.crt");
-  return proof_verifier;
 }
 
 // static

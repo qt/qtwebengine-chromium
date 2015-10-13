@@ -94,7 +94,7 @@ public:
 
     bool isImage() const;
 
-    bool checked() const { return m_isChecked; }
+    bool checked() const;
     void setChecked(bool, TextFieldEventBehavior = DispatchNoEvent);
     void dispatchChangeEventIfNeeded();
 
@@ -259,6 +259,10 @@ public:
     virtual void ensureFallbackContent();
     virtual void ensurePrimaryContent();
     bool hasFallbackContent() const;
+
+    bool isPlaceholderVisible() const override { return m_isPlaceholderVisible; }
+    void setPlaceholderVisibility(bool) override;
+
 protected:
     HTMLInputElement(Document&, HTMLFormElement*, bool createdByParser);
 
@@ -309,7 +313,7 @@ private:
 
     void attach(const AttachContext& = AttachContext()) final;
 
-    bool appendFormData(FormDataList&, bool) final;
+    void appendToFormData(FormData&) final;
     String resultForDialogSubmit() final;
 
     bool canBeSuccessfulSubmitButton() const final;
@@ -335,7 +339,7 @@ private:
     bool isEmptySuggestedValue() const final { return suggestedValue().isEmpty(); }
     void handleFocusEvent(Element* oldFocusedElement, WebFocusType) final;
     void handleBlurEvent() final;
-    void dispatchFocusInEvent(const AtomicString& eventType, Element* oldFocusedElement, WebFocusType) final;
+    void dispatchFocusInEvent(const AtomicString& eventType, Element* oldFocusedElement, WebFocusType, InputDeviceCapabilities* sourceCapabilities) final;
     bool supportsAutocapitalize() const final;
     const AtomicString& defaultAutocapitalize() const final;
 
@@ -384,6 +388,7 @@ private:
     unsigned m_hasTouchEventHandler : 1;
     unsigned m_shouldRevealPassword : 1;
     unsigned m_needsToUpdateViewValue : 1;
+    unsigned m_isPlaceholderVisible : 1;
     RefPtrWillBeMember<InputType> m_inputType;
     RefPtrWillBeMember<InputTypeView> m_inputTypeView;
     // The ImageLoader must be owned by this element because the loader code assumes

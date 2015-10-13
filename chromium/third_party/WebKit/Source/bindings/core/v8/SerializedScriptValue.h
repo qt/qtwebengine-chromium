@@ -46,13 +46,13 @@ class ArrayBufferContents;
 namespace blink {
 
 class BlobDataHandle;
-class DOMArrayBuffer;
+class DOMArrayBufferBase;
 class ExceptionState;
 class MessagePort;
 class WebBlobInfo;
 
 typedef HeapVector<Member<MessagePort>, 1> MessagePortArray;
-typedef Vector<RefPtr<DOMArrayBuffer>, 1> ArrayBufferArray;
+typedef Vector<RefPtr<DOMArrayBufferBase>, 1> ArrayBufferArray;
 typedef HashMap<String, RefPtr<BlobDataHandle>> BlobDataHandleMap;
 typedef Vector<WebBlobInfo> WebBlobInfoArray;
 
@@ -96,6 +96,9 @@ public:
     // Ok to invoke multiple times (only adds memory once).
     // The memory registration is revoked automatically in destructor.
     void registerMemoryAllocatedWithCurrentScriptContext();
+
+    // Returns true if the value contains a transferable ArrayBuffer.
+    bool containsTransferableArrayBuffer() const;
 
 private:
     // The followings are private, but used by SerializedScriptValueFactory.

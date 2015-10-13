@@ -4,14 +4,16 @@
 {
     'targets': [
         {
-          # Depend on this target to use public blink API headers for things
-          # like enums and public structures without actually linking against any Blink
-          # libraries.
-          'target_name': 'blink_headers',
-          'type': 'none',
-          'direct_dependent_settings': {
-            'include_dirs': [ '..' ],
-          },
+            # Depend on this target to use public blink API headers for things
+            # like enums and public structures without actually linking against any Blink
+            # libraries.
+            'target_name': 'blink_headers',
+            'type': 'none',
+            'direct_dependent_settings': {
+              'include_dirs': [ '..' ],
+            },
+            'includes': [ 'blink_headers.gypi' ],
+            'sources': ['<@(blink_public_sources)'],
         },
     ],
     'conditions': [
@@ -36,12 +38,22 @@
                     'includes': [ '../../../build/android/java_cpp_enum.gypi' ],
                 },
                 {
+                    # gn version: //third_party/WebKit/public:blink_headers_java_enums_srcjar
+                    'target_name': 'web_display_mode',
+                    'type': 'none',
+                    'variables': {
+                        'source_file': 'platform/WebDisplayMode.h',
+                    },
+                    'includes': [ '../../../build/android/java_cpp_enum.gypi' ],
+                },
+                {
                     # gn version: //third_party/WebKit/public:blink_headers_java
                     'target_name': 'blink_headers_java',
                     'type': 'none',
                     'dependencies': [
                         'web_input_event_java',
                         'web_text_input_type',
+                        'web_display_mode',
                     ],
                     'variables': {
                         'java_in_dir': '../../../build/android/empty',

@@ -25,13 +25,13 @@
 #include "core/layout/svg/LayoutSVGResourceMasker.h"
 #include "core/layout/svg/SVGResources.h"
 #include "core/layout/svg/SVGResourcesCache.h"
-#include "core/paint/DeprecatedPaintLayer.h"
+#include "core/paint/PaintLayer.h"
 
 #include "wtf/TemporaryChange.h"
 
 namespace blink {
 
-static inline SVGDocumentExtensions& svgExtensionsFromElement(SVGElement* element)
+static inline SVGDocumentExtensions& svgExtensionsFromElement(Element* element)
 {
     ASSERT(element);
     return element->document().accessSVGExtensions();
@@ -68,7 +68,11 @@ void LayoutSVGResourceContainer::layout()
 
 void LayoutSVGResourceContainer::willBeDestroyed()
 {
-    SVGResourcesCache::resourceDestroyed(this);
+    // Detach all clients referring to this resource. If the resource itself is
+    // a client, it will be detached from any such resources by the call to
+    // LayoutSVGHiddenContainer::willBeDestroyed() below.
+    detachAllClients();
+
     LayoutSVGHiddenContainer::willBeDestroyed();
     if (m_registered)
         svgExtensionsFromElement(element()).removeResource(m_id);
@@ -82,6 +86,23 @@ void LayoutSVGResourceContainer::styleDidChange(StyleDifference diff, const Comp
         m_registered = true;
         registerResource();
     }
+}
+
+void LayoutSVGResourceContainer::detachAllClients()
+{
+    for (auto* client : m_clients) {
+        // Unlink the resource from the client's SVGResources. (The actual
+        // removal will be signaled after processing all the clients.)
+        SVGResources* resources = SVGResourcesCache::cachedResourcesForLayoutObject(client);
+        ASSERT(resources); // Or else the client wouldn't be in the list in the first place.
+        resources->resourceDestroyed(this);
+
+        // Add a pending resolution based on the id of the old resource.
+        Element* clientElement = toElement(client->node());
+        svgExtensionsFromElement(clientElement).addPendingResource(m_id, clientElement);
+    }
+
+    removeAllClientsFromCache();
 }
 
 void LayoutSVGResourceContainer::idChanged()
@@ -144,7 +165,12 @@ void LayoutSVGResourceContainer::markClientForInvalidation(LayoutObject* client,
         client->setNeedsBoundariesUpdate();
         break;
     case PaintInvalidation:
-        client->setShouldDoFullPaintInvalidation();
+        // Since LayoutSVGInlineTexts don't have SVGResources (they use their
+        // parent's), they will not be notified of changes to paint servers. So
+        // if the client is one that could have a LayoutSVGInlineText use a
+        // paint invalidation reason that will force paint invalidation of the
+        // entire <text>/<tspan>/... subtree.
+        client->setShouldDoFullPaintInvalidation(PaintInvalidationSVGResourceChange);
         break;
     case ParentOnlyInvalidation:
         break;
@@ -174,14 +200,14 @@ void LayoutSVGResourceContainer::addClientLayer(Node* node)
     clearInvalidationMask();
 }
 
-void LayoutSVGResourceContainer::addClientLayer(DeprecatedPaintLayer* client)
+void LayoutSVGResourceContainer::addClientLayer(PaintLayer* client)
 {
     ASSERT(client);
     m_clientLayers.add(client);
     clearInvalidationMask();
 }
 
-void LayoutSVGResourceContainer::removeClientLayer(DeprecatedPaintLayer* client)
+void LayoutSVGResourceContainer::removeClientLayer(PaintLayer* client)
 {
     ASSERT(client);
     m_clientLayers.remove(client);
@@ -212,24 +238,31 @@ void LayoutSVGResourceContainer::registerResource()
     extensions.addResource(m_id, this);
 
     // Update cached resources of pending clients.
-    const SVGDocumentExtensions::SVGPendingElements::const_iterator end = clients->end();
-    for (SVGDocumentExtensions::SVGPendingElements::const_iterator it = clients->begin(); it != end; ++it) {
-        ASSERT((*it)->hasPendingResources());
-        extensions.clearHasPendingResourcesIfPossible(*it);
-        LayoutObject* layoutObject = (*it)->layoutObject();
+    for (const auto& pendingClient : *clients) {
+        ASSERT(pendingClient->hasPendingResources());
+        extensions.clearHasPendingResourcesIfPossible(pendingClient);
+        LayoutObject* layoutObject = pendingClient->layoutObject();
         if (!layoutObject)
             continue;
+
+        const ComputedStyle& style = layoutObject->styleRef();
 
         // If the client has a layer (is a non-SVGElement) we need to signal
         // invalidation in the same way as is done in markAllClientLayersForInvalidation above.
         if (layoutObject->hasLayer() && resourceType() == FilterResourceType) {
-            toLayoutBoxModelObject(layoutObject)->layer()->filterNeedsPaintInvalidation();
-            continue;
+            if (style.hasFilter())
+                toLayoutBoxModelObject(layoutObject)->layer()->filterNeedsPaintInvalidation();
+            // If this is the SVG root, we could have both 'filter' and
+            // '-webkit-filter' applied, so we need to do the invalidation
+            // below as well, unless we can optimistically determine that
+            // 'filter' does not apply to the element in question.
+            if (!layoutObject->isSVGRoot() || !style.svgStyle().hasFilter())
+                continue;
         }
 
         StyleDifference diff;
         diff.setNeedsFullLayout();
-        SVGResourcesCache::clientStyleChanged(layoutObject, diff, layoutObject->styleRef());
+        SVGResourcesCache::clientStyleChanged(layoutObject, diff, style);
         layoutObject->setNeedsLayoutAndFullPaintInvalidation(LayoutInvalidationReason::SvgResourceInvalidated);
     }
 }

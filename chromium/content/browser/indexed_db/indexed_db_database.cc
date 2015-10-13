@@ -17,6 +17,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "content/browser/indexed_db/indexed_db_blob_info.h"
+#include "content/browser/indexed_db/indexed_db_class_factory.h"
 #include "content/browser/indexed_db/indexed_db_connection.h"
 #include "content/browser/indexed_db/indexed_db_context_impl.h"
 #include "content/browser/indexed_db/indexed_db_cursor.h"
@@ -131,7 +132,8 @@ scoped_refptr<IndexedDBDatabase> IndexedDBDatabase::Create(
     const Identifier& unique_identifier,
     leveldb::Status* s) {
   scoped_refptr<IndexedDBDatabase> database =
-      new IndexedDBDatabase(name, backing_store, factory, unique_identifier);
+      IndexedDBClassFactory::Get()->CreateIndexedDBDatabase(
+          name, backing_store, factory, unique_identifier);
   *s = database->OpenInternal();
   if (s->ok())
     return database;
@@ -224,6 +226,10 @@ IndexedDBDatabase::~IndexedDBDatabase() {
   DCHECK(transactions_.empty());
   DCHECK(pending_open_calls_.empty());
   DCHECK(pending_delete_calls_.empty());
+}
+
+size_t IndexedDBDatabase::GetMaxMessageSizeInBytes() const {
+  return kMaxIDBMessageSizeInBytes;
 }
 
 scoped_ptr<IndexedDBConnection> IndexedDBDatabase::CreateConnection(
@@ -852,9 +858,11 @@ void IndexedDBDatabase::GetAllOperation(
       response_size += return_key.size_estimate();
     else
       response_size += return_value.SizeEstimate();
-    if (response_size > IPC::Channel::kMaximumMessageSize) {
-      // TODO(cmumford): Reach this limit more gracefully (crbug.com/478949)
-      break;
+    if (response_size > GetMaxMessageSizeInBytes()) {
+      callbacks->OnError(
+          IndexedDBDatabaseError(blink::WebIDBDatabaseExceptionUnknownError,
+                                 "Maximum IPC message size exceeded."));
+      return;
     }
 
     if (cursor_type == indexed_db::CURSOR_KEY_ONLY)
@@ -1058,19 +1066,22 @@ void IndexedDBDatabase::PutOperation(scoped_ptr<PutOperationParams> params,
                                              error);
     return;
   }
-
-  for (size_t i = 0; i < index_writers.size(); ++i) {
-    IndexWriter* index_writer = index_writers[i];
-    index_writer->WriteIndexKeys(record_identifier,
-                                 backing_store_.get(),
-                                 transaction->BackingStoreTransaction(),
-                                 id(),
-                                 params->object_store_id);
+  {
+    IDB_TRACE1("IndexedDBDatabase::PutOperation.UpdateIndexes", "txn.id",
+               transaction->id());
+    for (size_t i = 0; i < index_writers.size(); ++i) {
+      IndexWriter* index_writer = index_writers[i];
+      index_writer->WriteIndexKeys(record_identifier, backing_store_.get(),
+                                   transaction->BackingStoreTransaction(), id(),
+                                   params->object_store_id);
+    }
   }
 
   if (object_store.auto_increment &&
       params->put_mode != blink::WebIDBPutModeCursorUpdate &&
       key->type() == WebIDBKeyTypeNumber) {
+    IDB_TRACE1("IndexedDBDatabase::PutOperation.AutoIncrement", "txn.id",
+               transaction->id());
     leveldb::Status s = UpdateKeyGenerator(backing_store_.get(),
                                            transaction,
                                            id(),
@@ -1087,8 +1098,11 @@ void IndexedDBDatabase::PutOperation(scoped_ptr<PutOperationParams> params,
       return;
     }
   }
-
-  params->callbacks->OnSuccess(*key);
+  {
+    IDB_TRACE1("IndexedDBDatabase::PutOperation.Callbacks", "txn.id",
+               transaction->id());
+    params->callbacks->OnSuccess(*key);
+  }
 }
 
 void IndexedDBDatabase::SetIndexKeys(int64 transaction_id,
@@ -1170,7 +1184,6 @@ void IndexedDBDatabase::SetIndexKeys(int64 transaction_id,
 void IndexedDBDatabase::SetIndexesReady(int64 transaction_id,
                                         int64,
                                         const std::vector<int64>& index_ids) {
-  IDB_TRACE1("IndexedDBDatabase::SetIndexesReady", "txn.id", transaction_id);
   IndexedDBTransaction* transaction = GetTransaction(transaction_id);
   if (!transaction)
     return;
@@ -1186,9 +1199,6 @@ void IndexedDBDatabase::SetIndexesReady(int64 transaction_id,
 void IndexedDBDatabase::SetIndexesReadyOperation(
     size_t index_count,
     IndexedDBTransaction* transaction) {
-  IDB_TRACE1("IndexedDBDatabase::SetIndexesReadyOperation",
-             "txn.id",
-             transaction->id());
   for (size_t i = 0; i < index_count; ++i)
     transaction->DidCompletePreemptiveEvent();
 }
@@ -1547,6 +1557,7 @@ void IndexedDBDatabase::VersionChangeOperation(
 
 void IndexedDBDatabase::TransactionFinished(IndexedDBTransaction* transaction,
                                             bool committed) {
+  IDB_TRACE1("IndexedDBTransaction::TransactionFinished", "txn.id", id());
   DCHECK(transactions_.find(transaction->id()) != transactions_.end());
   DCHECK_EQ(transactions_[transaction->id()], transaction);
   transactions_.erase(transaction->id());
@@ -1664,13 +1675,10 @@ void IndexedDBDatabase::CreateTransaction(
 
   // The transaction will add itself to this database's coordinator, which
   // manages the lifetime of the object.
-  TransactionCreated(new IndexedDBTransaction(
-      transaction_id,
-      connection->callbacks(),
-      std::set<int64>(object_store_ids.begin(), object_store_ids.end()),
-      mode,
-      this,
-      new IndexedDBBackingStore::Transaction(backing_store_.get())));
+  TransactionCreated(IndexedDBClassFactory::Get()->CreateIndexedDBTransaction(
+      transaction_id, connection->callbacks(),
+      std::set<int64>(object_store_ids.begin(), object_store_ids.end()), mode,
+      this, new IndexedDBBackingStore::Transaction(backing_store_.get())));
 }
 
 void IndexedDBDatabase::TransactionCreated(IndexedDBTransaction* transaction) {

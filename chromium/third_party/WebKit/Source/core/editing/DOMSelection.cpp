@@ -39,14 +39,22 @@
 #include "core/dom/Node.h"
 #include "core/dom/Range.h"
 #include "core/dom/TreeScope.h"
+#include "core/editing/EditingUtilities.h"
 #include "core/editing/FrameSelection.h"
-#include "core/editing/htmlediting.h"
 #include "core/editing/iterators/TextIterator.h"
 #include "core/frame/LocalFrame.h"
 #include "core/inspector/ConsoleMessage.h"
 #include "wtf/text/WTFString.h"
 
 namespace blink {
+
+static Position createPosition(Node* node, int offset)
+{
+    ASSERT(offset >= 0);
+    if (!node)
+        return Position();
+    return Position(node, offset);
+}
 
 static Node* selectionShadowAncestor(LocalFrame* frame)
 {
@@ -218,7 +226,7 @@ void DOMSelection::collapse(Node* node, int offset, ExceptionState& exceptionSta
     range->setEnd(node, offset, exceptionState);
     if (exceptionState.hadException())
         return;
-    m_frame->selection().setSelectedRange(range.get(), DOWNSTREAM, m_frame->selection().isDirectional() ? FrameSelection::Directional : FrameSelection::NonDirectional);
+    m_frame->selection().setSelectedRange(range.get(), TextAffinity::Downstream, m_frame->selection().isDirectional() ? SelectionDirectionalMode::Directional : SelectionDirectionalMode::NonDirectional);
 }
 
 void DOMSelection::collapseToEnd(ExceptionState& exceptionState)
@@ -233,7 +241,7 @@ void DOMSelection::collapseToEnd(ExceptionState& exceptionState)
         return;
     }
 
-    m_frame->selection().moveTo(VisiblePosition(selection.end(), DOWNSTREAM));
+    m_frame->selection().moveTo(createVisiblePosition(selection.end()));
 }
 
 void DOMSelection::collapseToStart(ExceptionState& exceptionState)
@@ -248,7 +256,7 @@ void DOMSelection::collapseToStart(ExceptionState& exceptionState)
         return;
     }
 
-    m_frame->selection().moveTo(VisiblePosition(selection.start(), DOWNSTREAM));
+    m_frame->selection().moveTo(createVisiblePosition(selection.start()));
 }
 
 void DOMSelection::empty()
@@ -276,9 +284,8 @@ void DOMSelection::setBaseAndExtent(Node* baseNode, int baseOffset, Node* extent
     if (!isValidForPosition(baseNode) || !isValidForPosition(extentNode))
         return;
 
-    // FIXME: Eliminate legacy editing positions
-    VisiblePosition visibleBase = VisiblePosition(createLegacyEditingPosition(baseNode, baseOffset), DOWNSTREAM);
-    VisiblePosition visibleExtent = VisiblePosition(createLegacyEditingPosition(extentNode, extentOffset), DOWNSTREAM);
+    VisiblePosition visibleBase = createVisiblePosition(createPosition(baseNode, baseOffset));
+    VisiblePosition visibleExtent = createVisiblePosition(createPosition(extentNode, extentOffset));
 
     m_frame->selection().moveTo(visibleBase, visibleExtent);
 }
@@ -352,8 +359,7 @@ void DOMSelection::extend(Node* node, int offset, ExceptionState& exceptionState
     if (!isValidForPosition(node))
         return;
 
-    // FIXME: Eliminate legacy editing positions
-    m_frame->selection().setExtent(VisiblePosition(createLegacyEditingPosition(node, offset), DOWNSTREAM));
+    m_frame->selection().setExtent(createVisiblePosition(createPosition(node, offset)));
 }
 
 PassRefPtrWillBeRawPtr<Range> DOMSelection::getRangeAt(int index, ExceptionState& exceptionState)
@@ -433,7 +439,7 @@ void DOMSelection::addRange(Range* newRange)
     Range* start = originalRange->compareBoundaryPoints(Range::START_TO_START, newRange, ASSERT_NO_EXCEPTION) < 0 ? originalRange.get() : newRange;
     Range* end = originalRange->compareBoundaryPoints(Range::END_TO_END, newRange, ASSERT_NO_EXCEPTION) < 0 ? newRange : originalRange.get();
     RefPtrWillBeRawPtr<Range> merged = Range::create(originalRange->startContainer()->document(), start->startContainer(), start->startOffset(), end->endContainer(), end->endOffset());
-    EAffinity affinity = selection.selection().affinity();
+    TextAffinity affinity = selection.selection().affinity();
     selection.setSelectedRange(merged.get(), affinity);
 }
 
@@ -447,7 +453,7 @@ void DOMSelection::deleteFromDocument()
     if (selection.isNone())
         return;
 
-    RefPtrWillBeRawPtr<Range> selectedRange = selection.selection().toNormalizedRange();
+    RefPtrWillBeRawPtr<Range> selectedRange = createRange(selection.selection().toNormalizedEphemeralRange());
     if (!selectedRange)
         return;
 
@@ -458,31 +464,35 @@ void DOMSelection::deleteFromDocument()
 
 bool DOMSelection::containsNode(const Node* n, bool allowPartial) const
 {
+    ASSERT(n);
+
     if (!m_frame)
         return false;
 
     FrameSelection& selection = m_frame->selection();
 
-    if (!n || m_frame->document() != n->document() || selection.isNone())
+    if (m_frame->document() != n->document() || selection.isNone())
         return false;
 
     unsigned nodeIndex = n->nodeIndex();
-    RefPtrWillBeRawPtr<Range> selectedRange = selection.selection().toNormalizedRange();
+    const EphemeralRange selectedRange = selection.selection().toNormalizedEphemeralRange();
 
     ContainerNode* parentNode = n->parentNode();
     if (!parentNode)
         return false;
 
+    const Position startPosition = selectedRange.startPosition().toOffsetInAnchor();
+    const Position endPosition = selectedRange.endPosition().toOffsetInAnchor();
     TrackExceptionState exceptionState;
-    bool nodeFullySelected = Range::compareBoundaryPoints(parentNode, nodeIndex, selectedRange->startContainer(), selectedRange->startOffset(), exceptionState) >= 0 && !exceptionState.hadException()
-        && Range::compareBoundaryPoints(parentNode, nodeIndex + 1, selectedRange->endContainer(), selectedRange->endOffset(), exceptionState) <= 0 && !exceptionState.hadException();
+    bool nodeFullySelected = Range::compareBoundaryPoints(parentNode, nodeIndex, startPosition.computeContainerNode(), startPosition.offsetInContainerNode(), exceptionState) >= 0 && !exceptionState.hadException()
+        && Range::compareBoundaryPoints(parentNode, nodeIndex + 1, endPosition.computeContainerNode(), endPosition.offsetInContainerNode(), exceptionState) <= 0 && !exceptionState.hadException();
     if (exceptionState.hadException())
         return false;
     if (nodeFullySelected)
         return true;
 
-    bool nodeFullyUnselected = (Range::compareBoundaryPoints(parentNode, nodeIndex, selectedRange->endContainer(), selectedRange->endOffset(), exceptionState) > 0 && !exceptionState.hadException())
-        || (Range::compareBoundaryPoints(parentNode, nodeIndex + 1, selectedRange->startContainer(), selectedRange->startOffset(), exceptionState) < 0 && !exceptionState.hadException());
+    bool nodeFullyUnselected = (Range::compareBoundaryPoints(parentNode, nodeIndex, endPosition.computeContainerNode(), endPosition.offsetInContainerNode(), exceptionState) > 0 && !exceptionState.hadException())
+        || (Range::compareBoundaryPoints(parentNode, nodeIndex + 1, startPosition.computeContainerNode(), startPosition.offsetInContainerNode(), exceptionState) < 0 && !exceptionState.hadException());
     ASSERT(!exceptionState.hadException());
     if (nodeFullyUnselected)
         return false;
@@ -503,10 +513,8 @@ String DOMSelection::toString()
     if (!m_frame)
         return String();
 
-    Position start, end;
-    if (m_frame->selection().selection().toNormalizedPositions(start, end))
-        return plainText(start, end, TextIteratorForSelectionToString);
-    return emptyString();
+    const EphemeralRange range = m_frame->selection().selection().toNormalizedEphemeralRange();
+    return plainText(range, TextIteratorForSelectionToString);
 }
 
 Node* DOMSelection::shadowAdjustedNode(const Position& position) const
@@ -514,7 +522,7 @@ Node* DOMSelection::shadowAdjustedNode(const Position& position) const
     if (position.isNull())
         return 0;
 
-    Node* containerNode = position.containerNode();
+    Node* containerNode = position.computeContainerNode();
     Node* adjustedNode = m_treeScope->ancestorInThisScope(containerNode);
 
     if (!adjustedNode)
@@ -532,7 +540,7 @@ int DOMSelection::shadowAdjustedOffset(const Position& position) const
     if (position.isNull())
         return 0;
 
-    Node* containerNode = position.containerNode();
+    Node* containerNode = position.computeContainerNode();
     Node* adjustedNode = m_treeScope->ancestorInThisScope(containerNode);
 
     if (!adjustedNode)

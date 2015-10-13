@@ -4,7 +4,9 @@
 
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
+#include "content/common/accessibility_messages.h"
 #include "content/common/frame_messages.h"
+#include "content/common/site_isolation_policy.h"
 #include "content/common/view_message_enums.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/test/render_view_test.h"
@@ -64,15 +66,22 @@ class RendererAccessibilityTest : public RenderViewTest {
     frame()->OnSetAccessibilityMode(mode);
   }
 
-  void GetLastAccEvent(
-      AccessibilityHostMsg_EventParams* params) {
+  void GetAllAccEvents(
+      std::vector<AccessibilityHostMsg_EventParams>* param_list) {
     const IPC::Message* message =
         sink_->GetUniqueMessageMatching(AccessibilityHostMsg_Events::ID);
     ASSERT_TRUE(message);
     base::Tuple<std::vector<AccessibilityHostMsg_EventParams>, int> param;
     AccessibilityHostMsg_Events::Read(message, &param);
-    ASSERT_GE(base::get<0>(param).size(), 1U);
-    *params = base::get<0>(param)[0];
+    *param_list = base::get<0>(param);
+  }
+
+  void GetLastAccEvent(
+      AccessibilityHostMsg_EventParams* params) {
+    std::vector<AccessibilityHostMsg_EventParams> param_list;
+    GetAllAccEvents(&param_list);
+    ASSERT_GE(param_list.size(), 1U);
+    *params = param_list[0];
   }
 
   int CountAccessibilityNodesSentToBrowser() {
@@ -170,7 +179,7 @@ TEST_F(RendererAccessibilityTest,
   // the main frame and it cannot be further navigated.
   // TODO(nasko): Figure out what this behavior looks like when swapped out
   // no longer exists.
-  if (RenderFrameProxy::IsSwappedOutStateForbidden()) {
+  if (SiteIsolationPolicy::IsSwappedOutStateForbidden()) {
     return;
   }
   std::string html =
@@ -248,10 +257,10 @@ TEST_F(RendererAccessibilityTest, HideAccessibilityObject) {
   WebAXObject node_c = node_b.childAt(0);
 
   // Hide node 'B' ('C' stays visible).
-  ExecuteJavaScript(
+  ExecuteJavaScriptForTests(
       "document.getElementById('B').style.visibility = 'hidden';");
   // Force layout now.
-  ExecuteJavaScript("document.getElementById('B').offsetLeft;");
+  ExecuteJavaScriptForTests("document.getElementById('B').offsetLeft;");
 
   // Send a childrenChanged on 'A'.
   sink_->ClearMessages();
@@ -294,9 +303,9 @@ TEST_F(RendererAccessibilityTest, ShowAccessibilityObject) {
   EXPECT_EQ(3, CountAccessibilityNodesSentToBrowser());
 
   // Show node 'B', then send a childrenChanged on 'A'.
-  ExecuteJavaScript(
+  ExecuteJavaScriptForTests(
       "document.getElementById('B').style.visibility = 'visible';");
-  ExecuteJavaScript("document.getElementById('B').offsetLeft;");
+  ExecuteJavaScriptForTests("document.getElementById('B').offsetLeft;");
 
   sink_->ClearMessages();
   WebDocument document = view()->GetWebView()->mainFrame()->document();
@@ -355,10 +364,10 @@ TEST_F(RendererAccessibilityTest, DetachAccessibilityObject) {
 
   // Change the display of the second 'span' back to inline, which causes the
   // anonymous block to be destroyed.
-  ExecuteJavaScript(
+  ExecuteJavaScriptForTests(
       "document.querySelectorAll('span')[1].style.display = 'inline';");
   // Force layout now.
-  ExecuteJavaScript("document.body.offsetLeft;");
+  ExecuteJavaScriptForTests("document.body.offsetLeft;");
 
   // Send a childrenChanged on the body.
   sink_->ClearMessages();
@@ -426,4 +435,46 @@ TEST_F(RendererAccessibilityTest, EventOnObjectNotInTree) {
   ASSERT_EQ(0U, base::get<0>(param).size());
 }
 
+TEST_F(RendererAccessibilityTest, TextSelectionShouldSendRoot) {
+  // A text selection change in a text field will be reflected in attributes
+  // of the root node.  Verify that the root node is updated as the result
+  // of a text change event.
+  std::string html =
+      "<body>"
+      "  <div role='group'>"
+      "    <input id='input' type='text' value='hello there'>"
+      "  </div>"
+      "</body>";
+  LoadHTML(html.c_str());
+
+  scoped_ptr<TestRendererAccessibility> accessibility(
+      new TestRendererAccessibility(frame()));
+  accessibility->SendPendingAccessibilityEvents();
+  sink_->ClearMessages();
+
+  WebDocument document = view()->GetWebView()->mainFrame()->document();
+  WebAXObject root_obj = document.accessibilityObject();
+  WebAXObject input_obj =
+      document.getElementById("input").accessibilityObject();
+  ASSERT_EQ(blink::WebAXRoleTextField, input_obj.role());
+  ExecuteJavaScriptForTests("document.getElementById('input').focus();");
+  accessibility->HandleAXEvent(
+      input_obj,
+      ui::AX_EVENT_TEXT_SELECTION_CHANGED);
+  accessibility->SendPendingAccessibilityEvents();
+  std::vector<AccessibilityHostMsg_EventParams> all_events;
+  GetAllAccEvents(&all_events);
+  EXPECT_EQ(2U, all_events.size());
+  bool had_root_update = false, had_input_update = false;
+  for (auto i = all_events.begin(); i != all_events.end(); ++i) {
+    ASSERT_EQ(ui::AX_EVENT_TEXT_SELECTION_CHANGED, i->event_type);
+    ASSERT_EQ(1U, i->update.nodes.size());
+    if (root_obj.axID() == i->update.nodes[0].id)
+      had_root_update = true;
+    if (input_obj.axID() == i->update.nodes[0].id)
+      had_input_update = true;
+  }
+  ASSERT_TRUE(had_root_update);
+  ASSERT_TRUE(had_input_update);
+}
 }  // namespace content

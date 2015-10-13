@@ -362,6 +362,7 @@ bool InitializeAccessibilityTreeSearch(
     { NSAccessibilityNumberOfCharactersAttribute, @"numberOfCharacters" },
     { NSAccessibilityOrientationAttribute, @"orientation" },
     { NSAccessibilityParentAttribute, @"parent" },
+    { NSAccessibilityPlaceholderValueAttribute, @"placeholderValue" },
     { NSAccessibilityPositionAttribute, @"position" },
     { NSAccessibilityRoleAttribute, @"role" },
     { NSAccessibilityRoleDescriptionAttribute, @"roleDescription" },
@@ -397,7 +398,6 @@ bool InitializeAccessibilityTreeSearch(
     { @"AXInvalid", @"invalid" },
     { @"AXLoaded", @"loaded" },
     { @"AXLoadingProgress", @"loadingProgress" },
-    { @"AXPlaceholder", @"placeholder" },
     { @"AXRequired", @"required" },
     { @"AXSortDirection", @"sortDirection" },
     { @"AXVisited", @"visited" },
@@ -736,7 +736,7 @@ bool InitializeAccessibilityTreeSearch(
   return @"false";
 }
 
-- (NSString*)placeholder {
+- (NSString*)placeholderValue {
   return NSStringForStringAttribute(
       browserAccessibility_, ui::AX_ATTR_PLACEHOLDER);
 }
@@ -944,6 +944,9 @@ bool InitializeAccessibilityTreeSearch(
   case ui::AX_ROLE_BANNER:
     return base::SysUTF16ToNSString(content_client->GetLocalizedString(
         IDS_AX_ROLE_BANNER));
+  case ui::AX_ROLE_CHECK_BOX:
+    return base::SysUTF16ToNSString(content_client->GetLocalizedString(
+        IDS_AX_ROLE_CHECK_BOX));
   case ui::AX_ROLE_COMPLEMENTARY:
     return base::SysUTF16ToNSString(content_client->GetLocalizedString(
         IDS_AX_ROLE_COMPLEMENTARY));
@@ -1559,8 +1562,7 @@ bool InitializeAccessibilityTreeSearch(
         NSAccessibilityCellForColumnAndRowParameterizedAttribute,
         nil]];
   }
-  if ([[self role] isEqualToString:NSAccessibilityTextFieldRole] ||
-      [[self role] isEqualToString:NSAccessibilityTextAreaRole]) {
+  if (browserAccessibility_->IsEditableText()) {
     [ret addObjectsFromArray:[NSArray arrayWithObjects:
         NSAccessibilityLineForIndexParameterizedAttribute,
         NSAccessibilityRangeForLineParameterizedAttribute,
@@ -1696,15 +1698,6 @@ bool InitializeAccessibilityTreeSearch(
         @"AXLoaded",
         @"AXLoadingProgress",
         nil]];
-  } else if ([role isEqualToString:NSAccessibilityTextFieldRole] ||
-             [role isEqualToString:NSAccessibilityTextAreaRole]) {
-    [ret addObjectsFromArray:[NSArray arrayWithObjects:
-        NSAccessibilityInsertionPointLineNumberAttribute,
-        NSAccessibilityNumberOfCharactersAttribute,
-        NSAccessibilitySelectedTextAttribute,
-        NSAccessibilitySelectedTextRangeAttribute,
-        NSAccessibilityVisibleCharacterRangeAttribute,
-        nil]];
   } else if ([role isEqualToString:NSAccessibilityTabGroupRole]) {
     [ret addObject:NSAccessibilityTabsAttribute];
   } else if ([role isEqualToString:NSAccessibilityProgressIndicatorRole] ||
@@ -1746,6 +1739,17 @@ bool InitializeAccessibilityTreeSearch(
     [ret addObjectsFromArray:[NSArray arrayWithObjects:
         NSAccessibilitySelectedChildrenAttribute,
         NSAccessibilityVisibleChildrenAttribute,
+        nil]];
+  }
+
+  // Caret navigation and text selection attributes.
+  if (browserAccessibility_->IsEditableText()) {
+    [ret addObjectsFromArray:[NSArray arrayWithObjects:
+        NSAccessibilityInsertionPointLineNumberAttribute,
+        NSAccessibilityNumberOfCharactersAttribute,
+        NSAccessibilitySelectedTextAttribute,
+        NSAccessibilitySelectedTextRangeAttribute,
+        NSAccessibilityVisibleCharacterRangeAttribute,
         nil]];
   }
 
@@ -1824,7 +1828,7 @@ bool InitializeAccessibilityTreeSearch(
 
   if (browserAccessibility_->HasStringAttribute(ui::AX_ATTR_PLACEHOLDER)) {
     [ret addObjectsFromArray:[NSArray arrayWithObjects:
-        @"AXPlaceholder", nil]];
+        NSAccessibilityPlaceholderValueAttribute, nil]];
   }
 
   if (GetState(browserAccessibility_, ui::AX_STATE_REQUIRED)) {
@@ -1875,8 +1879,7 @@ bool InitializeAccessibilityTreeSearch(
         ui::AX_ATTR_CAN_SET_VALUE);
   }
   if ([attribute isEqualToString:NSAccessibilitySelectedTextRangeAttribute] &&
-      ([[self role] isEqualToString:NSAccessibilityTextFieldRole] ||
-       [[self role] isEqualToString:NSAccessibilityTextAreaRole]))
+      browserAccessibility_->IsEditableText())
     return YES;
 
   return NO;

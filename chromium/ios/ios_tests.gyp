@@ -12,8 +12,6 @@
       'sources': [
         # TODO(droger): Move most of these files to
         # //ios/chrome/ios_chrome_tests.gyp, see http://crbug.com/437333
-        'public/test/fake_profile_oauth2_token_service_ios_provider.h',
-        'public/test/fake_profile_oauth2_token_service_ios_provider.mm',
         'public/test/fake_string_provider.cc',
         'public/test/fake_string_provider.h',
         'public/test/fake_sync_service_factory.cc',
@@ -32,6 +30,7 @@
         '../components/components.gyp:keyed_service_core',
         '../components/components.gyp:keyed_service_ios',
         '../components/components.gyp:sync_driver_test_support',
+        '../sync/sync.gyp:sync',
         '../testing/gtest.gyp:gtest',
         'provider/ios_provider_chrome.gyp:ios_provider_chrome_browser',
       ],

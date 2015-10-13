@@ -471,8 +471,10 @@ void CopyTextureCHROMIUMResourceManager::DoCopyTextureInternal(
   DCHECK(source_target == GL_TEXTURE_2D ||
          source_target == GL_TEXTURE_RECTANGLE_ARB ||
          source_target == GL_TEXTURE_EXTERNAL_OES);
-  DCHECK(xoffset >= 0 && xoffset + source_width <= dest_width);
-  DCHECK(yoffset >= 0 && yoffset + source_height <= dest_height);
+  DCHECK_GE(xoffset, 0);
+  DCHECK_LE(xoffset + width, dest_width);
+  DCHECK_GE(yoffset, 0);
+  DCHECK_LE(yoffset + height, dest_height);
   if (!initialized_) {
     DLOG(ERROR) << "CopyTextureCHROMIUM: Uninitialized manager.";
     return;
@@ -580,6 +582,8 @@ void CopyTextureCHROMIUMResourceManager::DoCopyTextureInternal(
     if (need_scissor) {
       glEnable(GL_SCISSOR_TEST);
       glScissor(xoffset, yoffset, width, height);
+    } else {
+      glDisable(GL_SCISSOR_TEST);
     }
     glViewport(0, 0, dest_width, dest_height);
     glDrawArrays(GL_TRIANGLE_FAN, 0, 4);

@@ -34,7 +34,8 @@
 
 #include "core/CSSPropertyNames.h"
 #include "core/CSSValueKeywords.h"
-#include "core/dom/Position.h"
+#include "core/editing/Position.h"
+#include "core/editing/VisibleSelection.h"
 #include "core/editing/WritingDirection.h"
 #include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
@@ -57,7 +58,6 @@ class Node;
 class QualifiedName;
 class ComputedStyle;
 class StylePropertySet;
-class VisibleSelection;
 
 class EditingStyle final : public RefCountedWillBeGarbageCollectedFinalized<EditingStyle> {
 public:
@@ -117,7 +117,7 @@ public:
     bool conflictsWithImplicitStyleOfElement(HTMLElement*, EditingStyle* extractedStyle = nullptr, ShouldExtractMatchingStyle = DoNotExtractMatchingStyle) const;
     bool conflictsWithImplicitStyleOfAttributes(HTMLElement*) const;
     bool extractConflictingImplicitStyleOfAttributes(HTMLElement*, ShouldPreserveWritingDirection, EditingStyle* extractedStyle,
-            Vector<QualifiedName>& conflictingAttributes, ShouldExtractMatchingStyle) const;
+        Vector<QualifiedName>& conflictingAttributes, ShouldExtractMatchingStyle) const;
     bool styleIsPresentInComputedStyleOfNode(Node*) const;
 
     static bool elementIsStyledSpanOrHTMLEquivalent(const HTMLElement*);
@@ -169,6 +169,7 @@ private:
 };
 
 class StyleChange {
+    DISALLOW_ALLOCATION();
 public:
     StyleChange()
         : m_applyBold(false)

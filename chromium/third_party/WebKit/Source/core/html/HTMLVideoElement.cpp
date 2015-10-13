@@ -32,11 +32,13 @@
 #include "core/dom/Attribute.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
+#include "core/dom/Fullscreen.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/frame/Settings.h"
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/layout/LayoutImage.h"
 #include "core/layout/LayoutVideo.h"
+#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/UserGestureIndicator.h"
 #include "platform/graphics/GraphicsContext.h"
 #include "platform/graphics/ImageBuffer.h"
@@ -136,17 +138,6 @@ void HTMLVideoElement::parseAttribute(const QualifiedName& name, const AtomicStr
     }
 }
 
-bool HTMLVideoElement::supportsFullscreen() const
-{
-    if (!document().page())
-        return false;
-
-    if (!webMediaPlayer())
-        return false;
-
-    return true;
-}
-
 unsigned HTMLVideoElement::videoWidth() const
 {
     if (!webMediaPlayer())
@@ -232,17 +223,10 @@ bool HTMLVideoElement::hasAvailableVideoFrame() const
     return webMediaPlayer()->hasVideo() && webMediaPlayer()->readyState() >= WebMediaPlayer::ReadyStateHaveCurrentData;
 }
 
-void HTMLVideoElement::webkitEnterFullscreen(ExceptionState& exceptionState)
+void HTMLVideoElement::webkitEnterFullscreen()
 {
-    if (isFullscreen())
-        return;
-
-    if (!supportsFullscreen()) {
-        exceptionState.throwDOMException(InvalidStateError, "This element does not support fullscreen mode.");
-        return;
-    }
-
-    enterFullscreen();
+    if (!isFullscreen())
+        enterFullscreen();
 }
 
 void HTMLVideoElement::webkitExitFullscreen()
@@ -253,12 +237,20 @@ void HTMLVideoElement::webkitExitFullscreen()
 
 bool HTMLVideoElement::webkitSupportsFullscreen()
 {
-    return supportsFullscreen();
+    return Fullscreen::fullscreenEnabled(document());
 }
 
 bool HTMLVideoElement::webkitDisplayingFullscreen()
 {
     return isFullscreen();
+}
+
+bool HTMLVideoElement::usesOverlayFullscreenVideo() const
+{
+    if (RuntimeEnabledFeatures::forceOverlayFullscreenVideoEnabled())
+        return true;
+
+    return webMediaPlayer() && webMediaPlayer()->supportsOverlayFullscreenVideo();
 }
 
 void HTMLVideoElement::didMoveToNewDocument(Document& oldDocument)
@@ -292,12 +284,7 @@ KURL HTMLVideoElement::posterImageURL() const
     return document().completeURL(url);
 }
 
-KURL HTMLVideoElement::mediaPlayerPosterURL()
-{
-    return posterImageURL();
-}
-
-PassRefPtr<Image> HTMLVideoElement::getSourceImageForCanvas(SourceImageMode mode, SourceImageStatus* status) const
+PassRefPtr<Image> HTMLVideoElement::getSourceImageForCanvas(SourceImageStatus* status, AccelerationHint) const
 {
     if (!hasAvailableVideoFrame()) {
         *status = InvalidSourceImageStatus;
@@ -305,6 +292,7 @@ PassRefPtr<Image> HTMLVideoElement::getSourceImageForCanvas(SourceImageMode mode
     }
 
     IntSize intrinsicSize(videoWidth(), videoHeight());
+    // FIXME: Not sure if we dhould we be doing anything with the AccelerationHint argument here?
     OwnPtr<ImageBuffer> imageBuffer = ImageBuffer::create(intrinsicSize);
     if (!imageBuffer) {
         *status = InvalidSourceImageStatus;
@@ -312,9 +300,14 @@ PassRefPtr<Image> HTMLVideoElement::getSourceImageForCanvas(SourceImageMode mode
     }
 
     paintCurrentFrame(imageBuffer->canvas(), IntRect(IntPoint(0, 0), intrinsicSize), nullptr);
+    RefPtr<Image> snapshot = imageBuffer->newImageSnapshot();
+    if (!snapshot) {
+        *status = InvalidSourceImageStatus;
+        return nullptr;
+    }
 
-    *status = (mode == CopySourceImageIfVolatile) ? NormalSourceImageStatus : ExternalSourceImageStatus;
-    return imageBuffer->copyImage(mode == CopySourceImageIfVolatile ? CopyBackingStore : DontCopyBackingStore, Unscaled);
+    *status = NormalSourceImageStatus;
+    return snapshot.release();
 }
 
 bool HTMLVideoElement::wouldTaintOrigin(SecurityOrigin* destinationSecurityOrigin) const

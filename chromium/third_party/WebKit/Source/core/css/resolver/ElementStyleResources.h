@@ -41,8 +41,8 @@ class FilterOperation;
 class StyleImage;
 class TextLinkColors;
 
-typedef WillBeHeapHashMap<RawPtrWillBeMember<FilterOperation>, RefPtrWillBeMember<CSSSVGDocumentValue>> PendingSVGDocumentMap;
-typedef WillBeHeapHashMap<CSSPropertyID, RefPtrWillBeMember<CSSValue>> PendingImagePropertyMap;
+using PendingImagePropertySet = HashSet<CSSPropertyID>;
+using PendingSVGDocumentMap = WillBeHeapHashMap<RawPtrWillBeMember<FilterOperation>, RefPtrWillBeMember<CSSSVGDocumentValue>>;
 
 // Holds information about resources, requested by stylesheets.
 // Lifetime: per-element style resolve.
@@ -52,14 +52,14 @@ class ElementStyleResources {
 public:
     ElementStyleResources();
 
-    PassRefPtr<StyleImage> styleImage(Document&, const TextLinkColors&, Color currentColor, CSSPropertyID, CSSValue*);
+    PassRefPtrWillBeRawPtr<StyleImage> styleImage(Document&, CSSPropertyID, CSSValue*);
 
-    PassRefPtr<StyleImage> generatedOrPendingFromValue(CSSPropertyID, CSSImageGeneratorValue*);
-    PassRefPtr<StyleImage> cachedOrPendingFromValue(Document&, CSSPropertyID, CSSImageValue*);
-    PassRefPtr<StyleImage> setOrPendingFromValue(CSSPropertyID, CSSImageSetValue*);
-    PassRefPtr<StyleImage> cursorOrPendingFromValue(CSSPropertyID, CSSCursorImageValue*);
+    PassRefPtrWillBeRawPtr<StyleImage> generatedOrPendingFromValue(CSSPropertyID, CSSImageGeneratorValue*);
+    PassRefPtrWillBeRawPtr<StyleImage> cachedOrPendingFromValue(Document&, CSSPropertyID, CSSImageValue*);
+    PassRefPtrWillBeRawPtr<StyleImage> setOrPendingFromValue(CSSPropertyID, CSSImageSetValue*);
+    PassRefPtrWillBeRawPtr<StyleImage> cursorOrPendingFromValue(CSSPropertyID, CSSCursorImageValue*);
 
-    const PendingImagePropertyMap& pendingImageProperties() const { return m_pendingImageProperties; }
+    const PendingImagePropertySet& pendingImageProperties() const { return m_pendingImageProperties; }
     const PendingSVGDocumentMap& pendingSVGDocuments() const { return m_pendingSVGDocuments; }
 
     void clearPendingImageProperties();
@@ -71,7 +71,7 @@ public:
     void addPendingSVGDocument(FilterOperation*, CSSSVGDocumentValue*);
 
 private:
-    PendingImagePropertyMap m_pendingImageProperties;
+    PendingImagePropertySet m_pendingImageProperties;
     PendingSVGDocumentMap m_pendingSVGDocuments;
     float m_deviceScaleFactor;
 };

@@ -76,6 +76,11 @@ public:
     String domain() const { return m_domain; }
     unsigned short port() const { return m_port; }
 
+    // |port()| will return 0 if the port is the default for an origin. This
+    // method instead returns the effective port, even if it is the default port
+    // (e.g. "http" => 80).
+    unsigned short effectivePort() const { return m_effectivePort; }
+
     // Returns true if a given URL is secure, based either directly on its
     // own protocol, or, when relevant, on the protocol of its "inner URL"
     // Protocols like blob: and filesystem: fall into this latter category.
@@ -184,10 +189,10 @@ public:
     bool hasSuborigin() const { return !m_suboriginName.isNull(); }
     const String& suboriginName() const { return m_suboriginName; }
 
-    // Marks a file:// origin as being in a domain defined by its path.
-    // FIXME 81578: The naming of this is confusing. Files with restricted access to other local files
-    // still can have other privileges that can be remembered, thereby not making them unique.
-    void enforceFilePathSeparation();
+    // By default 'file:' URLs may access other 'file:' URLs. This method
+    // denies access. If either SecurityOrigin sets this flag, the access
+    // check will fail.
+    void blockLocalAccessFromLocalOrigin();
 
     // Convert this SecurityOrigin into a string. The string
     // representation of a SecurityOrigin is similar to a URL, except it
@@ -222,10 +227,13 @@ public:
     //   - Grant universal access.
     //   - Grant loading of local resources.
     //   - Use path-based file:// origins.
-    //
-    // Note: It is dangerous to change the privileges of an origin
-    // at any other time than during initialization.
-    void transferPrivilegesFrom(const SecurityOrigin&);
+    struct PrivilegeData {
+        bool m_universalAccess;
+        bool m_canLoadLocalResources;
+        bool m_blockLocalAccessFromLocalOrigin;
+    };
+    PassOwnPtr<PrivilegeData> createPrivilegeData() const;
+    void transferPrivilegesFrom(PassOwnPtr<PrivilegeData>);
 
 private:
     // FIXME: After the merge with the Chromium repo, this should be refactored
@@ -250,11 +258,12 @@ private:
     String m_domain;
     String m_suboriginName;
     unsigned short m_port;
+    unsigned short m_effectivePort;
     bool m_isUnique;
     bool m_universalAccess;
     bool m_domainWasSetInDOM;
     bool m_canLoadLocalResources;
-    bool m_enforceFilePathSeparation;
+    bool m_blockLocalAccessFromLocalOrigin;
     bool m_needsDatabaseIdentifierQuirkForFiles;
 };
 

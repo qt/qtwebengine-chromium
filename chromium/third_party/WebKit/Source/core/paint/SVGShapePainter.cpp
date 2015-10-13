@@ -5,19 +5,18 @@
 #include "config.h"
 #include "core/paint/SVGShapePainter.h"
 
-#include "core/layout/svg/LayoutSVGPath.h"
 #include "core/layout/svg/LayoutSVGResourceMarker.h"
 #include "core/layout/svg/LayoutSVGShape.h"
 #include "core/layout/svg/SVGLayoutSupport.h"
 #include "core/layout/svg/SVGMarkerData.h"
 #include "core/layout/svg/SVGResources.h"
 #include "core/layout/svg/SVGResourcesCache.h"
+#include "core/paint/FloatClipRecorder.h"
 #include "core/paint/LayoutObjectDrawingRecorder.h"
 #include "core/paint/ObjectPainter.h"
 #include "core/paint/PaintInfo.h"
 #include "core/paint/SVGContainerPainter.h"
 #include "core/paint/SVGPaintContext.h"
-#include "core/paint/ScopeRecorder.h"
 #include "core/paint/TransformRecorder.h"
 #include "platform/graphics/GraphicsContextStateSaver.h"
 #include "platform/graphics/paint/SkPictureBuilder.h"
@@ -58,8 +57,8 @@ void SVGShapePainter::paint(const PaintInfo& paintInfo)
     TransformRecorder transformRecorder(*paintInfoBeforeFiltering.context, m_layoutSVGShape, m_layoutSVGShape.localTransform());
     {
         SVGPaintContext paintContext(m_layoutSVGShape, paintInfoBeforeFiltering);
-        if (paintContext.applyClipMaskAndFilterIfNecessary() && !LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(*paintContext.paintInfo().context, m_layoutSVGShape, paintContext.paintInfo().phase)) {
-            LayoutObjectDrawingRecorder recorder(*paintContext.paintInfo().context, m_layoutSVGShape, paintContext.paintInfo().phase, boundingBox);
+        if (paintContext.applyClipMaskAndFilterIfNecessary() && !LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(*paintContext.paintInfo().context, m_layoutSVGShape, paintContext.paintInfo().phase, LayoutPoint())) {
+            LayoutObjectDrawingRecorder recorder(*paintContext.paintInfo().context, m_layoutSVGShape, paintContext.paintInfo().phase, boundingBox, LayoutPoint());
             const SVGComputedStyle& svgStyle = m_layoutSVGShape.style()->svgStyle();
 
             bool shouldAntiAlias = svgStyle.shapeRendering() != SR_CRISPEDGES;
@@ -115,9 +114,7 @@ void SVGShapePainter::paint(const PaintInfo& paintInfo)
     if (m_layoutSVGShape.style()->outlineWidth()) {
         PaintInfo outlinePaintInfo(paintInfoBeforeFiltering);
         outlinePaintInfo.phase = PaintPhaseSelfOutline;
-        LayoutRect layoutObjectBounds(boundingBox);
-        LayoutRect visualOverflowRect = ObjectPainter::outlineBounds(layoutObjectBounds, m_layoutSVGShape.styleRef());
-        ObjectPainter(m_layoutSVGShape).paintOutline(outlinePaintInfo, layoutObjectBounds, visualOverflowRect);
+        ObjectPainter(m_layoutSVGShape).paintOutline(outlinePaintInfo, LayoutPoint(boundingBox.location()));
     }
 }
 
@@ -170,11 +167,11 @@ void SVGShapePainter::strokeShape(GraphicsContext* context, const SkPaint& paint
         context->drawOval(m_layoutSVGShape.objectBoundingBox(), paint);
         break;
     default:
+        ASSERT(m_layoutSVGShape.hasPath());
         Path* usePath = &m_layoutSVGShape.path();
         if (m_layoutSVGShape.hasNonScalingStroke())
             usePath = m_layoutSVGShape.nonScalingStrokePath(usePath, m_layoutSVGShape.nonScalingStrokeTransform());
         context->drawPath(usePath->skPath(), paint);
-        strokeZeroLengthLineCaps(context, paint);
     }
 }
 
@@ -196,22 +193,22 @@ void SVGShapePainter::paintMarkers(const PaintInfo& paintInfo, const FloatRect& 
 
     float strokeWidth = m_layoutSVGShape.strokeWidth();
     unsigned size = markerPositions->size();
-    SkPictureBuilder pictureBuilder(boundingBox, nullptr, paintInfo.context);
-    PaintInfo markersPaintInfo(paintInfo);
-    markersPaintInfo.context = &pictureBuilder.context();
-
-    // It's expensive to track the transformed paint cull rect for each
-    // marker so just disable culling. The shape paint call will already be
-    // culled if it is outside the paint info cull rect.
-    markersPaintInfo.rect = LayoutRect::infiniteIntRect();
 
     for (unsigned i = 0; i < size; ++i) {
-        ScopeRecorder scopeRecorder(*markersPaintInfo.context, m_layoutSVGShape);
-        if (LayoutSVGResourceMarker* marker = SVGMarkerData::markerForType((*markerPositions)[i].type, markerStart, markerMid, markerEnd))
-            paintMarker(markersPaintInfo, *marker, (*markerPositions)[i], strokeWidth);
-    }
+        if (LayoutSVGResourceMarker* marker = SVGMarkerData::markerForType((*markerPositions)[i].type, markerStart, markerMid, markerEnd)) {
+            SkPictureBuilder pictureBuilder(boundingBox, nullptr, paintInfo.context);
+            PaintInfo markerPaintInfo(paintInfo);
+            markerPaintInfo.context = &pictureBuilder.context();
 
-    pictureBuilder.endRecording()->playback(paintInfo.context->canvas());
+            // It's expensive to track the transformed paint cull rect for each
+            // marker so just disable culling. The shape paint call will already
+            // be culled if it is outside the paint info cull rect.
+            markerPaintInfo.rect = LayoutRect::infiniteIntRect();
+
+            paintMarker(markerPaintInfo, *marker, (*markerPositions)[i], strokeWidth);
+            pictureBuilder.endRecording()->playback(paintInfo.context->canvas());
+        }
+    }
 }
 
 void SVGShapePainter::paintMarker(const PaintInfo& paintInfo, LayoutSVGResourceMarker& marker, const MarkerPosition& position, float strokeWidth)
@@ -226,39 +223,7 @@ void SVGShapePainter::paintMarker(const PaintInfo& paintInfo, LayoutSVGResourceM
     Optional<FloatClipRecorder> clipRecorder;
     if (SVGLayoutSupport::isOverflowHidden(&marker))
         clipRecorder.emplace(*paintInfo.context, marker, paintInfo.phase, marker.viewport());
-
     SVGContainerPainter(marker).paint(paintInfo);
-}
-
-void SVGShapePainter::strokeZeroLengthLineCaps(GraphicsContext* context, const SkPaint& strokePaint)
-{
-    const Vector<FloatPoint>* zeroLengthLineCaps = m_layoutSVGShape.zeroLengthLineCaps();
-    if (!zeroLengthLineCaps || zeroLengthLineCaps->isEmpty())
-        return;
-
-    // We need a paint for filling.
-    SkPaint fillPaint = strokePaint;
-    fillPaint.setStyle(SkPaint::kFill_Style);
-
-    AffineTransform nonScalingTransform;
-    bool hasNonScalingStroke = m_layoutSVGShape.hasNonScalingStroke();
-    if (hasNonScalingStroke)
-        nonScalingTransform = m_layoutSVGShape.nonScalingStrokeTransform();
-
-    for (const FloatPoint& capPosition : *zeroLengthLineCaps) {
-        FloatPoint position = capPosition;
-        // If non-scaling-stroke is in effect, apply the transform to the
-        // position (being the non-stroke geometry), and then paint the
-        // requested shape. The CTM should've been adjusted in
-        // SVGShapePainter::paint.
-        if (hasNonScalingStroke)
-            position = nonScalingTransform.mapPoint(position);
-        FloatRect subpathRect = LayoutSVGPath::zeroLengthSubpathRect(position, m_layoutSVGShape.strokeWidth());
-        if (m_layoutSVGShape.style()->svgStyle().capStyle() == SquareCap)
-            context->drawRect(subpathRect, fillPaint);
-        else
-            context->drawOval(subpathRect, fillPaint);
-    }
 }
 
 } // namespace blink

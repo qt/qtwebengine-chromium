@@ -12,10 +12,11 @@
 
 #include "SkCanvas.h"
 #include "SkDrawCommand.h"
+#include "SkPath.h"
 #include "SkPathOps.h"
 #include "SkPicture.h"
-#include "SkTArray.h"
 #include "SkString.h"
+#include "SkTArray.h"
 
 class SkNWayCanvas;
 
@@ -183,7 +184,7 @@ protected:
                         const SkPaint& paint) override;
 
     void onDrawPatch(const SkPoint cubics[12], const SkColor colors[4],
-                     const SkPoint texCoords[4], SkXfermode* xmode, const SkPaint& paint);
+                     const SkPoint texCoords[4], SkXfermode* xmode, const SkPaint& paint) override;
     void onDrawPaint(const SkPaint&) override;
 
     void onDrawRect(const SkRect&, const SkPaint&) override;
@@ -198,10 +199,10 @@ protected:
     void onDrawPath(const SkPath&, const SkPaint&) override;
     void onDrawBitmap(const SkBitmap&, SkScalar left, SkScalar top, const SkPaint*) override;
     void onDrawBitmapRect(const SkBitmap&, const SkRect* src, const SkRect& dst, const SkPaint*,
-                          DrawBitmapRectFlags flags) override;
+                          SrcRectConstraint) override;
     void onDrawImage(const SkImage*, SkScalar left, SkScalar top, const SkPaint*) override;
     void onDrawImageRect(const SkImage*, const SkRect* src, const SkRect& dst,
-                         const SkPaint*) override;
+                         const SkPaint*, SrcRectConstraint) override;
     void onDrawBitmapNine(const SkBitmap&, const SkIRect& center, const SkRect& dst,
                           const SkPaint*) override;
     void onDrawSprite(const SkBitmap&, int left, int top, const SkPaint*) override;

@@ -74,22 +74,20 @@ void FullscreenController::didEnterFullScreen()
     if (!m_exitFullscreenPageScaleFactor) {
         m_exitFullscreenPageScaleFactor = m_webViewImpl->pageScaleFactor();
         m_exitFullscreenScrollOffset = m_webViewImpl->mainFrame()->scrollOffset();
-        m_exitFullscreenPinchViewportOffset = m_webViewImpl->pinchViewportOffset();
+        m_exitFullscreenVisualViewportOffset = m_webViewImpl->visualViewportOffset();
 
         updatePageScaleConstraints(false);
         m_webViewImpl->setPageScaleFactor(1.0f);
         m_webViewImpl->mainFrame()->setScrollOffset(WebSize());
-        m_webViewImpl->setPinchViewportOffset(FloatPoint());
+        m_webViewImpl->setVisualViewportOffset(FloatPoint());
     }
 
     Fullscreen::from(document).didEnterFullScreenForElement(element.get());
     ASSERT(Fullscreen::currentFullScreenElementFrom(document) == element);
 
-    if (RuntimeEnabledFeatures::overlayFullscreenVideoEnabled()) {
-        if (isHTMLVideoElement(element)) {
-            HTMLVideoElement* videoElement = toHTMLVideoElement(element);
-            if (HTMLMediaElement::isMediaStreamURL(videoElement->sourceURL().string()))
-                return;
+    if (isHTMLVideoElement(element)) {
+        HTMLVideoElement* videoElement = toHTMLVideoElement(element);
+        if (videoElement->usesOverlayFullscreenVideo()) {
             if (videoElement->webMediaPlayer()
                 // FIXME: There is no embedder-side handling in layout test mode.
                 && !LayoutTestSupport::isRunningLayoutTest()) {
@@ -108,21 +106,23 @@ void FullscreenController::didExitFullScreen()
 
     if (Document* document = m_fullScreenFrame->document()) {
         if (Fullscreen* fullscreen = Fullscreen::fromIfExists(*document)) {
-            if (fullscreen->webkitCurrentFullScreenElement()) {
+            Element* element = fullscreen->webkitCurrentFullScreenElement();
+            if (element) {
                 // When the client exits from full screen we have to call fullyExitFullscreen to notify
                 // the document. While doing that, suppress notifications back to the client.
                 m_isCancelingFullScreen = true;
                 Fullscreen::fullyExitFullscreen(*document);
                 m_isCancelingFullScreen = false;
 
-                if (RuntimeEnabledFeatures::overlayFullscreenVideoEnabled() && m_webViewImpl->layerTreeView())
+                // If the video used overlay fullscreen mode, the background was made transparent. Restore the transparency.
+                if (isHTMLVideoElement(element) && m_webViewImpl->layerTreeView())
                     m_webViewImpl->layerTreeView()->setHasTransparentBackground(m_webViewImpl->isTransparent());
 
                 if (m_exitFullscreenPageScaleFactor) {
                     updatePageScaleConstraints(true);
                     m_webViewImpl->setPageScaleFactor(m_exitFullscreenPageScaleFactor);
                     m_webViewImpl->mainFrame()->setScrollOffset(WebSize(m_exitFullscreenScrollOffset));
-                    m_webViewImpl->setPinchViewportOffset(m_exitFullscreenPinchViewportOffset);
+                    m_webViewImpl->setVisualViewportOffset(m_exitFullscreenVisualViewportOffset);
                     m_exitFullscreenPageScaleFactor = 0;
                     m_exitFullscreenScrollOffset = IntSize();
                 }

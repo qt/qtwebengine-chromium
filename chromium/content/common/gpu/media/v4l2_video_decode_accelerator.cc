@@ -53,15 +53,6 @@
 
 namespace content {
 
-namespace {
-
-// TODO(posciak): remove once we update linux-headers.
-#ifndef V4L2_EVENT_RESOLUTION_CHANGE
-#define V4L2_EVENT_RESOLUTION_CHANGE 5
-#endif
-
-}  // anonymous namespace
-
 struct V4L2VideoDecodeAccelerator::BitstreamBufferRef {
   BitstreamBufferRef(
       base::WeakPtr<Client>& client,
@@ -175,7 +166,6 @@ V4L2VideoDecodeAccelerator::V4L2VideoDecodeAccelerator(
       decoder_decode_buffer_tasks_scheduled_(0),
       decoder_frames_at_client_(0),
       decoder_flushing_(false),
-      resolution_change_pending_(false),
       resolution_change_reset_pending_(false),
       decoder_partial_frame_pending_(false),
       input_streamon_(false),
@@ -278,7 +268,7 @@ bool V4L2VideoDecodeAccelerator::Initialize(media::VideoCodecProfile profile,
   // Subscribe to the resolution change event.
   struct v4l2_event_subscription sub;
   memset(&sub, 0, sizeof(sub));
-  sub.type = V4L2_EVENT_RESOLUTION_CHANGE;
+  sub.type = V4L2_EVENT_SOURCE_CHANGE;
   IOCTL_OR_ERROR_RETURN_FALSE(VIDIOC_SUBSCRIBE_EVENT, &sub);
 
   if (video_profile_ >= media::H264PROFILE_MIN &&
@@ -323,10 +313,13 @@ void V4L2VideoDecodeAccelerator::AssignPictureBuffers(
   DVLOG(3) << "AssignPictureBuffers(): buffer_count=" << buffers.size();
   DCHECK(child_task_runner_->BelongsToCurrentThread());
 
-  if (buffers.size() != output_buffer_map_.size()) {
+  const uint32_t req_buffer_count =
+      output_dpb_size_ + kDpbOutputBufferExtraCount;
+
+  if (buffers.size() < req_buffer_count) {
     LOG(ERROR) << "AssignPictureBuffers(): Failed to provide requested picture"
                   " buffers. (Got " << buffers.size()
-               << ", requested " << output_buffer_map_.size() << ")";
+               << ", requested " << req_buffer_count << ")";
     NOTIFY_ERROR(INVALID_ARGUMENT);
     return;
   }
@@ -341,6 +334,23 @@ void V4L2VideoDecodeAccelerator::AssignPictureBuffers(
 
   // It's safe to manipulate all the buffer state here, because the decoder
   // thread is waiting on pictures_assigned_.
+
+  // Allocate the output buffers.
+  struct v4l2_requestbuffers reqbufs;
+  memset(&reqbufs, 0, sizeof(reqbufs));
+  reqbufs.count  = buffers.size();
+  reqbufs.type   = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
+  reqbufs.memory = V4L2_MEMORY_MMAP;
+  IOCTL_OR_ERROR_RETURN(VIDIOC_REQBUFS, &reqbufs);
+
+  if (reqbufs.count != buffers.size()) {
+    DLOG(ERROR) << "Could not allocate enough output buffers";
+    NOTIFY_ERROR(PLATFORM_FAILURE);
+    return;
+  }
+
+  output_buffer_map_.resize(buffers.size());
+
   DCHECK(free_output_buffers_.empty());
   for (size_t i = 0; i < output_buffer_map_.size(); ++i) {
     DCHECK(buffers[i].size() == coded_size_);
@@ -905,8 +915,9 @@ void V4L2VideoDecodeAccelerator::ServiceDeviceTask(bool event_pending) {
     return;
   }
 
+  bool resolution_change_pending = false;
   if (event_pending)
-    DequeueEvents();
+    resolution_change_pending = DequeueResolutionChangeEvent();
   Dequeue();
   Enqueue();
 
@@ -948,7 +959,8 @@ void V4L2VideoDecodeAccelerator::ServiceDeviceTask(bool event_pending) {
            << decoder_frames_at_client_ << "]";
 
   ScheduleDecodeBufferTaskIfNeeded();
-  StartResolutionChangeIfNeeded();
+  if (resolution_change_pending)
+    StartResolutionChange();
 }
 
 void V4L2VideoDecodeAccelerator::Enqueue() {
@@ -1002,24 +1014,34 @@ void V4L2VideoDecodeAccelerator::Enqueue() {
   }
 }
 
-void V4L2VideoDecodeAccelerator::DequeueEvents() {
+bool V4L2VideoDecodeAccelerator::DequeueResolutionChangeEvent() {
   DCHECK_EQ(decoder_thread_.message_loop(), base::MessageLoop::current());
   DCHECK_NE(decoder_state_, kUninitialized);
-  DVLOG(3) << "DequeueEvents()";
+  DVLOG(3) << "DequeueResolutionChangeEvent()";
 
   struct v4l2_event ev;
   memset(&ev, 0, sizeof(ev));
 
   while (device_->Ioctl(VIDIOC_DQEVENT, &ev) == 0) {
-    if (ev.type == V4L2_EVENT_RESOLUTION_CHANGE) {
-      DVLOG(3) << "DequeueEvents(): got resolution change event.";
-      DCHECK(!resolution_change_pending_);
-      resolution_change_pending_ = IsResolutionChangeNecessary();
+    if (ev.type == V4L2_EVENT_SOURCE_CHANGE) {
+      uint32_t changes = ev.u.src_change.changes;
+      // We used to define source change was always resolution change. The union
+      // |ev.u| is not used and it is zero by default. When using the upstream
+      // version of the resolution event change, we also need to check
+      // |ev.u.src_change.changes| to know what is changed. For API backward
+      // compatibility, event is treated as resolution change when all bits in
+      // |ev.u.src_change.changes| are cleared.
+      if (changes == 0 || (changes & V4L2_EVENT_SRC_CH_RESOLUTION)) {
+        DVLOG(3)
+            << "DequeueResolutionChangeEvent(): got resolution change event.";
+        return true;
+      }
     } else {
-      LOG(ERROR) << "DequeueEvents(): got an event (" << ev.type
-                  << ") we haven't subscribed to.";
+      LOG(ERROR) << "DequeueResolutionChangeEvent(): got an event (" << ev.type
+                 << ") we haven't subscribed to.";
     }
   }
+  return false;
 }
 
 void V4L2VideoDecodeAccelerator::Dequeue() {
@@ -1295,7 +1317,7 @@ void V4L2VideoDecodeAccelerator::NotifyFlushDoneIfNeeded() {
   // transitioning to next chunk.
   // For now, do the streamoff-streamon cycle to satisfy Exynos and not freeze
   // when doing MSE. This should be harmless otherwise.
-  if (!StopDevicePoll(false))
+  if (!(StopDevicePoll() && StopOutputStream() && StopInputStream()))
     return;
 
   if (!StartDevicePoll())
@@ -1323,17 +1345,29 @@ void V4L2VideoDecodeAccelerator::ResetTask() {
 
   // If we are in the middle of switching resolutions, postpone reset until
   // it's done. We don't have to worry about timing of this wrt to decoding,
-  // because input pipe is already stopped if we are changing resolution.
+  // because output pipe is already stopped if we are changing resolution.
   // We will come back here after we are done with the resolution change.
   DCHECK(!resolution_change_reset_pending_);
-  if (resolution_change_pending_ || decoder_state_ == kChangingResolution) {
+  if (decoder_state_ == kChangingResolution) {
     resolution_change_reset_pending_ = true;
     return;
   }
 
-  // We stop streaming and clear buffer tracking info (not preserving inputs).
-  // StopDevicePoll() unconditionally does _not_ destroy buffers, however.
-  if (!StopDevicePoll(false))
+  // After the output stream is stopped, the codec should not post any
+  // resolution change events. So we dequeue the resolution change event
+  // afterwards. The event could be posted before or while stopping the output
+  // stream. The codec will expect the buffer of new size after the seek, so
+  // we need to handle the resolution change event first.
+  if (!(StopDevicePoll() && StopOutputStream()))
+    return;
+
+  if (DequeueResolutionChangeEvent()) {
+    resolution_change_reset_pending_ = true;
+    StartResolutionChange();
+    return;
+  }
+
+  if (!StopInputStream())
     return;
 
   decoder_current_bitstream_buffer_.reset();
@@ -1367,12 +1401,6 @@ void V4L2VideoDecodeAccelerator::ResetDoneTask() {
   if (!StartDevicePoll())
     return;
 
-  // We might have received a resolution change event while we were waiting
-  // for the reset to finish. The codec will not post another event if the
-  // resolution after reset remains the same as the one to which were just
-  // about to switch, so preserve the event across reset so we can address
-  // it after resuming.
-
   // Reset format-specific bits.
   if (video_profile_ >= media::H264PROFILE_MIN &&
       video_profile_ <= media::H264PROFILE_MAX) {
@@ -1404,8 +1432,9 @@ void V4L2VideoDecodeAccelerator::DestroyTask() {
 
   // DestroyTask() should run regardless of decoder_state_.
 
-  // Stop streaming and the device_poll_thread_.
-  StopDevicePoll(false);
+  StopDevicePoll();
+  StopOutputStream();
+  StopInputStream();
 
   decoder_current_bitstream_buffer_.reset();
   decoder_current_input_buffer_ = -1;
@@ -1438,8 +1467,12 @@ bool V4L2VideoDecodeAccelerator::StartDevicePoll() {
   return true;
 }
 
-bool V4L2VideoDecodeAccelerator::StopDevicePoll(bool keep_input_state) {
+bool V4L2VideoDecodeAccelerator::StopDevicePoll() {
   DVLOG(3) << "StopDevicePoll()";
+
+  if (!device_poll_thread_.IsRunning())
+    return true;
+
   if (decoder_thread_.IsRunning())
     DCHECK_EQ(decoder_thread_.message_loop(), base::MessageLoop::current());
 
@@ -1455,35 +1488,20 @@ bool V4L2VideoDecodeAccelerator::StopDevicePoll(bool keep_input_state) {
     NOTIFY_ERROR(PLATFORM_FAILURE);
     return false;
   }
+  DVLOG(3) << "StopDevicePoll(): device poll stopped";
+  return true;
+}
 
-  // Stop streaming.
-  if (!keep_input_state) {
-    if (input_streamon_) {
-      __u32 type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
-      IOCTL_OR_ERROR_RETURN_FALSE(VIDIOC_STREAMOFF, &type);
-    }
-    input_streamon_ = false;
-  }
-  if (output_streamon_) {
-    __u32 type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
-    IOCTL_OR_ERROR_RETURN_FALSE(VIDIOC_STREAMOFF, &type);
-  }
+bool V4L2VideoDecodeAccelerator::StopOutputStream() {
+  DVLOG(3) << "StopOutputStream()";
+  if (!output_streamon_)
+    return true;
+
+  __u32 type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
+  IOCTL_OR_ERROR_RETURN_FALSE(VIDIOC_STREAMOFF, &type);
   output_streamon_ = false;
 
-  // Reset all our accounting info.
-  if (!keep_input_state) {
-    while (!input_ready_queue_.empty())
-      input_ready_queue_.pop();
-    free_input_buffers_.clear();
-    for (size_t i = 0; i < input_buffer_map_.size(); ++i) {
-      free_input_buffers_.push_back(i);
-      input_buffer_map_[i].at_device = false;
-      input_buffer_map_[i].bytes_used = 0;
-      input_buffer_map_[i].input_id = -1;
-    }
-    input_buffer_queued_count_ = 0;
-  }
-
+  // Reset accounting info for output.
   while (!free_output_buffers_.empty())
     free_output_buffers_.pop();
 
@@ -1502,28 +1520,44 @@ bool V4L2VideoDecodeAccelerator::StopDevicePoll(bool keep_input_state) {
     }
   }
   output_buffer_queued_count_ = 0;
-
-  DVLOG(3) << "StopDevicePoll(): device poll stopped";
   return true;
 }
 
-void V4L2VideoDecodeAccelerator::StartResolutionChangeIfNeeded() {
+bool V4L2VideoDecodeAccelerator::StopInputStream() {
+  DVLOG(3) << "StopInputStream()";
+  if (!input_streamon_)
+    return true;
+
+  __u32 type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
+  IOCTL_OR_ERROR_RETURN_FALSE(VIDIOC_STREAMOFF, &type);
+  input_streamon_ = false;
+
+  // Reset accounting info for input.
+  while (!input_ready_queue_.empty())
+    input_ready_queue_.pop();
+  free_input_buffers_.clear();
+  for (size_t i = 0; i < input_buffer_map_.size(); ++i) {
+    free_input_buffers_.push_back(i);
+    input_buffer_map_[i].at_device = false;
+    input_buffer_map_[i].bytes_used = 0;
+    input_buffer_map_[i].input_id = -1;
+  }
+  input_buffer_queued_count_ = 0;
+
+  return true;
+}
+
+void V4L2VideoDecodeAccelerator::StartResolutionChange() {
   DCHECK_EQ(decoder_thread_.message_loop(), base::MessageLoop::current());
   DCHECK_NE(decoder_state_, kUninitialized);
   DCHECK_NE(decoder_state_, kResetting);
 
-  if (!resolution_change_pending_)
-    return;
+  DVLOG(3) << "Initiate resolution change";
 
-  DVLOG(3) << "No more work, initiate resolution change";
-
-  // Keep input queue.
-  if (!StopDevicePoll(true))
+  if (!(StopDevicePoll() && StopOutputStream()))
     return;
 
   decoder_state_ = kChangingResolution;
-  DCHECK(resolution_change_pending_);
-  resolution_change_pending_ = false;
 
   // Post a task to clean up buffers on child thread. This will also ensure
   // that we won't accept ReusePictureBuffer() anymore after that.
@@ -1672,10 +1706,7 @@ bool V4L2VideoDecodeAccelerator::CreateBuffersForFormat(
            << coded_size_.ToString() << ", visible size: "
            << visible_size_.ToString();
 
-  if (!CreateOutputBuffers())
-    return false;
-
-  return true;
+  return CreateOutputBuffers();
 }
 
 gfx::Size V4L2VideoDecodeAccelerator::GetVisibleSize(
@@ -1780,6 +1811,24 @@ bool V4L2VideoDecodeAccelerator::SetupFormats() {
   else
     input_size = kInputBufferMaxSizeFor1080p;
 
+  struct v4l2_fmtdesc fmtdesc;
+  memset(&fmtdesc, 0, sizeof(fmtdesc));
+  fmtdesc.type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
+  bool is_format_supported = false;
+  while (device_->Ioctl(VIDIOC_ENUM_FMT, &fmtdesc) == 0) {
+    if (fmtdesc.pixelformat == input_format_fourcc) {
+      is_format_supported = true;
+      break;
+    }
+    ++fmtdesc.index;
+  }
+
+  if (!is_format_supported) {
+    DVLOG(1) << "Input fourcc " << input_format_fourcc
+             << " not supported by device.";
+    return false;
+  }
+
   struct v4l2_format format;
   memset(&format, 0, sizeof(format));
   format.type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
@@ -1791,7 +1840,6 @@ bool V4L2VideoDecodeAccelerator::SetupFormats() {
   // We have to set up the format for output, because the driver may not allow
   // changing it once we start streaming; whether it can support our chosen
   // output format or not may depend on the input format.
-  struct v4l2_fmtdesc fmtdesc;
   memset(&fmtdesc, 0, sizeof(fmtdesc));
   fmtdesc.type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
   while (device_->Ioctl(VIDIOC_ENUM_FMT, &fmtdesc) == 0) {
@@ -1833,22 +1881,13 @@ bool V4L2VideoDecodeAccelerator::CreateOutputBuffers() {
 
   // Output format setup in Initialize().
 
-  // Allocate the output buffers.
-  struct v4l2_requestbuffers reqbufs;
-  memset(&reqbufs, 0, sizeof(reqbufs));
-  reqbufs.count  = output_dpb_size_ + kDpbOutputBufferExtraCount;
-  reqbufs.type   = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
-  reqbufs.memory = V4L2_MEMORY_MMAP;
-  IOCTL_OR_ERROR_RETURN_FALSE(VIDIOC_REQBUFS, &reqbufs);
-
-  output_buffer_map_.resize(reqbufs.count);
-
+  const uint32_t buffer_count = output_dpb_size_ + kDpbOutputBufferExtraCount;
   DVLOG(3) << "CreateOutputBuffers(): ProvidePictureBuffers(): "
-           << "buffer_count=" << output_buffer_map_.size()
+           << "buffer_count=" << buffer_count
            << ", coded_size=" << coded_size_.ToString();
   child_task_runner_->PostTask(
       FROM_HERE, base::Bind(&Client::ProvidePictureBuffers, client_,
-                            output_buffer_map_.size(), coded_size_,
+                            buffer_count, coded_size_,
                             device_->GetTextureTarget()));
 
   // Wait for the client to call AssignPictureBuffers() on the Child thread.
@@ -2004,34 +2043,6 @@ void V4L2VideoDecodeAccelerator::PictureCleared() {
   DCHECK_GT(picture_clearing_count_, 0);
   picture_clearing_count_--;
   SendPictureReady();
-}
-
-bool V4L2VideoDecodeAccelerator::IsResolutionChangeNecessary() {
-  DVLOG(3) << "IsResolutionChangeNecessary() ";
-
-  struct v4l2_control ctrl;
-  memset(&ctrl, 0, sizeof(ctrl));
-  ctrl.id = V4L2_CID_MIN_BUFFERS_FOR_CAPTURE;
-  IOCTL_OR_ERROR_RETURN_FALSE(VIDIOC_G_CTRL, &ctrl);
-  if (ctrl.value != output_dpb_size_) {
-    DVLOG(3)
-        << "IsResolutionChangeNecessary(): Returning true since DPB mismatch ";
-    return true;
-  }
-  struct v4l2_format format;
-  bool again = false;
-  bool ret = GetFormatInfo(&format, nullptr, &again);
-  if (!ret || again) {
-    DVLOG(3) << "IsResolutionChangeNecessary(): GetFormatInfo() failed";
-    return false;
-  }
-  gfx::Size new_coded_size(base::checked_cast<int>(format.fmt.pix_mp.width),
-                           base::checked_cast<int>(format.fmt.pix_mp.height));
-  if (coded_size_ != new_coded_size) {
-    DVLOG(3) << "IsResolutionChangeNecessary(): Resolution change detected";
-    return true;
-  }
-  return false;
 }
 
 }  // namespace content

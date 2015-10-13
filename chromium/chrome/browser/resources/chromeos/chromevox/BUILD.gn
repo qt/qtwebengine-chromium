@@ -31,7 +31,6 @@ group("chromevox") {
   ]
   if (chromevox_compress_js) {
     deps += [
-      ":chromevox1_background_script",
       ":chromevox1_content_script",
       ":chromevox1_kbexplorer_script",
       ":chromevox1_options_script",
@@ -141,6 +140,8 @@ run_jsbundler("chromevox_copied_files") {
       chromevox_assets_gypi_values.chromevox_assets_chromevox_background_keymaps
   sources += chromevox_assets_gypi_values.chromevox_assets_chromevox_background_mathmaps_functions
   sources += chromevox_assets_gypi_values.chromevox_assets_chromevox_background_mathmaps_symbols
+  sources +=
+      chromevox_assets_gypi_values.chromevox_assets_cvox2_background_earcons
   sources += [
     "chromevox/background/background.html",
     "chromevox/background/kbexplorer.html",
@@ -154,7 +155,6 @@ run_jsbundler("chromevox_copied_files") {
     sources += chromevox_modules
     sources += [
       "closure/closure_preinit.js",
-      chromevox_vars_gypi_values.chromevox1_background_script_loader_file,
       chromevox_vars_gypi_values.chromevox1_content_script_loader_file,
       chromevox_vars_gypi_values.chromevox1_kbexplorer_loader_file,
       chromevox_vars_gypi_values.chromevox1_options_script_loader_file,
@@ -256,13 +256,6 @@ if (chromevox_compress_js) {
     }
   }
 
-  compress_js("chromevox1_background_script") {
-    sources = [
-      chromevox_vars_gypi_values.chromevox1_background_script_loader_file,
-    ]
-    output_file = "$chromevox_out_dir/chromeVoxChromeBackgroundScript.js"
-  }
-
   compress_js("chromevox1_content_script") {
     sources = [
       chromevox_vars_gypi_values.chromevox1_content_script_loader_file,
@@ -286,7 +279,6 @@ if (chromevox_compress_js) {
 
   compress_js("chromevox2_background_script") {
     sources = [
-      chromevox_vars_gypi_values.chromevox1_background_script_loader_file,
       chromevox_vars_gypi_values.chromevox2_background_script_loader_file,
     ]
     output_file = "$chromevox_out_dir/chromeVox2ChromeBackgroundScript.js"
@@ -377,6 +369,8 @@ generate_deps_js("chromevox_test_deps_js") {
 js2gtest("chromevox_unitjs_tests") {
   test_type = "webui"
   sources = chromevox_tests_gypi_values.chromevox_tests_unitjs_sources
+  gen_include_files =
+      chromevox_tests_gypi_values.chromevox_tests_unit_gen_include_sources
   test_deps_js_outputs = get_target_outputs(":chromevox_test_deps_js")
   deps_js = test_deps_js_outputs[0]
   deps = [
@@ -389,5 +383,7 @@ js2gtest("chromevox_extjs_tests") {
   test_type = "extension"
   sources = chromevox_tests_gypi_values.chromevox_tests_extjs_sources
   sources -= [ "braille/liblouis_test.extjs" ]  # TODO(GYP)
+  gen_include_files =
+      chromevox_tests_gypi_values.chromevox_tests_ext_gen_include_sources
   defines = [ "HAS_OUT_OF_PROC_TEST_RUNNER" ]
 }

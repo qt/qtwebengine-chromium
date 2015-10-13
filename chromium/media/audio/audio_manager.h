@@ -61,6 +61,15 @@ class MEDIA_EXPORT AudioManager {
   // called previously to start the hang monitor.  Does nothing on OSX.
   static void EnableHangMonitor();
 
+#if defined(OS_LINUX)
+  // Sets the name of the audio source as seen by external apps. Only actually
+  // used with PulseAudio as of this writing.
+  static void SetGlobalAppName(const std::string& app_name);
+
+  // Returns the app name or an empty string if it is not set.
+  static const std::string& GetGlobalAppName();
+#endif
+
   // Should only be used for testing. Resets a previously-set
   // AudioManagerFactory. The instance of AudioManager is not affected.
   static void ResetFactoryForTesting();
@@ -69,6 +78,13 @@ class MEDIA_EXPORT AudioManager {
   // created. This is a utility method for the code outside of media directory,
   // like src/chrome.
   static AudioManager* Get();
+
+  // Returns the localized name of the generic "default" device.
+  static std::string GetDefaultDeviceName();
+
+  // Returns the localized name of the generic default communications device.
+  // This device is not supported on all platforms.
+  static std::string GetCommunicationsDeviceName();
 
   // Returns true if the OS reports existence of audio devices. This does not
   // guarantee that the existing devices support all formats and sample rates.

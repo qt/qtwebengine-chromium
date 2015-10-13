@@ -264,21 +264,6 @@ TEST_F(AcmReceiverTestOldApi, DISABLED_ON_ANDROID(SampleRate)) {
   }
 }
 
-// Verify that the playout mode is set correctly.
-TEST_F(AcmReceiverTestOldApi, DISABLED_ON_ANDROID(PlayoutMode)) {
-  receiver_->SetPlayoutMode(voice);
-  EXPECT_EQ(voice, receiver_->PlayoutMode());
-
-  receiver_->SetPlayoutMode(streaming);
-  EXPECT_EQ(streaming, receiver_->PlayoutMode());
-
-  receiver_->SetPlayoutMode(fax);
-  EXPECT_EQ(fax, receiver_->PlayoutMode());
-
-  receiver_->SetPlayoutMode(off);
-  EXPECT_EQ(off, receiver_->PlayoutMode());
-}
-
 TEST_F(AcmReceiverTestOldApi, DISABLED_ON_ANDROID(PostdecodingVad)) {
   receiver_->EnableVad();
   EXPECT_TRUE(receiver_->vad_enabled());
@@ -307,7 +292,14 @@ TEST_F(AcmReceiverTestOldApi, DISABLED_ON_ANDROID(PostdecodingVad)) {
   EXPECT_EQ(AudioFrame::kVadUnknown, frame.vad_activity_);
 }
 
-TEST_F(AcmReceiverTestOldApi, DISABLED_ON_ANDROID(LastAudioCodec)) {
+#ifdef WEBRTC_CODEC_ISAC
+#define IF_ISAC_FLOAT(x) x
+#else
+#define IF_ISAC_FLOAT(x) DISABLED_##x
+#endif
+
+TEST_F(AcmReceiverTestOldApi,
+       DISABLED_ON_ANDROID(IF_ISAC_FLOAT(LastAudioCodec))) {
   const int kCodecId[] = {
       ACMCodecDB::kISAC, ACMCodecDB::kPCMA, ACMCodecDB::kISACSWB,
       ACMCodecDB::kPCM16Bswb32kHz,

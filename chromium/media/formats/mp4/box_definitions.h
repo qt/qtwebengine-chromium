@@ -12,6 +12,7 @@
 #include "base/compiler_specific.h"
 #include "media/base/media_export.h"
 #include "media/base/media_log.h"
+#include "media/base/video_codecs.h"
 #include "media/formats/mp4/aac.h"
 #include "media/formats/mp4/avc.h"
 #include "media/formats/mp4/box_reader.h"
@@ -185,7 +186,8 @@ struct MEDIA_EXPORT AVCDecoderConfigurationRecord : Box {
   std::vector<PPS> pps_list;
 
  private:
-  bool ParseInternal(BufferReader* reader, const LogCB& log_cb);
+  bool ParseInternal(BufferReader* reader,
+                     const scoped_refptr<MediaLog>& media_log);
 };
 
 struct MEDIA_EXPORT PixelAspectRatioBox : Box {
@@ -206,10 +208,12 @@ struct MEDIA_EXPORT VideoSampleEntry : Box {
   PixelAspectRatioBox pixel_aspect;
   ProtectionSchemeInfo sinf;
 
-  // Currently expected to be present regardless of format.
-  AVCDecoderConfigurationRecord avcc;
+  VideoCodec video_codec;
+  VideoCodecProfile video_codec_profile;
 
   bool IsFormatValid() const;
+
+  scoped_refptr<BitstreamConverter> frame_bitstream_converter;
 };
 
 struct MEDIA_EXPORT ElementaryStreamDescriptor : Box {
@@ -240,15 +244,20 @@ struct MEDIA_EXPORT SampleDescription : Box {
   std::vector<AudioSampleEntry> audio_entries;
 };
 
-struct MEDIA_EXPORT SyncSample : Box {
-  DECLARE_BOX_METHODS(SyncSample);
+struct MEDIA_EXPORT CencSampleEncryptionInfoEntry {
+  CencSampleEncryptionInfoEntry();
+  ~CencSampleEncryptionInfoEntry();
 
-  // Returns true if the |k|th sample is a sync sample (aka a random
-  // access point). Returns false if sample |k| is not a sync sample.
-  bool IsSyncSample(size_t k) const;
+  bool is_encrypted;
+  uint8 iv_size;
+  std::vector<uint8> key_id;
+};
 
-  bool is_present;
-  std::vector<uint32> entries;
+struct MEDIA_EXPORT SampleGroupDescription : Box {  // 'sgpd'.
+  DECLARE_BOX_METHODS(SampleGroupDescription);
+
+  uint32 grouping_type;
+  std::vector<CencSampleEncryptionInfoEntry> entries;
 };
 
 struct MEDIA_EXPORT SampleTable : Box {
@@ -259,7 +268,7 @@ struct MEDIA_EXPORT SampleTable : Box {
   // includes the 'stts', 'stsc', and 'stco' boxes, which must contain no
   // samples in order to be compliant files.
   SampleDescription description;
-  SyncSample sync_sample;
+  SampleGroupDescription sample_group_description;
 };
 
 struct MEDIA_EXPORT MediaHeader : Box {
@@ -383,22 +392,6 @@ class MEDIA_EXPORT IndependentAndDisposableSamples : public Box {
 
  private:
   std::vector<SampleDependsOn> sample_depends_on_;
-};
-
-struct MEDIA_EXPORT CencSampleEncryptionInfoEntry {
-  CencSampleEncryptionInfoEntry();
-  ~CencSampleEncryptionInfoEntry();
-
-  bool is_encrypted;
-  uint8 iv_size;
-  std::vector<uint8> key_id;
-};
-
-struct MEDIA_EXPORT SampleGroupDescription : Box {  // 'sgpd'.
-  DECLARE_BOX_METHODS(SampleGroupDescription);
-
-  uint32 grouping_type;
-  std::vector<CencSampleEncryptionInfoEntry> entries;
 };
 
 struct MEDIA_EXPORT SampleToGroupEntry {

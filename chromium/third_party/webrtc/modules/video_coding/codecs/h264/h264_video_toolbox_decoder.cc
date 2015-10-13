@@ -47,9 +47,9 @@ struct FrameDecodeParams {
 // instead once the pipeline supports it.
 rtc::scoped_refptr<webrtc::VideoFrameBuffer> VideoFrameBufferForPixelBuffer(
     CVPixelBufferRef pixel_buffer) {
-  DCHECK(pixel_buffer);
-  DCHECK(CVPixelBufferGetPixelFormatType(pixel_buffer) ==
-         kCVPixelFormatType_420YpCbCr8BiPlanarFullRange);
+  RTC_DCHECK(pixel_buffer);
+  RTC_DCHECK(CVPixelBufferGetPixelFormatType(pixel_buffer) ==
+             kCVPixelFormatType_420YpCbCr8BiPlanarFullRange);
   size_t width = CVPixelBufferGetWidthOfPlane(pixel_buffer, 0);
   size_t height = CVPixelBufferGetHeightOfPlane(pixel_buffer, 0);
   // TODO(tkchin): Use a frame buffer pool.
@@ -64,9 +64,9 @@ rtc::scoped_refptr<webrtc::VideoFrameBuffer> VideoFrameBufferForPixelBuffer(
   int src_uv_stride = CVPixelBufferGetBytesPerRowOfPlane(pixel_buffer, 1);
   int ret = libyuv::NV12ToI420(
       src_y, src_y_stride, src_uv, src_uv_stride,
-      buffer->data(webrtc::kYPlane), buffer->stride(webrtc::kYPlane),
-      buffer->data(webrtc::kUPlane), buffer->stride(webrtc::kUPlane),
-      buffer->data(webrtc::kVPlane), buffer->stride(webrtc::kVPlane),
+      buffer->MutableData(webrtc::kYPlane), buffer->stride(webrtc::kYPlane),
+      buffer->MutableData(webrtc::kUPlane), buffer->stride(webrtc::kUPlane),
+      buffer->MutableData(webrtc::kVPlane), buffer->stride(webrtc::kVPlane),
       width, height);
   CVPixelBufferUnlockBaseAddress(pixel_buffer, kCVPixelBufferLock_ReadOnly);
   if (ret) {
@@ -125,7 +125,7 @@ int H264VideoToolboxDecoder::Decode(
     const RTPFragmentationHeader* fragmentation,
     const CodecSpecificInfo* codec_specific_info,
     int64_t render_time_ms) {
-  DCHECK(input_image._buffer);
+  RTC_DCHECK(input_image._buffer);
 
   CMSampleBufferRef sample_buffer = nullptr;
   if (!H264AnnexBBufferToCMSampleBuffer(input_image._buffer,
@@ -134,7 +134,7 @@ int H264VideoToolboxDecoder::Decode(
                                         &sample_buffer)) {
     return WEBRTC_VIDEO_CODEC_ERROR;
   }
-  DCHECK(sample_buffer);
+  RTC_DCHECK(sample_buffer);
   // Check if the video format has changed, and reinitialize decoder if needed.
   CMVideoFormatDescriptionRef description =
       CMSampleBufferGetFormatDescription(sample_buffer);
@@ -160,7 +160,7 @@ int H264VideoToolboxDecoder::Decode(
 
 int H264VideoToolboxDecoder::RegisterDecodeCompleteCallback(
     DecodedImageCallback* callback) {
-  DCHECK(!callback_);
+  RTC_DCHECK(!callback_);
   callback_ = callback;
   return WEBRTC_VIDEO_CODEC_OK;
 }
@@ -238,7 +238,7 @@ int H264VideoToolboxDecoder::ResetDecompressionSession() {
 }
 
 void H264VideoToolboxDecoder::ConfigureDecompressionSession() {
-  DCHECK(decompression_session_);
+  RTC_DCHECK(decompression_session_);
 #if defined(WEBRTC_IOS)
   VTSessionSetProperty(decompression_session_,
                        kVTDecompressionPropertyKey_RealTime, kCFBooleanTrue);

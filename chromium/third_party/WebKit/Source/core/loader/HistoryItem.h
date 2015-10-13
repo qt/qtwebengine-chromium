@@ -41,7 +41,7 @@ namespace blink {
 
 class Document;
 class DocumentState;
-class FormData;
+class EncodedFormData;
 class KURL;
 class ResourceRequest;
 
@@ -59,11 +59,11 @@ public:
     const Referrer& referrer() const;
     const String& target() const;
 
-    FormData* formData();
+    EncodedFormData* formData();
     const AtomicString& formContentType() const;
 
-    const FloatPoint& pinchViewportScrollPoint() const;
-    void setPinchViewportScrollPoint(const FloatPoint&);
+    const FloatPoint& visualViewportScrollPoint() const;
+    void setVisualViewportScrollPoint(const FloatPoint&);
     const IntPoint& scrollPoint() const;
     void setScrollPoint(const IntPoint&);
 
@@ -94,7 +94,7 @@ public:
     HistoryScrollRestorationType scrollRestorationType() { return m_scrollRestorationType; }
 
     void setFormInfoFromRequest(const ResourceRequest&);
-    void setFormData(PassRefPtr<FormData>);
+    void setFormData(PassRefPtr<EncodedFormData>);
     void setFormContentType(const AtomicString&);
 
     bool isCurrentDocument(Document*) const;
@@ -108,7 +108,7 @@ private:
     Referrer m_referrer;
     String m_target;
 
-    FloatPoint m_pinchViewportScrollPoint;
+    FloatPoint m_visualViewportScrollPoint;
     IntPoint m_scrollPoint;
     float m_pageScaleFactor;
     Vector<String> m_documentStateVector;
@@ -133,7 +133,7 @@ private:
     RefPtr<SerializedScriptValue> m_stateObject;
 
     // info used to repost form data
-    RefPtr<FormData> m_formData;
+    RefPtr<EncodedFormData> m_formData;
     AtomicString m_formContentType;
 
 }; // class HistoryItem

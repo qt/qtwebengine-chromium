@@ -6,42 +6,37 @@
 #define WebBluetooth_h
 
 #include "public/platform/WebCallbacks.h"
+#include "public/platform/WebPassOwnPtr.h"
 #include "public/platform/WebString.h"
 #include "public/platform/WebVector.h"
+#include "public/platform/modules/bluetooth/WebBluetoothError.h"
 #include <vector>
 
 namespace blink {
 
 struct WebBluetoothDevice;
-struct WebBluetoothError;
-struct WebBluetoothGATTCharacteristic;
+struct WebBluetoothGATTCharacteristicInit;
 struct WebBluetoothGATTRemoteServer;
 struct WebBluetoothGATTService;
 struct WebRequestDeviceOptions;
 
 // Success and failure callbacks for requestDevice.
-// WebBluetoothDevice and WebBluetoothError object ownership is transferred.
-typedef WebCallbacks<WebBluetoothDevice, WebBluetoothError> WebBluetoothRequestDeviceCallbacks;
+using WebBluetoothRequestDeviceCallbacks = WebCallbacks<WebPassOwnPtr<WebBluetoothDevice>, const WebBluetoothError&>;
 
 // Success and failure callbacks for connectGATT.
-// WebBluetoothGATTRemoteServer and WebBluetoothError object ownership is transferred.
-typedef WebCallbacks<WebBluetoothGATTRemoteServer, WebBluetoothError> WebBluetoothConnectGATTCallbacks;
+using WebBluetoothConnectGATTCallbacks = WebCallbacks<WebPassOwnPtr<WebBluetoothGATTRemoteServer>, const WebBluetoothError&>;
 
 // Success and failure callbacks for getPrimaryService.
-// WebBluetoothGATTService and WebBluetoothError object ownership is transferred.
-typedef WebCallbacks<WebBluetoothGATTService, WebBluetoothError> WebBluetoothGetPrimaryServiceCallbacks;
+using WebBluetoothGetPrimaryServiceCallbacks = WebCallbacks<WebPassOwnPtr<WebBluetoothGATTService>, const WebBluetoothError&>;
 
 // Success and failure callbacks for getCharacteristic.
-// WebBluetoothCharacteristic and WebBluetoothError object ownership is transferred.
-typedef WebCallbacks<WebBluetoothGATTCharacteristic, WebBluetoothError> WebBluetoothGetCharacteristicCallbacks;
+using WebBluetoothGetCharacteristicCallbacks = WebCallbacks<WebPassOwnPtr<WebBluetoothGATTCharacteristicInit>, const WebBluetoothError&>;
 
 // Success and failure callbacks for readValue.
-// WebVector and WebBluetoothError object ownership is transferred.
-typedef WebCallbacks<WebVector<uint8_t>, WebBluetoothError> WebBluetoothReadValueCallbacks;
+using WebBluetoothReadValueCallbacks = WebCallbacks<const WebVector<uint8_t>&, const WebBluetoothError&>;
 
 // Success and failure callbacks for writeValue.
-// WebBluetoothError object ownership is transferred.
-typedef WebCallbacks<void, WebBluetoothError> WebBluetoothWriteValueCallbacks;
+using WebBluetoothWriteValueCallbacks = WebCallbacks<void, const WebBluetoothError&>;
 
 class WebBluetooth {
 public:

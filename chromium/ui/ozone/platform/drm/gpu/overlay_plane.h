@@ -9,6 +9,7 @@
 
 #include "base/memory/ref_counted.h"
 #include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/geometry/rect_f.h"
 #include "ui/gfx/overlay_transform.h"
 #include "ui/ozone/ozone_export.h"
 
@@ -21,9 +22,9 @@ typedef std::vector<OverlayPlane> OverlayPlaneList;
 
 struct OZONE_EXPORT OverlayPlane {
   // Simpler constructor for the primary plane.
-  explicit OverlayPlane(scoped_refptr<ScanoutBuffer> buffer);
+  explicit OverlayPlane(const scoped_refptr<ScanoutBuffer>& buffer);
 
-  OverlayPlane(scoped_refptr<ScanoutBuffer> buffer,
+  OverlayPlane(const scoped_refptr<ScanoutBuffer>& buffer,
                int z_order,
                gfx::OverlayTransform plane_transform,
                const gfx::Rect& display_bounds,

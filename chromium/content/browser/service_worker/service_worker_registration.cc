@@ -8,7 +8,7 @@
 #include "content/browser/service_worker/service_worker_info.h"
 #include "content/browser/service_worker/service_worker_metrics.h"
 #include "content/browser/service_worker/service_worker_register_job.h"
-#include "content/browser/service_worker/service_worker_utils.h"
+#include "content/common/service_worker/service_worker_utils.h"
 #include "content/public/browser/browser_thread.h"
 
 namespace content {
@@ -33,6 +33,7 @@ ServiceWorkerRegistration::ServiceWorkerRegistration(
       is_uninstalling_(false),
       is_uninstalled_(false),
       should_activate_when_ready_(false),
+      force_update_on_page_load_(false),
       resources_total_size_bytes_(0),
       context_(context) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
@@ -79,6 +80,8 @@ ServiceWorkerRegistrationInfo ServiceWorkerRegistration::GetInfo() {
       pattern(), registration_id_,
       is_deleted_ ? ServiceWorkerRegistrationInfo::IS_DELETED
                   : ServiceWorkerRegistrationInfo::IS_NOT_DELETED,
+      force_update_on_page_load_ ? ServiceWorkerRegistrationInfo::IS_FORCED
+                                 : ServiceWorkerRegistrationInfo::IS_NOT_FORCED,
       GetVersionInfo(active_version_.get()),
       GetVersionInfo(waiting_version_.get()),
       GetVersionInfo(installing_version_.get()), resources_total_size_bytes_);

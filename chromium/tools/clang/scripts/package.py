@@ -58,6 +58,13 @@ def PrintTarProgress(tarinfo):
 
 
 def main():
+  if sys.platform == 'win32':
+    try:
+      subprocess.check_output(['grep', '--help'], shell=True)
+    except subprocess.CalledProcessError:
+      print 'Add gnuwin32 to your PATH, then try again.'
+      return 1
+
   parser = argparse.ArgumentParser(description='build and package clang')
   parser.add_argument('--gcc-toolchain',
                       help="the prefix for the GCC version used for building. "
@@ -118,11 +125,13 @@ def main():
   exe_ext = '.exe' if sys.platform == 'win32' else ''
   want = ['bin/llvm-symbolizer' + exe_ext,
           'lib/clang/*/asan_blacklist.txt',
+          'lib/clang/*/cfi_blacklist.txt',
           # Copy built-in headers (lib/clang/3.x.y/include).
           'lib/clang/*/include/*',
           ]
   if sys.platform == 'win32':
     want.append('bin/clang-cl.exe')
+    want.append('bin/lld-link.exe')
   else:
     so_ext = 'dylib' if sys.platform == 'darwin' else 'so'
     want.extend(['bin/clang',

@@ -16,7 +16,6 @@
 #include "core/fetch/ResourcePtr.h"
 #include "core/fetch/StyleSheetResourceClient.h"
 #include "core/frame/LocalFrame.h"
-#include "core/html/VoidCallback.h"
 #include "core/inspector/InspectorCSSAgent.h"
 #include "core/inspector/InspectorPageAgent.h"
 #include "core/page/Page.h"
@@ -42,8 +41,8 @@ public:
 private:
     InspectorResourceContentLoader* m_loader;
 
-    virtual void setCSSStyleSheet(const String&, const KURL&, const String&, const CSSStyleSheetResource*) override;
-    virtual void notifyFinished(Resource*) override;
+    void setCSSStyleSheet(const String&, const KURL&, const String&, const CSSStyleSheetResource*) override;
+    void notifyFinished(Resource*) override;
     void resourceFinished(Resource*);
 
     friend class InspectorResourceContentLoader;
@@ -145,7 +144,7 @@ void InspectorResourceContentLoader::start()
     checkDone();
 }
 
-void InspectorResourceContentLoader::ensureResourcesContentLoaded(VoidCallback* callback)
+void InspectorResourceContentLoader::ensureResourcesContentLoaded(PassOwnPtr<Closure> callback)
 {
     if (!m_started)
         start();
@@ -160,7 +159,6 @@ InspectorResourceContentLoader::~InspectorResourceContentLoader()
 
 DEFINE_TRACE(InspectorResourceContentLoader)
 {
-    visitor->trace(m_callbacks);
     visitor->trace(m_inspectedFrame);
 }
 
@@ -168,6 +166,11 @@ void InspectorResourceContentLoader::didCommitLoadForLocalFrame(LocalFrame* fram
 {
     if (frame == m_inspectedFrame)
         stop();
+}
+
+void InspectorResourceContentLoader::dispose()
+{
+    stop();
 }
 
 void InspectorResourceContentLoader::stop()
@@ -192,10 +195,10 @@ void InspectorResourceContentLoader::checkDone()
 {
     if (!hasFinished())
         return;
-    PersistentHeapVectorWillBeHeapVector<Member<VoidCallback> > callbacks;
+    Vector<OwnPtr<Closure>> callbacks;
     callbacks.swap(m_callbacks);
     for (const auto& callback : callbacks)
-        callback->handleEvent();
+        (*callback)();
 }
 
 void InspectorResourceContentLoader::resourceFinished(ResourceClient* client)

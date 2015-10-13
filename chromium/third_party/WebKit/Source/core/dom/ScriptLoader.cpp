@@ -229,7 +229,7 @@ bool ScriptLoader::prepareScript(const TextPosition& scriptStartPosition, Legacy
     if (!client->charsetAttributeValue().isEmpty())
         m_characterEncoding = client->charsetAttributeValue();
     else
-        m_characterEncoding = elementDocument.charset();
+        m_characterEncoding = elementDocument.characterSet();
 
     if (client->hasSourceAttribute()) {
         FetchRequest::DeferOption defer = FetchRequest::NoDefer;
@@ -378,6 +378,24 @@ bool ScriptLoader::executeScript(const ScriptSourceCode& sourceCode, double* com
         }
     }
 
+    // The following SRI checks need to be here because, unfortunately, fetches
+    // are not done purely according to the Fetch spec. In particular,
+    // different requests for the same resource do not have different
+    // responses; the memory cache can (and will) return the exact same
+    // Resource object.  For different requests, the same Resource object will
+    // be returned and will not be associated with the particular request.
+    // Therefore, when the body of the response comes in, there's no way to
+    // validate the integrity of the Resource object against a particular
+    // request (since there may be several pending requests all tied to the
+    // identical object, and the actual requests are not stored).
+    //
+    // In order to simulate the correct behavior, Blink explicitly does the SRI
+    // checks at execution here (similar to the AccessControlStatus check done
+    // above), while having proper Fetch checks in the fetch module for use in
+    // the fetch JavaScript API. In a future world where the ResourceFetcher
+    // uses the Fetch algorithm, this should be fixed by having separate
+    // Response objects (perhaps attached to identical Resource objects) per
+    // request.  See https://crbug.com/500701 for more information.
     if (m_isExternalScript) {
         const KURL resourceUrl = sourceCode.resource()->resourceRequest().url();
         if (!SubresourceIntegrity::CheckSubresourceIntegrity(*m_element, sourceCode.source(), sourceCode.resource()->url(), *sourceCode.resource())) {
@@ -464,16 +482,14 @@ bool ScriptLoader::isScriptForEventSupported() const
 {
     String eventAttribute = client()->eventAttributeValue();
     String forAttribute = client()->forAttributeValue();
-    if (!eventAttribute.isEmpty() && !forAttribute.isEmpty()) {
-        forAttribute = forAttribute.stripWhiteSpace();
-        if (!equalIgnoringCase(forAttribute, "window"))
-            return false;
+    if (eventAttribute.isNull() || forAttribute.isNull())
+        return true;
 
-        eventAttribute = eventAttribute.stripWhiteSpace();
-        if (!equalIgnoringCase(eventAttribute, "onload") && !equalIgnoringCase(eventAttribute, "onload()"))
-            return false;
-    }
-    return true;
+    forAttribute = forAttribute.stripWhiteSpace();
+    if (!equalIgnoringCase(forAttribute, "window"))
+        return false;
+    eventAttribute = eventAttribute.stripWhiteSpace();
+    return equalIgnoringCase(eventAttribute, "onload") || equalIgnoringCase(eventAttribute, "onload()");
 }
 
 String ScriptLoader::scriptContent() const

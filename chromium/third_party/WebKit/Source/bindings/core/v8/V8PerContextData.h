@@ -38,6 +38,7 @@
 #include "core/CoreExport.h"
 #include "gin/public/context_holder.h"
 #include "gin/public/gin_embedders.h"
+#include "wtf/Allocator.h"
 #include "wtf/HashMap.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/Vector.h"
@@ -59,6 +60,8 @@ enum V8ContextEmbedderDataField {
 };
 
 class CORE_EXPORT V8PerContextData final {
+    WTF_MAKE_FAST_ALLOCATED(V8PerContextData);
+    WTF_MAKE_NONCOPYABLE(V8PerContextData);
 public:
     static PassOwnPtr<V8PerContextData> create(v8::Local<v8::Context>);
 
@@ -79,8 +82,8 @@ public:
 
     v8::Local<v8::Function> constructorForType(const WrapperTypeInfo* type)
     {
-        v8::Local<v8::Function> function = m_constructorMap.Get(type);
-        return (!function.IsEmpty()) ? function : constructorForTypeSlowCase(type);
+        v8::Local<v8::Function> interfaceObject = m_constructorMap.Get(type);
+        return (!interfaceObject.IsEmpty()) ? interfaceObject : constructorForTypeSlowCase(type);
     }
 
     v8::Local<v8::Object> prototypeForType(const WrapperTypeInfo*);

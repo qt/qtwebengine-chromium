@@ -15,31 +15,29 @@
 #include <vector>
 
 #include "webrtc/call.h"
+#include "webrtc/call/transport_adapter.h"
 #include "webrtc/common_video/libyuv/include/webrtc_libyuv.h"
 #include "webrtc/modules/rtp_rtcp/interface/rtp_rtcp_defines.h"
+#include "webrtc/system_wrappers/interface/critical_section_wrapper.h"
 #include "webrtc/video/encoded_frame_callback_adapter.h"
 #include "webrtc/video/send_statistics_proxy.h"
-#include "webrtc/video/transport_adapter.h"
 #include "webrtc/video/video_capture_input.h"
 #include "webrtc/video_receive_stream.h"
 #include "webrtc/video_send_stream.h"
-#include "webrtc/system_wrappers/interface/critical_section_wrapper.h"
 
 namespace webrtc {
 
 class ChannelGroup;
-class CpuOveruseObserver;
 class ProcessThread;
 class ViEChannel;
 class ViEEncoder;
 
 namespace internal {
 
-class VideoSendStream : public webrtc::VideoSendStream {
+class VideoSendStream : public webrtc::VideoSendStream,
+                        public webrtc::CpuOveruseObserver {
  public:
-  VideoSendStream(newapi::Transport* transport,
-                  CpuOveruseObserver* overuse_observer,
-                  int num_cpu_cores,
+  VideoSendStream(int num_cpu_cores,
                   ProcessThread* module_process_thread,
                   ChannelGroup* channel_group,
                   int channel_id,
@@ -47,23 +45,25 @@ class VideoSendStream : public webrtc::VideoSendStream {
                   const VideoEncoderConfig& encoder_config,
                   const std::map<uint32_t, RtpState>& suspended_ssrcs);
 
-  virtual ~VideoSendStream();
+  ~VideoSendStream() override;
 
-  VideoCaptureInput* Input() override;
-
+  // webrtc::SendStream implementation.
   void Start() override;
   void Stop() override;
+  void SignalNetworkState(NetworkState state) override;
+  bool DeliverRtcp(const uint8_t* packet, size_t length) override;
 
+  // webrtc::VideoSendStream implementation.
+  VideoCaptureInput* Input() override;
   bool ReconfigureVideoEncoder(const VideoEncoderConfig& config) override;
-
   Stats GetStats() override;
 
-  bool DeliverRtcp(const uint8_t* packet, size_t length);
+  // webrtc::CpuOveruseObserver implementation.
+  void OveruseDetected() override;
+  void NormalUsage() override;
 
   typedef std::map<uint32_t, RtpState> RtpStateMap;
   RtpStateMap GetRtpStates() const;
-
-  void SignalNetworkState(Call::NetworkState state);
 
   int64_t GetRtt() const;
 

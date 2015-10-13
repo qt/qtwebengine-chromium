@@ -6,9 +6,8 @@
 #include "base/command_line.h"
 #include "base/debug/debugger.h"
 #include "base/debug/leak_annotations.h"
-#include "base/debug/stack_trace.h"
+#include "base/feature_list.h"
 #include "base/i18n/rtl.h"
-#include "base/memory/ref_counted.h"
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
@@ -17,9 +16,9 @@
 #include "base/strings/string_util.h"
 #include "base/sys_info.h"
 #include "base/threading/platform_thread.h"
-#include "base/time/time.h"
 #include "base/timer/hi_res_timer_manager.h"
 #include "base/trace_event/trace_event.h"
+#include "components/scheduler/renderer/renderer_scheduler.h"
 #include "content/child/child_process.h"
 #include "content/common/content_constants_internal.h"
 #include "content/public/common/content_switches.h"
@@ -28,11 +27,11 @@
 #include "content/renderer/render_process_impl.h"
 #include "content/renderer/render_thread_impl.h"
 #include "content/renderer/renderer_main_platform_delegate.h"
+#include "third_party/skia/include/core/SkGraphics.h"
 #include "ui/base/ui_base_switches.h"
 
 #if defined(OS_ANDROID)
 #include "base/android/library_loader/library_loader_hooks.h"
-#include "third_party/skia/include/core/SkGraphics.h"
 #endif  // OS_ANDROID
 
 #if defined(OS_MACOSX)
@@ -53,6 +52,10 @@
 #include "third_party/libjingle/overrides/init_webrtc.h"
 #endif
 
+#if defined(USE_OZONE)
+#include "ui/ozone/public/client_native_pixmap_factory.h"
+#endif
+
 namespace content {
 namespace {
 // This function provides some ways to test crash and assertion handling
@@ -66,30 +69,10 @@ static void HandleRendererErrorTestParameters(
     ChildProcess::WaitForDebugger("Renderer");
 }
 
-// This is a simplified version of the browser Jankometer, which measures
-// the processing time of tasks on the render thread.
-class RendererMessageLoopObserver : public base::MessageLoop::TaskObserver {
- public:
-  RendererMessageLoopObserver()
-      : process_times_(base::Histogram::FactoryGet(
-            "Chrome.ProcMsgL RenderThread",
-            1, 3600000, 50, base::Histogram::kUmaTargetedHistogramFlag)) {}
-  ~RendererMessageLoopObserver() override {}
-
-  void WillProcessTask(const base::PendingTask& pending_task) override {
-    begin_process_message_ = base::TimeTicks::Now();
-  }
-
-  void DidProcessTask(const base::PendingTask& pending_task) override {
-    if (!begin_process_message_.is_null())
-      process_times_->AddTime(base::TimeTicks::Now() - begin_process_message_);
-  }
-
- private:
-  base::TimeTicks begin_process_message_;
-  base::HistogramBase* const process_times_;
-  DISALLOW_COPY_AND_ASSIGN(RendererMessageLoopObserver);
-};
+#if defined(USE_OZONE)
+base::LazyInstance<scoped_ptr<ui::ClientNativePixmapFactory>> g_pixmap_factory =
+    LAZY_INSTANCE_INITIALIZER;
+#endif
 
 }  // namespace
 
@@ -118,11 +101,17 @@ int RendererMain(const MainFunctionParams& parameters) {
   }
 #endif
 
+  SkGraphics::Init();
 #if defined(OS_ANDROID)
   const int kMB = 1024 * 1024;
   size_t font_cache_limit =
       base::SysInfo::IsLowEndDevice() ? kMB : 8 * kMB;
   SkGraphics::SetFontCacheLimit(font_cache_limit);
+#endif
+
+#if defined(USE_OZONE)
+  g_pixmap_factory.Get() = ui::ClientNativePixmapFactory::Create();
+  ui::ClientNativePixmapFactory::SetInstance(g_pixmap_factory.Get().get());
 #endif
 
   // This function allows pausing execution using the --renderer-startup-dialog
@@ -132,7 +121,6 @@ int RendererMain(const MainFunctionParams& parameters) {
   HandleRendererErrorTestParameters(parsed_command_line);
 
   RendererMainPlatformDelegate platform(parameters);
-  RendererMessageLoopObserver task_observer;
 #if defined(OS_MACOSX)
   // As long as scrollbars on Mac are painted with Cocoa, the message pump
   // needs to be backed by a Foundation-level loop to process NSTimers. See
@@ -144,9 +132,10 @@ int RendererMain(const MainFunctionParams& parameters) {
   // The main message loop of the renderer services doesn't have IO or UI tasks.
   scoped_ptr<base::MessageLoop> main_message_loop(new base::MessageLoop());
 #endif
-  main_message_loop->AddTaskObserver(&task_observer);
 
   base::PlatformThread::SetName("CrRendererMain");
+  scoped_ptr<scheduler::RendererScheduler> renderer_scheduler(
+      scheduler::RendererScheduler::Create());
 
   bool no_sandbox = parsed_command_line.HasSwitch(switches::kNoSandbox);
 
@@ -171,6 +160,12 @@ int RendererMain(const MainFunctionParams& parameters) {
     DCHECK(result);
   }
 
+  scoped_ptr<base::FeatureList> feature_list(new base::FeatureList);
+  feature_list->InitializeFromCommandLine(
+      parsed_command_line.GetSwitchValueASCII(switches::kEnableFeatures),
+      parsed_command_line.GetSwitchValueASCII(switches::kDisableFeatures));
+  base::FeatureList::SetInstance(feature_list.Pass());
+
   // PlatformInitialize uses FieldTrials, so this must happen later.
   platform.PlatformInitialize();
 
@@ -191,23 +186,16 @@ int RendererMain(const MainFunctionParams& parameters) {
     // TODO(markus): Check if it is OK to unconditionally move this
     // instruction down.
     RenderProcessImpl render_process;
-    new RenderThreadImpl(main_message_loop.Pass());
+    RenderThreadImpl::Create(main_message_loop.Pass(),
+                             renderer_scheduler.Pass());
 #endif
     bool run_loop = true;
-    if (!no_sandbox) {
+    if (!no_sandbox)
       run_loop = platform.EnableSandbox();
-    } else {
-      LOG(ERROR) << "Running without renderer sandbox";
-#ifndef NDEBUG
-      // For convenience, we print the stack traces for crashes.  When sandbox
-      // is enabled, the in-process stack dumping is enabled as part of the
-      // EnableSandbox() call.
-      base::debug::EnableInProcessStackDumping();
-#endif
-    }
 #if defined(OS_POSIX) && !defined(OS_MACOSX)
     RenderProcessImpl render_process;
-    new RenderThreadImpl(main_message_loop.Pass());
+    RenderThreadImpl::Create(main_message_loop.Pass(),
+                             renderer_scheduler.Pass());
 #endif
     base::HighResolutionTimerManager hi_res_timer_manager;
 

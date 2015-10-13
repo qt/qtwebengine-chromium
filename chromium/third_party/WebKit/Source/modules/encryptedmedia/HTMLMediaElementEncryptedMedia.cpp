@@ -50,7 +50,6 @@ static void throwExceptionIfMediaKeyExceptionOccurred(const String& keySystem, c
 // This class allows MediaKeys to be set asynchronously.
 class SetMediaKeysHandler : public ScriptPromiseResolver {
     WTF_MAKE_NONCOPYABLE(SetMediaKeysHandler);
-
 public:
     static ScriptPromise create(ScriptState*, HTMLMediaElement&, MediaKeys*);
     ~SetMediaKeysHandler() override;
@@ -72,8 +71,8 @@ private:
 
     // Keep media element alive until promise is fulfilled
     RefPtrWillBeMember<HTMLMediaElement> m_element;
-    PersistentWillBeMember<MediaKeys> m_newMediaKeys;
-    bool m_tookOwnership;
+    Member<MediaKeys> m_newMediaKeys;
+    bool m_madeReservation;
     Timer<SetMediaKeysHandler> m_timer;
 };
 
@@ -128,7 +127,7 @@ private:
 
 ScriptPromise SetMediaKeysHandler::create(ScriptState* scriptState, HTMLMediaElement& element, MediaKeys* mediaKeys)
 {
-    RefPtrWillBeRawPtr<SetMediaKeysHandler> handler = adoptRefWillBeNoop(new SetMediaKeysHandler(scriptState, element, mediaKeys));
+    SetMediaKeysHandler* handler = new SetMediaKeysHandler(scriptState, element, mediaKeys);
     handler->suspendIfNeeded();
     handler->keepAliveWhilePending();
     return handler->promise();
@@ -138,7 +137,7 @@ SetMediaKeysHandler::SetMediaKeysHandler(ScriptState* scriptState, HTMLMediaElem
     : ScriptPromiseResolver(scriptState)
     , m_element(element)
     , m_newMediaKeys(mediaKeys)
-    , m_tookOwnership(false)
+    , m_madeReservation(false)
     , m_timer(this, &SetMediaKeysHandler::timerFired)
 {
     WTF_LOG(Media, "SetMediaKeysHandler::SetMediaKeysHandler");
@@ -166,13 +165,13 @@ void SetMediaKeysHandler::clearExistingMediaKeys()
     //     reject promise with a new DOMException whose name is
     //     "QuotaExceededError".
     if (m_newMediaKeys) {
-        if (!m_newMediaKeys->setMediaElement(m_element.get())) {
+        if (!m_newMediaKeys->reserveForMediaElement(m_element.get())) {
             fail(QuotaExceededError, "The MediaKeys object is already in use by another media element.");
             return;
         }
-        // Note that |m_newMediaKeys| is considered owned by |m_element|, so
-        // it needs to be reset if any of these steps fail.
-        m_tookOwnership = true;
+        // Note that |m_newMediaKeys| is now considered reserved for
+        // |m_element|, so it needs to be accepted or cancelled.
+        m_madeReservation = true;
     }
 
     // 3.2 If the mediaKeys attribute is not null, run the following steps:
@@ -242,6 +241,8 @@ void SetMediaKeysHandler::finish()
     if (thisElement.m_mediaKeys)
         thisElement.m_mediaKeys->clearMediaElement();
     thisElement.m_mediaKeys = m_newMediaKeys;
+    if (m_madeReservation)
+        m_newMediaKeys->acceptReservation();
 
     // 3.5 Resolve promise with undefined.
     resolve();
@@ -250,8 +251,8 @@ void SetMediaKeysHandler::finish()
 void SetMediaKeysHandler::fail(ExceptionCode code, const String& errorMessage)
 {
     // Reset ownership of |m_newMediaKeys|.
-    if (m_tookOwnership)
-        m_newMediaKeys->clearMediaElement();
+    if (m_madeReservation)
+        m_newMediaKeys->cancelReservation();
 
     // Reject promise with an appropriate error.
     reject(DOMException::create(code, errorMessage));
@@ -290,20 +291,21 @@ DEFINE_TRACE(SetMediaKeysHandler)
     ScriptPromiseResolver::trace(visitor);
 }
 
-HTMLMediaElementEncryptedMedia::HTMLMediaElementEncryptedMedia()
-    : m_emeMode(EmeModeNotSelected)
+HTMLMediaElementEncryptedMedia::HTMLMediaElementEncryptedMedia(HTMLMediaElement& element)
+    : m_mediaElement(&element)
+    , m_emeMode(EmeModeNotSelected)
     , m_isWaitingForKey(false)
 {
 }
 
-#if !ENABLE(OILPAN)
 HTMLMediaElementEncryptedMedia::~HTMLMediaElementEncryptedMedia()
 {
+#if !ENABLE(OILPAN)
     WTF_LOG(Media, "HTMLMediaElementEncryptedMedia::~HTMLMediaElementEncryptedMedia");
     if (m_mediaKeys)
         m_mediaKeys->clearMediaElement();
-}
 #endif
+}
 
 const char* HTMLMediaElementEncryptedMedia::supplementName()
 {
@@ -314,7 +316,7 @@ HTMLMediaElementEncryptedMedia& HTMLMediaElementEncryptedMedia::from(HTMLMediaEl
 {
     HTMLMediaElementEncryptedMedia* supplement = static_cast<HTMLMediaElementEncryptedMedia*>(WillBeHeapSupplement<HTMLMediaElement>::from(element, supplementName()));
     if (!supplement) {
-        supplement = new HTMLMediaElementEncryptedMedia();
+        supplement = new HTMLMediaElementEncryptedMedia(element);
         provideTo(element, supplementName(), adoptPtrWillBeNoop(supplement));
     }
     return *supplement;
@@ -327,11 +329,6 @@ bool HTMLMediaElementEncryptedMedia::setEmeMode(EmeMode emeMode)
 
     m_emeMode = emeMode;
     return true;
-}
-
-WebContentDecryptionModule* HTMLMediaElementEncryptedMedia::contentDecryptionModule()
-{
-    return m_mediaKeys ? m_mediaKeys->contentDecryptionModule() : 0;
 }
 
 MediaKeys* HTMLMediaElementEncryptedMedia::mediaKeys(HTMLMediaElement& element)
@@ -496,7 +493,7 @@ void HTMLMediaElementEncryptedMedia::cancelKeyRequest(WebMediaPlayer* webMediaPl
     throwExceptionIfMediaKeyExceptionOccurred(keySystem, sessionId, result, exceptionState);
 }
 
-void HTMLMediaElementEncryptedMedia::keyAdded(HTMLMediaElement& element, const String& keySystem, const String& sessionId)
+void HTMLMediaElementEncryptedMedia::keyAdded(const WebString& keySystem, const WebString& sessionId)
 {
     WTF_LOG(Media, "HTMLMediaElementEncryptedMedia::mediaPlayerKeyAdded");
 
@@ -505,32 +502,32 @@ void HTMLMediaElementEncryptedMedia::keyAdded(HTMLMediaElement& element, const S
     initializer.setSessionId(sessionId);
 
     RefPtrWillBeRawPtr<Event> event = MediaKeyEvent::create(EventTypeNames::webkitkeyadded, initializer);
-    event->setTarget(&element);
-    element.scheduleEvent(event.release());
+    event->setTarget(m_mediaElement);
+    m_mediaElement->scheduleEvent(event.release());
 }
 
-void HTMLMediaElementEncryptedMedia::keyError(HTMLMediaElement& element, const String& keySystem, const String& sessionId, WebMediaPlayerClient::MediaKeyErrorCode errorCode, unsigned short systemCode)
+void HTMLMediaElementEncryptedMedia::keyError(const WebString& keySystem, const WebString& sessionId, WebMediaPlayerEncryptedMediaClient::MediaKeyErrorCode errorCode, unsigned short systemCode)
 {
     WTF_LOG(Media, "HTMLMediaElementEncryptedMedia::mediaPlayerKeyError: sessionID=%s, errorCode=%d, systemCode=%d", sessionId.utf8().data(), errorCode, systemCode);
 
     MediaKeyError::Code mediaKeyErrorCode = MediaKeyError::MEDIA_KEYERR_UNKNOWN;
     switch (errorCode) {
-    case WebMediaPlayerClient::MediaKeyErrorCodeUnknown:
+    case WebMediaPlayerEncryptedMediaClient::MediaKeyErrorCodeUnknown:
         mediaKeyErrorCode = MediaKeyError::MEDIA_KEYERR_UNKNOWN;
         break;
-    case WebMediaPlayerClient::MediaKeyErrorCodeClient:
+    case WebMediaPlayerEncryptedMediaClient::MediaKeyErrorCodeClient:
         mediaKeyErrorCode = MediaKeyError::MEDIA_KEYERR_CLIENT;
         break;
-    case WebMediaPlayerClient::MediaKeyErrorCodeService:
+    case WebMediaPlayerEncryptedMediaClient::MediaKeyErrorCodeService:
         mediaKeyErrorCode = MediaKeyError::MEDIA_KEYERR_SERVICE;
         break;
-    case WebMediaPlayerClient::MediaKeyErrorCodeOutput:
+    case WebMediaPlayerEncryptedMediaClient::MediaKeyErrorCodeOutput:
         mediaKeyErrorCode = MediaKeyError::MEDIA_KEYERR_OUTPUT;
         break;
-    case WebMediaPlayerClient::MediaKeyErrorCodeHardwareChange:
+    case WebMediaPlayerEncryptedMediaClient::MediaKeyErrorCodeHardwareChange:
         mediaKeyErrorCode = MediaKeyError::MEDIA_KEYERR_HARDWARECHANGE;
         break;
-    case WebMediaPlayerClient::MediaKeyErrorCodeDomain:
+    case WebMediaPlayerEncryptedMediaClient::MediaKeyErrorCodeDomain:
         mediaKeyErrorCode = MediaKeyError::MEDIA_KEYERR_DOMAIN;
         break;
     }
@@ -542,11 +539,11 @@ void HTMLMediaElementEncryptedMedia::keyError(HTMLMediaElement& element, const S
     initializer.setSystemCode(systemCode);
 
     RefPtrWillBeRawPtr<Event> event = MediaKeyEvent::create(EventTypeNames::webkitkeyerror, initializer);
-    event->setTarget(&element);
-    element.scheduleEvent(event.release());
+    event->setTarget(m_mediaElement);
+    m_mediaElement->scheduleEvent(event.release());
 }
 
-void HTMLMediaElementEncryptedMedia::keyMessage(HTMLMediaElement& element, const String& keySystem, const String& sessionId, const unsigned char* message, unsigned messageLength, const WebURL& defaultURL)
+void HTMLMediaElementEncryptedMedia::keyMessage(const WebString& keySystem, const WebString& sessionId, const unsigned char* message, unsigned messageLength, const WebURL& defaultURL)
 {
     WTF_LOG(Media, "HTMLMediaElementEncryptedMedia::mediaPlayerKeyMessage: sessionID=%s", sessionId.utf8().data());
 
@@ -557,18 +554,18 @@ void HTMLMediaElementEncryptedMedia::keyMessage(HTMLMediaElement& element, const
     initializer.setDefaultURL(KURL(defaultURL));
 
     RefPtrWillBeRawPtr<Event> event = MediaKeyEvent::create(EventTypeNames::webkitkeymessage, initializer);
-    event->setTarget(&element);
-    element.scheduleEvent(event.release());
+    event->setTarget(m_mediaElement);
+    m_mediaElement->scheduleEvent(event.release());
 }
 
-void HTMLMediaElementEncryptedMedia::encrypted(HTMLMediaElement& element, WebEncryptedMediaInitDataType initDataType, const unsigned char* initData, unsigned initDataLength)
+void HTMLMediaElementEncryptedMedia::encrypted(WebEncryptedMediaInitDataType initDataType, const unsigned char* initData, unsigned initDataLength)
 {
     WTF_LOG(Media, "HTMLMediaElementEncryptedMedia::encrypted");
 
     if (RuntimeEnabledFeatures::encryptedMediaEnabled()) {
         // Send event for WD EME.
         RefPtrWillBeRawPtr<Event> event;
-        if (element.isMediaDataCORSSameOrigin(element.executionContext()->securityOrigin())) {
+        if (m_mediaElement->isMediaDataCORSSameOrigin(m_mediaElement->executionContext()->securityOrigin())) {
             event = createEncryptedEvent(initDataType, initData, initDataLength);
         } else {
             // Current page is not allowed to see content from the media file,
@@ -576,19 +573,19 @@ void HTMLMediaElementEncryptedMedia::encrypted(HTMLMediaElement& element, WebEnc
             event = createEncryptedEvent(WebEncryptedMediaInitDataType::Unknown, nullptr, 0);
         }
 
-        event->setTarget(&element);
-        element.scheduleEvent(event.release());
+        event->setTarget(m_mediaElement);
+        m_mediaElement->scheduleEvent(event.release());
     }
 
     if (RuntimeEnabledFeatures::prefixedEncryptedMediaEnabled()) {
         // Send event for v0.1b EME.
         RefPtrWillBeRawPtr<Event> event = createWebkitNeedKeyEvent(initData, initDataLength);
-        event->setTarget(&element);
-        element.scheduleEvent(event.release());
+        event->setTarget(m_mediaElement);
+        m_mediaElement->scheduleEvent(event.release());
     }
 }
 
-void HTMLMediaElementEncryptedMedia::didBlockPlaybackWaitingForKey(HTMLMediaElement& element)
+void HTMLMediaElementEncryptedMedia::didBlockPlaybackWaitingForKey()
 {
     WTF_LOG(Media, "HTMLMediaElementEncryptedMedia::didBlockPlaybackWaitingForKey");
 
@@ -598,42 +595,39 @@ void HTMLMediaElementEncryptedMedia::didBlockPlaybackWaitingForKey(HTMLMediaElem
     // FIXME: Is this really required?
 
     // 1. Let the media element be the specified HTMLMediaElement object.
-    HTMLMediaElementEncryptedMedia& thisElement = HTMLMediaElementEncryptedMedia::from(element);
-
     // 2. If the media element's waiting for key value is false, queue a task
     //    to fire a simple event named waitingforkey at the media element.
-    if (!thisElement.m_isWaitingForKey) {
+    if (!m_isWaitingForKey) {
         RefPtrWillBeRawPtr<Event> event = Event::create(EventTypeNames::waitingforkey);
-        event->setTarget(&element);
-        element.scheduleEvent(event.release());
+        event->setTarget(m_mediaElement);
+        m_mediaElement->scheduleEvent(event.release());
     }
 
     // 3. Set the media element's waiting for key value to true.
-    thisElement.m_isWaitingForKey = true;
+    m_isWaitingForKey = true;
 
     // 4. Suspend playback.
     //    (Already done on the Chromium side by the decryptors.)
 }
 
-void HTMLMediaElementEncryptedMedia::didResumePlaybackBlockedForKey(HTMLMediaElement& element)
+void HTMLMediaElementEncryptedMedia::didResumePlaybackBlockedForKey()
 {
     WTF_LOG(Media, "HTMLMediaElementEncryptedMedia::didResumePlaybackBlockedForKey");
 
     // Logic is on the Chromium side to attempt to resume playback when a new
     // key is available. However, |m_isWaitingForKey| needs to be cleared so
     // that a later waitingForKey() call can generate the event.
-    HTMLMediaElementEncryptedMedia& thisElement = HTMLMediaElementEncryptedMedia::from(element);
-    thisElement.m_isWaitingForKey = false;
+    m_isWaitingForKey = false;
 }
 
-WebContentDecryptionModule* HTMLMediaElementEncryptedMedia::contentDecryptionModule(HTMLMediaElement& element)
+WebContentDecryptionModule* HTMLMediaElementEncryptedMedia::contentDecryptionModule()
 {
-    HTMLMediaElementEncryptedMedia& thisElement = HTMLMediaElementEncryptedMedia::from(element);
-    return thisElement.contentDecryptionModule();
+    return m_mediaKeys ? m_mediaKeys->contentDecryptionModule() : 0;
 }
 
 DEFINE_TRACE(HTMLMediaElementEncryptedMedia)
 {
+    visitor->trace(m_mediaElement);
     visitor->trace(m_mediaKeys);
     WillBeHeapSupplement<HTMLMediaElement>::trace(visitor);
 }

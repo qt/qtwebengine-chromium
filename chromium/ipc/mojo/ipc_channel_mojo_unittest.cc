@@ -4,6 +4,8 @@
 
 #include "ipc/mojo/ipc_channel_mojo.h"
 
+#include <stdint.h>
+
 #include "base/base_paths.h"
 #include "base/files/file.h"
 #include "base/location.h"
@@ -67,9 +69,9 @@ class ListenerThatExpectsOK : public IPC::Listener {
 class ChannelClient {
  public:
   explicit ChannelClient(IPC::Listener* listener, const char* name) {
-    channel_ = IPC::ChannelMojo::Create(
-        main_message_loop_.task_runner(), IPCTestBase::GetChannelName(name),
-        IPC::Channel::MODE_CLIENT, listener, nullptr);
+    channel_ = IPC::ChannelMojo::Create(main_message_loop_.task_runner(),
+                                        IPCTestBase::GetChannelName(name),
+                                        IPC::Channel::MODE_CLIENT, listener);
   }
 
   void Connect() {
@@ -114,8 +116,7 @@ class IPCChannelMojoTest : public IPCChannelMojoTestBase {
   scoped_ptr<IPC::ChannelFactory> CreateChannelFactory(
       const IPC::ChannelHandle& handle,
       base::SequencedTaskRunner* runner) override {
-    return IPC::ChannelMojo::CreateServerFactory(task_runner(), handle,
-                                                 nullptr);
+    return IPC::ChannelMojo::CreateServerFactory(task_runner(), handle);
   }
 
   bool DidStartClient() override {
@@ -133,7 +134,7 @@ class TestChannelListenerWithExtraExpectations
       : is_connected_called_(false) {
   }
 
-  void OnChannelConnected(int32 peer_pid) override {
+  void OnChannelConnected(int32_t peer_pid) override {
     IPC::TestChannelListener::OnChannelConnected(peer_pid);
     EXPECT_TRUE(base::kNullProcessId != peer_pid);
     is_connected_called_ = true;
@@ -200,7 +201,7 @@ class ListenerExpectingErrors : public IPC::Listener {
       : has_error_(false) {
   }
 
-  void OnChannelConnected(int32 peer_pid) override {
+  void OnChannelConnected(int32_t peer_pid) override {
     base::MessageLoop::current()->Quit();
   }
 
@@ -223,8 +224,7 @@ class IPCChannelMojoErrorTest : public IPCChannelMojoTestBase {
   scoped_ptr<IPC::ChannelFactory> CreateChannelFactory(
       const IPC::ChannelHandle& handle,
       base::SequencedTaskRunner* runner) override {
-    return IPC::ChannelMojo::CreateServerFactory(task_runner(), handle,
-                                                 nullptr);
+    return IPC::ChannelMojo::CreateServerFactory(task_runner(), handle);
   }
 
   bool DidStartClient() override {
@@ -243,7 +243,7 @@ class ListenerThatQuits : public IPC::Listener {
     return true;
   }
 
-  void OnChannelConnected(int32 peer_pid) override {
+  void OnChannelConnected(int32_t peer_pid) override {
     base::MessageLoop::current()->Quit();
   }
 };
@@ -595,7 +595,7 @@ class ListenerSendingOneOk : public IPC::Listener {
     return true;
   }
 
-  void OnChannelConnected(int32 peer_pid) override {
+  void OnChannelConnected(int32_t peer_pid) override {
     ListenerThatExpectsOK::SendOK(sender_);
     base::MessageLoop::current()->Quit();
   }
@@ -625,8 +625,7 @@ class IPCChannelMojoDeadHandleTest : public IPCChannelMojoTestBase {
   scoped_ptr<IPC::ChannelFactory> CreateChannelFactory(
       const IPC::ChannelHandle& handle,
       base::SequencedTaskRunner* runner) override {
-    return IPC::ChannelMojo::CreateServerFactory(task_runner(), handle,
-                                                 nullptr);
+    return IPC::ChannelMojo::CreateServerFactory(task_runner(), handle);
   }
 
   bool DidStartClient() override {
@@ -815,7 +814,7 @@ const base::ProcessId kMagicChildId = 54321;
 
 class ListenerThatVerifiesPeerPid : public IPC::Listener {
  public:
-  void OnChannelConnected(int32 peer_pid) override {
+  void OnChannelConnected(int32_t peer_pid) override {
     EXPECT_EQ(peer_pid, kMagicChildId);
     base::MessageLoop::current()->Quit();
   }

@@ -10,7 +10,6 @@
       'type': 'static_library',
       'dependencies': [
         '../base/base.gyp:base',
-        '../content/content.gyp:content_browser',
         '../skia/skia.gyp:skia',
         '../ui/base/ui_base.gyp:ui_base',
         '../ui/gfx/gfx.gyp:gfx',
@@ -37,6 +36,8 @@
         'favicon/core/favicon_service.h',
         'favicon/core/favicon_url.cc',
         'favicon/core/favicon_url.h',
+        'favicon/core/favicon_util.cc',
+        'favicon/core/favicon_util.h',
         'favicon/core/large_icon_service.cc',
         'favicon/core/large_icon_service.h',
       ],
@@ -69,6 +70,11 @@
           ],
           'include_dirs': [
             '..',
+          ],
+          'sources!': [
+            'favicon/core/fallback_icon_client.h',
+            'favicon/core/fallback_icon_service.cc',
+            'favicon/core/fallback_icon_service.h',
           ],
         },
       ],

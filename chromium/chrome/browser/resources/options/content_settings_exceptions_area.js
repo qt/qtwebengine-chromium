@@ -16,10 +16,10 @@ cr.define('options.contentSettings', function() {
    */
   function IsEditableType(contentType) {
     // Exceptions of the following lists are not editable for now.
-    return !(contentType == 'notifications' ||
-             contentType == 'location' ||
+    return !(contentType == 'location' ||
              contentType == 'fullscreen' ||
-             contentType == 'media-stream' ||
+             contentType == 'media-stream-mic' ||
+             contentType == 'media-stream-camera' ||
              contentType == 'midi-sysex' ||
              contentType == 'zoomlevels');
   }
@@ -125,17 +125,6 @@ cr.define('options.contentSettings', function() {
 
       if (this.pattern)
         select.setAttribute('displaymode', 'edit');
-
-      if (this.contentType == 'media-stream') {
-        this.settingLabel.classList.add('media-audio-setting');
-
-        var videoSettingLabel = cr.doc.createElement('span');
-        videoSettingLabel.textContent = this.videoSettingForDisplay();
-        videoSettingLabel.className = 'exception-setting';
-        videoSettingLabel.classList.add('media-video-setting');
-        videoSettingLabel.setAttribute('displaymode', 'static');
-        this.contentElement.appendChild(videoSettingLabel);
-      }
 
       if (this.contentType == 'zoomlevels') {
         this.deletable = true;
@@ -261,16 +250,6 @@ cr.define('options.contentSettings', function() {
      */
     settingForDisplay: function() {
       return this.getDisplayStringForSetting(this.setting);
-    },
-
-    /**
-     * media video specific function.
-     * Gets a human-readable video setting string.
-     *
-     * @return {string} The display string.
-     */
-    videoSettingForDisplay: function() {
-      return this.getDisplayStringForSetting(this.dataItem.video);
     },
 
     /**
@@ -639,9 +618,6 @@ cr.define('options.contentSettings', function() {
         else
           divs[i].hidden = true;
       }
-
-      var mediaHeader = this.pageDiv.querySelector('.media-header');
-      mediaHeader.hidden = type != 'media-stream';
 
       $('exception-behavior-column').hidden = type == 'zoomlevels';
       $('exception-zoom-column').hidden = type != 'zoomlevels';

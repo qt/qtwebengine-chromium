@@ -23,6 +23,7 @@
 #include "build/build_config.h"
 #include "net/base/connection_type_histograms.h"
 #include "net/base/net_util.h"
+#include "net/base/port_util.h"
 #include "net/cert/cert_verifier.h"
 #include "net/http/http_basic_stream.h"
 #include "net/http/http_network_session.h"
@@ -214,16 +215,18 @@ void HttpStreamFactoryImpl::Job::WaitFor(Job* job) {
   job->waiting_job_ = this;
 }
 
-void HttpStreamFactoryImpl::Job::Resume(Job* job) {
+void HttpStreamFactoryImpl::Job::Resume(Job* job,
+                                        const base::TimeDelta& delay) {
   DCHECK_EQ(blocking_job_, job);
   blocking_job_ = NULL;
 
   // We know we're blocked if the next_state_ is STATE_WAIT_FOR_JOB_COMPLETE.
   // Unblock |this|.
   if (next_state_ == STATE_WAIT_FOR_JOB_COMPLETE) {
-    base::ThreadTaskRunnerHandle::Get()->PostTask(
+    base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
         FROM_HERE, base::Bind(&HttpStreamFactoryImpl::Job::OnIOComplete,
-                              ptr_factory_.GetWeakPtr(), OK));
+                              ptr_factory_.GetWeakPtr(), OK),
+        delay);
   }
 }
 
@@ -678,7 +681,7 @@ int HttpStreamFactoryImpl::Job::DoStart() {
   // Don't connect to restricted ports.
   if (!IsPortAllowedForScheme(server_.port(), request_info_.url.scheme())) {
     if (waiting_job_) {
-      waiting_job_->Resume(this);
+      waiting_job_->Resume(this, base::TimeDelta());
       waiting_job_ = NULL;
     }
     return ERR_UNSAFE_PORT;
@@ -753,7 +756,7 @@ int HttpStreamFactoryImpl::Job::DoResolveProxyComplete(int result) {
 
   if (result != OK) {
     if (waiting_job_) {
-      waiting_job_->Resume(this);
+      waiting_job_->Resume(this, base::TimeDelta());
       waiting_job_ = NULL;
     }
     return result;
@@ -859,7 +862,17 @@ int HttpStreamFactoryImpl::Job::DoInitConnection() {
       // OK, there's no available QUIC session. Let |waiting_job_| resume
       // if it's paused.
       if (waiting_job_) {
-        waiting_job_->Resume(this);
+        if (rv == ERR_IO_PENDING) {
+          // Start the |waiting_job_| after the delay returned by
+          // GetTimeDelayForWaitingJob().
+          //
+          // If QUIC request fails during handshake, then
+          // DoInitConnectionComplete() will start the |waiting_job_|.
+          waiting_job_->Resume(this, quic_request_.GetTimeDelayForWaitingJob());
+        } else {
+          // QUIC request has failed, resume the |waiting_job_|.
+          waiting_job_->Resume(this, base::TimeDelta());
+        }
         waiting_job_ = NULL;
       }
     }
@@ -895,7 +908,7 @@ int HttpStreamFactoryImpl::Job::DoInitConnection() {
   // OK, there's no available SPDY session. Let |waiting_job_| resume if it's
   // paused.
   if (waiting_job_) {
-    waiting_job_->Resume(this);
+    waiting_job_->Resume(this, base::TimeDelta());
     waiting_job_ = NULL;
   }
 
@@ -950,6 +963,10 @@ int HttpStreamFactoryImpl::Job::DoInitConnection() {
 }
 
 int HttpStreamFactoryImpl::Job::DoInitConnectionComplete(int result) {
+  if (using_quic_ && result < 0 && waiting_job_) {
+    waiting_job_->Resume(this, base::TimeDelta());
+    waiting_job_ = NULL;
+  }
   if (IsPreconnecting()) {
     if (using_quic_)
       return result;
@@ -976,7 +993,7 @@ int HttpStreamFactoryImpl::Job::DoInitConnectionComplete(int result) {
 
   if (proxy_info_.is_quic() && using_quic_) {
     if (result == ERR_QUIC_PROTOCOL_ERROR ||
-        result == ERR_QUIC_HANDSHAKE_FAILED) {
+        result == ERR_QUIC_HANDSHAKE_FAILED || result == ERR_MSG_TOO_BIG) {
       using_quic_ = false;
       return ReconsiderProxyAfterError(result);
     }
@@ -992,7 +1009,7 @@ int HttpStreamFactoryImpl::Job::DoInitConnectionComplete(int result) {
   // TODO(willchan): Make this a bit more exact. Maybe there are recoverable
   // errors, such as ignoring certificate errors for Alternate-Protocol.
   if (result < 0 && waiting_job_) {
-    waiting_job_->Resume(this);
+    waiting_job_->Resume(this, base::TimeDelta());
     waiting_job_ = NULL;
   }
 
@@ -1376,6 +1393,7 @@ int HttpStreamFactoryImpl::Job::ReconsiderProxyAfterError(int error) {
     // captive portal).
     case ERR_QUIC_PROTOCOL_ERROR:
     case ERR_QUIC_HANDSHAKE_FAILED:
+    case ERR_MSG_TOO_BIG:
     case ERR_SSL_PROTOCOL_ERROR:
       break;
     case ERR_SOCKS_CONNECTION_HOST_UNREACHABLE:
@@ -1392,9 +1410,12 @@ int HttpStreamFactoryImpl::Job::ReconsiderProxyAfterError(int error) {
       return error;
   }
 
-  if (request_info_.load_flags & LOAD_BYPASS_PROXY) {
+  // Do not bypass non-QUIC proxy on ERR_MSG_TOO_BIG.
+  if (!proxy_info_.is_quic() && error == ERR_MSG_TOO_BIG)
     return error;
-  }
+
+  if (request_info_.load_flags & LOAD_BYPASS_PROXY)
+    return error;
 
   if (proxy_info_.is_https() && proxy_ssl_config_.send_client_cert) {
     session_->ssl_client_auth_cache()->Remove(

@@ -33,7 +33,7 @@ cvox.TabsApiHandler = function(tts, braille, earcons) {
   /** @type {cvox.AbstractEarcons} @private */
   this.earcons_ = earcons;
   /** @type {function(string, Array<string>=)} @private */
-  this.msg_ = cvox.ChromeVox.msgs.getMsg.bind(cvox.ChromeVox.msgs);
+  this.msg_ = Msgs.getMsg.bind(Msgs);
   /**
    * Tracks whether the active tab has finished loading.
    * @type {boolean}
@@ -62,7 +62,7 @@ cvox.TabsApiHandler.prototype = {
                    cvox.AbstractTts.PERSONALITY_ANNOUNCEMENT);
     this.braille_.write(
         cvox.NavBraille.fromText(this.msg_('chrome_tab_created')));
-    this.earcons_.playEarcon(cvox.AbstractEarcons.OBJECT_OPEN);
+    this.earcons_.playEarcon(cvox.Earcon.OBJECT_OPEN);
   },
 
   /**
@@ -73,7 +73,7 @@ cvox.TabsApiHandler.prototype = {
     if (!cvox.ChromeVox.isActive) {
       return;
     }
-    this.earcons_.playEarcon(cvox.AbstractEarcons.OBJECT_CLOSE);
+    this.earcons_.playEarcon(cvox.Earcon.OBJECT_CLOSE);
   },
 
   /**
@@ -96,7 +96,7 @@ cvox.TabsApiHandler.prototype = {
                      cvox.AbstractTts.PERSONALITY_ANNOUNCEMENT);
       this.braille_.write(
           cvox.NavBraille.fromText(this.msg_('chrome_tab_selected', [title])));
-      this.earcons_.playEarcon(cvox.AbstractEarcons.OBJECT_SELECT);
+      this.earcons_.playEarcon(cvox.Earcon.OBJECT_SELECT);
     }.bind(this));
   },
 
@@ -115,10 +115,10 @@ cvox.TabsApiHandler.prototype = {
       }
       if (tab.status == 'loading') {
         this.lastActiveTabLoaded_ = false;
-        this.earcons_.playEarcon(cvox.AbstractEarcons.BUSY_PROGRESS_LOOP);
+        this.earcons_.playEarcon(cvox.Earcon.PAGE_START_LOADING);
       } else if (!this.lastActiveTabLoaded_) {
         this.lastActiveTabLoaded_ = true;
-        this.earcons_.playEarcon(cvox.AbstractEarcons.TASK_SUCCESS);
+        this.earcons_.playEarcon(cvox.Earcon.PAGE_FINISH_LOADING);
       }
     }.bind(this));
   },
@@ -145,7 +145,7 @@ cvox.TabsApiHandler.prototype = {
                        cvox.AbstractTts.PERSONALITY_ANNOUNCEMENT);
         this.braille_.write(
             cvox.NavBraille.fromText(this.msg_(msgId, [title])));
-        this.earcons_.playEarcon(cvox.AbstractEarcons.OBJECT_SELECT);
+        this.earcons_.playEarcon(cvox.Earcon.OBJECT_SELECT);
       }.bind(this));
     }.bind(this));
   }

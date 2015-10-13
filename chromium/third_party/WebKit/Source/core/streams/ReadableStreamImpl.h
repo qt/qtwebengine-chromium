@@ -26,7 +26,9 @@ namespace blink {
 
 // We define the default ChunkTypeTraits for frequently used types.
 template<typename ChunkType>
-class ReadableStreamChunkTypeTraits { };
+class ReadableStreamChunkTypeTraits {
+    STATIC_ONLY(ReadableStreamChunkTypeTraits);
+};
 
 template<>
 class ReadableStreamChunkTypeTraits<String> {
@@ -118,18 +120,12 @@ public:
     DEFINE_INLINE_VIRTUAL_TRACE()
     {
         visitor->trace(m_strategy);
-#if ENABLE(OILPAN)
         visitor->trace(m_pendingReads);
-#endif
         ReadableStream::trace(visitor);
     }
 
 private:
-#if ENABLE(OILPAN)
     using PendingReads = HeapDeque<Member<ScriptPromiseResolver>>;
-#else
-    using PendingReads = Deque<RefPtr<ScriptPromiseResolver>>;
-#endif
 
     // ReadableStream methods
     bool isQueueEmpty() const override { return m_queue.isEmpty(); }
@@ -142,8 +138,11 @@ private:
     void resolveAllPendingReadsAsDone() override
     {
         for (auto& resolver : m_pendingReads) {
-            ScriptState::Scope scope(resolver->scriptState());
-            resolver->resolve(v8IteratorResultDone(resolver->scriptState()));
+            ScriptState* scriptState = resolver->scriptState();
+            if (!scriptState->contextIsValid())
+                continue;
+            ScriptState::Scope scope(scriptState);
+            resolver->resolve(v8IteratorResultDone(scriptState));
         }
         m_pendingReads.clear();
     }
@@ -180,8 +179,10 @@ bool ReadableStreamImpl<ChunkTypeTraits>::enqueue(typename ChunkTypeTraits::Pass
         return enqueuePostAction();
     }
 
-    RefPtrWillBeRawPtr<ScriptPromiseResolver> resolver = m_pendingReads.takeFirst();
+    ScriptPromiseResolver* resolver = m_pendingReads.takeFirst();
     ScriptState* scriptState = resolver->scriptState();
+    if (!scriptState->contextIsValid())
+        return false;
     ScriptState::Scope scope(scriptState);
     resolver->resolve(v8IteratorResult(scriptState, chunk));
     return enqueuePostAction();
@@ -191,6 +192,7 @@ template <typename ChunkTypeTraits>
 ScriptPromise ReadableStreamImpl<ChunkTypeTraits>::read(ScriptState* scriptState)
 {
     ASSERT(stateInternal() == Readable);
+    setIsDisturbed();
     if (m_queue.isEmpty()) {
         m_pendingReads.append(ScriptPromiseResolver::create(scriptState));
         ScriptPromise promise = m_pendingReads.last()->promise();
@@ -216,6 +218,7 @@ void ReadableStreamImpl<ChunkTypeTraits>::readInternal(Deque<std::pair<typename 
     ASSERT(m_pendingReads.isEmpty());
     ASSERT(queue.isEmpty());
 
+    setIsDisturbed();
     queue.swap(m_queue);
     m_totalQueueSize = 0;
     readInternalPostAction();

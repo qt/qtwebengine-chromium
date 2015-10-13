@@ -12,7 +12,6 @@ namespace switches {
 // Media switches
 extern const char kEnableCmaMediaPipeline[];
 extern const char kHdmiSinkSupportedCodecs[];
-extern const char kEnableLegacyHolePunching[];
 
 // Content-implementation switches
 extern const char kEnableLocalFileAccesses[];
@@ -23,12 +22,12 @@ extern const char kOverrideMetricsUploadUrl[];
 // Network switches
 extern const char kNoWifi[];
 
+// App switches
+extern const char kAllowHiddenMediaPlayback[];
+
 // Switches to communicate app state information
 extern const char kLastLaunchedApp[];
 extern const char kPreviousApp[];
-
-// Graphics switches
-extern const char kEnableTransparentBackground[];
 
 }  // namespace switches
 

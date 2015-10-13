@@ -14,6 +14,8 @@
 
 #include <stdint.h>
 
+#include <bitset>
+
 namespace gl
 {
 class Buffer;
@@ -41,19 +43,10 @@ struct Color
 };
 
 template <typename T>
-bool operator==(const Color<T> &a, const Color<T> &b)
-{
-    return a.red == b.red &&
-           a.green == b.green &&
-           a.blue == b.blue &&
-           a.alpha == b.alpha;
-}
+bool operator==(const Color<T> &a, const Color<T> &b);
 
 template <typename T>
-bool operator!=(const Color<T> &a, const Color<T> &b)
-{
-    return !(a == b);
-}
+bool operator!=(const Color<T> &a, const Color<T> &b);
 
 typedef Color<float> ColorF;
 typedef Color<int> ColorI;
@@ -171,35 +164,57 @@ struct DepthStencilState
     GLuint stencilBackWritemask;
 };
 
+// State from Table 6.10 (state per sampler object)
 struct SamplerState
 {
     SamplerState();
 
     GLenum minFilter;
     GLenum magFilter;
+
     GLenum wrapS;
     GLenum wrapT;
     GLenum wrapR;
+
+    // From EXT_texture_filter_anisotropic
     float maxAnisotropy;
 
-    GLint baseLevel;
-    GLint maxLevel;
     GLfloat minLod;
     GLfloat maxLod;
 
     GLenum compareMode;
     GLenum compareFunc;
+};
+
+bool operator==(const SamplerState &a, const SamplerState &b);
+bool operator!=(const SamplerState &a, const SamplerState &b);
+
+// State from Table 6.9 (state per texture object) in the OpenGL ES 3.0.2 spec.
+struct TextureState
+{
+    TextureState();
 
     GLenum swizzleRed;
     GLenum swizzleGreen;
     GLenum swizzleBlue;
     GLenum swizzleAlpha;
 
-    bool swizzleRequired() const;
+    SamplerState samplerState;
 
-    bool operator==(const SamplerState &other) const;
-    bool operator!=(const SamplerState &other) const;
+    GLuint baseLevel;
+    GLuint maxLevel;
+
+    bool immutableFormat;
+    GLuint immutableLevels;
+
+    // From GL_ANGLE_texture_usage
+    GLenum usage;
+
+    bool swizzleRequired() const;
 };
+
+bool operator==(const TextureState &a, const TextureState &b);
+bool operator!=(const TextureState &a, const TextureState &b);
 
 struct PixelUnpackState
 {
@@ -256,16 +271,21 @@ struct PixelPackState
     {}
 };
 
+// Used in Program and VertexArray.
+typedef std::bitset<MAX_VERTEX_ATTRIBS> AttributesMask;
+
+// Use in Program
+typedef std::bitset<IMPLEMENTATION_MAX_COMBINED_SHADER_UNIFORM_BUFFERS> UniformBlockBindingMask;
 }
 
 namespace rx
 {
-
 enum VendorID : uint32_t
 {
-    VENDOR_ID_AMD = 0x1002,
-    VENDOR_ID_INTEL = 0x8086,
-    VENDOR_ID_NVIDIA = 0x10DE,
+    VENDOR_ID_UNKNOWN = 0x0,
+    VENDOR_ID_AMD     = 0x1002,
+    VENDOR_ID_INTEL   = 0x8086,
+    VENDOR_ID_NVIDIA  = 0x10DE,
 };
 
 // A macro that determines whether an object has a given runtime type.
@@ -314,6 +334,54 @@ inline const DestT *GetImplAs(const SrcT *src)
     return GetAs<const DestT>(src->getImplementation());
 }
 
+}
+
+#include "angletypes.inl"
+
+namespace angle
+{
+// Zero-based for better array indexing
+enum FramebufferBinding
+{
+    FramebufferBindingRead = 0,
+    FramebufferBindingDraw,
+    FramebufferBindingSingletonMax,
+    FramebufferBindingBoth = FramebufferBindingSingletonMax,
+    FramebufferBindingMax,
+    FramebufferBindingUnknown = FramebufferBindingMax,
+};
+
+inline FramebufferBinding EnumToFramebufferBinding(GLenum enumValue)
+{
+    switch (enumValue)
+    {
+        case GL_READ_FRAMEBUFFER:
+            return FramebufferBindingRead;
+        case GL_DRAW_FRAMEBUFFER:
+            return FramebufferBindingDraw;
+        case GL_FRAMEBUFFER:
+            return FramebufferBindingBoth;
+        default:
+            UNREACHABLE();
+            return FramebufferBindingUnknown;
+    }
+}
+
+inline GLenum FramebufferBindingToEnum(FramebufferBinding binding)
+{
+    switch (binding)
+    {
+        case FramebufferBindingRead:
+            return GL_READ_FRAMEBUFFER;
+        case FramebufferBindingDraw:
+            return GL_DRAW_FRAMEBUFFER;
+        case FramebufferBindingBoth:
+            return GL_FRAMEBUFFER;
+        default:
+            UNREACHABLE();
+            return GL_NONE;
+    }
+}
 }
 
 #endif // LIBANGLE_ANGLETYPES_H_

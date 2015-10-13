@@ -1,5 +1,4 @@
-// Copyright 2008 Google Inc.
-// Author: Lincoln Smith
+// Copyright 2008 The open-vcdiff Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -164,7 +163,7 @@ VCDiffInstructionMap::VCDiffInstructionMap(
       first_instruction_map_.Add(code_table_data.inst1[opcode],
                                  code_table_data.size1[opcode],
                                  code_table_data.mode1[opcode],
-                                 opcode);
+                                 static_cast<unsigned char>(opcode));
     } else if (code_table_data.inst1[opcode] == VCD_NOOP) {
       // An unusual case where inst1 == NOOP and inst2 == ADD, RUN, or COPY.
       // This is valid under the standard, but unlikely to be used.
@@ -172,7 +171,7 @@ VCDiffInstructionMap::VCDiffInstructionMap(
       first_instruction_map_.Add(code_table_data.inst2[opcode],
                                  code_table_data.size2[opcode],
                                  code_table_data.mode2[opcode],
-                                 opcode);
+                                 static_cast<unsigned char>(opcode));
     }
   }
   // Second pass to fill up second_instruction_map_ (depends on first pass)
@@ -189,7 +188,7 @@ VCDiffInstructionMap::VCDiffInstructionMap(
                                   code_table_data.inst2[opcode],
                                   code_table_data.size2[opcode],
                                   code_table_data.mode2[opcode],
-                                  opcode);
+                                  static_cast<unsigned char>(opcode));
     }
   }
 }

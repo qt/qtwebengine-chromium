@@ -32,6 +32,7 @@ class OZONE_EXPORT DrmBuffer : public ScanoutBuffer {
 
   // ScanoutBuffer:
   uint32_t GetFramebufferId() const override;
+  uint32_t GetFramebufferPixelFormat() const override;
   uint32_t GetHandle() const override;
   gfx::Size GetSize() const override;
 
@@ -56,6 +57,9 @@ class OZONE_EXPORT DrmBuffer : public ScanoutBuffer {
   // registered with the CRTC.
   uint32_t framebuffer_ = 0;
 
+  // Pixel format of |framebuffer_|
+  uint32_t fb_pixel_format_ = 0;
+
   // Wrapper around the native pixel memory.
   skia::RefPtr<SkSurface> surface_;
 
@@ -69,6 +73,7 @@ class OZONE_EXPORT DrmBufferGenerator : public ScanoutBufferGenerator {
 
   // ScanoutBufferGenerator:
   scoped_refptr<ScanoutBuffer> Create(const scoped_refptr<DrmDevice>& drm,
+                                      gfx::BufferFormat format,
                                       const gfx::Size& size) override;
 
  private:

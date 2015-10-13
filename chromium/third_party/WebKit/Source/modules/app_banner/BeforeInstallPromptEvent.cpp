@@ -30,10 +30,11 @@ BeforeInstallPromptEvent::BeforeInstallPromptEvent(const AtomicString& name, Exe
 
 BeforeInstallPromptEvent::BeforeInstallPromptEvent(const AtomicString& name, const BeforeInstallPromptEventInit& init)
     : Event(name, false, true)
-    , m_platforms(init.platforms())
     , m_requestId(-1)
     , m_client(nullptr)
 {
+    if (init.hasPlatforms())
+        m_platforms = init.platforms();
 }
 
 BeforeInstallPromptEvent::~BeforeInstallPromptEvent()

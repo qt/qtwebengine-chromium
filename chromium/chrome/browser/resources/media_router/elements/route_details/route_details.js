@@ -24,6 +24,7 @@ Polymer({
     route: {
       type: Object,
       value: null,
+      observer: 'maybeLoadCustomController_',
     },
 
     /**
@@ -33,7 +34,6 @@ Polymer({
     sink: {
       type: Object,
       value: null,
-      observer: 'updateActivityStatus_',
     },
 
     /**
@@ -43,6 +43,17 @@ Polymer({
     stopCastingButtonText_: {
       type: String,
       value: loadTimeData.getString('stopCastingButton'),
+    },
+
+    /**
+     * Whether the custom controller should be hidden.
+     * A custom controller is shown iff |route| specifies customControllerPath
+     * and the view can be loaded.
+     * @private {boolean}
+     */
+    isCustomControllerHidden_: {
+      type: Boolean,
+      value: true,
     },
   },
 
@@ -66,12 +77,48 @@ Polymer({
   },
 
   /**
-   * Updates |activityStatus_| with the name of |sink|.
+   * Loads the custom controller if |route.customControllerPath| exists.
+   * Falls back to the default route details view otherwise, or if load fails.
+   * Updates |activityStatus_| for the default view.
    *
    * @private
    */
-  updateActivityStatus_: function() {
-    this.activityStatus_ = this.sink ?
-        loadTimeData.getStringF('castingActivityStatus', this.sink.name) : '';
-  }
+  maybeLoadCustomController_: function() {
+    this.activityStatus_ = this.route ?
+        loadTimeData.getStringF('castingActivityStatus',
+                                this.route.description) :
+        '';
+
+    if (!this.route || !this.route.customControllerPath) {
+      this.isCustomControllerHidden_ = true;
+      return;
+    }
+
+    // Show custom controller
+    var extensionview = this.$['custom-controller'];
+
+    // Do nothing if the url is the same and the view is not hidden.
+    if (this.route.customControllerPath == extensionview.src &&
+        !this.isCustomControllerHidden_)
+      return;
+
+    var that = this;
+    extensionview.load(this.route.customControllerPath)
+    .then(function() {
+      // Load was successful; show the custom controller.
+      that.isCustomControllerHidden_ = false;
+    }, function() {
+      // Load was unsuccessful; fall back to default view.
+      that.isCustomControllerHidden_ = true;
+    });
+  },
+
+  /**
+   * Handles a click on the close button by firing a close-button-click event.
+   *
+   * @private
+   */
+  onCloseButtonClick_: function() {
+    this.fire('close-button-click');
+  },
 });

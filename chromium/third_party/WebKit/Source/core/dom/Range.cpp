@@ -35,11 +35,11 @@
 #include "core/dom/NodeWithIndex.h"
 #include "core/dom/ProcessingInstruction.h"
 #include "core/dom/Text.h"
+#include "core/editing/EditingUtilities.h"
 #include "core/editing/VisiblePosition.h"
 #include "core/editing/VisibleUnits.h"
-#include "core/editing/htmlediting.h"
 #include "core/editing/iterators/TextIterator.h"
-#include "core/editing/markup.h"
+#include "core/editing/serializers/Serialization.h"
 #include "core/events/ScopedEventQueue.h"
 #include "core/html/HTMLBodyElement.h"
 #include "core/html/HTMLElement.h"
@@ -99,7 +99,7 @@ PassRefPtrWillBeRawPtr<Range> Range::create(Document& ownerDocument, Node* start
 
 PassRefPtrWillBeRawPtr<Range> Range::create(Document& ownerDocument, const Position& start, const Position& end)
 {
-    return adoptRefWillBeNoop(new Range(ownerDocument, start.containerNode(), start.computeOffsetInContainerNode(), end.containerNode(), end.computeOffsetInContainerNode()));
+    return adoptRefWillBeNoop(new Range(ownerDocument, start.computeContainerNode(), start.computeOffsetInContainerNode(), end.computeContainerNode(), end.computeOffsetInContainerNode()));
 }
 
 PassRefPtrWillBeRawPtr<Range> Range::createAdjustedToTreeScope(const TreeScope& treeScope, const Position& position)
@@ -134,6 +134,14 @@ Range::~Range()
 #endif
 }
 #endif
+
+void Range::dispose()
+{
+#if ENABLE(OILPAN)
+    // A prompt detach from the owning Document helps avoid GC overhead.
+    m_ownerDocument->detachRange(this);
+#endif
+}
 
 void Range::setDocument(Document& document)
 {
@@ -221,13 +229,13 @@ void Range::setEnd(PassRefPtrWillBeRawPtr<Node> refNode, int offset, ExceptionSt
 void Range::setStart(const Position& start, ExceptionState& exceptionState)
 {
     Position parentAnchored = start.parentAnchoredEquivalent();
-    setStart(parentAnchored.containerNode(), parentAnchored.offsetInContainerNode(), exceptionState);
+    setStart(parentAnchored.computeContainerNode(), parentAnchored.offsetInContainerNode(), exceptionState);
 }
 
 void Range::setEnd(const Position& end, ExceptionState& exceptionState)
 {
     Position parentAnchored = end.parentAnchoredEquivalent();
-    setEnd(parentAnchored.containerNode(), parentAnchored.offsetInContainerNode(), exceptionState);
+    setEnd(parentAnchored.computeContainerNode(), parentAnchored.offsetInContainerNode(), exceptionState);
 }
 
 void Range::collapse(bool toStart)
@@ -436,7 +444,7 @@ bool Range::intersectsNode(Node* refNode, const Position& start, const Position&
         return false;
     }
 
-    Node* startContainerNode = start.containerNode();
+    Node* startContainerNode = start.computeContainerNode();
     int startOffset = start.computeOffsetInContainerNode();
 
     if (compareBoundaryPoints(parentNode, nodeIndex, startContainerNode, startOffset, exceptionState) < 0 // starts before start
@@ -445,7 +453,7 @@ bool Range::intersectsNode(Node* refNode, const Position& start, const Position&
         return false;
     }
 
-    Node* endContainerNode = end.containerNode();
+    Node* endContainerNode = end.computeContainerNode();
     int endOffset = end.computeOffsetInContainerNode();
 
     if (compareBoundaryPoints(parentNode, nodeIndex, endContainerNode, endOffset, exceptionState) > 0 // starts after end
@@ -898,7 +906,7 @@ String Range::toString() const
 
 String Range::text() const
 {
-    return plainText(startPosition(), endPosition(), TextIteratorEmitsObjectReplacementCharacter);
+    return plainText(EphemeralRange(this), TextIteratorEmitsObjectReplacementCharacter);
 }
 
 PassRefPtrWillBeRawPtr<DocumentFragment> Range::createContextualFragment(const String& markup, ExceptionState& exceptionState)
@@ -1078,26 +1086,6 @@ void Range::selectNode(Node* refNode, ExceptionState& exceptionState)
     if (!refNode->parentNode()) {
         exceptionState.throwDOMException(InvalidNodeTypeError, "the given Node has no parent.");
         return;
-    }
-
-    // InvalidNodeTypeError: Raised if an ancestor of refNode is an Entity, Notation or
-    // DocumentType node or if refNode is a Document, DocumentFragment, ShadowRoot, Attr, Entity, or Notation
-    // node.
-    for (ContainerNode* anc = refNode->parentNode(); anc; anc = anc->parentNode()) {
-        switch (anc->nodeType()) {
-        case Node::ATTRIBUTE_NODE:
-        case Node::CDATA_SECTION_NODE:
-        case Node::COMMENT_NODE:
-        case Node::DOCUMENT_FRAGMENT_NODE:
-        case Node::DOCUMENT_NODE:
-        case Node::ELEMENT_NODE:
-        case Node::PROCESSING_INSTRUCTION_NODE:
-        case Node::TEXT_NODE:
-            break;
-        case Node::DOCUMENT_TYPE_NODE:
-            exceptionState.throwDOMException(InvalidNodeTypeError, "The node provided has an ancestor of type '" + anc->nodeName() + "'.");
-            return;
-        }
     }
 
     switch (refNode->nodeType()) {
@@ -1579,8 +1567,8 @@ void Range::didSplitTextNode(Text& oldNode)
 
 void Range::expand(const String& unit, ExceptionState& exceptionState)
 {
-    VisiblePosition start(startPosition());
-    VisiblePosition end(endPosition());
+    VisiblePosition start = createVisiblePosition(startPosition());
+    VisiblePosition end = createVisiblePosition(endPosition());
     if (unit == "word") {
         start = startOfWord(start);
         end = endOfWord(end);
@@ -1596,8 +1584,8 @@ void Range::expand(const String& unit, ExceptionState& exceptionState)
     } else {
         return;
     }
-    setStart(start.deepEquivalent().containerNode(), start.deepEquivalent().computeOffsetInContainerNode(), exceptionState);
-    setEnd(end.deepEquivalent().containerNode(), end.deepEquivalent().computeOffsetInContainerNode(), exceptionState);
+    setStart(start.deepEquivalent().computeContainerNode(), start.deepEquivalent().computeOffsetInContainerNode(), exceptionState);
+    setEnd(end.deepEquivalent().computeContainerNode(), end.deepEquivalent().computeOffsetInContainerNode(), exceptionState);
 }
 
 ClientRectList* Range::getClientRects() const

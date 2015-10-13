@@ -11,12 +11,15 @@
 #include "content/browser/frame_host/render_widget_host_view_child_frame.h"
 #include "content/common/content_export.h"
 #include "content/common/cursors/webcursor.h"
+#include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "ui/events/event.h"
 #include "ui/events/gestures/gesture_recognizer.h"
 #include "ui/events/gestures/gesture_types.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/geometry/vector2d_f.h"
 #include "ui/gfx/native_widget_types.h"
+
+struct ViewHostMsg_TextInputState_Params;
 
 namespace content {
 class BrowserPluginGuest;
@@ -72,10 +75,8 @@ class CONTENT_EXPORT RenderWidgetHostViewGuest
   void MovePluginWindows(const std::vector<WebPluginGeometry>& moves) override;
   void UpdateCursor(const WebCursor& cursor) override;
   void SetIsLoading(bool is_loading) override;
-  void TextInputTypeChanged(ui::TextInputType type,
-                            ui::TextInputMode input_mode,
-                            bool can_compose_inline,
-                            int flags) override;
+  void TextInputStateChanged(
+      const ViewHostMsg_TextInputState_Params& params) override;
   void ImeCancelComposition() override;
 #if defined(OS_MACOSX) || defined(USE_AURA)
   void ImeCompositionRangeChanged(
@@ -100,6 +101,7 @@ class CONTENT_EXPORT RenderWidgetHostViewGuest
   bool LockMouse() override;
   void UnlockMouse() override;
   void GetScreenInfo(blink::WebScreenInfo* results) override;
+  bool GetScreenColorProfile(std::vector<char>* color_profile) override;
 
 #if defined(OS_MACOSX)
   // RenderWidgetHostView implementation.
@@ -133,6 +135,12 @@ class CONTENT_EXPORT RenderWidgetHostViewGuest
       gfx::NativeViewAccessible accessible_parent) override;
   gfx::NativeViewId GetParentForWindowlessPlugin() const override;
 #endif
+
+  void WheelEventAck(const blink::WebMouseWheelEvent& event,
+                     InputEventAckState ack_result) override;
+
+  void GestureEventAck(const blink::WebGestureEvent& event,
+                       InputEventAckState ack_result) override;
 
   // Overridden from ui::GestureEventHelper.
   bool CanDispatchToConsumer(ui::GestureConsumer* consumer) override;

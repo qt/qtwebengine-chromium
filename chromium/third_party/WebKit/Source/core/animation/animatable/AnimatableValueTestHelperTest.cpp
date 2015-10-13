@@ -45,7 +45,7 @@ namespace blink {
 
 class AnimationAnimatableValueTestHelperTest : public ::testing::Test {
 protected:
-    ::std::string PrintToString(PassRefPtrWillBeRawPtr<AnimatableValue> animValue)
+    ::std::string PrintToString(PassRefPtr<AnimatableValue> animValue)
     {
         return ::testing::PrintToString(*animValue.get());
     }
@@ -76,18 +76,6 @@ TEST_F(AnimationAnimatableValueTestHelperTest, PrintTo)
     EXPECT_EQ(
         ::std::string("AnimatableStrokeDasharrayList(1+0%, 0+2%)"),
         PrintToString(AnimatableStrokeDasharrayList::create(l2, 1)));
-
-    TransformOperations operations1;
-    operations1.operations().append(TranslateTransformOperation::create(Length(2, blink::Fixed), Length(0, blink::Fixed), TransformOperation::TranslateX));
-    EXPECT_EQ(
-        ::std::string("AnimatableTransform([1 0 0 1 2 0])"),
-        PrintToString(AnimatableTransform::create(operations1)));
-
-    TransformOperations operations2;
-    operations2.operations().append(ScaleTransformOperation::create(1, 1, 1, TransformOperation::Scale3D));
-    EXPECT_EQ(
-        ::std::string("AnimatableTransform([1 0 0 1 0 0])"),
-        PrintToString(AnimatableTransform::create(operations2)));
 
     EXPECT_EQ(
         ::std::string("AnimatableUnknown(none)"),

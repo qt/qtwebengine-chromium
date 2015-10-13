@@ -141,9 +141,6 @@ class APITest : public ACMTest {
   int32_t _minDelayB;
   bool _payloadUsed[32];
 
-  AudioPlayoutMode _playoutModeA;
-  AudioPlayoutMode _playoutModeB;
-
   bool _verbose;
 
   int _dotPositionA;
@@ -153,7 +150,6 @@ class APITest : public ACMTest {
 
   char _movingDot[41];
 
-  DTMFDetector* _dtmfCallback;
   VADCallback* _vadCallbackA;
   VADCallback* _vadCallbackB;
   RWLockWrapper& _apiTestRWLock;

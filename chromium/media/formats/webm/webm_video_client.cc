@@ -9,8 +9,8 @@
 
 namespace media {
 
-WebMVideoClient::WebMVideoClient(const LogCB& log_cb)
-    : log_cb_(log_cb) {
+WebMVideoClient::WebMVideoClient(const scoped_refptr<MediaLog>& media_log)
+    : media_log_(media_log) {
   Reset();
 }
 
@@ -44,12 +44,12 @@ bool WebMVideoClient::InitializeConfig(
     video_codec = kCodecVP9;
     profile = VP9PROFILE_ANY;
   } else {
-    MEDIA_LOG(ERROR, log_cb_) << "Unsupported video codec_id " << codec_id;
+    MEDIA_LOG(ERROR, media_log_) << "Unsupported video codec_id " << codec_id;
     return false;
   }
 
-  VideoFrame::Format format =
-      (alpha_mode_ == 1) ? VideoFrame::YV12A : VideoFrame::YV12;
+  VideoPixelFormat format =
+      (alpha_mode_ == 1) ? PIXEL_FORMAT_YV12A : PIXEL_FORMAT_YV12;
 
   if (pixel_width_ <= 0 || pixel_height_ <= 0)
     return false;
@@ -83,8 +83,8 @@ bool WebMVideoClient::InitializeConfig(
     if (display_width_ <= 0 || display_height_ <= 0)
       return false;
   } else {
-    MEDIA_LOG(ERROR, log_cb_) << "Unsupported display unit type "
-                              << display_unit_;
+    MEDIA_LOG(ERROR, media_log_) << "Unsupported display unit type "
+                                 << display_unit_;
     return false;
   }
   gfx::Size natural_size = gfx::Size(display_width_, display_height_);
@@ -95,10 +95,9 @@ bool WebMVideoClient::InitializeConfig(
     extra_data_size = codec_private.size();
   }
 
-  config->Initialize(video_codec, profile, format,
-                     VideoFrame::COLOR_SPACE_UNSPECIFIED, coded_size,
-                     visible_rect, natural_size, extra_data, extra_data_size,
-                     is_encrypted, true);
+  config->Initialize(video_codec, profile, format, COLOR_SPACE_HD_REC709,
+                     coded_size, visible_rect, natural_size, extra_data,
+                     extra_data_size, is_encrypted);
   return config->IsValidConfig();
 }
 
@@ -141,9 +140,9 @@ bool WebMVideoClient::OnUInt(int id, int64 val) {
   }
 
   if (*dst != -1) {
-    MEDIA_LOG(ERROR, log_cb_) << "Multiple values for id " << std::hex << id
-                              << " specified (" << *dst << " and " << val
-                              << ")";
+    MEDIA_LOG(ERROR, media_log_) << "Multiple values for id " << std::hex << id
+                                 << " specified (" << *dst << " and " << val
+                                 << ")";
     return false;
   }
 

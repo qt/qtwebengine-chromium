@@ -67,23 +67,25 @@ bool HttpBasicStream::IsResponseBodyComplete() const {
   return parser()->IsResponseBodyComplete();
 }
 
-bool HttpBasicStream::CanFindEndOfResponse() const {
-  return parser()->CanFindEndOfResponse();
-}
-
 bool HttpBasicStream::IsConnectionReused() const {
   return parser()->IsConnectionReused();
 }
 
 void HttpBasicStream::SetConnectionReused() { parser()->SetConnectionReused(); }
 
-bool HttpBasicStream::IsConnectionReusable() const {
-  return parser()->IsConnectionReusable();
+bool HttpBasicStream::CanReuseConnection() const {
+  return parser()->CanReuseConnection();
 }
 
-int64 HttpBasicStream::GetTotalReceivedBytes() const {
+int64_t HttpBasicStream::GetTotalReceivedBytes() const {
   if (parser())
     return parser()->received_bytes();
+  return 0;
+}
+
+int64_t HttpBasicStream::GetTotalSentBytes() const {
+  if (parser())
+    return parser()->sent_bytes();
   return 0;
 }
 
@@ -102,7 +104,12 @@ void HttpBasicStream::GetSSLCertRequestInfo(
   parser()->GetSSLCertRequestInfo(cert_request_info);
 }
 
-bool HttpBasicStream::IsSpdyHttpStream() const { return false; }
+bool HttpBasicStream::GetRemoteEndpoint(IPEndPoint* endpoint) {
+  if (!state_.connection() || !state_.connection()->socket())
+    return false;
+
+  return state_.connection()->socket()->GetPeerAddress(endpoint) == OK;
+}
 
 void HttpBasicStream::Drain(HttpNetworkSession* session) {
   HttpResponseBodyDrainer* drainer = new HttpResponseBodyDrainer(this);

@@ -5,9 +5,7 @@
 #include "chromecast/media/cma/filters/hole_frame_factory.h"
 
 #include "base/bind.h"
-#include "base/command_line.h"
 #include "base/location.h"
-#include "chromecast/base/chromecast_switches.h"
 #include "gpu/GLES2/gl2extchromium.h"
 #include "gpu/command_buffer/client/gles2_interface.h"
 #include "media/base/video_frame.h"
@@ -21,11 +19,8 @@ HoleFrameFactory::HoleFrameFactory(
     : gpu_factories_(gpu_factories),
       texture_(0),
       image_id_(0),
-      sync_point_(0),
-      use_legacy_hole_punching_(
-          base::CommandLine::ForCurrentProcess()->HasSwitch(
-              switches::kEnableLegacyHolePunching)) {
-  if (!use_legacy_hole_punching_) {
+      sync_point_(0) {
+  if (gpu_factories_) {
     gpu::gles2::GLES2Interface* gl = gpu_factories_->GetGLES2Interface();
     CHECK(gl);
 
@@ -43,7 +38,7 @@ HoleFrameFactory::HoleFrameFactory(
 }
 
 HoleFrameFactory::~HoleFrameFactory() {
-  if (texture_ != 0) {
+  if (texture_) {
     gpu::gles2::GLES2Interface* gl = gpu_factories_->GetGLES2Interface();
     gl->BindTexture(GL_TEXTURE_2D, texture_);
     gl->ReleaseTexImage2DCHROMIUM(GL_TEXTURE_2D, image_id_);
@@ -54,25 +49,23 @@ HoleFrameFactory::~HoleFrameFactory() {
 
 scoped_refptr<::media::VideoFrame> HoleFrameFactory::CreateHoleFrame(
     const gfx::Size& size) {
-  if (use_legacy_hole_punching_) {
-#if defined(VIDEO_HOLE)
-    return ::media::VideoFrame::CreateHoleFrame(size);
-#endif
-    NOTREACHED();
+  if (texture_) {
+    scoped_refptr<::media::VideoFrame> frame =
+        ::media::VideoFrame::WrapNativeTexture(
+            ::media::PIXEL_FORMAT_XRGB,
+            gpu::MailboxHolder(mailbox_, GL_TEXTURE_2D, sync_point_),
+            ::media::VideoFrame::ReleaseMailboxCB(),
+            size,                // coded_size
+            gfx::Rect(size),     // visible rect
+            size,                // natural size
+            base::TimeDelta());  // timestamp
+    frame->metadata()->SetBoolean(::media::VideoFrameMetadata::ALLOW_OVERLAY,
+                                  true);
+    return frame;
+  } else {
+    // This case is needed for audio-only devices.
+    return ::media::VideoFrame::CreateBlackFrame(gfx::Size(1, 1));
   }
-
-  scoped_refptr<::media::VideoFrame> frame =
-      ::media::VideoFrame::WrapNativeTexture(
-          ::media::VideoFrame::XRGB,
-          gpu::MailboxHolder(mailbox_, GL_TEXTURE_2D, sync_point_),
-          ::media::VideoFrame::ReleaseMailboxCB(),
-          size,                // coded_size
-          gfx::Rect(size),     // visible rect
-          size,                // natural size
-          base::TimeDelta());  // timestamp
-  frame->metadata()->SetBoolean(::media::VideoFrameMetadata::ALLOW_OVERLAY,
-                                true);
-  return frame;
 }
 
 }  // namespace media

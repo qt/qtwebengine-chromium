@@ -9,13 +9,18 @@
 
 #include "base/memory/ref_counted.h"
 #include "content/public/common/resource_type.h"
+#include "content/public/common/security_style.h"
+#include "net/cert/cert_status_flags.h"
+
+class GURL;
 
 namespace content {
 class NavigationEntryImpl;
 class SSLCertErrorHandler;
 class SSLPolicyBackend;
 class SSLRequestInfo;
-class WebContentsImpl;
+class WebContents;
+struct SSLStatus;
 
 // SSLPolicy
 //
@@ -37,11 +42,17 @@ class SSLPolicy {
   void OnRequestStarted(SSLRequestInfo* info);
 
   // Update the SSL information in |entry| to match the current state.
-  // |web_contents| is the WebContentsImpl associated with this entry.
-  void UpdateEntry(NavigationEntryImpl* entry,
-                   WebContentsImpl* web_contents);
+  // |web_contents| is the WebContents associated with this entry.
+  void UpdateEntry(NavigationEntryImpl* entry, WebContents* web_contents);
 
   SSLPolicyBackend* backend() const { return backend_; }
+
+  // Returns a security style describing an individual resource. Does
+  // not take into account any of the page- or host-level state such as
+  // mixed content or whether the host has run insecure content.
+  static SecurityStyle GetSecurityStyleForResource(const GURL& url,
+                                                   int cert_id,
+                                                   net::CertStatus cert_status);
 
  private:
   enum OnCertErrorInternalOptionsMask {

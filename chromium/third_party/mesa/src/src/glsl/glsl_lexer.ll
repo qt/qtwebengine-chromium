@@ -66,7 +66,8 @@ static int classify_identifier(struct _mesa_glsl_parse_state *, const char *);
 			  "Illegal use of reserved word `%s'", yytext);	\
 	 return ERROR_TOK;						\
       } else {								\
-	 yylval->identifier = strdup(yytext);				\
+	 void *mem_ctx = yyextra;					\
+	 yylval->identifier = ralloc_strdup(mem_ctx, yytext);		\
 	 return classify_identifier(yyextra, yytext);			\
       }									\
    } while (0)
@@ -208,7 +209,8 @@ HASH		^{SPC}#{SPC}
 <PP>[ \t\r]*			{ }
 <PP>:				return COLON;
 <PP>[_a-zA-Z][_a-zA-Z0-9]*	{
-				   yylval->identifier = strdup(yytext);
+				   void *mem_ctx = yyextra;
+				   yylval->identifier = ralloc_strdup(mem_ctx, yytext);
 				   return IDENTIFIER;
 				}
 <PP>[1-9][0-9]*			{
@@ -316,7 +318,8 @@ layout		{
 		      || yyextra->ARB_fragment_coord_conventions_enable) {
 		      return LAYOUT_TOK;
 		   } else {
-		      yylval->identifier = strdup(yytext);
+		      void *mem_ctx = yyextra;
+		      yylval->identifier = ralloc_strdup(mem_ctx, yytext);
 		      return IDENTIFIER;
 		   }
 		}

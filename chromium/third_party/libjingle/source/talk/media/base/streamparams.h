@@ -49,6 +49,7 @@
 #include <vector>
 
 #include "webrtc/base/basictypes.h"
+#include "webrtc/base/constructormagic.h"
 
 namespace cricket {
 
@@ -246,7 +247,7 @@ struct MediaStreams {
   std::vector<StreamParams> video_;
   std::vector<StreamParams> data_;
 
-  DISALLOW_COPY_AND_ASSIGN(MediaStreams);
+  RTC_DISALLOW_COPY_AND_ASSIGN(MediaStreams);
 };
 
 // A request for a specific format of a specific stream.
@@ -302,25 +303,6 @@ inline const StreamParams* GetStream(const StreamParamsVec& streams,
   return GetStream(streams,
       [&selector](const StreamParams& sp) { return selector.Matches(sp); });
 }
-
-////////////////////////////////////////////////////////////////////////////////
-// Deprecated methods that will be removed one of these days.
-// Please use the methods with the same name above.
-bool GetStream(const StreamParamsVec& streams,
-               const StreamSelector& selector,
-               StreamParams* stream_out);
-inline bool GetStreamBySsrc(const StreamParamsVec& streams, uint32 ssrc,
-                            StreamParams* stream_out) {
-  return GetStream(streams, StreamSelector(ssrc), stream_out);
-}
-inline bool GetStreamByIds(const StreamParamsVec& streams,
-                           const std::string& groupid,
-                           const std::string& id,
-                           StreamParams* stream_out) {
-  return GetStream(streams, StreamSelector(groupid, id), stream_out);
-}
-// End deprecated methods.
-////////////////////////////////////////////////////////////////////////////////
 
 template <class Condition>
 bool RemoveStream(StreamParamsVec* streams, Condition condition) {

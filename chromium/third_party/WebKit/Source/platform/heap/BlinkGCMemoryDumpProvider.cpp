@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 #include "config.h"
-#include "Source/platform/heap/BlinkGCMemoryDumpProvider.h"
+#include "platform/heap/BlinkGCMemoryDumpProvider.h"
 
 #include "platform/heap/Handle.h"
 #include "public/platform/Platform.h"
@@ -13,6 +13,23 @@
 #include "wtf/Threading.h"
 
 namespace blink {
+namespace {
+
+void dumpMemoryTotals(blink::WebProcessMemoryDump* memoryDump)
+{
+    String dumpName = String::format("blink_gc");
+    WebMemoryAllocatorDump* allocatorDump = memoryDump->createMemoryAllocatorDump(dumpName);
+    allocatorDump->AddScalar("size", "bytes", Heap::allocatedSpace());
+
+    dumpName.append("/allocated_objects");
+    WebMemoryAllocatorDump* objectsDump = memoryDump->createMemoryAllocatorDump(dumpName);
+
+    // Heap::markedObjectSize() can be underestimated if we're still in the
+    // process of lazy sweeping.
+    objectsDump->AddScalar("size", "bytes", Heap::allocatedObjectSize() + Heap::markedObjectSize());
+}
+
+} // namespace
 
 BlinkGCMemoryDumpProvider* BlinkGCMemoryDumpProvider::instance()
 {
@@ -24,17 +41,15 @@ BlinkGCMemoryDumpProvider::~BlinkGCMemoryDumpProvider()
 {
 }
 
-bool BlinkGCMemoryDumpProvider::onMemoryDump(blink::WebProcessMemoryDump* memoryDump)
+bool BlinkGCMemoryDumpProvider::onMemoryDump(WebMemoryDumpLevelOfDetail levelOfDetail, blink::WebProcessMemoryDump* memoryDump)
 {
-    Heap::collectGarbage(ThreadState::NoHeapPointersOnStack, ThreadState::TakeSnapshot, Heap::ForcedGC);
-    String dumpName = String::format("blink_gc/thread_%lu", static_cast<unsigned long>(WTF::currentThread()));
-    WebMemoryAllocatorDump* allocatorDump = memoryDump->createMemoryAllocatorDump(dumpName);
-    allocatorDump->AddScalar("size", "bytes", Heap::allocatedSpace());
+    if (levelOfDetail == WebMemoryDumpLevelOfDetail::Light) {
+        dumpMemoryTotals(memoryDump);
+        return true;
+    }
 
-    dumpName.append("/allocated_objects");
-    WebMemoryAllocatorDump* objectsDump = memoryDump->createMemoryAllocatorDump(dumpName);
-    objectsDump->AddScalar("size", "bytes", Heap::allocatedObjectSize() + Heap::markedObjectSize());
-    objectsDump->AddScalar("estimated_live_object_size", "bytes", Heap::estimatedLiveObjectSize());
+    Heap::collectGarbage(ThreadState::NoHeapPointersOnStack, ThreadState::TakeSnapshot, Heap::ForcedGC);
+    dumpMemoryTotals(memoryDump);
 
     // Merge all dumps collected by Heap::collectGarbage.
     memoryDump->takeAllDumpsFrom(m_currentProcessMemoryDump.get());

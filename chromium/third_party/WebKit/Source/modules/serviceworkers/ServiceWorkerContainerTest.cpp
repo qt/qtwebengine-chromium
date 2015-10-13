@@ -20,9 +20,9 @@
 #include "modules/serviceworkers/ServiceWorkerContainerClient.h"
 #include "platform/weborigin/KURL.h"
 #include "platform/weborigin/SecurityOrigin.h"
-#include "public/platform/WebServiceWorkerClientsInfo.h"
-#include "public/platform/WebServiceWorkerProvider.h"
 #include "public/platform/WebURL.h"
+#include "public/platform/modules/serviceworker/WebServiceWorkerClientsInfo.h"
+#include "public/platform/modules/serviceworker/WebServiceWorkerProvider.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/text/WTFString.h"
@@ -139,6 +139,11 @@ public:
         ADD_FAILURE() << "the provider should not be called to register a Service Worker";
         delete callbacks;
     }
+
+    bool validateScopeAndScriptURL(const WebURL& scope, const WebURL& scriptURL, WebString* errorMessage)
+    {
+        return true;
+    }
 };
 
 class ServiceWorkerContainerTest : public ::testing::Test {
@@ -151,7 +156,7 @@ protected:
     ~ServiceWorkerContainerTest()
     {
         m_page.clear();
-        V8GCController::collectGarbage(isolate());
+        V8GCController::collectAllGarbageForTesting(isolate());
     }
 
     ExecutionContext* executionContext() { return &(m_page->document()); }
@@ -293,6 +298,11 @@ private:
             m_owner.m_getRegistrationCallCount++;
             m_owner.m_getRegistrationURL = documentURL;
             m_getRegistrationCallbacksToDelete.append(adoptPtr(callbacks));
+        }
+
+        bool validateScopeAndScriptURL(const WebURL& scope, const WebURL& scriptURL, WebString* errorMessage)
+        {
+            return true;
         }
 
     private:

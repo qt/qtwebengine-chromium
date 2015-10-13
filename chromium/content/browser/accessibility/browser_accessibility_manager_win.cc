@@ -19,7 +19,7 @@ namespace content {
 
 // static
 BrowserAccessibilityManager* BrowserAccessibilityManager::Create(
-    const ui::AXTreeUpdate& initial_tree,
+    const SimpleAXTreeUpdate& initial_tree,
     BrowserAccessibilityDelegate* delegate,
     BrowserAccessibilityFactory* factory) {
   return new BrowserAccessibilityManagerWin(initial_tree, delegate, factory);
@@ -31,12 +31,13 @@ BrowserAccessibilityManager::ToBrowserAccessibilityManagerWin() {
 }
 
 BrowserAccessibilityManagerWin::BrowserAccessibilityManagerWin(
-    const ui::AXTreeUpdate& initial_tree,
+    const SimpleAXTreeUpdate& initial_tree,
     BrowserAccessibilityDelegate* delegate,
     BrowserAccessibilityFactory* factory)
     : BrowserAccessibilityManager(delegate, factory),
       tracked_scroll_object_(NULL),
-      focus_event_on_root_needed_(false) {
+      focus_event_on_root_needed_(false),
+      inside_on_window_focused_(false) {
   ui::win::CreateATLModuleIfNeeded();
   Initialize(initial_tree);
 }
@@ -49,7 +50,8 @@ BrowserAccessibilityManagerWin::~BrowserAccessibilityManagerWin() {
 }
 
 // static
-ui::AXTreeUpdate BrowserAccessibilityManagerWin::GetEmptyDocument() {
+SimpleAXTreeUpdate
+    BrowserAccessibilityManagerWin::GetEmptyDocument() {
   ui::AXNodeData empty_document;
   empty_document.id = 0;
   empty_document.role = ui::AX_ROLE_ROOT_WEB_AREA;
@@ -58,7 +60,7 @@ ui::AXTreeUpdate BrowserAccessibilityManagerWin::GetEmptyDocument() {
       (1 << ui::AX_STATE_READ_ONLY) |
       (1 << ui::AX_STATE_BUSY);
 
-  ui::AXTreeUpdate update;
+  SimpleAXTreeUpdate update;
   update.nodes.push_back(empty_document);
   return update;
 }
@@ -136,6 +138,11 @@ void BrowserAccessibilityManagerWin::MaybeCallNotifyWinEvent(
 }
 
 void BrowserAccessibilityManagerWin::OnWindowFocused() {
+  // Make sure we don't call this recursively.
+  if (inside_on_window_focused_)
+    return;
+  inside_on_window_focused_ = true;
+
   // This is called either when this web frame gets focused, or when
   // the root of the accessibility tree changes. In both cases, we need
   // to fire a focus event on the root and then on the focused element
@@ -145,18 +152,22 @@ void BrowserAccessibilityManagerWin::OnWindowFocused() {
   // if they're not successful this time.
   focus_event_on_root_needed_ = true;
 
-  if (!delegate_ || !delegate_->AccessibilityViewHasFocus())
+  if (!delegate_ || !delegate_->AccessibilityViewHasFocus()) {
+    inside_on_window_focused_ = false;
     return;
+  }
 
   // Try to fire a focus event on the root first and then the focused node.
   // This will clear focus_event_on_root_needed_ if successful.
-  if (focus_ != tree_->root())
+  if (focus_ != tree_->root() && GetRoot())
     NotifyAccessibilityEvent(ui::AX_EVENT_FOCUS, GetRoot());
   BrowserAccessibilityManager::OnWindowFocused();
+  inside_on_window_focused_ = false;
 }
 
 void BrowserAccessibilityManagerWin::UserIsReloading() {
-  MaybeCallNotifyWinEvent(IA2_EVENT_DOCUMENT_RELOAD, GetRoot());
+  if (GetRoot())
+    MaybeCallNotifyWinEvent(IA2_EVENT_DOCUMENT_RELOAD, GetRoot());
 }
 
 void BrowserAccessibilityManagerWin::NotifyAccessibilityEvent(
@@ -253,6 +264,9 @@ void BrowserAccessibilityManagerWin::NotifyAccessibilityEvent(
       break;
   }
 
+  if (!node)
+    return;
+
   if (event_id != EVENT_MIN) {
     // Pass the node's unique id in the |child_id| argument to NotifyWinEvent;
     // the AT client will then call get_accChild on the HWND's accessibility
@@ -284,6 +298,7 @@ void BrowserAccessibilityManagerWin::OnNodeCreated(ui::AXTree* tree,
     return;
   LONG unique_id_win = obj->ToBrowserAccessibilityWin()->unique_id_win();
   unique_id_to_ax_id_map_[unique_id_win] = obj->GetId();
+  unique_id_to_ax_tree_id_map_[unique_id_win] = ax_tree_id_;
 }
 
 void BrowserAccessibilityManagerWin::OnNodeWillBeDeleted(ui::AXTree* tree,
@@ -295,6 +310,8 @@ void BrowserAccessibilityManagerWin::OnNodeWillBeDeleted(ui::AXTree* tree,
   if (!obj->IsNative())
     return;
   unique_id_to_ax_id_map_.erase(
+      obj->ToBrowserAccessibilityWin()->unique_id_win());
+  unique_id_to_ax_tree_id_map_.erase(
       obj->ToBrowserAccessibilityWin()->unique_id_win());
   if (obj == tracked_scroll_object_) {
     tracked_scroll_object_->Release();
@@ -361,30 +378,31 @@ void BrowserAccessibilityManagerWin::TrackScrollingObject(
 
 BrowserAccessibilityWin* BrowserAccessibilityManagerWin::GetFromUniqueIdWin(
     LONG unique_id_win) {
-  base::hash_map<LONG, int32>::iterator iter =
-      unique_id_to_ax_id_map_.find(unique_id_win);
-  if (iter != unique_id_to_ax_id_map_.end()) {
-    BrowserAccessibility* result = GetFromID(iter->second);
-    if (result && result->IsNative())
-      return result->ToBrowserAccessibilityWin();
+  auto tree_iter = unique_id_to_ax_tree_id_map_.find(unique_id_win);
+  if (tree_iter == unique_id_to_ax_tree_id_map_.end())
+    return nullptr;
+
+  int tree_id = tree_iter->second;
+  if (tree_id != ax_tree_id_) {
+    BrowserAccessibilityManagerWin* manager =
+        BrowserAccessibilityManager::FromID(tree_id)
+            ->ToBrowserAccessibilityManagerWin();
+    if (!manager)
+      return nullptr;
+    if (manager != this)
+      return manager->GetFromUniqueIdWin(unique_id_win);
+    return nullptr;
   }
 
-  // Also search all child frames, such as out-of-process iframes or
-  // guest browser plugins.
-  if (delegate()) {
-    std::vector<BrowserAccessibilityManager*> child_frames;
-    delegate()->AccessibilityGetAllChildFrames(&child_frames);
-    for (size_t i = 0; i < child_frames.size(); ++i) {
-      BrowserAccessibilityManagerWin* child_manager =
-          child_frames[i]->ToBrowserAccessibilityManagerWin();
-      BrowserAccessibilityWin* result =
-          child_manager->GetFromUniqueIdWin(unique_id_win);
-      if (result)
-        return result;
-    }
-  }
+  auto iter = unique_id_to_ax_id_map_.find(unique_id_win);
+  if (iter == unique_id_to_ax_id_map_.end())
+    return nullptr;
 
-  return NULL;
+  BrowserAccessibility* result = GetFromID(iter->second);
+  if (result && result->IsNative())
+    return result->ToBrowserAccessibilityWin();
+
+  return nullptr;
 }
 
 }  // namespace content

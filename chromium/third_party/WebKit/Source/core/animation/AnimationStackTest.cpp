@@ -39,12 +39,12 @@ protected:
         timeline->serviceAnimations(TimingUpdateForAnimationFrame);
     }
 
-    const WillBeHeapVector<OwnPtrWillBeMember<SampledEffect>>& effects()
+    const HeapVector<Member<SampledEffect>>& effects()
     {
         return element->ensureElementAnimations().defaultStack().m_effects;
     }
 
-    PassRefPtrWillBeRawPtr<EffectModel> makeEffectModel(CSSPropertyID id, PassRefPtrWillBeRawPtr<AnimatableValue> value)
+    EffectModel* makeEffectModel(CSSPropertyID id, PassRefPtr<AnimatableValue> value)
     {
         AnimatableValueKeyframeVector keyframes(2);
         keyframes[0] = AnimatableValueKeyframe::create();
@@ -56,14 +56,14 @@ protected:
         return AnimatableValueKeyframeEffectModel::create(keyframes);
     }
 
-    PassRefPtrWillBeRawPtr<InertEffect> makeInertEffect(PassRefPtrWillBeRawPtr<EffectModel> effect)
+    InertEffect* makeInertEffect(EffectModel* effect)
     {
         Timing timing;
         timing.fillMode = Timing::FillModeBoth;
         return InertEffect::create(effect, timing, false, 0);
     }
 
-    PassRefPtrWillBeRawPtr<KeyframeEffect> makeKeyframeEffect(PassRefPtrWillBeRawPtr<EffectModel> effect, double duration = 10)
+    KeyframeEffect* makeKeyframeEffect(EffectModel* effect, double duration = 10)
     {
         Timing timing;
         timing.fillMode = Timing::FillModeBoth;
@@ -71,37 +71,37 @@ protected:
         return KeyframeEffect::create(element.get(), effect, timing);
     }
 
-    AnimatableValue* interpolationValue(const ActiveInterpolationMap& activeInterpolations, CSSPropertyID id)
+    AnimatableValue* interpolationValue(const ActiveInterpolationsMap& activeInterpolations, CSSPropertyID id)
     {
-        Interpolation& interpolation = *activeInterpolations.get(PropertyHandle(id));
+        Interpolation& interpolation = *activeInterpolations.get(PropertyHandle(id)).at(0);
         return toLegacyStyleInterpolation(interpolation).currentValue().get();
     }
 
     RefPtrWillBePersistent<Document> document;
-    RefPtrWillBePersistent<AnimationTimeline> timeline;
+    Persistent<AnimationTimeline> timeline;
     RefPtrWillBePersistent<Element> element;
 };
 
 TEST_F(AnimationAnimationStackTest, ElementAnimationsSorted)
 {
-    play(makeKeyframeEffect(makeEffectModel(CSSPropertyFontSize, AnimatableDouble::create(1))).get(), 10);
-    play(makeKeyframeEffect(makeEffectModel(CSSPropertyFontSize, AnimatableDouble::create(2))).get(), 15);
-    play(makeKeyframeEffect(makeEffectModel(CSSPropertyFontSize, AnimatableDouble::create(3))).get(), 5);
-    ActiveInterpolationMap result = AnimationStack::activeInterpolations(&element->elementAnimations()->defaultStack(), 0, 0, KeyframeEffect::DefaultPriority, 0);
+    play(makeKeyframeEffect(makeEffectModel(CSSPropertyFontSize, AnimatableDouble::create(1))), 10);
+    play(makeKeyframeEffect(makeEffectModel(CSSPropertyFontSize, AnimatableDouble::create(2))), 15);
+    play(makeKeyframeEffect(makeEffectModel(CSSPropertyFontSize, AnimatableDouble::create(3))), 5);
+    ActiveInterpolationsMap result = AnimationStack::activeInterpolations(&element->elementAnimations()->defaultStack(), 0, 0, KeyframeEffect::DefaultPriority, 0);
     EXPECT_EQ(1u, result.size());
     EXPECT_TRUE(interpolationValue(result, CSSPropertyFontSize)->equals(AnimatableDouble::create(3).get()));
 }
 
 TEST_F(AnimationAnimationStackTest, NewAnimations)
 {
-    play(makeKeyframeEffect(makeEffectModel(CSSPropertyFontSize, AnimatableDouble::create(1))).get(), 15);
-    play(makeKeyframeEffect(makeEffectModel(CSSPropertyZIndex, AnimatableDouble::create(2))).get(), 10);
-    WillBeHeapVector<RawPtrWillBeMember<InertEffect>> newAnimations;
-    RefPtrWillBeRawPtr<InertEffect> inert1 = makeInertEffect(makeEffectModel(CSSPropertyFontSize, AnimatableDouble::create(3)));
-    RefPtrWillBeRawPtr<InertEffect> inert2 = makeInertEffect(makeEffectModel(CSSPropertyZIndex, AnimatableDouble::create(4)));
-    newAnimations.append(inert1.get());
-    newAnimations.append(inert2.get());
-    ActiveInterpolationMap result = AnimationStack::activeInterpolations(&element->elementAnimations()->defaultStack(), &newAnimations, 0, KeyframeEffect::DefaultPriority, 10);
+    play(makeKeyframeEffect(makeEffectModel(CSSPropertyFontSize, AnimatableDouble::create(1))), 15);
+    play(makeKeyframeEffect(makeEffectModel(CSSPropertyZIndex, AnimatableDouble::create(2))), 10);
+    HeapVector<Member<InertEffect>> newAnimations;
+    InertEffect* inert1 = makeInertEffect(makeEffectModel(CSSPropertyFontSize, AnimatableDouble::create(3)));
+    InertEffect* inert2 = makeInertEffect(makeEffectModel(CSSPropertyZIndex, AnimatableDouble::create(4)));
+    newAnimations.append(inert1);
+    newAnimations.append(inert2);
+    ActiveInterpolationsMap result = AnimationStack::activeInterpolations(&element->elementAnimations()->defaultStack(), &newAnimations, 0, KeyframeEffect::DefaultPriority, 10);
     EXPECT_EQ(2u, result.size());
     EXPECT_TRUE(interpolationValue(result, CSSPropertyFontSize)->equals(AnimatableDouble::create(3).get()));
     EXPECT_TRUE(interpolationValue(result, CSSPropertyZIndex)->equals(AnimatableDouble::create(4).get()));
@@ -109,19 +109,19 @@ TEST_F(AnimationAnimationStackTest, NewAnimations)
 
 TEST_F(AnimationAnimationStackTest, CancelledAnimations)
 {
-    WillBeHeapHashSet<RawPtrWillBeMember<const Animation>> cancelledAnimations;
-    RefPtrWillBeRawPtr<Animation> animation = play(makeKeyframeEffect(makeEffectModel(CSSPropertyFontSize, AnimatableDouble::create(1))).get(), 0);
-    cancelledAnimations.add(animation.get());
-    play(makeKeyframeEffect(makeEffectModel(CSSPropertyZIndex, AnimatableDouble::create(2))).get(), 0);
-    ActiveInterpolationMap result = AnimationStack::activeInterpolations(&element->elementAnimations()->defaultStack(), 0, &cancelledAnimations, KeyframeEffect::DefaultPriority, 0);
+    HeapHashSet<Member<const Animation>> cancelledAnimations;
+    Animation* animation = play(makeKeyframeEffect(makeEffectModel(CSSPropertyFontSize, AnimatableDouble::create(1))), 0);
+    cancelledAnimations.add(animation);
+    play(makeKeyframeEffect(makeEffectModel(CSSPropertyZIndex, AnimatableDouble::create(2))), 0);
+    ActiveInterpolationsMap result = AnimationStack::activeInterpolations(&element->elementAnimations()->defaultStack(), 0, &cancelledAnimations, KeyframeEffect::DefaultPriority, 0);
     EXPECT_EQ(1u, result.size());
     EXPECT_TRUE(interpolationValue(result, CSSPropertyZIndex)->equals(AnimatableDouble::create(2).get()));
 }
 
 TEST_F(AnimationAnimationStackTest, ClearedEffectsRemoved)
 {
-    RefPtrWillBeRawPtr<Animation> animation = play(makeKeyframeEffect(makeEffectModel(CSSPropertyFontSize, AnimatableDouble::create(1))).get(), 10);
-    ActiveInterpolationMap result = AnimationStack::activeInterpolations(&element->elementAnimations()->defaultStack(), 0, 0, KeyframeEffect::DefaultPriority, 0);
+    Animation* animation = play(makeKeyframeEffect(makeEffectModel(CSSPropertyFontSize, AnimatableDouble::create(1))), 10);
+    ActiveInterpolationsMap result = AnimationStack::activeInterpolations(&element->elementAnimations()->defaultStack(), 0, 0, KeyframeEffect::DefaultPriority, 0);
     EXPECT_EQ(1u, result.size());
     EXPECT_TRUE(interpolationValue(result, CSSPropertyFontSize)->equals(AnimatableDouble::create(1).get()));
 

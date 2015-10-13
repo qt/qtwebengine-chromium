@@ -14,7 +14,10 @@
 #include "content/common/content_export.h"
 #include "ui/gfx/geometry/point.h"
 
-template <typename T> struct DefaultSingletonTraits;
+namespace base {
+template <typename T>
+struct DefaultSingletonTraits;
+}  // namespace base
 
 namespace content {
 class RenderWidgetHost;
@@ -66,23 +69,37 @@ class CONTENT_EXPORT TextInputClientMac {
   // allow the Get*() methods to continue/return.
   void SetCharacterIndexAndSignal(NSUInteger index);
   void SetFirstRectAndSignal(NSRect first_rect);
-  void SetSubstringAndSignal(NSAttributedString* string);
 
   // This async method is invoked from RenderWidgetHostViewCocoa's
   // -quickLookWithEvent:, when the user taps a word using 3 fingers.
-  // The reply callback will be invoked from the IO thread, the caller is
+  // The reply callback will be invoked from the IO thread; the caller is
   // responsible for bouncing to the main thread if necessary.
   // The callback parameters provide the attributed word under the point and
   // the lower left baseline point of the text.
   void GetStringAtPoint(RenderWidgetHost* rwh,
                         gfx::Point point,
-                        void (^replyHandler)(NSAttributedString*, NSPoint));
+                        void (^reply_handler)(NSAttributedString*, NSPoint));
+
   // This is called on the IO thread when we get the renderer's reply for
   // GetStringAtPoint.
-  void GetStringAtPointReply(NSAttributedString*, NSPoint);
+  void GetStringAtPointReply(NSAttributedString* string, NSPoint point);
+
+  // This async method is invoked when browser tries to retreive the text for
+  // certain range and doesn't want to wait for the reply from blink.
+  // The reply callback will be invoked from the IO thread; the caller is
+  // responsible for bouncing to the main thread if necessary.
+  // The callback parameters provide the attributed word under the point and
+  // the lower left baseline point of the text.
+  void GetStringFromRange(RenderWidgetHost* rwh,
+                          NSRange range,
+                          void (^reply_handler)(NSAttributedString*, NSPoint));
+
+  // This is called on the IO thread when we get the renderer's reply for
+  // GetStringFromRange.
+  void GetStringFromRangeReply(NSAttributedString* string, NSPoint point);
 
  private:
-  friend struct DefaultSingletonTraits<TextInputClientMac>;
+  friend struct base::DefaultSingletonTraits<TextInputClientMac>;
   TextInputClientMac();
   ~TextInputClientMac();
 
@@ -97,12 +114,17 @@ class CONTENT_EXPORT TextInputClientMac {
 
   NSUInteger character_index_;
   NSRect first_rect_;
-  base::scoped_nsobject<NSAttributedString> substring_;
 
   base::Lock lock_;
   base::ConditionVariable condition_;
 
-  base::mac::ScopedBlock<void(^)(NSAttributedString*, NSPoint)> replyHandler_;
+  // The callback when received IPC TextInputClientReplyMsg_GotStringAtPoint.
+  base::mac::ScopedBlock<void(^)(NSAttributedString*, NSPoint)>
+      replyForPointHandler_;
+
+  // The callback when received IPC TextInputClientReplyMsg_GotStringForRange.
+  base::mac::ScopedBlock<void(^)(NSAttributedString*, NSPoint)>
+      replyForRangeHandler_;
 
   DISALLOW_COPY_AND_ASSIGN(TextInputClientMac);
 };

@@ -5,32 +5,52 @@
 #ifndef WebBluetoothError_h
 #define WebBluetoothError_h
 
-#include "public/platform/WebString.h"
-
 namespace blink {
 
-// Error object when a bluetooth request can not be satisfied used to create
-// DOMExceptions.
-struct WebBluetoothError {
-    enum ErrorType {
-        AbortError,
-        InvalidModificationError,
-        InvalidStateError,
-        NetworkError,
-        NotFoundError,
-        NotSupportedError,
-        SecurityError,
-        SyntaxError
-    };
+// Errors that can occur during Web Bluetooth execution, which are transformed
+// to a DOMException in Source/modules/bluetooth/BluetoothError.cpp.
+//
+// These errors all produce constant message strings. If a particular message
+// needs a dynamic component, we should add a separate enum so type-checking the IPC
+// ensures the dynamic component is passed.
+enum class WebBluetoothError {
+    // AbortError:
+    // InvalidModificationError:
+    GATTInvalidAttributeLength,
+    // InvalidStateError:
+    ServiceNoLongerExists,
+    CharacteristicNoLongerExists,
+    // NetworkError:
+    GATTOperationInProgress,
+    GATTNotPaired,
+    DeviceNoLongerInRange,
+    ConnectUnknownError,
+    ConnectAlreadyInProgress,
+    ConnectUnknownFailure,
+    ConnectAuthFailed,
+    ConnectAuthCanceled,
+    ConnectAuthRejected,
+    ConnectAuthTimeout,
+    ConnectUnsupportedDevice,
+    UntranslatedConnectErrorCode,
+    // NotFoundError:
+    NoBluetoothAdapter,
+    ChosenDeviceVanished,
+    ChooserCancelled,
+    ServiceNotFound,
+    CharacteristicNotFound,
+    // NotSupportedError:
+    GATTUnknownError,
+    GATTUnknownFailure,
+    GATTNotPermitted,
+    GATTNotSupported,
+    GATTUntranslatedErrorCode,
+    // SecurityError:
+    GATTNotAuthorized,
+    RequestDeviceWithoutFrame,
+    // SyntaxError:
 
-    WebBluetoothError(ErrorType errorType, const WebString& message)
-        : errorType(errorType)
-        , message(message)
-    {
-    }
-
-    ErrorType errorType;
-    WebString message;
+    ENUM_MAX_VALUE = GATTNotAuthorized,
 };
 
 } // namespace blink

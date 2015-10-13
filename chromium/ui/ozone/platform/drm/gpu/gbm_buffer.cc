@@ -10,21 +10,25 @@
 #include <xf86drm.h>
 
 #include "base/logging.h"
+#include "base/posix/eintr_wrapper.h"
 #include "base/trace_event/trace_event.h"
 #include "ui/gfx/geometry/size_conversions.h"
+#include "ui/gfx/native_pixmap_handle_ozone.h"
 #include "ui/ozone/platform/drm/gpu/drm_window.h"
 #include "ui/ozone/platform/drm/gpu/gbm_device.h"
+#include "ui/ozone/platform/drm/gpu/gbm_surface_factory.h"
+#include "ui/ozone/platform/drm/gpu/gbm_surfaceless.h"
 
 namespace ui {
 
 namespace {
 
-int GetGbmFormatFromBufferFormat(SurfaceFactoryOzone::BufferFormat fmt) {
+int GetGbmFormatFromBufferFormat(gfx::BufferFormat fmt) {
   switch (fmt) {
-    case SurfaceFactoryOzone::BGRA_8888:
-      return GBM_BO_FORMAT_ARGB8888;
-    case SurfaceFactoryOzone::RGBX_8888:
-      return GBM_BO_FORMAT_XRGB8888;
+    case gfx::BufferFormat::BGRA_8888:
+      return GBM_FORMAT_ARGB8888;
+    case gfx::BufferFormat::BGRX_8888:
+      return GBM_FORMAT_XRGB8888;
     default:
       NOTREACHED();
       return 0;
@@ -35,9 +39,9 @@ int GetGbmFormatFromBufferFormat(SurfaceFactoryOzone::BufferFormat fmt) {
 
 GbmBuffer::GbmBuffer(const scoped_refptr<GbmDevice>& gbm,
                      gbm_bo* bo,
-                     bool scanout)
-    : GbmBufferBase(gbm, bo, scanout) {
-}
+                     gfx::BufferUsage usage)
+    : GbmBufferBase(gbm, bo, usage == gfx::BufferUsage::SCANOUT),
+      usage_(usage) {}
 
 GbmBuffer::~GbmBuffer() {
   if (bo())
@@ -47,30 +51,31 @@ GbmBuffer::~GbmBuffer() {
 // static
 scoped_refptr<GbmBuffer> GbmBuffer::CreateBuffer(
     const scoped_refptr<GbmDevice>& gbm,
-    SurfaceFactoryOzone::BufferFormat format,
+    gfx::BufferFormat format,
     const gfx::Size& size,
-    bool scanout) {
+    gfx::BufferUsage usage) {
   TRACE_EVENT2("drm", "GbmBuffer::CreateBuffer", "device",
                gbm->device_path().value(), "size", size.ToString());
-  unsigned flags = GBM_BO_USE_RENDERING;
-  if (scanout)
-    flags |= GBM_BO_USE_SCANOUT;
+  bool use_scanout = (usage == gfx::BufferUsage::SCANOUT);
+  unsigned flags = 0;
+  // GBM_BO_USE_SCANOUT is the hint of x-tiling.
+  if (use_scanout)
+    flags = GBM_BO_USE_SCANOUT | GBM_BO_USE_RENDERING;
   gbm_bo* bo = gbm_bo_create(gbm->device(), size.width(), size.height(),
                              GetGbmFormatFromBufferFormat(format), flags);
   if (!bo)
-    return NULL;
+    return nullptr;
 
-  scoped_refptr<GbmBuffer> buffer(new GbmBuffer(gbm, bo, scanout));
-  if (scanout && !buffer->GetFramebufferId())
-    return NULL;
+  scoped_refptr<GbmBuffer> buffer(new GbmBuffer(gbm, bo, usage));
+  if (use_scanout && !buffer->GetFramebufferId())
+    return nullptr;
 
   return buffer;
 }
 
 GbmPixmap::GbmPixmap(const scoped_refptr<GbmBuffer>& buffer,
-                     ScreenManager* screen_manager)
-    : buffer_(buffer), screen_manager_(screen_manager) {
-}
+                     GbmSurfaceFactory* surface_manager)
+    : buffer_(buffer), surface_manager_(surface_manager) {}
 
 bool GbmPixmap::Initialize() {
   // We want to use the GBM API because it's going to call into libdrm
@@ -90,6 +95,20 @@ void GbmPixmap::SetScalingCallback(const ScalingCallback& scaling_callback) {
 
 scoped_refptr<NativePixmap> GbmPixmap::GetScaledPixmap(gfx::Size new_size) {
   return scaling_callback_.Run(new_size);
+}
+
+gfx::NativePixmapHandle GbmPixmap::ExportHandle() {
+  gfx::NativePixmapHandle handle;
+
+  int dmabuf_fd = HANDLE_EINTR(dup(dma_buf_));
+  if (dmabuf_fd < 0) {
+    PLOG(ERROR) << "dup";
+    return handle;
+  }
+
+  handle.fd = base::FileDescriptor(dmabuf_fd, true /* auto_close */);
+  handle.stride = gbm_bo_get_stride(buffer_->bo());
+  return handle;
 }
 
 GbmPixmap::~GbmPixmap() {
@@ -114,6 +133,7 @@ bool GbmPixmap::ScheduleOverlayPlane(gfx::AcceleratedWidget widget,
                                      gfx::OverlayTransform plane_transform,
                                      const gfx::Rect& display_bounds,
                                      const gfx::RectF& crop_rect) {
+  DCHECK(buffer_->GetUsage() == gfx::BufferUsage::SCANOUT);
   gfx::Size required_size;
   if (plane_z_order &&
       ShouldApplyScaling(display_bounds, crop_rect, &required_size)) {
@@ -126,7 +146,7 @@ bool GbmPixmap::ScheduleOverlayPlane(gfx::AcceleratedWidget widget,
     }
   }
 
-  screen_manager_->GetWindow(widget)->QueueOverlayPlane(OverlayPlane(
+  surface_manager_->GetSurface(widget)->QueueOverlayPlane(OverlayPlane(
       buffer_, plane_z_order, plane_transform, display_bounds, crop_rect));
   return true;
 }

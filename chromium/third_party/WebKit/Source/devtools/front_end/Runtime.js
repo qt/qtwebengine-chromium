@@ -36,7 +36,7 @@ var _loadedScripts = {};
 // FIXME: This is a workaround to force Closure compiler provide
 // the standard ES6 runtime for all modules. This should be removed
 // once Closure provides standard externs for Map et al.
-for (var k of []);
+for (var k of []) {};
 
 /**
  * @param {string} url
@@ -744,10 +744,8 @@ Runtime.Module.prototype = {
         if (!this._descriptor.scripts)
             return Promise.resolve();
 
-        if (Runtime.isReleaseMode()) {
-            var base = this._descriptor.remote && Runtime._remoteBase || undefined;
-            return loadScriptsPromise([this._name + "_module.js"], base);
-        }
+        if (Runtime.isReleaseMode())
+            return loadScriptsPromise([this._name + "_module.js"], this._remoteBase());
 
         return loadScriptsPromise(this._descriptor.scripts.map(this._modularizeURL, this));
     },
@@ -761,10 +759,34 @@ Runtime.Module.prototype = {
     },
 
     /**
+     * @return {string|undefined}
+     */
+    _remoteBase: function()
+    {
+        return this._descriptor.remote && Runtime._remoteBase || undefined;
+    },
+
+    /**
+     * @param {string} value
+     * @return {string}
+     */
+    substituteURL: function(value)
+    {
+        var base = this._remoteBase() || "";
+        return value.replace(/@url\(([^\)]*?)\)/g, convertURL.bind(this));
+
+        function convertURL(match, url)
+        {
+            return base + this._modularizeURL(url);
+        }
+    },
+
+    /**
      * @param {string} className
+     * @param {!Runtime.Extension} extension
      * @return {?Object}
      */
-    _instance: function(className)
+    _instance: function(className, extension)
     {
         if (className in this._instanceMap)
             return this._instanceMap[className];
@@ -775,7 +797,7 @@ Runtime.Module.prototype = {
             return null;
         }
 
-        var instance = new constructorFunction();
+        var instance = new constructorFunction(extension);
         this._instanceMap[className] = instance;
         return instance;
     }
@@ -823,7 +845,9 @@ Runtime.Extension.prototype = {
     enabled: function()
     {
         var activatorExperiment = this.descriptor()["experiment"];
-        if (activatorExperiment && !Runtime.experiments.isEnabled(activatorExperiment))
+        if (activatorExperiment && activatorExperiment.startsWith("!") && Runtime.experiments.isEnabled(activatorExperiment.substring(1)))
+            return false;
+        if (activatorExperiment && !activatorExperiment.startsWith("!") && !Runtime.experiments.isEnabled(activatorExperiment))
             return false;
         var condition = this.descriptor()["condition"];
         if (condition && !Runtime.queryParam(condition))
@@ -869,7 +893,7 @@ Runtime.Extension.prototype = {
          */
         function constructInstance()
         {
-            var result = this._module._instance(className);
+            var result = this._module._instance(className, this);
             if (!result)
                 return Promise.reject("Could not instantiate: " + className);
             return result;
@@ -882,6 +906,7 @@ Runtime.Extension.prototype = {
      */
     title: function(platform)
     {
+        // FIXME: should be WebInspector.UIString() but runtime is not l10n aware yet.
         return this._descriptor["title-" + platform] || this._descriptor["title"];
     }
 }

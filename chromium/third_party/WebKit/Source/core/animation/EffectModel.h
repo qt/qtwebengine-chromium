@@ -38,13 +38,12 @@
 #include "platform/heap/Handle.h"
 #include "wtf/HashMap.h"
 #include "wtf/PassOwnPtr.h"
-#include "wtf/RefCounted.h"
 
 namespace blink {
 
 class Interpolation;
 
-class CORE_EXPORT EffectModel : public RefCountedWillBeGarbageCollectedFinalized<EffectModel>, public ScriptWrappable {
+class CORE_EXPORT EffectModel : public GarbageCollectedFinalized<EffectModel>, public ScriptWrappable {
     DEFINE_WRAPPERTYPEINFO();
 public:
     enum CompositeOperation {
@@ -54,7 +53,7 @@ public:
 
     EffectModel() { }
     virtual ~EffectModel() { }
-    virtual void sample(int iteration, double fraction, double iterationDuration, OwnPtrWillBeRawPtr<WillBeHeapVector<RefPtrWillBeMember<Interpolation>>>&) const = 0;
+    virtual bool sample(int iteration, double fraction, double iterationDuration, OwnPtr<Vector<RefPtr<Interpolation>>>&) const = 0;
 
     virtual bool affects(PropertyHandle) const { return false; }
     virtual bool isTransformRelatedEffect() const { return false; }

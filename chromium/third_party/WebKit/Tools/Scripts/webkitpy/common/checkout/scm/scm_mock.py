@@ -34,7 +34,7 @@ class MockSCM(object):
     executable_name = "MockSCM"
 
     def __init__(self, filesystem=None, executive=None):
-        self.checkout_root = "/mock-checkout/third_party/WebKit"
+        self.checkout_root = "/mock-checkout"
         self.added_paths = set()
         self._filesystem = filesystem or MockFileSystem()
         self._executive = executive or MockExecutive()
@@ -76,10 +76,10 @@ class MockSCM(object):
     def absolute_path(self, *comps):
         return self._filesystem.join(self.checkout_root, *comps)
 
-    def svn_revision(self, path):
-        return '5678'
+    def commit_position(self, path):
+        return 5678
 
-    def svn_revision_from_git_commit(self, git_commit):
+    def commit_position_from_git_commit(self, git_commit):
         if git_commit == '6469e754a1':
             return 1234
         if git_commit == '624c3081c0':

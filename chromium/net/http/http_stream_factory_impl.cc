@@ -124,7 +124,6 @@ HttpStreamRequest* HttpStreamFactoryImpl::RequestStreamInternal(
 void HttpStreamFactoryImpl::PreconnectStreams(
     int num_streams,
     const HttpRequestInfo& request_info,
-    RequestPriority priority,
     const SSLConfig& server_ssl_config,
     const SSLConfig& proxy_ssl_config) {
   DCHECK(!for_websockets_);
@@ -135,8 +134,13 @@ void HttpStreamFactoryImpl::PreconnectStreams(
     // TODO(bnc): Pass on multiple alternative services to Job.
     alternative_service = alternative_service_vector[0];
   }
+
+  // Due to how the socket pools handle priorities and idle sockets, only IDLE
+  // priority currently makes sense for preconnects. The priority for
+  // preconnects is currently ignored (see RequestSocketsForPool()), but could
+  // be used at some point for proxy resolution or something.
   Job* job =
-      new Job(this, session_, request_info, priority, server_ssl_config,
+      new Job(this, session_, request_info, IDLE, server_ssl_config,
               proxy_ssl_config, alternative_service, session_->net_log());
   preconnect_job_set_.insert(job);
   job->Preconnect(num_streams);
@@ -148,9 +152,6 @@ const HostMappingRules* HttpStreamFactoryImpl::GetHostMappingRules() const {
 
 AlternativeServiceVector HttpStreamFactoryImpl::GetAlternativeServicesFor(
     const GURL& original_url) {
-  if (!session_->params().use_alternate_protocols)
-    return AlternativeServiceVector();
-
   if (original_url.SchemeIs("ftp"))
     return AlternativeServiceVector();
 
@@ -162,6 +163,9 @@ AlternativeServiceVector HttpStreamFactoryImpl::GetAlternativeServicesFor(
   if (alternative_service_vector.empty())
     return AlternativeServiceVector();
 
+  const bool enable_different_host =
+      session_->params().use_alternative_services;
+
   AlternativeServiceVector enabled_alternative_service_vector;
   for (const AlternativeService& alternative_service :
        alternative_service_vector) {
@@ -171,6 +175,9 @@ AlternativeServiceVector HttpStreamFactoryImpl::GetAlternativeServicesFor(
       HistogramAlternateProtocolUsage(ALTERNATE_PROTOCOL_USAGE_BROKEN);
       continue;
     }
+
+    if (origin.host() != alternative_service.host && !enable_different_host)
+      continue;
 
     // Some shared unix systems may have user home directories (like
     // http://foo.com/~mike) which allow users to emit headers.  This is a bad
@@ -204,7 +211,7 @@ AlternativeServiceVector HttpStreamFactoryImpl::GetAlternativeServicesFor(
     if (session_->quic_stream_factory()->IsQuicDisabled(origin.port()))
       continue;
 
-    if (session_->params().disable_insecure_quic &&
+    if (!session_->params().enable_insecure_quic &&
         !original_url.SchemeIs("https")) {
       continue;
     }

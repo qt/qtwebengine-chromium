@@ -9,15 +9,17 @@
 #ifndef LIBANGLE_STATE_H_
 #define LIBANGLE_STATE_H_
 
+#include <bitset>
+
 #include "common/angleutils.h"
+#include "libANGLE/Program.h"
 #include "libANGLE/RefCountObject.h"
-#include "libANGLE/angletypes.h"
-#include "libANGLE/VertexAttribute.h"
 #include "libANGLE/Renderbuffer.h"
+#include "libANGLE/Sampler.h"
 #include "libANGLE/Texture.h"
 #include "libANGLE/TransformFeedback.h"
-#include "libANGLE/Program.h"
-#include "libANGLE/Sampler.h"
+#include "libANGLE/VertexAttribute.h"
+#include "libANGLE/angletypes.h"
 
 namespace gl
 {
@@ -201,10 +203,7 @@ class State : angle::NonCopyable
     // GL_UNIFORM_BUFFER - Both indexed and generic targets
     void setGenericUniformBufferBinding(Buffer *buffer);
     void setIndexedUniformBufferBinding(GLuint index, Buffer *buffer, GLintptr offset, GLsizeiptr size);
-    GLuint getIndexedUniformBufferId(GLuint index) const;
-    Buffer *getIndexedUniformBuffer(GLuint index) const;
-    GLintptr getIndexedUniformBufferOffset(GLuint index) const;
-    GLsizeiptr getIndexedUniformBufferSize(GLuint index) const;
+    const OffsetBindingPointer<Buffer> &getIndexedUniformBuffer(size_t index) const;
 
     // GL_COPY_[READ/WRITE]_BUFFER
     void setCopyReadBufferBinding(Buffer *buffer);
@@ -224,6 +223,7 @@ class State : angle::NonCopyable
     void setVertexAttribi(GLuint index, const GLint values[4]);
     void setVertexAttribState(unsigned int attribNum, Buffer *boundBuffer, GLint size, GLenum type,
                               bool normalized, bool pureInteger, GLsizei stride, const void *pointer);
+    void setVertexAttribDivisor(GLuint index, GLuint divisor);
     const VertexAttribCurrentValueData &getVertexAttribCurrentValue(unsigned int attribNum) const;
     const void *getVertexAttribPointer(unsigned int attribNum) const;
 
@@ -251,6 +251,75 @@ class State : angle::NonCopyable
     bool getIndexedInteger64v(GLenum target, GLuint index, GLint64 *data);
 
     bool hasMappedBuffer(GLenum target) const;
+
+    enum DirtyBitType
+    {
+        DIRTY_BIT_SCISSOR_TEST_ENABLED,
+        DIRTY_BIT_SCISSOR,
+        DIRTY_BIT_VIEWPORT,
+        DIRTY_BIT_DEPTH_RANGE,
+        DIRTY_BIT_BLEND_ENABLED,
+        DIRTY_BIT_BLEND_COLOR,
+        DIRTY_BIT_BLEND_FUNCS,
+        DIRTY_BIT_BLEND_EQUATIONS,
+        DIRTY_BIT_COLOR_MASK,
+        DIRTY_BIT_SAMPLE_ALPHA_TO_COVERAGE_ENABLED,
+        DIRTY_BIT_SAMPLE_COVERAGE_ENABLED,
+        DIRTY_BIT_SAMPLE_COVERAGE,
+        DIRTY_BIT_DEPTH_TEST_ENABLED,
+        DIRTY_BIT_DEPTH_FUNC,
+        DIRTY_BIT_DEPTH_MASK,
+        DIRTY_BIT_STENCIL_TEST_ENABLED,
+        DIRTY_BIT_STENCIL_FUNCS_FRONT,
+        DIRTY_BIT_STENCIL_FUNCS_BACK,
+        DIRTY_BIT_STENCIL_OPS_FRONT,
+        DIRTY_BIT_STENCIL_OPS_BACK,
+        DIRTY_BIT_STENCIL_WRITEMASK_FRONT,
+        DIRTY_BIT_STENCIL_WRITEMASK_BACK,
+        DIRTY_BIT_CULL_FACE_ENABLED,
+        DIRTY_BIT_CULL_FACE,
+        DIRTY_BIT_FRONT_FACE,
+        DIRTY_BIT_POLYGON_OFFSET_FILL_ENABLED,
+        DIRTY_BIT_POLYGON_OFFSET,
+        DIRTY_BIT_RASTERIZER_DISCARD_ENABLED,
+        DIRTY_BIT_LINE_WIDTH,
+        DIRTY_BIT_PRIMITIVE_RESTART_ENABLED,
+        DIRTY_BIT_CLEAR_COLOR,
+        DIRTY_BIT_CLEAR_DEPTH,
+        DIRTY_BIT_CLEAR_STENCIL,
+        DIRTY_BIT_UNPACK_ALIGNMENT,
+        DIRTY_BIT_UNPACK_ROW_LENGTH,
+        DIRTY_BIT_PACK_ALIGNMENT,
+        DIRTY_BIT_PACK_REVERSE_ROW_ORDER,
+        DIRTY_BIT_DITHER_ENABLED,
+        DIRTY_BIT_GENERATE_MIPMAP_HINT,
+        DIRTY_BIT_SHADER_DERIVATIVE_HINT,
+        DIRTY_BIT_READ_FRAMEBUFFER_BINDING,
+        DIRTY_BIT_READ_FRAMEBUFFER_OBJECT,
+        DIRTY_BIT_DRAW_FRAMEBUFFER_BINDING,
+        DIRTY_BIT_DRAW_FRAMEBUFFER_OBJECT,
+        DIRTY_BIT_RENDERBUFFER_BINDING,
+        DIRTY_BIT_VERTEX_ARRAY_BINDING,
+        DIRTY_BIT_VERTEX_ARRAY_OBJECT,
+        DIRTY_BIT_PROGRAM_BINDING,
+        DIRTY_BIT_PROGRAM_OBJECT,
+        DIRTY_BIT_CURRENT_VALUE_0,
+        DIRTY_BIT_CURRENT_VALUE_MAX = DIRTY_BIT_CURRENT_VALUE_0 + MAX_VERTEX_ATTRIBS,
+        DIRTY_BIT_INVALID           = DIRTY_BIT_CURRENT_VALUE_MAX,
+        DIRTY_BIT_MAX               = DIRTY_BIT_INVALID,
+    };
+
+    typedef std::bitset<DIRTY_BIT_MAX> DirtyBits;
+    const DirtyBits &getDirtyBits() const { return mDirtyBits; }
+    void clearDirtyBits() { mDirtyBits.reset(); }
+    void clearDirtyBits(const DirtyBits &bitset) { mDirtyBits &= ~bitset; }
+    void setAllDirtyBits() { mDirtyBits.set(); }
+
+    // Dirty bit masks
+    const DirtyBits &unpackStateBitMask() const { return mUnpackStateBitMask; }
+    const DirtyBits &packStateBitMask() const { return mPackStateBitMask; }
+    const DirtyBits &clearStateBitMask() const { return mClearStateBitMask; }
+    const DirtyBits &blitStateBitMask() const { return mBlitStateBitMask; }
 
   private:
     // Cached values from Context's caps
@@ -320,6 +389,12 @@ class State : angle::NonCopyable
     PixelPackState mPack;
 
     bool mPrimitiveRestart;
+
+    DirtyBits mDirtyBits;
+    DirtyBits mUnpackStateBitMask;
+    DirtyBits mPackStateBitMask;
+    DirtyBits mClearStateBitMask;
+    DirtyBits mBlitStateBitMask;
 };
 
 }

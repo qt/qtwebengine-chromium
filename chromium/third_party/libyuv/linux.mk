@@ -18,7 +18,10 @@ LOCAL_OBJ_FILES := \
     source/cpu_id.o            \
     source/planar_functions.o  \
     source/rotate.o            \
+    source/rotate_any.o        \
     source/rotate_argb.o       \
+    source/rotate_common.o     \
+    source/rotate_gcc.o        \
     source/rotate_mips.o       \
     source/row_any.o           \
     source/row_common.o        \

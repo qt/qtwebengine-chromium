@@ -6,12 +6,15 @@
 #define WebPermissionClient_h
 
 #include "public/platform/WebCallbacks.h"
+#include "public/platform/WebPassOwnPtr.h"
+#include "public/platform/WebVector.h"
 #include "public/platform/modules/permissions/WebPermissionStatus.h"
 #include "public/platform/modules/permissions/WebPermissionType.h"
 
 namespace blink {
 
-using WebPermissionQueryCallback = WebCallbacks<WebPermissionStatus, void>;
+using WebPermissionCallback = WebCallbacks<WebPermissionStatus, void>;
+using WebPermissionsCallback = WebCallbacks<WebPassOwnPtr<WebVector<WebPermissionStatus>>, void>;
 
 class WebPermissionObserver;
 class WebURL;
@@ -21,7 +24,16 @@ class WebURL;
 class WebPermissionClient {
 public:
     // Query the permission status of a given origin for a specific permission.
-    virtual void queryPermission(WebPermissionType, const WebURL&, WebPermissionQueryCallback*) { }
+    virtual void queryPermission(WebPermissionType, const WebURL&, WebPermissionCallback*) { }
+
+    // Request a specific permission for a given origin.
+    virtual void requestPermission(WebPermissionType, const WebURL&, WebPermissionCallback*) { }
+
+    // Request some permissions for a given origin.
+    virtual void requestPermissions(const WebVector<WebPermissionType>&, const WebURL&, WebPermissionsCallback*) { }
+
+    // Revoke a specific permission for a given origin.
+    virtual void revokePermission(WebPermissionType, const WebURL&, WebPermissionCallback*) { }
 
     // Listen for permission changes for a given origin and inform the observer
     // when they happen. The observer is not owned by the WebPermissionClient.

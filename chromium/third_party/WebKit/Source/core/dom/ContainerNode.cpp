@@ -145,27 +145,19 @@ bool ContainerNode::checkAcceptChild(const Node* newChild, const Node* oldChild,
         return false;
     }
 
-    if (containsConsideringHostElements(*newChild)) {
-        exceptionState.throwDOMException(HierarchyRequestError, "The new child element contains the parent.");
-        return false;
-    }
-
-    if (isDocumentNode())
-        return toDocument(this)->canAcceptChild(*newChild, oldChild, exceptionState);
-
-    if (!isChildTypeAllowed(*newChild)) {
-        exceptionState.throwDOMException(HierarchyRequestError, "Nodes of type '" + newChild->nodeName() + "' may not be inserted inside nodes of type '" + nodeName() + "'.");
-        return false;
-    }
-
-    return true;
+    return checkAcceptChildGuaranteedNodeTypes(*newChild, oldChild, exceptionState);
 }
 
-bool ContainerNode::checkAcceptChildGuaranteedNodeTypes(const Node& newChild, ExceptionState& exceptionState) const
+bool ContainerNode::checkAcceptChildGuaranteedNodeTypes(const Node& newChild, const Node* oldChild, ExceptionState& exceptionState) const
 {
-    ASSERT(isChildTypeAllowed(newChild));
-    if (newChild.contains(this)) {
+    if (isDocumentNode())
+        return toDocument(this)->canAcceptChild(newChild, oldChild, exceptionState);
+    if (newChild.containsIncludingHostElements(*this)) {
         exceptionState.throwDOMException(HierarchyRequestError, "The new child element contains the parent.");
+        return false;
+    }
+    if (!isChildTypeAllowed(newChild)) {
+        exceptionState.throwDOMException(HierarchyRequestError, "Nodes of type '" + newChild.nodeName() + "' may not be inserted inside nodes of type '" + nodeName() + "'.");
         return false;
     }
     return true;
@@ -214,7 +206,7 @@ PassRefPtrWillBeRawPtr<Node> ContainerNode::insertBefore(PassRefPtrWillBeRawPtr<
         return newChild;
 
     // We need this extra check because collectChildrenAndRemoveFromOldParent() can fire mutation events.
-    if (!checkAcceptChildGuaranteedNodeTypes(*newChild, exceptionState)) {
+    if (!checkAcceptChildGuaranteedNodeTypes(*newChild, nullptr, exceptionState)) {
         if (exceptionState.hadException())
             return nullptr;
         return newChild;
@@ -321,6 +313,9 @@ void ContainerNode::parserInsertBefore(PassRefPtrWillBeRawPtr<Node> newChild, No
     // See: fast/parser/execute-script-during-adoption-agency-removal.html
     while (RefPtrWillBeRawPtr<ContainerNode> parent = newChild->parentNode())
         parent->parserRemoveChild(*newChild);
+
+    if (nextChild.parentNode() != this)
+        return;
 
     if (document() != newChild->document())
         document().adoptNode(newChild.get(), ASSERT_NO_EXCEPTION);
@@ -443,12 +438,18 @@ void ContainerNode::willRemoveChild(Node& child)
     child.notifyMutationObserversNodeWillDetach();
     dispatchChildRemovalEvents(child);
     ChildFrameDisconnector(child).disconnect();
+    if (document() != child.document()) {
+        // |child| was moved another document by DOM mutation event handler.
+        return;
+    }
 
-    // nodeWillBeRemoved must be run after ChildFrameDisconnector, because ChildFrameDisconnector can run script
-    // which may cause state that is to be invalidated by removing the node.
+    // |nodeWillBeRemoved()| must be run after |ChildFrameDisconnector|, because
+    // |ChildFrameDisconnector| can run script which may cause state that is to
+    // be invalidated by removing the node.
     ScriptForbiddenScope scriptForbiddenScope;
     EventDispatchForbiddenScope assertNoEventDispatch;
-    document().nodeWillBeRemoved(child); // e.g. mutation event listener can create a new range.
+    // e.g. mutation event listener can create a new range.
+    document().nodeWillBeRemoved(child);
 }
 
 void ContainerNode::willRemoveChildren()
@@ -512,6 +513,9 @@ void ContainerNode::addChildNodesToDeletionQueue(Node*& head, Node*& tail, Conta
             next->setPreviousSibling(nullptr);
 
         if (!n->refCount()) {
+            if (n->inDocument())
+                container.document().decrementNodeCount();
+
 #if ENABLE(SECURITY_ASSERT)
             n->m_deletionHasBegun = true;
 #endif
@@ -534,11 +538,6 @@ void ContainerNode::addChildNodesToDeletionQueue(Node*& head, Node*& tail, Conta
     container.setLastChild(nullptr);
 }
 #endif
-
-void ContainerNode::disconnectDescendantFrames()
-{
-    ChildFrameDisconnector(*this).disconnect();
-}
 
 DEFINE_TRACE(ContainerNode)
 {
@@ -740,7 +739,7 @@ PassRefPtrWillBeRawPtr<Node> ContainerNode::appendChild(PassRefPtrWillBeRawPtr<N
         return newChild;
 
     // We need this extra check because collectChildrenAndRemoveFromOldParent() can fire mutation events.
-    if (!checkAcceptChildGuaranteedNodeTypes(*newChild, exceptionState)) {
+    if (!checkAcceptChildGuaranteedNodeTypes(*newChild, nullptr, exceptionState)) {
         if (exceptionState.hadException())
             return nullptr;
         return newChild;
@@ -934,17 +933,18 @@ bool ContainerNode::getUpperLeftCorner(FloatPoint& point) const
             return true;
         }
 
-        if (p->node() && p->node() == this && o->isText() && !o->isBR() && !toLayoutText(o)->firstTextBox()) {
+        if (p->node() && p->node() == this && o->isText() && !o->isBR() && !toLayoutText(o)->hasTextBoxes()) {
             // Do nothing - skip unrendered whitespace that is a child or next sibling of the anchor.
         } else if ((o->isText() && !o->isBR()) || o->isReplaced()) {
             point = FloatPoint();
             if (o->isText() && toLayoutText(o)->firstTextBox()) {
                 point.move(toLayoutText(o)->linesBoundingBox().x(), toLayoutText(o)->firstTextBox()->root().lineTop().toFloat());
+                point = o->localToAbsolute(point, UseTransforms);
             } else if (o->isBox()) {
                 LayoutBox* box = toLayoutBox(o);
                 point.moveBy(box->location());
+                point = o->container()->localToAbsolute(point, UseTransforms);
             }
-            point = o->container()->localToAbsolute(point, UseTransforms);
             return true;
         }
     }
@@ -1031,11 +1031,12 @@ bool ContainerNode::getLowerRightCorner(FloatPoint& point) const
                 if (!linesBox.maxX() && !linesBox.maxY())
                     continue;
                 point.moveBy(linesBox.maxXMaxYCorner());
+                point = o->localToAbsolute(point, UseTransforms);
             } else {
                 LayoutBox* box = toLayoutBox(o);
                 point.moveBy(box->frameRect().maxXMaxYCorner());
+                point = o->container()->localToAbsolute(point, UseTransforms);
             }
-            point = o->container()->localToAbsolute(point, UseTransforms);
             return true;
         }
     }
@@ -1091,15 +1092,15 @@ void ContainerNode::setFocus(bool received)
     // TODO(kochi): Handle UA shadows which marks multiple nodes as focused such as
     // <input type="date"> the same way as author shadow.
     if (ShadowRoot* root = containingShadowRoot()) {
-        if (root->type() == ShadowRootType::Open)
+        if (root->type() != ShadowRootType::UserAgent)
             shadowHost()->setFocus(received);
     }
 
     // If this is an author shadow host and indirectly focused (has focused element within
     // its shadow root), update focus.
     if (isElementNode() && document().focusedElement() && document().focusedElement() != this) {
-        if (toElement(this)->shadowRoot())
-            received = received && toElement(this)->shadowRoot()->delegatesFocus();
+        if (toElement(this)->authorShadowRoot())
+            received = received && toElement(this)->authorShadowRoot()->delegatesFocus();
     }
 
     if (focused() == received)
@@ -1354,9 +1355,6 @@ void ContainerNode::checkForChildrenAdjacentRuleChanges()
 void ContainerNode::checkForSiblingStyleChanges(SiblingCheckType changeType, Node* nodeBeforeChange, Node* nodeAfterChange)
 {
     if (!inActiveDocument() || document().hasPendingForcedStyleRecalc() || styleChangeType() >= SubtreeStyleChange)
-        return;
-
-    if (needsStyleRecalc() && childrenAffectedByPositionalRules())
         return;
 
     // Forward positional selectors include nth-child, nth-of-type, first-of-type and only-of-type.

@@ -34,7 +34,7 @@ namespace blink {
 class ContainerNode;
 class Document;
 class FormAttributeTargetObserver;
-class FormDataList;
+class FormData;
 class HTMLElement;
 class HTMLFormElement;
 class Node;
@@ -63,9 +63,9 @@ public:
     // Note that the 'name' IDL attribute doesn't use this function.
     virtual const AtomicString& name() const;
 
-    // Override in derived classes to get the encoded name=value pair for submitting.
-    // Return true for a successful control (see HTML4-17.13.2).
-    virtual bool appendFormData(FormDataList&, bool) { return false; }
+    // Override in derived classes to get the encoded name=value pair for
+    // submitting.
+    virtual void appendToFormData(FormData&) { }
 
     void resetFormOwner();
 
@@ -126,11 +126,7 @@ private:
     void resetFormAttributeTargetObserver();
 
     OwnPtrWillBeMember<FormAttributeTargetObserver> m_formAttributeTargetObserver;
-#if ENABLE(OILPAN)
-    Member<HTMLFormElement> m_form;
-#else
-    WeakPtr<HTMLFormElement> m_form;
-#endif
+    WeakPtrWillBeMember<HTMLFormElement> m_form;
     OwnPtrWillBeMember<ValidityState> m_validityState;
     String m_customValidationMessage;
     // Non-Oilpan: Even if m_formWasSetByParser is true, m_form can be null

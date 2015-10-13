@@ -56,6 +56,7 @@ class StyleSheetContents;
 // http://www.google.com/chrome/intl/en/privacy.html
 
 class CORE_EXPORT UseCounter {
+    DISALLOW_ALLOCATION();
     WTF_MAKE_NONCOPYABLE(UseCounter);
 public:
     UseCounter();
@@ -141,18 +142,14 @@ public:
         DocumentCreateAttribute = 111,
         DocumentCreateAttributeNS = 112,
         DocumentCreateCDATASection = 113, // Removed from DOM4.
-        DocumentInputEncoding = 114,
         DocumentXMLEncoding = 115, // Removed from DOM4.
         DocumentXMLStandalone = 116, // Removed from DOM4.
         DocumentXMLVersion = 117, // Removed from DOM4.
         NodeIsSameNode = 118, // Removed from DOM4.
-        NodeNamespaceURI = 120, // Removed from DOM4.
-        NodeLocalName = 122, // Removed from DOM4.
         NavigatorProductSub = 123,
         NavigatorVendor = 124,
         NavigatorVendorSub = 125,
         FileError = 126,
-        DocumentCharset = 127, // Documented as IE extensions = 0, from KHTML days.
         PrefixedAnimationEndEvent = 128,
         UnprefixedAnimationEndEvent = 129,
         PrefixedAndUnprefixedAnimationEndEvent = 130,
@@ -323,10 +320,6 @@ public:
         PrefixedIDBTransactionConstructor = 370,
         NotificationPermission = 371,
         RangeDetach = 372,
-        PrefixedTouchRadiusX = 378,
-        PrefixedTouchRadiusY = 379,
-        PrefixedTouchRotationAngle = 380,
-        PrefixedTouchForce = 381,
         PrefixedMouseEventMovementX = 382,
         PrefixedMouseEventMovementY = 383,
         PrefixedFileRelativePath = 386,
@@ -414,7 +407,6 @@ public:
         MapElement = 482,
         MeterElement = 483,
         ProgressElement = 484,
-        VideoFullscreenAllowedExemption = 485,
         PrefixedHTMLElementDropzone = 490,
         WheelEventWheelDeltaX = 491,
         WheelEventWheelDeltaY = 492,
@@ -441,7 +433,6 @@ public:
         SrcsetXDescriptor = 523,
         SrcsetWDescriptor = 524,
         SelectionContainsNode = 525,
-        MediaStreamEnded = 526,
         XMLExternalResourceLoad = 529,
         MixedContentPrivateHostnameInPublicHostname = 530,
         LegacyProtocolEmbeddedAsSubresource = 531,
@@ -449,8 +440,6 @@ public:
         NotificationCreated = 533,
         NotificationClosed = 534,
         NotificationPermissionRequested = 535,
-        MediaStreamLabel = 536,
-        MediaStreamStop = 537,
         ConsoleTimeline = 538,
         ConsoleTimelineEnd = 539,
         SRIElementWithMatchingIntegrityAttribute = 540,
@@ -508,8 +497,6 @@ public:
 
         SetReferrerPolicy = 593,
         MouseEventWhich = 595,
-        UIEventCharCode = 596,
-        UIEventKeyCode = 597,
         UIEventWhich = 598,
         TextWholeText = 599,
         NotificationCloseEvent = 603,
@@ -529,7 +516,6 @@ public:
         AudioListenerDopplerFactor = 620,
         AudioListenerSpeedOfSound = 621,
         AudioListenerSetVelocity = 622,
-        CSSSelectorPseudoFullScreenDocument = 627,
         CSSSelectorPseudoFullScreenAncestor = 628,
         CSSSelectorPseudoFullScreen = 629,
         WebKitCSSMatrix = 630,
@@ -601,11 +587,6 @@ public:
         V8Animation_Cancel_Method = 699,
         V8Animation_Onfinish_AttributeGetter = 700,
         V8Animation_Onfinish_AttributeSetter = 701,
-        ElementOffsetParent = 702,
-        ElementOffsetTop = 703,
-        ElementOffsetLeft = 704,
-        ElementOffsetWidth = 705,
-        ElementOffsetHeight = 706,
         V8Window_WebKitAnimationEvent_ConstructorGetter = 707,
         V8Window_WebKitAnimationEvent_AttributeSetter = 708,
         ResourceLoadedAfterRedirectWithCSP = 709,
@@ -673,10 +654,6 @@ public:
         V8Element_Animate_Method = 773,
         // The above items are available in M44 branch.
 
-        V8SVGSVGElement_PixelUnitToMillimeterX_AttributeGetter = 774,
-        V8SVGSVGElement_PixelUnitToMillimeterY_AttributeGetter = 775,
-        V8SVGSVGElement_ScreenPixelToMillimeterX_AttributeGetter = 776,
-        V8SVGSVGElement_ScreenPixelToMillimeterY_AttributeGetter = 777,
         V8SVGSVGElement_GetElementById_Method = 778,
         ElementCreateShadowRootMultiple = 779,
         V8MessageChannel_Constructor = 780,
@@ -699,7 +676,6 @@ public:
         ElementCreateShadowRootMultipleWithUserAgentShadowRoot = 800,
         InputTypeFileSecureOrigin = 801,
         InputTypeFileInsecureOrigin = 802,
-        V8HashChangeEvent_InitHashChangeEvent_Method = 803,
         ElementCreateShadowRootWithParameter = 804,
         V8KeyboardEvent_KeyIdentifier_AttributeGetter = 805,
         V8SecurityPolicyViolationEvent_DocumentURI_AttributeGetter = 806,
@@ -748,7 +724,6 @@ public:
         DOMStringList_Contains_Method_Location = 849,
         NavigatorVibrate = 850,
         NavigatorVibrateSubFrame = 851,
-        PermissionStatusStatus = 852,
         V8XPathEvaluator_Constructor = 853,
         V8XPathEvaluator_CreateExpression_Method = 854,
         V8XPathEvaluator_CreateNSResolver_Method = 855,
@@ -783,8 +758,86 @@ public:
         V8Performance_Memory_AttributeGetter = 884,
         V8SharedWorker_WorkerStart_AttributeGetter = 885,
         HTMLKeygenElement = 886,
+        // The above items are available in M45 branch.
 
+        V8SVGElement_OffsetParent_AttributeGetter = 887,
+        V8SVGElement_OffsetTop_AttributeGetter = 888,
+        V8SVGElement_OffsetLeft_AttributeGetter = 889,
+        V8SVGElement_OffsetWidth_AttributeGetter = 890,
+        V8SVGElement_OffsetHeight_AttributeGetter = 891,
+        HTMLMediaElementPreloadNone = 892,
+        HTMLMediaElementPreloadMetadata = 893,
+        HTMLMediaElementPreloadAuto = 894,
+        HTMLMediaElementPreloadDefault = 895,
+        MixedContentBlockableAllowed = 896,
+        PseudoBeforeAfterForInputElement = 897,
+        V8Permissions_Revoke_Method = 898,
+        LinkRelDnsPrefetch = 899,
+        LinkRelPreconnect = 900,
+        LinkRelPreload = 901,
+        LinkHeaderDnsPrefetch = 902,
+        LinkHeaderPreconnect = 903,
+        ClientHintsMetaAcceptCH = 904,
+        HTMLElementDeprecatedWidth = 905,
+        ClientHintsContentDPR = 906,
+        ElementCreateShadowRootOpen = 907,
+        ElementCreateShadowRootClosed = 908,
+        AudioParamSetValueAtTime = 909,
+        AudioParamLinearRampToValueAtTime = 910,
+        AudioParamExponentialRampToValueAtTime = 911,
+        AudioParamSetTargetAtTime = 912,
+        AudioParamSetValueCurveAtTime = 913,
+        AudioParamCancelScheduledValues = 914,
+        V8Permissions_Request_Method = 915,
+        LinkRelSubresource = 916,
+        LinkRelPrefetch = 917,
+        LinkRelPrerender = 918,
+        LinkRelNext = 919,
+        PrefixedPerformanceResourceTimingBufferFull = 920,
+        CSSValuePrefixedMinContent = 921,
+        CSSValuePrefixedMaxContent = 922,
+        CSSValuePrefixedFitContent = 923,
+        CSSValuePrefixedFillAvailable = 924,
         FetchAPIRequestContext = 925,
+        PresentationDefaultRequest = 926,
+        PresentationAvailabilityChangeEventListener = 927,
+        PresentationRequestConstructor = 928,
+        PresentationRequestStart = 929,
+        PresentationRequestReconnect = 930,
+        PresentationRequestGetAvailability = 931,
+        PresentationRequestConnectionAvailableEventListener = 932,
+        PresentationConnectionClose = 933,
+        PresentationConnectionSend = 934,
+        PresentationConnectionStateChangeEventListener = 935,
+        PresentationConnectionMessageEventListener = 936,
+        CSSAnimationsStackedNeutralKeyframe = 937,
+        ReadingCheckedInClickHandler = 938,
+        FlexboxIntrinsicSizeAlgorithmIsDifferent = 939,
+        HTMLImportsHasStyleSheets = 940,
+        WebkitTextInClipProperty = 941,
+        WebkitTextInColorProperty = 942,
+        HeaderValueNotMatchingRFC7230 = 943,
+        ClipPathOfPositionedElement = 944,
+        ClipCssOfPositionedElement = 945,
+        NetInfoType = 946,
+        NetInfoDownlinkMax = 947,
+        NetInfoOnChange = 948,
+        NetInfoOnTypeChange = 949,
+        V8Window_Alert_Method = 950,
+        V8Window_Confirm_Method = 951,
+        V8Window_Prompt_Method = 952,
+        V8Window_Print_Method = 953,
+        V8Window_RequestIdleCallback_Method = 954,
+        FlexboxPercentagePaddingVertical = 955,
+        FlexboxPercentageMarginVertical = 956,
+        BackspaceNavigatedBack = 957,
+        BackspaceNavigatedBackAfterFormInteraction = 958,
+        CSPSourceWildcardWouldMatchExactHost = 959,
+        CredentialManagerGet = 960,
+        CredentialManagerGetWithUI = 961,
+        CredentialManagerGetWithoutUI = 962,
+        CredentialManagerStore = 963,
+        CredentialManagerRequireUserMediation = 964,
 
         // Add new features immediately above this line. Don't change assigned
         // numbers of any item, and don't reuse removed slots.
@@ -843,6 +896,7 @@ public:
     static void unmuteForInspector();
 
     class CountBits {
+        DISALLOW_ALLOCATION();
     public:
         CountBits() : m_bits(NumberOfFeatures) { }
 

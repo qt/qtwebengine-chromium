@@ -38,6 +38,8 @@ XID FindXEventTarget(XEvent* xevent) {
   return target;
 }
 
+bool g_override_redirect = false;
+
 }  // namespace
 
 X11Window::X11Window(PlatformWindowDelegate* delegate)
@@ -52,6 +54,7 @@ X11Window::X11Window(PlatformWindowDelegate* delegate)
 }
 
 X11Window::~X11Window() {
+  Destroy();
 }
 
 void X11Window::Destroy() {
@@ -123,7 +126,7 @@ void X11Window::Show() {
   XSetWindowAttributes swa;
   memset(&swa, 0, sizeof(swa));
   swa.background_pixmap = None;
-  swa.override_redirect = False;
+  swa.override_redirect = g_override_redirect;
   xwindow_ = XCreateWindow(xdisplay_,
                            xroot_window_,
                            requested_bounds_.x(),
@@ -198,9 +201,6 @@ void X11Window::Show() {
   size_hints.win_gravity = StaticGravity;
   XSetWMNormalHints(xdisplay_, xwindow_, &size_hints);
 
-  // TODO(sky): provide real scale factor.
-  delegate_->OnAcceleratedWidgetAvailable(xwindow_, 1.f);
-
   XMapWindow(xdisplay_, xwindow_);
 
   // We now block until our window is mapped. Some X11 APIs will crash and
@@ -209,6 +209,9 @@ void X11Window::Show() {
   if (X11EventSource::GetInstance())
     X11EventSource::GetInstance()->BlockUntilWindowMapped(xwindow_);
   window_mapped_ = true;
+
+  // TODO(sky): provide real scale factor.
+  delegate_->OnAcceleratedWidgetAvailable(xwindow_, 1.f);
 }
 
 void X11Window::Hide() {
@@ -239,6 +242,8 @@ gfx::Rect X11Window::GetBounds() {
   return confirmed_bounds_;
 }
 
+void X11Window::SetTitle(const base::string16& title) {}
+
 void X11Window::SetCapture() {}
 
 void X11Window::ReleaseCapture() {}
@@ -256,6 +261,10 @@ void X11Window::SetCursor(PlatformCursor cursor) {}
 void X11Window::MoveCursorTo(const gfx::Point& location) {}
 
 void X11Window::ConfineCursorToBounds(const gfx::Rect& bounds) {
+}
+
+PlatformImeController* X11Window::GetPlatformImeController() {
+  return nullptr;
 }
 
 bool X11Window::CanDispatchEvent(const PlatformEvent& event) {
@@ -365,4 +374,11 @@ uint32_t X11Window::DispatchEvent(const PlatformEvent& event) {
   return POST_DISPATCH_STOP_PROPAGATION;
 }
 
+namespace test {
+
+void SetUseOverrideRedirectWindowByDefault(bool override_redirect) {
+  g_override_redirect = override_redirect;
+}
+
+}  // namespace test
 }  // namespace ui

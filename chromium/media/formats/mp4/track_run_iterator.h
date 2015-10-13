@@ -32,7 +32,7 @@ class MEDIA_EXPORT TrackRunIterator {
  public:
   // Create a new TrackRunIterator. A reference to |moov| will be retained for
   // the lifetime of this object.
-  TrackRunIterator(const Movie* moov, const LogCB& log_cb);
+  TrackRunIterator(const Movie* moov, const scoped_refptr<MediaLog>& media_log);
   ~TrackRunIterator();
 
   // Sets up the iterator to handle all the runs from the current fragment.
@@ -80,7 +80,6 @@ class MEDIA_EXPORT TrackRunIterator {
   base::TimeDelta cts() const;
   base::TimeDelta duration() const;
   bool is_keyframe() const;
-  bool is_random_access_point() const;
 
   // Only call when is_encrypted() is true and AuxInfoNeedsToBeCached() is
   // false. Result is owned by caller.
@@ -91,8 +90,6 @@ class MEDIA_EXPORT TrackRunIterator {
   const TrackEncryption& track_encryption() const;
 
   uint32 GetGroupDescriptionIndex(uint32 sample_index) const;
-  const CencSampleEncryptionInfoEntry& GetSampleEncryptionInfoEntry(
-      uint32 group_description_index) const;
 
   // Sample encryption information.
   bool IsSampleEncrypted(size_t sample_index) const;
@@ -100,7 +97,7 @@ class MEDIA_EXPORT TrackRunIterator {
   const std::vector<uint8>& GetKeyId(size_t sample_index) const;
 
   const Movie* moov_;
-  LogCB log_cb_;
+  scoped_refptr<MediaLog> media_log_;
 
   std::vector<TrackRunInfo> runs_;
   std::vector<TrackRunInfo>::const_iterator run_itr_;

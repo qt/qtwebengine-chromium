@@ -5,8 +5,7 @@
 #ifndef CONTENT_BROWSER_SERVICE_WORKER_EMBEDDED_WORKER_INSTANCE_H_
 #define CONTENT_BROWSER_SERVICE_WORKER_EMBEDDED_WORKER_INSTANCE_H_
 
-#include <map>
-#include <vector>
+#include <string>
 
 #include "base/basictypes.h"
 #include "base/callback.h"
@@ -37,8 +36,9 @@ namespace content {
 
 class EmbeddedWorkerRegistry;
 class MessagePortMessageFilter;
+class ServiceRegistry;
+class ServiceRegistryImpl;
 class ServiceWorkerContextCore;
-struct ServiceWorkerFetchRequest;
 
 // This gives an interface to control one EmbeddedWorker instance, which
 // may be 'in-waiting' or running in one of the child processes added by
@@ -53,8 +53,7 @@ class CONTENT_EXPORT EmbeddedWorkerInstance {
     STOPPING,
   };
 
-  // This enum is used in UMA histograms, so don't change the order or remove
-  // entries.
+  // This enum is used in UMA histograms. Append-only.
   enum StartingPhase {
     NOT_STARTING,
     ALLOCATING_PROCESS,
@@ -63,13 +62,19 @@ class CONTENT_EXPORT EmbeddedWorkerInstance {
     SCRIPT_DOWNLOADING,
     SCRIPT_LOADED,
     SCRIPT_EVALUATED,
+    THREAD_STARTED,  // Happens after SCRIPT_LOADED and before SCRIPT_EVALUATED
+    // Script read happens after SENT_START_WORKER and before SCRIPT_LOADED
+    // (installed scripts only)
+    SCRIPT_READ_STARTED,
+    SCRIPT_READ_FINISHED,
+    // Add new values here.
     STARTING_PHASE_MAX_VALUE,
   };
 
   class Listener {
    public:
     virtual ~Listener() {}
-    virtual void OnScriptLoaded() {}
+    virtual void OnThreadStarted() {}
     virtual void OnStarting() {}
     virtual void OnStarted() {}
     virtual void OnStopping() {}
@@ -77,6 +82,8 @@ class CONTENT_EXPORT EmbeddedWorkerInstance {
     virtual void OnStopped(Status old_status) {}
     // The browser-side IPC endpoint for communication with the worker died.
     virtual void OnDetached(Status old_status) {}
+    virtual void OnScriptLoaded() {}
+    virtual void OnScriptLoadFailed() {}
     virtual void OnReportException(const base::string16& error_message,
                                    int line_number,
                                    int column_number,
@@ -86,9 +93,7 @@ class CONTENT_EXPORT EmbeddedWorkerInstance {
                                         const base::string16& message,
                                         int line_number,
                                         const GURL& source_url) {}
-    // These should return false if the message is not handled by this
-    // listener. (TODO(kinuko): consider using IPC::Listener interface)
-    // TODO(kinuko): Deprecate OnReplyReceived.
+    // Returns false if the message is not handled by this listener.
     virtual bool OnMessageReceived(const IPC::Message& message) = 0;
   };
 
@@ -118,6 +123,10 @@ class CONTENT_EXPORT EmbeddedWorkerInstance {
   // status.
   ServiceWorkerStatusCode SendMessage(const IPC::Message& message);
 
+  // Returns the ServiceRegistry for this worker. It is invalid to call this
+  // when the worker is not in STARTING or RUNNING status.
+  ServiceRegistry* GetServiceRegistry();
+
   int embedded_worker_id() const { return embedded_worker_id_; }
   Status status() const { return status_; }
   StartingPhase starting_phase() const {
@@ -138,6 +147,11 @@ class CONTENT_EXPORT EmbeddedWorkerInstance {
   // Called when the script load request accessed the network.
   void OnNetworkAccessedForScriptLoad();
 
+  // Called when reading the main script from the service worker script cache
+  // begins and ends.
+  void OnScriptReadStarted();
+  void OnScriptReadFinished();
+
   static std::string StatusToString(Status status);
   static std::string StartingPhaseToString(StartingPhase phase);
 
@@ -146,6 +160,8 @@ class CONTENT_EXPORT EmbeddedWorkerInstance {
   class DevToolsProxy;
   friend class EmbeddedWorkerRegistry;
   FRIEND_TEST_ALL_PREFIXES(EmbeddedWorkerInstanceTest, StartAndStop);
+  FRIEND_TEST_ALL_PREFIXES(EmbeddedWorkerInstanceTest, DetachDuringStart);
+  FRIEND_TEST_ALL_PREFIXES(EmbeddedWorkerInstanceTest, StopDuringStart);
 
   // Constructor is called via EmbeddedWorkerRegistry::CreateWorker().
   // This instance holds a ref of |registry|.
@@ -180,8 +196,12 @@ class CONTENT_EXPORT EmbeddedWorkerInstance {
   void OnReadyForInspection();
 
   // Called back from Registry when the worker instance has ack'ed that
-  // it finished loading the script and has started a worker thread.
-  void OnScriptLoaded(int thread_id);
+  // it finished loading the script.
+  void OnScriptLoaded();
+
+  // Called back from Registry when the worker instance has ack'ed that
+  // it has started a worker thread.
+  void OnThreadStarted(int thread_id);
 
   // Called back from Registry when the worker instance has ack'ed that
   // it failed to load the script.
@@ -224,7 +244,13 @@ class CONTENT_EXPORT EmbeddedWorkerInstance {
                               int line_number,
                               const GURL& source_url);
 
+  // Resets all running state. After this function is called, |status_| is
+  // STOPPED.
   void ReleaseProcess();
+  // Called when the startup sequence failed. Calls ReleaseProcess() and invokes
+  // |callback| with |status|. May destroy |this|.
+  void OnStartFailed(const StatusCallback& callback,
+                     ServiceWorkerStatusCode status);
 
   base::WeakPtr<ServiceWorkerContextCore> context_;
   scoped_refptr<EmbeddedWorkerRegistry> registry_;
@@ -235,6 +261,7 @@ class CONTENT_EXPORT EmbeddedWorkerInstance {
   // Current running information. -1 indicates the worker is not running.
   int process_id_;
   int thread_id_;
+  scoped_ptr<ServiceRegistryImpl> service_registry_;
 
   // Whether devtools is attached or not.
   bool devtools_attached_;

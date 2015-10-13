@@ -8,6 +8,12 @@
   ],
   'target_defaults' : {
     'include_dirs': [
+      # TODO(use_chrome_edk): since we include a few headers from src/mojo/edk,
+      # we need their includes to be searched first (i.e. otherwise when
+      # embedder.cc in third_party includes core.h from src/mojo/edk, and the
+      # latter includes mojo/edk/system/memory.h, the header from third_party
+      # would incorrectly get chosen).
+      '../..',
       'src',
     ],
     'direct_dependent_settings': {
@@ -24,7 +30,10 @@
       'dependencies': [
         '../../base/base.gyp:base',
         '../../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
-        '../../crypto/crypto.gyp:crypto',
+        # TODO(use_chrome_edk): so that EDK in third_party can choose the EDK in
+        # src/mojo if the command line flag is specified. It has to since we can
+        # only have one definition of the Mojo primitives.
+        '../../mojo/mojo_edk.gyp:mojo_system_impl2',
       ],
       'includes': [
         'mojo_edk_system_impl.gypi',
@@ -110,7 +119,7 @@
         '../../base/base.gyp:test_support_base',
         '../../testing/gtest.gyp:gtest',
         'mojo_system_impl',
-        'mojo_public.gyp:mojo_test_support',
+        'mojo_public.gyp:mojo_public_test_support',
         'mojo_test_support_impl',
       ],
       'sources': [
@@ -124,7 +133,7 @@
       'dependencies': [
         '../../base/base.gyp:test_support_base',
         'mojo_edk.gyp:mojo_system_impl',
-        'mojo_public.gyp:mojo_test_support',
+        'mojo_public.gyp:mojo_public_test_support',
         'mojo_test_support_impl',
       ],
       'sources': [
@@ -141,7 +150,6 @@
           'dependencies': [
             '../../base/base.gyp:base_win64',
             '../../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations_win64',
-            '../../crypto/crypto.gyp:crypto_nacl_win64',
           ],
           'includes': [
             'mojo_edk_system_impl.gypi',

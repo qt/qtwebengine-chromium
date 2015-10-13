@@ -9,6 +9,7 @@
 #include "base/atomic_sequence_num.h"
 #include "base/command_line.h"
 #include "base/files/file_path.h"
+#include "base/hash.h"
 #include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
@@ -17,6 +18,7 @@
 #include "base/process/process_metrics.h"
 #include "base/rand_util.h"
 #include "base/strings/stringprintf.h"
+#include "base/synchronization/lock.h"
 #include "base/third_party/dynamic_annotations/dynamic_annotations.h"
 #include "content/common/child_process_messages.h"
 #include "content/common/gpu/client/gpu_memory_buffer_impl_shared_memory.h"
@@ -31,69 +33,48 @@
 #include "base/linux_util.h"
 #elif defined(OS_WIN)
 #include "content/common/font_cache_dispatcher_win.h"
-#include "ipc/attachment_broker_win.h"
+#include "ipc/attachment_broker_privileged_win.h"
 #endif  // OS_LINUX
-
-#if defined(OS_WIN)
-base::LazyInstance<IPC::AttachmentBrokerWin>::Leaky g_attachment_broker =
-    LAZY_INSTANCE_INITIALIZER;
-#endif  // defined(OS_WIN)
 
 namespace {
 
-#if defined(OS_MACOSX)
-// Given |path| identifying a Mac-style child process executable path, adjusts
-// it to correspond to |feature|. For a child process path such as
-// ".../Chromium Helper.app/Contents/MacOS/Chromium Helper", the transformed
-// path for feature "NP" would be
-// ".../Chromium Helper NP.app/Contents/MacOS/Chromium Helper NP". The new
-// path is returned.
-base::FilePath TransformPathForFeature(const base::FilePath& path,
-                                 const std::string& feature) {
-  std::string basename = path.BaseName().value();
+#if USE_ATTACHMENT_BROKER
+// This class is wrapped in a singleton to ensure that its constructor is only
+// called once. The constructor creates an attachment broker and
+// sets it as the global broker.
+class AttachmentBrokerWrapper {
+ public:
+  AttachmentBrokerWrapper() {
+    IPC::AttachmentBroker::SetGlobal(&attachment_broker_);
+  }
 
-  base::FilePath macos_path = path.DirName();
-  const char kMacOSName[] = "MacOS";
-  DCHECK_EQ(kMacOSName, macos_path.BaseName().value());
+  IPC::AttachmentBrokerPrivileged* GetAttachmentBroker() {
+    return &attachment_broker_;
+  }
 
-  base::FilePath contents_path = macos_path.DirName();
-  const char kContentsName[] = "Contents";
-  DCHECK_EQ(kContentsName, contents_path.BaseName().value());
+ private:
+  IPC::AttachmentBrokerPrivilegedWin attachment_broker_;
+};
 
-  base::FilePath helper_app_path = contents_path.DirName();
-  const char kAppExtension[] = ".app";
-  std::string basename_app = basename;
-  basename_app.append(kAppExtension);
-  DCHECK_EQ(basename_app, helper_app_path.BaseName().value());
+base::LazyInstance<AttachmentBrokerWrapper>::Leaky
+    g_attachment_broker_wrapper = LAZY_INSTANCE_INITIALIZER;
 
-  base::FilePath root_path = helper_app_path.DirName();
-
-  std::string new_basename = basename;
-  new_basename.append(1, ' ');
-  new_basename.append(feature);
-  std::string new_basename_app = new_basename;
-  new_basename_app.append(kAppExtension);
-
-  base::FilePath new_path = root_path.Append(new_basename_app)
-                                     .Append(kContentsName)
-                                     .Append(kMacOSName)
-                                     .Append(new_basename);
-
-  return new_path;
+IPC::AttachmentBrokerPrivileged* GetAttachmentBroker() {
+  return g_attachment_broker_wrapper.Get().GetAttachmentBroker();
 }
-#endif  // OS_MACOSX
+#endif  // USE_ATTACHMENT_BROKER
 
 // Global atomic to generate child process unique IDs.
 base::StaticAtomicSequenceNumber g_unique_id;
-
-// Global atomic to generate gpu memory buffer unique IDs.
-base::StaticAtomicSequenceNumber g_next_gpu_memory_buffer_id;
 
 }  // namespace
 
 namespace content {
 
 int ChildProcessHost::kInvalidUniqueID = -1;
+
+uint64 ChildProcessHost::kBrowserTracingProcessId =
+    std::numeric_limits<uint64>::max();
 
 // static
 ChildProcessHost* ChildProcessHost::Create(ChildProcessHostDelegate* delegate) {
@@ -121,36 +102,7 @@ base::FilePath ChildProcessHost::GetChildPath(int flags) {
   // executable.
   if (child_path.empty())
     PathService::Get(CHILD_PROCESS_EXE, &child_path);
-
-#if defined(OS_MACOSX)
-  DCHECK(!(flags & CHILD_NO_PIE && flags & CHILD_ALLOW_HEAP_EXECUTION));
-
-  // If needed, choose an executable with special flags set that inform the
-  // kernel to enable or disable specific optional process-wide features.
-  if (flags & CHILD_NO_PIE) {
-    // "NP" is "No PIE". This results in Chromium Helper NP.app or
-    // Google Chrome Helper NP.app.
-    child_path = TransformPathForFeature(child_path, "NP");
-  } else if (flags & CHILD_ALLOW_HEAP_EXECUTION) {
-    // "EH" is "Executable Heap". A non-executable heap is only available to
-    // 32-bit processes on Mac OS X 10.7. Most code can and should run with a
-    // non-executable heap, but the "EH" feature is provided to allow code
-    // intolerant of a non-executable heap to work properly on 10.7. This
-    // results in Chromium Helper EH.app or Google Chrome Helper EH.app.
-    child_path = TransformPathForFeature(child_path, "EH");
-  }
-#endif
-
   return child_path;
-}
-
-// static
-IPC::AttachmentBroker* ChildProcessHost::GetAttachmentBroker() {
-#if defined(OS_WIN)
-  return &g_attachment_broker.Get();
-#else
-  return nullptr;
-#endif  // defined(OS_WIN)
 }
 
 ChildProcessHostImpl::ChildProcessHostImpl(ChildProcessHostDelegate* delegate)
@@ -159,9 +111,19 @@ ChildProcessHostImpl::ChildProcessHostImpl(ChildProcessHostDelegate* delegate)
 #if defined(OS_WIN)
   AddFilter(new FontCacheDispatcher());
 #endif
+#if USE_ATTACHMENT_BROKER
+  // Construct the privileged attachment broker early in the life cycle of a
+  // child process. This ensures that when a test is being run in one of the
+  // single process modes, the global attachment broker is the privileged
+  // attachment broker, rather than an unprivileged attachment broker.
+  GetAttachmentBroker();
+#endif
 }
 
 ChildProcessHostImpl::~ChildProcessHostImpl() {
+#if USE_ATTACHMENT_BROKER
+  GetAttachmentBroker()->DeregisterCommunicationChannel(channel_.get());
+#endif
   for (size_t i = 0; i < filters_.size(); ++i) {
     filters_[i]->OnChannelClosing();
     filters_[i]->OnFilterRemoved();
@@ -181,10 +143,12 @@ void ChildProcessHostImpl::ForceShutdown() {
 
 std::string ChildProcessHostImpl::CreateChannel() {
   channel_id_ = IPC::Channel::GenerateVerifiedChannelID(std::string());
-  channel_ =
-      IPC::Channel::CreateServer(channel_id_, this, GetAttachmentBroker());
+  channel_ = IPC::Channel::CreateServer(channel_id_, this);
   if (!channel_->Connect())
     return std::string();
+#if USE_ATTACHMENT_BROKER
+  GetAttachmentBroker()->RegisterCommunicationChannel(channel_.get());
+#endif
 
   for (size_t i = 0; i < filters_.size(); ++i)
     filters_[i]->OnFilterAdded(channel_.get());
@@ -244,6 +208,25 @@ int ChildProcessHostImpl::GenerateChildProcessUniqueId() {
   return id;
 }
 
+uint64 ChildProcessHostImpl::ChildProcessUniqueIdToTracingProcessId(
+    int child_process_id) {
+  // In single process mode, all the children are hosted in the same process,
+  // therefore the generated memory dump guids should not be conditioned by the
+  // child process id. The clients need not be aware of SPM and the conversion
+  // takes care of the SPM special case while translating child process ids to
+  // tracing process ids.
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kSingleProcess))
+    return ChildProcessHost::kBrowserTracingProcessId;
+
+  // The hash value is incremented so that the tracing id is never equal to
+  // MemoryDumpManager::kInvalidTracingProcessId.
+  return static_cast<uint64>(
+             base::Hash(reinterpret_cast<const char*>(&child_process_id),
+                        sizeof(child_process_id))) +
+         1;
+}
+
 bool ChildProcessHostImpl::OnMessageReceived(const IPC::Message& msg) {
 #ifdef IPC_MESSAGE_LOG_ENABLED
   IPC::Logging* logger = IPC::Logging::GetInstance();
@@ -269,6 +252,10 @@ bool ChildProcessHostImpl::OnMessageReceived(const IPC::Message& msg) {
     IPC_BEGIN_MESSAGE_MAP(ChildProcessHostImpl, msg)
       IPC_MESSAGE_HANDLER(ChildProcessHostMsg_ShutdownRequest,
                           OnShutdownRequest)
+      // NB: The SyncAllocateSharedMemory, SyncAllocateGpuMemoryBuffer, and
+      // DeletedGpuMemoryBuffer IPCs are handled here for non-renderer child
+      // processes. For renderer processes, they are handled in
+      // RenderMessageFilter.
       IPC_MESSAGE_HANDLER(ChildProcessHostMsg_SyncAllocateSharedMemory,
                           OnAllocateSharedMemory)
       IPC_MESSAGE_HANDLER(ChildProcessHostMsg_SyncAllocateGpuMemoryBuffer,
@@ -329,10 +316,11 @@ void ChildProcessHostImpl::OnShutdownRequest() {
 }
 
 void ChildProcessHostImpl::OnAllocateGpuMemoryBuffer(
+    gfx::GpuMemoryBufferId id,
     uint32 width,
     uint32 height,
-    gfx::GpuMemoryBuffer::Format format,
-    gfx::GpuMemoryBuffer::Usage usage,
+    gfx::BufferFormat format,
+    gfx::BufferUsage usage,
     gfx::GpuMemoryBufferHandle* handle) {
   // TODO(reveman): Add support for other types of GpuMemoryBuffers.
 
@@ -342,8 +330,7 @@ void ChildProcessHostImpl::OnAllocateGpuMemoryBuffer(
   if (GpuMemoryBufferImplSharedMemory::IsFormatSupported(format) &&
       GpuMemoryBufferImplSharedMemory::IsUsageSupported(usage)) {
     *handle = GpuMemoryBufferImplSharedMemory::AllocateForChildProcess(
-        g_next_gpu_memory_buffer_id.GetNext(), gfx::Size(width, height), format,
-        peer_process_.Handle());
+        id, gfx::Size(width, height), format, peer_process_.Handle());
   }
 }
 

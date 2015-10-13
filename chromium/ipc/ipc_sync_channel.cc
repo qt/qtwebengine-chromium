@@ -96,7 +96,7 @@ class SyncChannel::ReceivedSyncMsgQueue :
 
   void DispatchMessages(SyncContext* dispatching_context) {
     bool first_time = true;
-    uint32 expected_version = 0;
+    uint32_t expected_version = 0;
     SyncMessageQueue::iterator it;
     while (true) {
       Message* message = NULL;
@@ -204,7 +204,7 @@ class SyncChannel::ReceivedSyncMsgQueue :
 
   typedef std::list<QueuedMessage> SyncMessageQueue;
   SyncMessageQueue message_queue_;
-  uint32 message_queue_version_;  // Used to signal DispatchMessages to rescan
+  uint32_t message_queue_version_;  // Used to signal DispatchMessages to rescan
 
   std::vector<QueuedMessage> received_replies_;
 
@@ -412,11 +412,10 @@ scoped_ptr<SyncChannel> SyncChannel::Create(
     Listener* listener,
     const scoped_refptr<base::SingleThreadTaskRunner>& ipc_task_runner,
     bool create_pipe_now,
-    base::WaitableEvent* shutdown_event,
-    AttachmentBroker* broker) {
+    base::WaitableEvent* shutdown_event) {
   scoped_ptr<SyncChannel> channel =
       Create(listener, ipc_task_runner, shutdown_event);
-  channel->Init(channel_handle, mode, create_pipe_now, broker);
+  channel->Init(channel_handle, mode, create_pipe_now);
   return channel.Pass();
 }
 
@@ -458,6 +457,16 @@ SyncChannel::~SyncChannel() {
 
 void SyncChannel::SetRestrictDispatchChannelGroup(int group) {
   sync_context()->set_restrict_dispatch_group(group);
+}
+
+scoped_refptr<SyncMessageFilter> SyncChannel::CreateSyncMessageFilter() {
+  scoped_refptr<SyncMessageFilter> filter = new SyncMessageFilter(
+      sync_context()->shutdown_event(),
+      sync_context()->IsChannelSendThreadSafe());
+  AddFilter(filter.get());
+  if (!did_init())
+    pre_init_sync_message_filters_.push_back(filter);
+  return filter;
 }
 
 bool SyncChannel::Send(Message* message) {
@@ -582,6 +591,14 @@ void SyncChannel::StartWatching() {
                   base::Unretained(this));
   dispatch_watcher_.StartWatching(sync_context()->GetDispatchEvent(),
                                   dispatch_watcher_callback_);
+}
+
+void SyncChannel::OnChannelInit() {
+  for (const auto& filter : pre_init_sync_message_filters_) {
+    filter->set_is_channel_send_thread_safe(
+        context()->IsChannelSendThreadSafe());
+  }
+  pre_init_sync_message_filters_.clear();
 }
 
 }  // namespace IPC

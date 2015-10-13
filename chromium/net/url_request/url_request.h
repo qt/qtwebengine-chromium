@@ -5,6 +5,8 @@
 #ifndef NET_URL_REQUEST_URL_REQUEST_H_
 #define NET_URL_REQUEST_URL_REQUEST_H_
 
+#include <stdint.h>
+
 #include <string>
 #include <vector>
 
@@ -356,8 +358,16 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
   bool GetFullRequestHeaders(HttpRequestHeaders* headers) const;
 
   // Gets the total amount of data received from network after SSL decoding and
-  // proxy handling.
-  int64 GetTotalReceivedBytes() const;
+  // proxy handling. Pertains only to the last URLRequestJob issued by this
+  // URLRequest, i.e. reset on redirects, but not reset when multiple roundtrips
+  // are used for range requests or auth.
+  int64_t GetTotalReceivedBytes() const;
+
+  // Gets the total amount of data sent over the network before SSL encoding and
+  // proxy handling. Pertains only to the last URLRequestJob issued by this
+  // URLRequest, i.e. reset on redirects, but not reset when multiple roundtrips
+  // are used for range requests or auth.
+  int64_t GetTotalSentBytes() const;
 
   // Returns the current load state for the request. The returned value's
   // |param| field is an optional parameter describing details related to the
@@ -444,6 +454,18 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
   // LoadTimingInfo only contains ConnectTiming information and socket IDs for
   // non-cached HTTP responses.
   void GetLoadTimingInfo(LoadTimingInfo* load_timing_info) const;
+
+  // Gets the remote endpoint of the most recent socket that the network stack
+  // used to make this request.
+  //
+  // Note that GetSocketAddress returns the |socket_address| field from
+  // HttpResponseInfo, which is only populated once the response headers are
+  // received, and can return cached values for cache revalidation requests.
+  // GetRemoteEndpoint will only return addresses from the current request.
+  //
+  // Returns true and fills in |endpoint| if the endpoint is available; returns
+  // false and leaves |endpoint| unchanged if it is unavailable.
+  bool GetRemoteEndpoint(IPEndPoint* endpoint) const;
 
   // Returns the cookie values included in the response, if the request is one
   // that can have cookies.  Returns true if the request is a cookie-bearing
@@ -599,6 +621,10 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
   void set_received_response_content_length(int64 received_content_length) {
     received_response_content_length_ = received_content_length;
   }
+
+  // The number of bytes in the raw response body (before any decompression,
+  // etc.). This is only available after the final Read completes. Not available
+  // for FTP responses.
   int64 received_response_content_length() const {
     return received_response_content_length_;
   }

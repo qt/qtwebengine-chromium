@@ -8,6 +8,7 @@
 #include "base/memory/aligned_memory.h"
 #include "base/trace_event/trace_event.h"
 #include "content/renderer/media/webrtc/webrtc_video_frame_adapter.h"
+#include "media/base/timestamp_constants.h"
 #include "media/base/video_frame.h"
 #include "media/base/video_frame_pool.h"
 #include "third_party/libjingle/source/talk/media/base/videoframefactory.h"
@@ -104,7 +105,7 @@ class WebRtcVideoCapturerAdapter::MediaVideoFrameFactory
 
     // We need to scale the frame before we hand it over to cricket.
     scoped_refptr<media::VideoFrame> scaled_frame =
-        scaled_frame_pool_.CreateFrame(media::VideoFrame::I420, output_size,
+        scaled_frame_pool_.CreateFrame(media::PIXEL_FORMAT_I420, output_size,
                                        gfx::Rect(output_size), output_size,
                                        frame_->timestamp());
     libyuv::I420Scale(video_frame->visible_data(media::VideoFrame::kYPlane),
@@ -215,8 +216,9 @@ void WebRtcVideoCapturerAdapter::OnFrameCaptured(
     const scoped_refptr<media::VideoFrame>& frame) {
   DCHECK(thread_checker_.CalledOnValidThread());
   TRACE_EVENT0("video", "WebRtcVideoCapturerAdapter::OnFrameCaptured");
-  if (!((frame->IsMappable() && (frame->format() == media::VideoFrame::I420 ||
-                                 frame->format() == media::VideoFrame::YV12)) ||
+  if (!((frame->IsMappable() &&
+         (frame->format() == media::PIXEL_FORMAT_I420 ||
+          frame->format() == media::PIXEL_FORMAT_YV12)) ||
         frame->HasTextures())) {
     // Since connecting sources and sinks do not check the format, we need to
     // just ignore formats that we can not handle.

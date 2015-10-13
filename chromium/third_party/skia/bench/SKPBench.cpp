@@ -104,7 +104,7 @@ SkIPoint SKPBench::onGetSize() {
     return SkIPoint::Make(fClip.width(), fClip.height());
 }
 
-void SKPBench::onDraw(const int loops, SkCanvas* canvas) {
+void SKPBench::onDraw(int loops, SkCanvas* canvas) {
     SkASSERT(fDoLooping || 1 == loops);
     if (fUseMultiPictureDraw) {
         for (int i = 0; i < loops; i++) {
@@ -138,7 +138,7 @@ void SKPBench::drawPicture() {
     for (int j = 0; j < fTileRects.count(); ++j) {
         const SkMatrix trans = SkMatrix::MakeTrans(-fTileRects[j].fLeft / fScale,
                                                    -fTileRects[j].fTop / fScale);
-        fSurfaces[j]->getCanvas()->drawPicture(fPic, &trans, NULL);
+        fSurfaces[j]->getCanvas()->drawPicture(fPic, &trans, nullptr);
     }
 
     for (int j = 0; j < fTileRects.count(); ++j) {

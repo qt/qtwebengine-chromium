@@ -39,13 +39,6 @@ class GpuMessageFilter : public BrowserMessageFilter {
   // BrowserMessageFilter methods:
   bool OnMessageReceived(const IPC::Message& message) override;
 
-  // This set of API is used to subscribe to frame presentation events.
-  // See RenderWidgetHostViewFrameSubscriber for more details.
-  void BeginFrameSubscription(
-      int route_id,
-      scoped_ptr<RenderWidgetHostViewFrameSubscriber> subscriber);
-  void EndFrameSubscription(int route_id);
-
  private:
   friend class BrowserThread;
   friend class base::DeleteHelper<GpuMessageFilter>;
@@ -58,7 +51,6 @@ class GpuMessageFilter : public BrowserMessageFilter {
   void OnEstablishGpuChannel(CauseForGpuLaunch,
                              IPC::Message* reply);
   void OnCreateViewCommandBuffer(
-      int32 surface_id,
       const GPUCreateCommandBufferConfig& init_params,
       int32 route_id,
       IPC::Message* reply);
@@ -69,20 +61,10 @@ class GpuMessageFilter : public BrowserMessageFilter {
   void CreateCommandBufferCallback(scoped_ptr<IPC::Message> reply,
                                    CreateCommandBufferResult result);
 
-  void BeginAllFrameSubscriptions();
-  void EndAllFrameSubscriptions();
-  void BeginFrameSubscriptionInternal(
-      linked_ptr<FrameSubscription> subscription);
-  void EndFrameSubscriptionInternal(
-      linked_ptr<FrameSubscription> subscription);
-
   int gpu_process_id_;
   int render_process_id_;
 
   scoped_refptr<RenderWidgetHelper> render_widget_helper_;
-
-  typedef std::vector<linked_ptr<FrameSubscription> > FrameSubscriptionList;
-  FrameSubscriptionList frame_subscription_list_;
 
   base::WeakPtrFactory<GpuMessageFilter> weak_ptr_factory_;
 

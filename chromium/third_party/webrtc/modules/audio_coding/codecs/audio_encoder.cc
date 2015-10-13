@@ -13,10 +13,12 @@
 
 namespace webrtc {
 
-AudioEncoder::EncodedInfo::EncodedInfo() : EncodedInfoLeaf() {
-}
+AudioEncoder::EncodedInfo::EncodedInfo() = default;
 
-AudioEncoder::EncodedInfo::~EncodedInfo() {
+AudioEncoder::EncodedInfo::~EncodedInfo() = default;
+
+int AudioEncoder::RtpTimestampRateHz() const {
+  return SampleRateHz();
 }
 
 AudioEncoder::EncodedInfo AudioEncoder::Encode(uint32_t rtp_timestamp,
@@ -24,16 +26,30 @@ AudioEncoder::EncodedInfo AudioEncoder::Encode(uint32_t rtp_timestamp,
                                                size_t num_samples_per_channel,
                                                size_t max_encoded_bytes,
                                                uint8_t* encoded) {
-  CHECK_EQ(num_samples_per_channel,
-           static_cast<size_t>(SampleRateHz() / 100));
+  RTC_CHECK_EQ(num_samples_per_channel,
+               static_cast<size_t>(SampleRateHz() / 100));
   EncodedInfo info =
       EncodeInternal(rtp_timestamp, audio, max_encoded_bytes, encoded);
-  CHECK_LE(info.encoded_bytes, max_encoded_bytes);
+  RTC_CHECK_LE(info.encoded_bytes, max_encoded_bytes);
   return info;
 }
 
-int AudioEncoder::RtpTimestampRateHz() const {
-  return SampleRateHz();
+bool AudioEncoder::SetFec(bool enable) {
+  return !enable;
 }
+
+bool AudioEncoder::SetDtx(bool enable) {
+  return !enable;
+}
+
+bool AudioEncoder::SetApplication(Application application) {
+  return false;
+}
+
+void AudioEncoder::SetMaxPlaybackRate(int frequency_hz) {}
+
+void AudioEncoder::SetProjectedPacketLossRate(double fraction) {}
+
+void AudioEncoder::SetTargetBitrate(int target_bps) {}
 
 }  // namespace webrtc

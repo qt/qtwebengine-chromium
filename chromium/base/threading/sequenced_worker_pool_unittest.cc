@@ -948,6 +948,8 @@ class SequencedWorkerPoolTaskRunnerTestDelegate {
 INSTANTIATE_TYPED_TEST_CASE_P(
     SequencedWorkerPool, TaskRunnerTest,
     SequencedWorkerPoolTaskRunnerTestDelegate);
+INSTANTIATE_TYPED_TEST_CASE_P(SequencedWorkerPool, TaskRunnerAffinityTest,
+                              SequencedWorkerPoolTaskRunnerTestDelegate);
 
 class SequencedWorkerPoolTaskRunnerWithShutdownBehaviorTestDelegate {
  public:
@@ -984,6 +986,9 @@ class SequencedWorkerPoolTaskRunnerWithShutdownBehaviorTestDelegate {
 
 INSTANTIATE_TYPED_TEST_CASE_P(
     SequencedWorkerPoolTaskRunner, TaskRunnerTest,
+    SequencedWorkerPoolTaskRunnerWithShutdownBehaviorTestDelegate);
+INSTANTIATE_TYPED_TEST_CASE_P(
+    SequencedWorkerPoolTaskRunner, TaskRunnerAffinityTest,
     SequencedWorkerPoolTaskRunnerWithShutdownBehaviorTestDelegate);
 
 class SequencedWorkerPoolSequencedTaskRunnerTestDelegate {
@@ -1022,9 +1027,16 @@ class SequencedWorkerPoolSequencedTaskRunnerTestDelegate {
 INSTANTIATE_TYPED_TEST_CASE_P(
     SequencedWorkerPoolSequencedTaskRunner, TaskRunnerTest,
     SequencedWorkerPoolSequencedTaskRunnerTestDelegate);
+INSTANTIATE_TYPED_TEST_CASE_P(
+    SequencedWorkerPoolSequencedTaskRunner, TaskRunnerAffinityTest,
+    SequencedWorkerPoolSequencedTaskRunnerTestDelegate);
 
 INSTANTIATE_TYPED_TEST_CASE_P(
     SequencedWorkerPoolSequencedTaskRunner, SequencedTaskRunnerTest,
+    SequencedWorkerPoolSequencedTaskRunnerTestDelegate);
+INSTANTIATE_TYPED_TEST_CASE_P(
+    SequencedWorkerPoolSequencedTaskRunner,
+    SequencedTaskRunnerDelayedTest,
     SequencedWorkerPoolSequencedTaskRunnerTestDelegate);
 
 }  // namespace

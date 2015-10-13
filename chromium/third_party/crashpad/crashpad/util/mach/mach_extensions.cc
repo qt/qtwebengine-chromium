@@ -16,6 +16,7 @@
 
 #include <AvailabilityMacros.h>
 #include <pthread.h>
+#include <servers/bootstrap.h>
 
 #include "base/mac/mach_logging.h"
 #include "util/mac/mac_util.h"
@@ -44,18 +45,24 @@ exception_mask_t ExcMaskAll() {
   // xnu-2422.110.17/osfmk/mach/ipc_tt.c.
 
 #if MAC_OS_X_VERSION_MIN_REQUIRED < MAC_OS_X_VERSION_10_9
-  int mac_os_x_minor_version = MacOSXMinorVersion();
+  const int mac_os_x_minor_version = MacOSXMinorVersion();
 #endif
 
   // See 10.6.8 xnu-1504.15.3/osfmk/mach/exception_types.h. 10.7 uses the same
   // definition as 10.6. See 10.7.5 xnu-1699.32.7/osfmk/mach/exception_types.h
   const exception_mask_t kExcMaskAll_10_6 =
-      EXC_MASK_BAD_ACCESS | EXC_MASK_BAD_INSTRUCTION | EXC_MASK_ARITHMETIC |
-      EXC_MASK_EMULATION | EXC_MASK_SOFTWARE | EXC_MASK_BREAKPOINT |
-      EXC_MASK_SYSCALL | EXC_MASK_MACH_SYSCALL | EXC_MASK_RPC_ALERT |
+      EXC_MASK_BAD_ACCESS |
+      EXC_MASK_BAD_INSTRUCTION |
+      EXC_MASK_ARITHMETIC |
+      EXC_MASK_EMULATION |
+      EXC_MASK_SOFTWARE |
+      EXC_MASK_BREAKPOINT |
+      EXC_MASK_SYSCALL |
+      EXC_MASK_MACH_SYSCALL |
+      EXC_MASK_RPC_ALERT |
       EXC_MASK_MACHINE;
-#if MAC_OS_X_VERSION_MIN_REQUIRED <= MAC_OS_X_VERSION_10_7
-  if (mac_os_x_minor_version <= 7) {
+#if MAC_OS_X_VERSION_MIN_REQUIRED < MAC_OS_X_VERSION_10_8
+  if (mac_os_x_minor_version < 8) {
     return kExcMaskAll_10_6;
   }
 #endif
@@ -64,8 +71,8 @@ exception_mask_t ExcMaskAll() {
   // xnu-2050.48.11/osfmk/mach/exception_types.h.
   const exception_mask_t kExcMaskAll_10_8 =
       kExcMaskAll_10_6 | EXC_MASK_RESOURCE;
-#if MAC_OS_X_VERSION_MIN_REQUIRED <= MAC_OS_X_VERSION_10_8
-  if (mac_os_x_minor_version <= 8) {
+#if MAC_OS_X_VERSION_MIN_REQUIRED < MAC_OS_X_VERSION_10_9
+  if (mac_os_x_minor_version < 9) {
     return kExcMaskAll_10_8;
   }
 #endif
@@ -74,6 +81,35 @@ exception_mask_t ExcMaskAll() {
   // xnu-2422.110.17/osfmk/mach/exception_types.h.
   const exception_mask_t kExcMaskAll_10_9 = kExcMaskAll_10_8 | EXC_MASK_GUARD;
   return kExcMaskAll_10_9;
+}
+
+exception_mask_t ExcMaskValid() {
+  const exception_mask_t kExcMaskValid_10_6 = ExcMaskAll() | EXC_MASK_CRASH;
+#if MAC_OS_X_VERSION_MIN_REQUIRED < MAC_OS_X_VERSION_10_11
+  if (MacOSXMinorVersion() < 11) {
+    return kExcMaskValid_10_6;
+  }
+#endif
+
+  // 10.11 added EXC_MASK_CORPSE_NOTIFY. See 10.11 <mach/exception_types.h>.
+  const exception_mask_t kExcMaskValid_10_11 =
+      kExcMaskValid_10_6 | EXC_MASK_CORPSE_NOTIFY;
+  return kExcMaskValid_10_11;
+}
+
+base::mac::ScopedMachSendRight SystemCrashReporterHandler() {
+  const char kSystemCrashReporterServiceName[] = "com.apple.ReportCrash";
+  exception_handler_t system_crash_reporter_handler;
+  kern_return_t kr = bootstrap_look_up(bootstrap_port,
+                                       kSystemCrashReporterServiceName,
+                                       &system_crash_reporter_handler);
+  if (kr != BOOTSTRAP_SUCCESS) {
+    BOOTSTRAP_LOG(ERROR, kr) << "bootstrap_look_up "
+                             << kSystemCrashReporterServiceName;
+    system_crash_reporter_handler = MACH_PORT_NULL;
+  }
+
+  return base::mac::ScopedMachSendRight(system_crash_reporter_handler);
 }
 
 }  // namespace crashpad

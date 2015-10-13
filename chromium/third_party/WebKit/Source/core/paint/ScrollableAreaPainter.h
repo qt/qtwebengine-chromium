@@ -5,16 +5,20 @@
 #ifndef ScrollableAreaPainter_h
 #define ScrollableAreaPainter_h
 
+#include "platform/heap/Handle.h"
+
 namespace blink {
 
 class GraphicsContext;
 class IntPoint;
 class IntRect;
-class DeprecatedPaintLayerScrollableArea;
+class PaintLayerScrollableArea;
 
 class ScrollableAreaPainter {
+    STACK_ALLOCATED();
+    WTF_MAKE_NONCOPYABLE(ScrollableAreaPainter);
 public:
-    ScrollableAreaPainter(DeprecatedPaintLayerScrollableArea& paintLayerScrollableArea) : m_scrollableArea(paintLayerScrollableArea) { }
+    explicit ScrollableAreaPainter(PaintLayerScrollableArea& paintLayerScrollableArea) : m_scrollableArea(&paintLayerScrollableArea) { }
 
     void paintResizer(GraphicsContext*, const IntPoint& paintOffset, const IntRect& damageRect);
     void paintOverflowControls(GraphicsContext*, const IntPoint& paintOffset, const IntRect& damageRect, bool paintingOverlayControls);
@@ -24,7 +28,9 @@ private:
     void drawPlatformResizerImage(GraphicsContext*, IntRect resizerCornerRect);
     bool overflowControlsIntersectRect(const IntRect& localRect) const;
 
-    DeprecatedPaintLayerScrollableArea& m_scrollableArea;
+    PaintLayerScrollableArea& scrollableArea() const;
+
+    RawPtrWillBeMember<PaintLayerScrollableArea> m_scrollableArea;
 };
 
 } // namespace blink

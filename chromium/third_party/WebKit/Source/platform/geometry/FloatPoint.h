@@ -29,8 +29,10 @@
 
 #include "platform/geometry/FloatSize.h"
 #include "platform/geometry/IntPoint.h"
+#include "third_party/skia/include/core/SkPoint.h"
 #include "wtf/MathExtras.h"
 #include <algorithm>
+#include <iosfwd>
 
 #if OS(MACOSX)
 typedef struct CGPoint CGPoint;
@@ -39,8 +41,6 @@ typedef struct CGPoint CGPoint;
 #import <Foundation/Foundation.h>
 #endif
 #endif
-
-struct SkPoint;
 
 namespace blink {
 
@@ -149,7 +149,10 @@ public:
 #endif
 #endif
 
+    // Can we remove this one?
     SkPoint data() const;
+
+    operator SkPoint() const { return SkPoint::Make(m_x, m_y); }
 
 private:
     float m_x, m_y;
@@ -267,6 +270,10 @@ inline FloatSize toFloatSize(const FloatPoint& a)
 
 // Find point where lines through the two pairs of points intersect. Returns false if the lines don't intersect.
 PLATFORM_EXPORT bool findIntersection(const FloatPoint& p1, const FloatPoint& p2, const FloatPoint& d1, const FloatPoint& d2, FloatPoint& intersection);
+
+// Redeclared here to avoid ODR issues.
+// See platform/testing/GeometryPrinters.h.
+void PrintTo(const FloatPoint&, std::ostream*);
 
 }
 

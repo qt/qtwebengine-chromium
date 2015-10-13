@@ -2,7 +2,6 @@
 # For example, core/rendering/OWNERS for rendering changes.
 
 # Reviewers (comments indicate areas of expertise):
-adamk@chromium.org
 ager@chromium.org
 alexis.menard@intel.com
 chrishtr@chromium.org
@@ -21,6 +20,7 @@ haraken@chromium.org
 hayato@chromium.org
 inferno@chromium.org
 japhet@chromium.org
+jbroman@chromium.org
 jchaffraix@chromium.org
 jianli@chromium.org
 jochen@chromium.org

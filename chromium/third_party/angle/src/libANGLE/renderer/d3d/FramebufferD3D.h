@@ -27,6 +27,7 @@ typedef std::vector<const FramebufferAttachment *> AttachmentList;
 namespace rx
 {
 class RenderTargetD3D;
+struct WorkaroundsD3D;
 
 struct ClearParameters
 {
@@ -80,7 +81,7 @@ class FramebufferD3D : public FramebufferImpl
 
     GLenum checkStatus() const override;
 
-    const gl::AttachmentList &getColorAttachmentsForRender(const Workarounds &workarounds) const;
+    const gl::AttachmentList &getColorAttachmentsForRender(const WorkaroundsD3D &workarounds) const;
 
   protected:
     // Cache variable
@@ -99,8 +100,6 @@ class FramebufferD3D : public FramebufferImpl
 
     virtual GLenum getRenderTargetImplementationFormat(RenderTargetD3D *renderTarget) const = 0;
 };
-
-unsigned int GetAttachmentSerial(const gl::FramebufferAttachment *attachment);
 
 }
 

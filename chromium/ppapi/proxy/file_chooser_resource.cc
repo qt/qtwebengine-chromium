@@ -78,8 +78,8 @@ void FileChooserResource::PopulateAcceptTypes(
   if (input.empty())
     return;
 
-  std::vector<std::string> type_list;
-  base::SplitString(input, ',', &type_list);
+  std::vector<std::string> type_list = base::SplitString(
+      input, ",", base::TRIM_WHITESPACE, base::SPLIT_WANT_ALL);
   output->reserve(type_list.size());
 
   for (size_t i = 0; i < type_list.size(); ++i) {
@@ -93,8 +93,7 @@ void FileChooserResource::PopulateAcceptTypes(
       continue;
     if (type.find_first_of('/') == std::string::npos && type[0] != '.')
       continue;
-    base::StringToLowerASCII(&type);
-    output->push_back(type);
+    output->push_back(base::ToLowerASCII(type));
   }
 }
 

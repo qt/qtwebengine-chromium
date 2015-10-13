@@ -41,24 +41,19 @@ class WorkerThreadDebugger;
 class WorkerDebuggerAgent final : public InspectorDebuggerAgent {
     WTF_MAKE_NONCOPYABLE(WorkerDebuggerAgent);
     WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(WorkerDebuggerAgent);
-    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(WorkerDebuggerAgent);
 public:
     static PassOwnPtrWillBeRawPtr<WorkerDebuggerAgent> create(WorkerThreadDebugger*, WorkerGlobalScope*, InjectedScriptManager*);
     ~WorkerDebuggerAgent() override;
     DECLARE_VIRTUAL_TRACE();
 
 private:
-
     WorkerDebuggerAgent(WorkerThreadDebugger*, WorkerGlobalScope*, InjectedScriptManager*);
 
-    void startListeningV8Debugger() override;
-    void stopListeningV8Debugger() override;
-    V8Debugger& debugger() override;
-    InjectedScript injectedScriptForEval(ErrorString*, const int* executionContextId) override;
+    // V8DebuggerAgent::Client implemntation.
+    InjectedScript defaultInjectedScript() override;
     void muteConsole() override;
     void unmuteConsole() override;
 
-    WorkerThreadDebugger* m_workerThreadDebugger;
     RawPtrWillBeMember<WorkerGlobalScope> m_inspectedWorkerGlobalScope;
 };
 

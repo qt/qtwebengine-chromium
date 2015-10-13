@@ -4,11 +4,11 @@
             "type": "@WebInspector.PanelFactory",
             "name": "security",
             "title": "Security",
-            "order": 7,
+            "order": 80,
             "className": "WebInspector.SecurityPanelFactory"
         }
     ],
-    "dependencies": ["platform", "ui", "sdk"],
+    "dependencies": ["network", "platform", "ui", "sdk"],
     "experiment": "securityPanel",
     "scripts": [
         "SecurityModel.js",
@@ -16,6 +16,8 @@
     ],
     "resources": [
         "lockIcon.css",
-        "securityPanel.css"
+        "mainView.css",
+        "originView.css",
+        "sidebar.css"
     ]
 }

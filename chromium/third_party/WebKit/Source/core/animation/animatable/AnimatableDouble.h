@@ -38,37 +38,27 @@ namespace blink {
 
 class CORE_EXPORT AnimatableDouble final : public AnimatableValue {
 public:
-    virtual ~AnimatableDouble() { }
+    ~AnimatableDouble() override { }
 
-    enum Constraint {
-        Unconstrained,
-        InterpolationIsNonContinuousWithZero,
-    };
-
-    static PassRefPtrWillBeRawPtr<AnimatableDouble> create(double number, Constraint constraint = Unconstrained)
+    static PassRefPtr<AnimatableDouble> create(double number)
     {
-        return adoptRefWillBeNoop(new AnimatableDouble(number, constraint));
+        return adoptRef(new AnimatableDouble(number));
     }
 
     double toDouble() const { return m_number; }
 
-    DEFINE_INLINE_VIRTUAL_TRACE() { AnimatableValue::trace(visitor); }
-
 protected:
-    virtual PassRefPtrWillBeRawPtr<AnimatableValue> interpolateTo(const AnimatableValue*, double fraction) const override;
-    virtual bool usesDefaultInterpolationWith(const AnimatableValue*) const override;
+    PassRefPtr<AnimatableValue> interpolateTo(const AnimatableValue*, double fraction) const override;
 
 private:
-    AnimatableDouble(double number, Constraint constraint)
+    AnimatableDouble(double number)
         : m_number(number)
-        , m_constraint(constraint)
     {
     }
-    virtual AnimatableType type() const override { return TypeDouble; }
-    virtual bool equalTo(const AnimatableValue*) const override;
+    AnimatableType type() const override { return TypeDouble; }
+    bool equalTo(const AnimatableValue*) const override;
 
     double m_number;
-    Constraint m_constraint;
 };
 
 DEFINE_ANIMATABLE_VALUE_TYPE_CASTS(AnimatableDouble, isDouble());

@@ -45,10 +45,13 @@ class WebPluginLoadObserver;
 
 class FrameLoaderClientImpl final : public FrameLoaderClient {
 public:
-    explicit FrameLoaderClientImpl(WebLocalFrameImpl* webFrame);
+    static PassOwnPtrWillBeRawPtr<FrameLoaderClientImpl> create(WebLocalFrameImpl*);
+
     ~FrameLoaderClientImpl() override;
 
-    WebLocalFrameImpl* webFrame() const { return m_webFrame; }
+    DECLARE_VIRTUAL_TRACE();
+
+    WebLocalFrameImpl* webFrame() const { return m_webFrame.get(); }
 
     // FrameLoaderClient ----------------------------------------------
 
@@ -93,13 +96,12 @@ public:
     void dispatchDidCommitLoad(HistoryItem*, HistoryCommitType) override;
     void dispatchDidFailProvisionalLoad(const ResourceError&, HistoryCommitType) override;
     void dispatchDidFailLoad(const ResourceError&, HistoryCommitType) override;
-    void dispatchDidFinishDocumentLoad() override;
+    void dispatchDidFinishDocumentLoad(bool documentIsEmpty) override;
     void dispatchDidFinishLoad() override;
-    void dispatchDidFirstVisuallyNonEmptyLayout() override;
 
     void dispatchDidChangeThemeColor() override;
     NavigationPolicy decidePolicyForNavigation(const ResourceRequest&, DocumentLoader*, NavigationPolicy) override;
-    void dispatchWillRequestResource(FetchRequest*) override;
+    bool hasPendingNavigation() override;
     void dispatchWillSendSubmitEvent(HTMLFormElement*) override;
     void dispatchWillSubmitForm(HTMLFormElement*) override;
     void didStartLoading(LoadStartType) override;
@@ -112,6 +114,7 @@ public:
     void didRunInsecureContent(SecurityOrigin*, const KURL& insecureURL) override;
     void didDetectXSS(const KURL&, bool didBlockEntirePage) override;
     void didDispatchPingLoader(const KURL&) override;
+    void didChangePerformanceTiming() override;
     void selectorMatchChanged(const Vector<String>& addedSelectors, const Vector<String>& removedSelectors) override;
     PassRefPtrWillBeRawPtr<DocumentLoader> createDocumentLoader(LocalFrame*, const ResourceRequest&, const SubstituteData&) override;
     WTF::String userAgent(const KURL&) override;
@@ -119,19 +122,11 @@ public:
     void transitionToCommittedForNewPage() override;
     PassRefPtrWillBeRawPtr<LocalFrame> createFrame(const FrameLoadRequest&, const WTF::AtomicString& name, HTMLFrameOwnerElement*) override;
     virtual bool canCreatePluginWithoutRenderer(const String& mimeType) const;
-    PassOwnPtrWillBeRawPtr<PluginPlaceholder> createPluginPlaceholder(
-        Document&, const KURL&,
-        const Vector<String>& paramNames, const Vector<String>& paramValues,
-        const String& mimeType, bool loadManually) override;
     PassRefPtrWillBeRawPtr<Widget> createPlugin(
         HTMLPlugInElement*, const KURL&,
         const Vector<WTF::String>&, const Vector<WTF::String>&,
         const WTF::String&, bool loadManually, DetachedPluginPolicy) override;
-    PassRefPtrWillBeRawPtr<Widget> createJavaAppletWidget(
-        HTMLAppletElement*,
-        const KURL& /* base_url */,
-        const Vector<WTF::String>& paramNames,
-        const Vector<WTF::String>& paramValues) override;
+    PassOwnPtr<WebMediaPlayer> createWebMediaPlayer(HTMLMediaElement&, const WebURL&, WebMediaPlayerClient*) override;
     ObjectContentType objectContentType(
         const KURL&, const WTF::String& mimeType, bool shouldPreferPlugInsForImages) override;
     void didChangeScrollOffset() override;
@@ -176,19 +171,20 @@ public:
 
     void dispatchDidChangeManifest() override;
 
-    void dispatchDidChangeDefaultPresentation() override;
-
     unsigned backForwardLength() override;
 
     void suddenTerminationDisablerChanged(bool present, SuddenTerminationDisablerType) override;
+
 private:
+    explicit FrameLoaderClientImpl(WebLocalFrameImpl*);
+
     bool isFrameLoaderClientImpl() const override { return true; }
 
     PassOwnPtr<WebPluginLoadObserver> pluginLoadObserver(DocumentLoader*);
 
     // The WebFrame that owns this object and manages its lifetime. Therefore,
     // the web frame object is guaranteed to exist.
-    WebLocalFrameImpl* m_webFrame;
+    RawPtrWillBeMember<WebLocalFrameImpl> m_webFrame;
 };
 
 DEFINE_TYPE_CASTS(FrameLoaderClientImpl, FrameLoaderClient, client, client->isFrameLoaderClientImpl(), client.isFrameLoaderClientImpl());

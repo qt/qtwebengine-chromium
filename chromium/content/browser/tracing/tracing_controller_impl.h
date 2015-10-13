@@ -59,11 +59,17 @@ class TracingControllerImpl
   void RequestGlobalMemoryDump(
       const base::trace_event::MemoryDumpRequestArgs& args,
       const base::trace_event::MemoryDumpCallback& callback) override;
-  bool IsCoordinatorProcess() const override;
+  uint64 GetTracingProcessId() const override;
+
+  class TraceMessageFilterObserver {
+   public:
+    virtual void OnTraceMessageFilterAdded(TraceMessageFilter* filter) = 0;
+    virtual void OnTraceMessageFilterRemoved(TraceMessageFilter* filter) = 0;
+  };
+  void AddTraceMessageFilterObserver(TraceMessageFilterObserver* observer);
+  void RemoveTraceMessageFilterObserver(TraceMessageFilterObserver* observer);
 
  private:
-  typedef std::set<scoped_refptr<TraceMessageFilter> > TraceMessageFilterSet;
-
   friend struct base::DefaultLazyInstanceTraits<TracingControllerImpl>;
   friend class TraceMessageFilter;
 
@@ -121,6 +127,9 @@ class TracingControllerImpl
       const scoped_refptr<base::RefCountedString>& events_str_ptr);
 #endif
 
+  void OnEndPowerTracingAcked(
+      const scoped_refptr<base::RefCountedString>& events_str_ptr);
+
   void OnCaptureMonitoringSnapshotAcked(
       TraceMessageFilter* trace_message_filter);
 
@@ -153,6 +162,7 @@ class TracingControllerImpl
 
   void OnMonitoringStateChanged(bool is_monitoring);
 
+  typedef std::set<scoped_refptr<TraceMessageFilter>> TraceMessageFilterSet;
   TraceMessageFilterSet trace_message_filters_;
 
   // Pending acks for DisableRecording.
@@ -181,6 +191,7 @@ class TracingControllerImpl
 #endif
   bool is_recording_;
   bool is_monitoring_;
+  bool is_power_tracing_;
 
   GetCategoriesDoneCallback pending_get_categories_done_callback_;
   GetTraceBufferUsageCallback pending_trace_buffer_usage_callback_;
@@ -188,6 +199,9 @@ class TracingControllerImpl
   std::string watch_category_name_;
   std::string watch_event_name_;
   WatchEventCallback watch_event_callback_;
+
+  base::ObserverList<TraceMessageFilterObserver>
+      trace_message_filter_observers_;
 
   std::set<std::string> known_category_groups_;
   std::set<TracingUI*> tracing_uis_;

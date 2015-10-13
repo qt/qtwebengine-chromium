@@ -18,6 +18,7 @@ class ContentSecurityPolicy;
 class KURL;
 
 class CORE_EXPORT CSPSourceList {
+    DISALLOW_ALLOCATION();
     WTF_MAKE_NONCOPYABLE(CSPSourceList);
 public:
     CSPSourceList(ContentSecurityPolicy*, const String& directiveName);
@@ -48,6 +49,8 @@ private:
     void addSourceUnsafeEval();
     void addSourceNonce(const String& nonce);
     void addSourceHash(const ContentSecurityPolicyHashAlgorithm&, const DigestValue& hash);
+
+    bool hasSourceMatchInList(const KURL&, ContentSecurityPolicy::RedirectStatus) const;
 
     ContentSecurityPolicy* m_policy;
     Vector<CSPSource> m_list;

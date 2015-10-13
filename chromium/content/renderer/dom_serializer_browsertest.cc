@@ -10,6 +10,8 @@
 #include "base/files/file_util.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
+#include "content/public/browser/render_view_host.h"
+#include "content/public/browser/web_contents.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/renderer/render_view.h"
 #include "content/public/renderer/render_view_observer.h"
@@ -26,6 +28,7 @@
 #include "third_party/WebKit/public/platform/WebURL.h"
 #include "third_party/WebKit/public/platform/WebVector.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
+#include "third_party/WebKit/public/web/WebDocumentType.h"
 #include "third_party/WebKit/public/web/WebElement.h"
 #include "third_party/WebKit/public/web/WebElementCollection.h"
 #include "third_party/WebKit/public/web/WebLocalFrame.h"
@@ -50,13 +53,6 @@ using blink::WebString;
 using blink::WebURL;
 using blink::WebView;
 using blink::WebVector;
-
-namespace {
-
-// The first RenderFrame is routing ID 1, and the first RenderView is 2.
-const int kRenderViewRoutingId = 2;
-
-}
 
 namespace content {
 
@@ -87,16 +83,11 @@ WebFrame* FindSubFrameByURL(WebView* web_view, const GURL& url) {
   return NULL;
 }
 
-// Helper function that test whether the first node in the doc is a doc type
-// node.
 bool HasDocType(const WebDocument& doc) {
-  WebNode node = doc.firstChild();
-  if (node.isNull())
-    return false;
-  return node.nodeType() == WebNode::DocumentTypeNode;
+  return !doc.doctype().isNull();
 }
 
-  // Helper function for checking whether input node is META tag. Return true
+// Helper function for checking whether input node is META tag. Return true
 // means it is META element, otherwise return false. The parameter charset_info
 // return actual charset info if the META tag has charset declaration.
 bool IsMetaElement(const WebNode& node, std::string& charset_info) {
@@ -108,7 +99,8 @@ bool IsMetaElement(const WebNode& node, std::string& charset_info) {
   charset_info.erase(0, charset_info.length());
   // Check the META charset declaration.
   WebString httpEquiv = meta.getAttribute("http-equiv");
-  if (base::LowerCaseEqualsASCII(httpEquiv, "content-type")) {
+  if (base::LowerCaseEqualsASCII(base::StringPiece16(httpEquiv),
+                                 "content-type")) {
     std::string content = meta.getAttribute("content").utf8();
     int pos = content.find("charset", 0);
     if (pos > -1) {
@@ -178,11 +170,15 @@ class DomSerializerTests : public ContentBrowserTest,
 #endif
   }
 
-  // DomSerializerDelegate.
-  virtual void didSerializeDataForFrame(const WebURL& frame_web_url,
-                                        const WebCString& data,
-                                        PageSerializationStatus status) {
+  void SetUpOnMainThread() override {
+    render_view_routing_id_ =
+        shell()->web_contents()->GetRenderViewHost()->GetRoutingID();
+  }
 
+  // DomSerializerDelegate.
+  void didSerializeDataForFrame(const WebURL& frame_web_url,
+                                const WebCString& data,
+                                PageSerializationStatus status) override {
     GURL frame_url(frame_web_url);
     // If the all frames are finished saving, check all finish status
     if (status == WebPageSerializerClient::AllFramesAreFinished) {
@@ -225,9 +221,7 @@ class DomSerializerTests : public ContentBrowserTest,
   }
 
   RenderView* GetRenderView() {
-    // We could have the test on the UI thread get the WebContent's routing ID,
-    // but we know this will be the first RV so skip that and just hardcode it.
-    return RenderView::FromRoutingID(kRenderViewRoutingId);
+    return RenderView::FromRoutingID(render_view_routing_id_);
   }
 
   WebView* GetWebView() {
@@ -265,23 +259,19 @@ class DomSerializerTests : public ContentBrowserTest,
     runner->Run();
   }
 
-  // Serialize page DOM according to specific page URL. The parameter
-  // recursive_serialization indicates whether we will serialize all
-  // sub-frames.
-  void SerializeDomForURL(const GURL& page_url,
-                          bool recursive_serialization) {
-    // Find corresponding WebFrame according to page_url.
-    WebFrame* web_frame = FindSubFrameByURL(GetWebView(), page_url);
+  // Serialize DOM belonging to a frame with the specified |frame_url|.
+  void SerializeDomForURL(const GURL& frame_url) {
+    // Find corresponding WebFrame according to frame_url.
+    WebFrame* web_frame = FindSubFrameByURL(GetWebView(), frame_url);
     ASSERT_TRUE(web_frame != NULL);
     WebVector<WebURL> links;
-    links.assign(&page_url, 1);
+    links.assign(&frame_url, 1);
     WebString file_path =
         base::FilePath(FILE_PATH_LITERAL("c:\\dummy.htm")).AsUTF16Unsafe();
     WebVector<WebString> local_paths;
     local_paths.assign(&file_path, 1);
     // Start serializing DOM.
     bool result = WebPageSerializer::serialize(web_frame->toWebLocalFrame(),
-       recursive_serialization,
        static_cast<WebPageSerializerClient*>(this),
        links,
        local_paths,
@@ -297,7 +287,7 @@ class DomSerializerTests : public ContentBrowserTest,
     WebDocument doc = web_frame->document();
     ASSERT_TRUE(HasDocType(doc));
     // Do serialization.
-    SerializeDomForURL(file_url, false);
+    SerializeDomForURL(file_url);
     // Load the serialized contents.
     ASSERT_TRUE(HasSerializedFrame(file_url));
     const std::string& serialized_contents =
@@ -317,7 +307,7 @@ class DomSerializerTests : public ContentBrowserTest,
     WebDocument doc = web_frame->document();
     ASSERT_TRUE(!HasDocType(doc));
     // Do serialization.
-    SerializeDomForURL(file_url, false);
+    SerializeDomForURL(file_url);
     // Load the serialized contents.
     ASSERT_TRUE(HasSerializedFrame(file_url));
     const std::string& serialized_contents =
@@ -333,7 +323,7 @@ class DomSerializerTests : public ContentBrowserTest,
   void SerializeXMLDocWithBuiltInEntitiesOnRenderer(
       const GURL& xml_file_url, const std::string& original_contents) {
     // Do serialization.
-    SerializeDomForURL(xml_file_url, false);
+    SerializeDomForURL(xml_file_url);
     // Compare the serialized contents with original contents.
     ASSERT_TRUE(HasSerializedFrame(xml_file_url));
     const std::string& serialized_contents =
@@ -352,7 +342,7 @@ class DomSerializerTests : public ContentBrowserTest,
     ASSERT_TRUE(std::string::npos == original_contents.find(motw_declaration));
 
     // Do serialization.
-    SerializeDomForURL(file_url, false);
+    SerializeDomForURL(file_url);
     // Make sure the serialized contents have MOTW ;
     ASSERT_TRUE(HasSerializedFrame(file_url));
     const std::string& serialized_contents =
@@ -378,7 +368,7 @@ class DomSerializerTests : public ContentBrowserTest,
         ASSERT_TRUE(charset_info.empty());
     }
     // Do serialization.
-    SerializeDomForURL(file_url, false);
+    SerializeDomForURL(file_url);
 
     // Load the serialized contents.
     ASSERT_TRUE(HasSerializedFrame(file_url));
@@ -434,7 +424,7 @@ class DomSerializerTests : public ContentBrowserTest,
     ASSERT_TRUE(charset_declaration_count > 1);
 
     // Do serialization.
-    SerializeDomForURL(file_url, false);
+    SerializeDomForURL(file_url);
 
     // Load the serialized contents.
     ASSERT_TRUE(HasSerializedFrame(file_url));
@@ -490,10 +480,9 @@ class DomSerializerTests : public ContentBrowserTest,
     ASSERT_TRUE(!body_ele.isNull());
     WebNode text_node = body_ele.firstChild();
     ASSERT_TRUE(text_node.isTextNode());
-    ASSERT_TRUE(std::string(text_node.createMarkup().utf8()) ==
-                "&amp;&lt;&gt;\"\'");
+    ASSERT_TRUE(std::string(text_node.nodeValue().utf8()) == "&<>\"\'");
     // Do serialization.
-    SerializeDomForURL(file_url, false);
+    SerializeDomForURL(file_url);
     // Compare the serialized contents with original contents.
     ASSERT_TRUE(HasSerializedFrame(file_url));
     const std::string& serialized_contents =
@@ -546,7 +535,7 @@ class DomSerializerTests : public ContentBrowserTest,
     WebString value = body_ele.getAttribute("title");
     ASSERT_TRUE(std::string(value.utf8()) == "&<>\"\'");
     // Do serialization.
-    SerializeDomForURL(file_url, false);
+    SerializeDomForURL(file_url);
     // Compare the serialized contents with original contents.
     ASSERT_TRUE(HasSerializedFrame(file_url));
     const std::string& serialized_contents =
@@ -587,7 +576,7 @@ class DomSerializerTests : public ContentBrowserTest,
     ASSERT_TRUE(base::UTF16ToWide(content) == parsed_value);
 
     // Do serialization.
-    SerializeDomForURL(file_url, false);
+    SerializeDomForURL(file_url);
     // Check the serialized string.
     ASSERT_TRUE(HasSerializedFrame(file_url));
     const std::string& serialized_contents =
@@ -640,7 +629,7 @@ class DomSerializerTests : public ContentBrowserTest,
     ASSERT_NE(original_base_url, path_dir_url);
 
     // Do serialization.
-    SerializeDomForURL(file_url, false);
+    SerializeDomForURL(file_url);
 
     // Load the serialized contents.
     ASSERT_TRUE(HasSerializedFrame(file_url));
@@ -710,7 +699,7 @@ class DomSerializerTests : public ContentBrowserTest,
     ASSERT_TRUE(head_element.childNodes().length() == 0);
 
     // Do serialization.
-    SerializeDomForURL(file_url, false);
+    SerializeDomForURL(file_url);
     // Make sure the serialized contents have META ;
     ASSERT_TRUE(HasSerializedFrame(file_url));
     const std::string& serialized_contents =
@@ -746,24 +735,20 @@ class DomSerializerTests : public ContentBrowserTest,
     ASSERT_TRUE(std::string(text_node_contents.utf8()) == "hello world");
   }
 
-  void SerializeDocumentWithDownloadedIFrameOnRenderer(const GURL& file_url) {
-    // Do a recursive serialization. We pass if we don't crash.
-    SerializeDomForURL(file_url, true);
-  }
-
   void SubResourceForElementsInNonHTMLNamespaceOnRenderer(
       const GURL& file_url) {
     WebFrame* web_frame = FindSubFrameByURL(GetWebView(), file_url);
     ASSERT_TRUE(web_frame != NULL);
     WebDocument doc = web_frame->document();
     WebNode lastNodeInBody = doc.body().lastChild();
-    ASSERT_EQ(WebNode::ElementNode, lastNodeInBody.nodeType());
+    ASSERT_TRUE(lastNodeInBody.isElementNode());
     WebString uri = GetSubResourceLinkFromElement(
         lastNodeInBody.to<WebElement>());
     EXPECT_TRUE(uri.isNull());
   }
 
  private:
+  int32 render_view_routing_id_;
   // Map frame_url to corresponding serialized_content.
   typedef base::hash_map<std::string, std::string> SerializedFrameContentMap;
   SerializedFrameContentMap serialized_frame_map_;
@@ -1006,24 +991,6 @@ IN_PROC_BROWSER_TEST_F(DomSerializerTests, SerializeHTMLDOMWithEmptyHead) {
   PostTaskToInProcessRendererAndWait(
         base::Bind(&DomSerializerTests::SerializeHTMLDOMWithEmptyHeadOnRenderer,
                    base::Unretained(this)));
-}
-
-// Test that we don't crash when the page contains an iframe that
-// was handled as a download (http://crbug.com/42212).
-IN_PROC_BROWSER_TEST_F(DomSerializerTests,
-                       SerializeDocumentWithDownloadedIFrame) {
-  base::FilePath page_file_path = GetTestFilePath(
-      "dom_serializer", "iframe-src-is-exe.htm");
-  GURL file_url = net::FilePathToFileURL(page_file_path);
-  ASSERT_TRUE(file_url.SchemeIsFile());
-  // Load the test file.
-  NavigateToURL(shell(), file_url);
-
-  PostTaskToInProcessRendererAndWait(
-        base::Bind(
-            &DomSerializerTests::
-                SerializeDocumentWithDownloadedIFrameOnRenderer,
-            base::Unretained(this), file_url));
 }
 
 IN_PROC_BROWSER_TEST_F(DomSerializerTests,

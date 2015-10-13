@@ -28,10 +28,11 @@ enum PaintInvalidationReason {
     PaintInvalidationBecameInvisible,
     PaintInvalidationScroll,
     PaintInvalidationSelection,
-    PaintInvalidationFocusRing,
+    PaintInvalidationOutline,
     PaintInvalidationLayer,
     PaintInvalidationLayoutObjectInsertion,
     PaintInvalidationLayoutObjectRemoval,
+    PaintInvalidationSVGResourceChange,
     // PaintInvalidationDelayedFull means that PaintInvalidationFull is needed in order to fully paint
     // the content, but that painting of the object can be delayed until a future frame.
     // This can be the case for an object whose content is not visible to the user.

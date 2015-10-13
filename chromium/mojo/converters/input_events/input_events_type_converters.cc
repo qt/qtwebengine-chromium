@@ -12,6 +12,7 @@
 #include "mojo/converters/geometry/geometry_type_converters.h"
 #include "mojo/converters/input_events/mojo_extended_key_event_data.h"
 #include "ui/events/event_utils.h"
+#include "ui/events/keycodes/dom/keycode_converter.h"
 #include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/mojo/events/input_events.mojom.h"
 
@@ -19,7 +20,7 @@ namespace mojo {
 namespace {
 
 ui::EventType MojoMouseEventTypeToUIEvent(const EventPtr& event) {
-  DCHECK(!event->pointer_data.is_null());
+  DCHECK(event->pointer_data);
   DCHECK_EQ(POINTER_KIND_MOUSE, event->pointer_data->kind);
   switch (event->action) {
     case EVENT_TYPE_POINTER_DOWN:
@@ -30,10 +31,6 @@ ui::EventType MojoMouseEventTypeToUIEvent(const EventPtr& event) {
 
     case EVENT_TYPE_POINTER_MOVE:
       DCHECK(event->pointer_data);
-      if (event->pointer_data->horizontal_wheel != 0 ||
-          event->pointer_data->vertical_wheel != 0) {
-        return ui::ET_MOUSEWHEEL;
-      }
       if (event->flags &
           (EVENT_FLAGS_LEFT_MOUSE_BUTTON | EVENT_FLAGS_MIDDLE_MOUSE_BUTTON |
            EVENT_FLAGS_RIGHT_MOUSE_BUTTON)) {
@@ -49,7 +46,7 @@ ui::EventType MojoMouseEventTypeToUIEvent(const EventPtr& event) {
 }
 
 ui::EventType MojoTouchEventTypeToUIEvent(const EventPtr& event) {
-  DCHECK(!event->pointer_data.is_null());
+  DCHECK(event->pointer_data);
   DCHECK_EQ(POINTER_KIND_TOUCH, event->pointer_data->kind);
   switch (event->action) {
     case EVENT_TYPE_POINTER_DOWN:
@@ -71,12 +68,17 @@ ui::EventType MojoTouchEventTypeToUIEvent(const EventPtr& event) {
   return ui::ET_TOUCH_CANCELLED;
 }
 
+ui::EventType MojoWheelEventTypeToUIEvent(const EventPtr& event) {
+  DCHECK(event->wheel_data);
+  return ui::ET_MOUSEWHEEL;
+}
+
 void SetPointerDataLocationFromEvent(const ui::LocatedEvent& located_event,
-                                     PointerData* pointer_data) {
-  pointer_data->x = located_event.location_f().x();
-  pointer_data->y = located_event.location_f().y();
-  pointer_data->screen_x = located_event.root_location_f().x();
-  pointer_data->screen_y = located_event.root_location_f().y();
+                                     mojo::LocationData* location_data) {
+  location_data->x = located_event.location_f().x();
+  location_data->y = located_event.location_f().y();
+  location_data->screen_x = located_event.root_location_f().x();
+  location_data->screen_y = located_event.root_location_f().y();
 }
 
 }  // namespace
@@ -134,8 +136,10 @@ EventType TypeConverter<EventType, ui::EventType>::Convert(ui::EventType type) {
     case ui::ET_MOUSE_ENTERED:
     case ui::ET_MOUSE_EXITED:
     case ui::ET_TOUCH_MOVED:
-    case ui::ET_MOUSEWHEEL:
       return EVENT_TYPE_POINTER_MOVE;
+
+    case ui::ET_MOUSEWHEEL:
+      return EVENT_TYPE_WHEEL;
 
     case ui::ET_MOUSE_RELEASED:
     case ui::ET_TOUCH_RELEASED:
@@ -166,43 +170,78 @@ EventPtr TypeConverter<EventPtr, ui::Event>::Convert(const ui::Event& input) {
   event->flags = EventFlags(input.flags());
   event->time_stamp = input.time_stamp().ToInternalValue();
 
-  PointerData pointer_data;
-  if (input.IsMouseEvent()) {
+  if (input.IsMouseWheelEvent()) {
+    const ui::MouseWheelEvent* wheel_event =
+        static_cast<const ui::MouseWheelEvent*>(&input);
+
+    WheelDataPtr wheel_data(WheelData::New());
+    LocationDataPtr location_data(LocationData::New());
+    const ui::LocatedEvent* located_event =
+        static_cast<const ui::LocatedEvent*>(&input);
+    SetPointerDataLocationFromEvent(*located_event, location_data.get());
+    wheel_data->location = location_data.Pass();
+
+    // TODO(rjkroege): Support page scrolling on windows by directly
+    // cracking into a mojo event when the native event is available.
+    wheel_data->mode = WHEEL_MODE_LINE;
+    // TODO(rjkroege): Support precise scrolling deltas.
+
+    if ((input.flags() & ui::EF_SHIFT_DOWN) != 0 &&
+        wheel_event->x_offset() == 0) {
+      wheel_data->delta_x = wheel_event->y_offset();
+      wheel_data->delta_y = 0;
+      wheel_data->delta_z = 0;
+    } else {
+      // TODO(rjkroege): support z in ui::Events.
+      wheel_data->delta_x = wheel_event->x_offset();
+      wheel_data->delta_y = wheel_event->y_offset();
+      wheel_data->delta_z = 0;
+    }
+    event->wheel_data = wheel_data.Pass();
+  } else if (input.IsMouseEvent()) {
     const ui::LocatedEvent* located_event =
         static_cast<const ui::LocatedEvent*>(&input);
     PointerDataPtr pointer_data(PointerData::New());
     // TODO(sky): come up with a better way to handle this.
     pointer_data->pointer_id = std::numeric_limits<int32>::max();
     pointer_data->kind = POINTER_KIND_MOUSE;
-    SetPointerDataLocationFromEvent(*located_event, pointer_data.get());
-    if (input.IsMouseWheelEvent()) {
-      const ui::MouseWheelEvent* wheel_event =
-          static_cast<const ui::MouseWheelEvent*>(&input);
-      // This conversion assumes we're using the mojo meaning of these values:
-      // [-1 1].
-      pointer_data->horizontal_wheel =
-          static_cast<float>(wheel_event->x_offset()) / 100.0f;
-      pointer_data->vertical_wheel =
-          static_cast<float>(wheel_event->y_offset()) / 100.0f;
-    }
+    LocationDataPtr location_data(LocationData::New());
+    SetPointerDataLocationFromEvent(*located_event, location_data.get());
+    pointer_data->location = location_data.Pass();
+
     event->pointer_data = pointer_data.Pass();
   } else if (input.IsTouchEvent()) {
     const ui::TouchEvent* touch_event =
         static_cast<const ui::TouchEvent*>(&input);
+
     PointerDataPtr pointer_data(PointerData::New());
     pointer_data->pointer_id = touch_event->touch_id();
     pointer_data->kind = POINTER_KIND_TOUCH;
-    SetPointerDataLocationFromEvent(*touch_event, pointer_data.get());
-    pointer_data->radius_major = touch_event->radius_x();
-    pointer_data->radius_minor = touch_event->radius_y();
-    pointer_data->pressure = touch_event->force();
-    pointer_data->orientation = touch_event->rotation_angle();
+    LocationDataPtr location_data(LocationData::New());
+    SetPointerDataLocationFromEvent(*touch_event, location_data.get());
+    pointer_data->location = location_data.Pass();
+
+    BrushDataPtr brush_data(BrushData::New());
+
+    // TODO(rjk): this is in the wrong coordinate system
+    brush_data->width = touch_event->pointer_details().radius_x();
+    brush_data->height = touch_event->pointer_details().radius_y();
+    // TODO(rjk): update for touch_event->rotation_angle();
+    brush_data->pressure = touch_event->pointer_details().force();
+    brush_data->tiltY = 0;
+    brush_data->tiltZ = 0;
+    pointer_data->brush_data = brush_data.Pass();
     event->pointer_data = pointer_data.Pass();
+
+    // TODO(rjkroege): Plumb raw pointer events on windows.
+    // TODO(rjkroege): Handle force-touch on MacOS
+    // TODO(rjkroege): Adjust brush data appropriately for Android.
   } else if (input.IsKeyEvent()) {
     const ui::KeyEvent* key_event = static_cast<const ui::KeyEvent*>(&input);
     KeyDataPtr key_data(KeyData::New());
     key_data->key_code = key_event->GetConflatedWindowsKeyCode();
-    key_data->native_key_code = key_event->platform_keycode();
+    key_data->native_key_code =
+      ui::KeycodeConverter::DomCodeToNativeKeycode(key_event->code());
     key_data->is_char = key_event->is_char();
     key_data->character = key_event->GetCharacter();
 
@@ -236,10 +275,11 @@ scoped_ptr<ui::Event> TypeConverter<scoped_ptr<ui::Event>, EventPtr>::Convert(
     const EventPtr& input) {
   gfx::PointF location;
   gfx::PointF screen_location;
-  if (!input->pointer_data.is_null()) {
-    location.SetPoint(input->pointer_data->x, input->pointer_data->y);
-    screen_location.SetPoint(input->pointer_data->screen_x,
-                             input->pointer_data->screen_y);
+  if (input->pointer_data && input->pointer_data->location) {
+    location.SetPoint(input->pointer_data->location->x,
+                      input->pointer_data->location->y);
+    screen_location.SetPoint(input->pointer_data->location->screen_x,
+                             input->pointer_data->location->screen_y);
   }
 
   switch (input->action) {
@@ -265,39 +305,50 @@ scoped_ptr<ui::Event> TypeConverter<scoped_ptr<ui::Event>, EventPtr>::Convert(
               static_cast<int32_t>(input->key_data->windows_key_code),
               input->key_data->text,
               input->key_data->unmodified_text)));
-      key_event->set_platform_keycode(input->key_data->native_key_code);
       return key_event.Pass();
     }
     case EVENT_TYPE_POINTER_DOWN:
     case EVENT_TYPE_POINTER_UP:
     case EVENT_TYPE_POINTER_MOVE:
     case EVENT_TYPE_POINTER_CANCEL: {
-      if (input->pointer_data->kind == POINTER_KIND_MOUSE) {
-        // TODO: last flags isn't right. Need to send changed_flags.
-        scoped_ptr<ui::MouseEvent> event(new ui::MouseEvent(
-            MojoMouseEventTypeToUIEvent(input), location, screen_location,
-            ui::EventTimeForNow(), ui::EventFlags(input->flags),
-            ui::EventFlags(input->flags)));
-        if (event->IsMouseWheelEvent()) {
-          // This conversion assumes we're using the mojo meaning of these
-          // values: [-1 1].
-          scoped_ptr<ui::MouseEvent> wheel_event(new ui::MouseWheelEvent(
-              *event,
-              static_cast<int>(input->pointer_data->horizontal_wheel * 100),
-              static_cast<int>(input->pointer_data->vertical_wheel * 100)));
-          event = wheel_event.Pass();
-        }
-        return event.Pass();
+      switch (input->pointer_data->kind) {
+        case POINTER_KIND_MOUSE: {
+          // TODO: last flags isn't right. Need to send changed_flags.
+          scoped_ptr<ui::MouseEvent> event(new ui::MouseEvent(
+              MojoMouseEventTypeToUIEvent(input), location, screen_location,
+              ui::EventTimeForNow(), ui::EventFlags(input->flags),
+              ui::EventFlags(input->flags)));
+          return event.Pass();
+        } break;
+        case POINTER_KIND_TOUCH: {
+          DCHECK(input->pointer_data->brush_data);
+          scoped_ptr<ui::TouchEvent> touch_event(new ui::TouchEvent(
+              MojoTouchEventTypeToUIEvent(input), location,
+              ui::EventFlags(input->flags), input->pointer_data->pointer_id,
+              base::TimeDelta::FromInternalValue(input->time_stamp),
+              input->pointer_data->brush_data->width,
+              input->pointer_data->brush_data->height, 0,
+              input->pointer_data->brush_data->pressure));
+          touch_event->set_root_location(screen_location);
+          return touch_event.Pass();
+        } break;
+        case POINTER_KIND_PEN:
+          NOTIMPLEMENTED();
+          break;
       }
-      scoped_ptr<ui::TouchEvent> touch_event(new ui::TouchEvent(
-          MojoTouchEventTypeToUIEvent(input), location,
-          ui::EventFlags(input->flags), input->pointer_data->pointer_id,
-          base::TimeDelta::FromInternalValue(input->time_stamp),
-          input->pointer_data->radius_major, input->pointer_data->radius_minor,
-          input->pointer_data->orientation, input->pointer_data->pressure));
-      touch_event->set_root_location(screen_location);
-      return touch_event.Pass();
-    }
+    } break;
+    case EVENT_TYPE_WHEEL: {
+      DCHECK(input->wheel_data);
+      scoped_ptr<ui::MouseEvent> pre_wheel_event(new ui::MouseEvent(
+          MojoWheelEventTypeToUIEvent(input), location, screen_location,
+          ui::EventTimeForNow(), ui::EventFlags(input->flags),
+          ui::EventFlags(input->flags)));
+      scoped_ptr<ui::MouseEvent> wheel_event(new ui::MouseWheelEvent(
+          *pre_wheel_event, static_cast<int>(input->wheel_data->delta_x),
+          static_cast<int>(input->wheel_data->delta_y)));
+      return wheel_event.Pass();
+    } break;
+
     default:
       NOTIMPLEMENTED();
   }

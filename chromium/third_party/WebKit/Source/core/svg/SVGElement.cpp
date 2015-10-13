@@ -310,7 +310,6 @@ CSSPropertyID SVGElement::cssPropertyIdForSVGAttributeName(const QualifiedName& 
             &SVGNames::directionAttr,
             &displayAttr,
             &dominant_baselineAttr,
-            &enable_backgroundAttr,
             &fillAttr,
             &fill_opacityAttr,
             &fill_ruleAttr,
@@ -500,15 +499,6 @@ const WillBeHeapHashSet<RawPtrWillBeWeakMember<SVGElement>>& SVGElement::instanc
     if (!hasSVGRareData())
         return emptyInstances();
     return svgRareData()->elementInstances();
-}
-
-bool SVGElement::getBoundingBox(FloatRect& rect)
-{
-    if (!isSVGGraphicsElement())
-        return false;
-
-    rect = toSVGGraphicsElement(this)->getBBox();
-    return true;
 }
 
 void SVGElement::setCursorElement(SVGCursorElement* cursorElement)
@@ -741,9 +731,9 @@ static inline void collectInstancesForSVGElement(SVGElement* element, WillBeHeap
     instances = element->instancesForElement();
 }
 
-bool SVGElement::addEventListener(const AtomicString& eventType, PassRefPtr<EventListener> prpListener, bool useCapture)
+bool SVGElement::addEventListener(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener> prpListener, bool useCapture)
 {
-    RefPtr<EventListener> listener = prpListener;
+    RefPtrWillBeRawPtr<EventListener> listener = prpListener;
 
     // Add event listener to regular DOM element
     if (!Node::addEventListener(eventType, listener, useCapture))
@@ -760,9 +750,9 @@ bool SVGElement::addEventListener(const AtomicString& eventType, PassRefPtr<Even
     return true;
 }
 
-bool SVGElement::removeEventListener(const AtomicString& eventType, PassRefPtr<EventListener> prpListener, bool useCapture)
+bool SVGElement::removeEventListener(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener> prpListener, bool useCapture)
 {
-    RefPtr<EventListener> listener = prpListener;
+    RefPtrWillBeRawPtr<EventListener> listener = prpListener;
 
     // Remove event listener from regular DOM element
     if (!Node::removeEventListener(eventType, listener, useCapture))
@@ -786,9 +776,11 @@ static bool hasLoadListener(Element* element)
         return true;
 
     for (element = element->parentOrShadowHostElement(); element; element = element->parentOrShadowHostElement()) {
-        const EventListenerVector& entry = element->getEventListeners(EventTypeNames::load);
-        for (size_t i = 0; i < entry.size(); ++i) {
-            if (entry[i].useCapture)
+        EventListenerVector* entry = element->getEventListeners(EventTypeNames::load);
+        if (!entry)
+            continue;
+        for (size_t i = 0; i < entry->size(); ++i) {
+            if (entry->at(i).useCapture)
                 return true;
         }
     }

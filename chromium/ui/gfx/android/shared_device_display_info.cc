@@ -13,7 +13,7 @@ namespace gfx {
 
 // static JNI call
 static void UpdateSharedDeviceDisplayInfo(JNIEnv* env,
-                                          jobject obj,
+                                          const JavaParamRef<jobject>& obj,
                                           jint display_height,
                                           jint display_width,
                                           jint physical_display_height,
@@ -32,7 +32,7 @@ static void UpdateSharedDeviceDisplayInfo(JNIEnv* env,
 
 // static
 SharedDeviceDisplayInfo* SharedDeviceDisplayInfo::GetInstance() {
-  return Singleton<SharedDeviceDisplayInfo>::get();
+  return base::Singleton<SharedDeviceDisplayInfo>::get();
 }
 
 int SharedDeviceDisplayInfo::GetDisplayHeight() {

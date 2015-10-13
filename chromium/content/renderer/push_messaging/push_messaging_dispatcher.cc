@@ -10,11 +10,11 @@
 #include "content/renderer/manifest/manifest_manager.h"
 #include "content/renderer/render_frame_impl.h"
 #include "ipc/ipc_message.h"
-#include "third_party/WebKit/public/platform/WebServiceWorkerRegistration.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/platform/modules/push_messaging/WebPushError.h"
 #include "third_party/WebKit/public/platform/modules/push_messaging/WebPushSubscription.h"
 #include "third_party/WebKit/public/platform/modules/push_messaging/WebPushSubscriptionOptions.h"
+#include "third_party/WebKit/public/platform/modules/serviceworker/WebServiceWorkerRegistration.h"
 #include "third_party/WebKit/public/web/WebConsoleMessage.h"
 #include "third_party/WebKit/public/web/WebLocalFrame.h"
 #include "url/gurl.h"
@@ -84,14 +84,14 @@ void PushMessagingDispatcher::DoSubscribe(
 
 void PushMessagingDispatcher::OnSubscribeFromDocumentSuccess(
     int32_t request_id,
-    const GURL& endpoint) {
+    const GURL& endpoint,
+    const std::vector<uint8_t>& curve25519dh) {
   blink::WebPushSubscriptionCallbacks* callbacks =
       subscription_callbacks_.Lookup(request_id);
   DCHECK(callbacks);
 
-  scoped_ptr<blink::WebPushSubscription> subscription(
-      new blink::WebPushSubscription(endpoint));
-  callbacks->onSuccess(subscription.release());
+  callbacks->onSuccess(blink::adoptWebPtr(
+      new blink::WebPushSubscription(endpoint, curve25519dh)));
 
   subscription_callbacks_.Remove(request_id);
 }
@@ -103,10 +103,14 @@ void PushMessagingDispatcher::OnSubscribeFromDocumentError(
       subscription_callbacks_.Lookup(request_id);
   DCHECK(callbacks);
 
-  scoped_ptr<blink::WebPushError> error(new blink::WebPushError(
-      blink::WebPushError::ErrorTypeAbort,
+  blink::WebPushError::ErrorType error_type =
+      status == PUSH_REGISTRATION_STATUS_PERMISSION_DENIED
+          ? blink::WebPushError::ErrorTypePermissionDenied
+          : blink::WebPushError::ErrorTypeAbort;
+
+  callbacks->onError(blink::WebPushError(
+      error_type,
       blink::WebString::fromUTF8(PushRegistrationStatusToString(status))));
-  callbacks->onError(error.release());
 
   subscription_callbacks_.Remove(request_id);
 }

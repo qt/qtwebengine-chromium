@@ -41,15 +41,16 @@ class MEDIA_EXPORT MediaPlayerBridge : public MediaPlayerAndroid {
   // |manager| to track unused resources and free them when needed.
   // MediaPlayerBridge also forwards Android MediaPlayer callbacks to
   // the |manager| when needed.
-  MediaPlayerBridge(int player_id,
-                    const GURL& url,
-                    const GURL& first_party_for_cookies,
-                    const std::string& user_agent,
-                    bool hide_url_log,
-                    MediaPlayerManager* manager,
-                    const RequestMediaResourcesCB& request_media_resources_cb,
-                    const GURL& frame_url,
-                    bool allow_credentials);
+  MediaPlayerBridge(
+      int player_id,
+      const GURL& url,
+      const GURL& first_party_for_cookies,
+      const std::string& user_agent,
+      bool hide_url_log,
+      MediaPlayerManager* manager,
+      const OnDecoderResourcesReleasedCB& on_decoder_resources_released_cb,
+      const GURL& frame_url,
+      bool allow_credentials);
   ~MediaPlayerBridge() override;
 
   // Initialize this object and extract the metadata from the media.
@@ -99,13 +100,17 @@ class MEDIA_EXPORT MediaPlayerBridge : public MediaPlayerAndroid {
   virtual base::android::ScopedJavaLocalRef<jobject> GetAllowedOperations();
 
  private:
+  friend class MediaPlayerBridgeTest;
+
   // Set the data source for the media player.
   void SetDataSource(const std::string& url);
 
   // Functions that implements media player control.
   void StartInternal();
   void PauseInternal();
-  void SeekInternal(base::TimeDelta time);
+
+  // Returns true if the Java MediaPlayerBridge's seekTo method is called
+  bool SeekInternal(base::TimeDelta current_time, base::TimeDelta time);
 
   // Called when |time_update_timer_| fires.
   void OnTimeUpdateTimerFired();
@@ -170,10 +175,13 @@ class MEDIA_EXPORT MediaPlayerBridge : public MediaPlayerAndroid {
   // Cookies for |url_|.
   std::string cookies_;
 
+  // The surface object currently owned by the player.
+  gfx::ScopedJavaSurface surface_;
+
   // Java MediaPlayerBridge instance.
   base::android::ScopedJavaGlobalRef<jobject> j_media_player_bridge_;
 
-  base::RepeatingTimer<MediaPlayerBridge> time_update_timer_;
+  base::RepeatingTimer time_update_timer_;
 
   // Volume of playback.
   double volume_;

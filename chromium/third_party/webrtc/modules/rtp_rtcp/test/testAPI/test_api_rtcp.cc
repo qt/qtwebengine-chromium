@@ -23,6 +23,7 @@
 using namespace webrtc;
 
 const uint64_t kTestPictureId = 12345678;
+const uint8_t kSliPictureId = 156;
 
 class RtcpCallback : public RtcpIntraFrameObserver {
  public:
@@ -38,7 +39,7 @@ class RtcpCallback : public RtcpIntraFrameObserver {
   };
   virtual void OnReceivedSLI(uint32_t ssrc,
                              uint8_t pictureId) {
-    EXPECT_EQ(28, pictureId);
+    EXPECT_EQ(kSliPictureId & 0x3f, pictureId);
   };
   virtual void OnReceivedRPSI(uint32_t ssrc,
                               uint64_t pictureId) {
@@ -54,8 +55,7 @@ class TestRtpFeedback : public NullRtpFeedback {
   TestRtpFeedback(RtpRtcp* rtp_rtcp) : rtp_rtcp_(rtp_rtcp) {}
   virtual ~TestRtpFeedback() {}
 
-  virtual void OnIncomingSSRCChanged(const int32_t id,
-                                     const uint32_t ssrc) {
+  void OnIncomingSSRCChanged(const uint32_t ssrc) override {
     rtp_rtcp_->SetRemoteSSRC(ssrc);
   }
 
@@ -68,7 +68,6 @@ class RtpRtcpRtcpTest : public ::testing::Test {
   RtpRtcpRtcpTest() : fake_clock(123456) {
     test_csrcs.push_back(1234);
     test_csrcs.push_back(2345);
-    test_id = 123;
     test_ssrc = 3456;
     test_timestamp = 4567;
     test_sequence_number = 2345;
@@ -86,7 +85,6 @@ class RtpRtcpRtcpTest : public ::testing::Test {
     receive_statistics2_.reset(ReceiveStatistics::Create(&fake_clock));
 
     RtpRtcp::Configuration configuration;
-    configuration.id = test_id;
     configuration.audio = true;
     configuration.clock = &fake_clock;
     configuration.receive_statistics = receive_statistics1_.get();
@@ -103,11 +101,10 @@ class RtpRtcpRtcpTest : public ::testing::Test {
     rtp_feedback1_.reset(new TestRtpFeedback(module1));
 
     rtp_receiver1_.reset(RtpReceiver::CreateAudioReceiver(
-        test_id, &fake_clock, NULL, receiver, rtp_feedback1_.get(),
+        &fake_clock, NULL, receiver, rtp_feedback1_.get(),
         rtp_payload_registry1_.get()));
 
     configuration.receive_statistics = receive_statistics2_.get();
-    configuration.id = test_id + 1;
     configuration.outgoing_transport = transport2;
     configuration.intra_frame_callback = myRTCPFeedback2;
 
@@ -116,7 +113,7 @@ class RtpRtcpRtcpTest : public ::testing::Test {
     rtp_feedback2_.reset(new TestRtpFeedback(module2));
 
     rtp_receiver2_.reset(RtpReceiver::CreateAudioReceiver(
-        test_id + 1, &fake_clock, NULL, receiver, rtp_feedback2_.get(),
+        &fake_clock, NULL, receiver, rtp_feedback2_.get(),
         rtp_payload_registry2_.get()));
 
     transport1->SetSendModule(module2, rtp_payload_registry2_.get(),
@@ -126,8 +123,8 @@ class RtpRtcpRtcpTest : public ::testing::Test {
     myRTCPFeedback1->SetModule(module1);
     myRTCPFeedback2->SetModule(module2);
 
-    module1->SetRTCPStatus(kRtcpCompound);
-    module2->SetRTCPStatus(kRtcpCompound);
+    module1->SetRTCPStatus(RtcpMode::kCompound);
+    module2->SetRTCPStatus(RtcpMode::kCompound);
 
     module2->SetSSRC(test_ssrc + 1);
     module1->SetSSRC(test_ssrc);
@@ -178,7 +175,6 @@ class RtpRtcpRtcpTest : public ::testing::Test {
     delete receiver;
   }
 
-  int test_id;
   rtc::scoped_ptr<TestRtpFeedback> rtp_feedback1_;
   rtc::scoped_ptr<TestRtpFeedback> rtp_feedback2_;
   rtc::scoped_ptr<ReceiveStatistics> receive_statistics1_;
@@ -204,7 +200,7 @@ class RtpRtcpRtcpTest : public ::testing::Test {
 
 TEST_F(RtpRtcpRtcpTest, RTCP_PLI_RPSI) {
   EXPECT_EQ(0, module1->SendRTCPReferencePictureSelection(kTestPictureId));
-  EXPECT_EQ(0, module1->SendRTCPSliceLossIndication(156));
+  EXPECT_EQ(0, module1->SendRTCPSliceLossIndication(kSliPictureId));
 }
 
 TEST_F(RtpRtcpRtcpTest, RTCP_CNAME) {

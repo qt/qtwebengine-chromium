@@ -28,7 +28,7 @@ class PacketReceiver;
 
 namespace test {
 
-class DirectTransport : public newapi::Transport {
+class DirectTransport : public Transport {
  public:
   DirectTransport();
   explicit DirectTransport(const FakeNetworkPipe::Config& config);
@@ -39,7 +39,9 @@ class DirectTransport : public newapi::Transport {
   virtual void StopSending();
   virtual void SetReceiver(PacketReceiver* receiver);
 
-  bool SendRtp(const uint8_t* data, size_t length) override;
+  bool SendRtp(const uint8_t* data,
+               size_t length,
+               const PacketOptions& options) override;
   bool SendRtcp(const uint8_t* data, size_t length) override;
 
  private:

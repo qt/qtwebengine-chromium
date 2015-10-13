@@ -354,6 +354,7 @@ TEST_F(WindowEventDispatcherTest, DontIgnoreUnknownKeys) {
   DispatchEventUsingWindowDispatcher(&unknown_key_with_char_event);
   EXPECT_TRUE(unknown_key_with_char_event.handled());
   EXPECT_EQ(1, handler.num_key_events());
+  root_window()->RemovePreTargetHandler(&handler);
 }
 
 TEST_F(WindowEventDispatcherTest, NoDelegateWindowReceivesKeyEvents) {
@@ -391,6 +392,7 @@ TEST_F(WindowEventDispatcherTest, TouchEventsOutsideBounds) {
       ui::ET_TOUCH_RELEASED, position, 0, ui::EventTimeForNow());
   DispatchEventUsingWindowDispatcher(&release);
   EXPECT_EQ(2, handler.num_touch_events());
+  root_window()->RemovePreTargetHandler(&handler);
 }
 
 // Tests that scroll events are dispatched correctly.
@@ -815,6 +817,7 @@ TEST_F(WindowEventDispatcherTest, TouchMovesHeld) {
   host()->dispatcher()->ReleasePointerMoves();
   RunAllPendingInMessageLoop();
   EXPECT_TRUE(recorder.events().empty());
+  root_window()->RemovePreTargetHandler(&recorder);
 }
 
 // Tests that mouse move event has a right location
@@ -845,6 +848,34 @@ TEST_F(WindowEventDispatcherTest, MouseEventWithoutTargetWindow) {
   ASSERT_EQ(2u, recorder_second.mouse_locations().size());
   EXPECT_EQ(gfx::Point(2, 3).ToString(),
             recorder_second.mouse_locations()[0].ToString());
+}
+
+// Tests that a mouse exit is dispatched to the last mouse location when
+// the window is hiddden.
+TEST_F(WindowEventDispatcherTest, DispatchMouseExitWhenHidingWindow) {
+  EventFilterRecorder recorder;
+
+  test::TestWindowDelegate delegate;
+  scoped_ptr<aura::Window> window(CreateTestWindowWithDelegate(
+      &delegate, 1, gfx::Rect(10, 10, 50, 50), root_window()));
+  window->Show();
+  window->AddPreTargetHandler(&recorder);
+
+  // Dispatch a mouse move event into the window.
+  const gfx::Point event_location(22, 33);
+  ui::MouseEvent mouse(ui::ET_MOUSE_MOVED, event_location, event_location,
+                       ui::EventTimeForNow(), 0, 0);
+  DispatchEventUsingWindowDispatcher(&mouse);
+  EXPECT_FALSE(recorder.events().empty());
+  recorder.Reset();
+
+  // Hide the window and verify a mouse exit event's location.
+  window->Hide();
+  EXPECT_FALSE(recorder.events().empty());
+  EXPECT_EQ("MOUSE_EXITED", EventTypesToString(recorder.events()));
+  ASSERT_EQ(1u, recorder.mouse_locations().size());
+  EXPECT_EQ(gfx::Point(12, 23).ToString(),
+            recorder.mouse_locations()[0].ToString());
 }
 
 // Verifies that a direct call to ProcessedTouchEvent() does not cause a crash.
@@ -918,6 +949,7 @@ TEST_F(WindowEventDispatcherTest, TouchMovesHeldOnScroll) {
             recorder.touch_locations()[0].ToString());
   EXPECT_EQ(gfx::Point(-40, 10).ToString(),
             recorder.touch_locations()[1].ToString());
+  root_window()->RemovePreTargetHandler(&recorder);
 }
 
 // Tests that a 'held' touch-event does contribute to gesture event when it is
@@ -2058,6 +2090,7 @@ TEST_F(WindowEventDispatcherTestInHighDPI, TouchMovesHeldOnScroll) {
             recorder.touch_locations()[0].ToString());
   EXPECT_EQ(gfx::Point(-40, 10).ToString(),
             recorder.touch_locations()[1].ToString());
+  root_window()->RemovePreTargetHandler(&recorder);
 }
 
 // This handler triggers a nested message loop when it receives a right click
@@ -2439,7 +2472,7 @@ TEST_F(WindowEventDispatcherTest,
 class AsyncWindowDelegate : public test::TestWindowDelegate {
  public:
   AsyncWindowDelegate(WindowEventDispatcher* dispatcher)
-      : dispatcher_(dispatcher) {}
+      : dispatcher_(dispatcher), window_(nullptr) {}
 
   void set_window(Window* window) {
     window_ = window;
@@ -2492,6 +2525,7 @@ TEST_F(WindowEventDispatcherTest, GestureEventCoordinates) {
   ASSERT_EQ(2u, recorder.gesture_locations().size());
   EXPECT_EQ(gfx::Point(kX - kWindowOffset, kY - kWindowOffset).ToString(),
             recorder.gesture_locations()[0].ToString());
+  root_window()->RemovePreTargetHandler(&recorder);
 }
 
 // Tests that a scroll-generating touch-event is marked as such.

@@ -75,14 +75,21 @@ public:
     // FIXME: Remove all overrides of this and change layerTreeView() above to ASSERT_NOT_REACHED.
     virtual bool allowsBrokenNullLayerTreeView() const { return false; }
 
-    // Sometimes the WebWidget enters a state where it will generate a sequence
-    // of invalidations that should not, by themselves, trigger the compositor
-    // to schedule a new frame. This call indicates to the embedder that it
-    // should suppress compositor scheduling temporarily.
-    virtual void suppressCompositorScheduling(bool enable) { }
-
     // Called when a call to WebWidget::animate is required
     virtual void scheduleAnimation() { }
+
+    // Called when one of the following things were involved during the layout:
+    // * > 200 text characters
+    // * > 1024 image pixels
+    // * a plugin
+    // * a canvas
+    // An approximation for first layout that resulted in pixels on screen.
+    // Not the best heuristic, and we should replace it with something better.
+    virtual void didFirstVisuallyNonEmptyLayout() { }
+
+    // The frame's document first layout immediately after the parsing finished.
+    // Another way to put it: first frame produced after DOMContentLoaded was dispatched.
+    virtual void didFirstLayoutAfterFinishedParsing() { }
 
     // Called when the widget acquires or loses focus, respectively.
     virtual void didFocus() { }

@@ -25,7 +25,9 @@ bool ProcessVersionString(const std::string& version_string,
                           char splitter,
                           std::vector<std::string>* version) {
   DCHECK(version);
-  base::SplitString(version_string, splitter, version);
+  *version = base::SplitString(
+      version_string, std::string(1, splitter),
+      base::TRIM_WHITESPACE, base::SPLIT_WANT_ALL);
   if (version->size() == 0)
     return false;
   // If the splitter is '-', we assume it's a date with format "mm-dd-yyyy";
@@ -723,6 +725,12 @@ GpuControlList::GpuControlListEntry::GetEntryFromValue(
     dictionary_entry_count++;
   }
 
+  bool in_process_gpu;
+  if (value->GetBoolean("in_process_gpu", &in_process_gpu)) {
+    entry->SetInProcessGPUInfo(in_process_gpu);
+    dictionary_entry_count++;
+  }
+
   if (top_level) {
     const base::ListValue* feature_value = NULL;
     if (value->GetList("features", &feature_value)) {
@@ -980,6 +988,10 @@ void GpuControlList::GpuControlListEntry::SetDirectRenderingInfo(bool value) {
   direct_rendering_info_.reset(new BoolInfo(value));
 }
 
+void GpuControlList::GpuControlListEntry::SetInProcessGPUInfo(bool value) {
+  in_process_gpu_info_.reset(new BoolInfo(value));
+}
+
 bool GpuControlList::GpuControlListEntry::SetFeatures(
     const std::vector<std::string>& feature_strings,
     const FeatureMap& feature_map,
@@ -1018,8 +1030,8 @@ bool GpuControlList::GpuControlListEntry::GLVersionInfoMismatch(
   if (gl_version_info_.get() == NULL && gl_type_ == kGLTypeNone)
     return false;
 
-  std::vector<std::string> segments;
-  base::SplitString(gl_version, ' ', &segments);
+  std::vector<std::string> segments = base::SplitString(
+      gl_version, " ", base::TRIM_WHITESPACE, base::SPLIT_WANT_ALL);
   std::string number;
   GLType gl_type = kGLTypeNone;
   if (segments.size() > 2 &&
@@ -1029,7 +1041,8 @@ bool GpuControlList::GpuControlListEntry::GLVersionInfoMismatch(
 
     gl_type = kGLTypeGLES;
     if (segments.size() > 3 &&
-        base::StartsWithASCII(segments[3], "(ANGLE", false)) {
+        base::StartsWith(segments[3], "(ANGLE",
+                         base::CompareCase::INSENSITIVE_ASCII)) {
       gl_type = kGLTypeANGLE;
     }
   } else {
@@ -1241,6 +1254,9 @@ bool GpuControlList::GpuControlListEntry::Contains(
     return false;
   if (direct_rendering_info_.get() != NULL &&
       !direct_rendering_info_->Contains(gpu_info.direct_rendering))
+    return false;
+  if (in_process_gpu_info_.get() != NULL &&
+      !in_process_gpu_info_->Contains(gpu_info.in_process_gpu))
     return false;
   if (!cpu_brand_.empty()) {
     base::CPU cpu_info;

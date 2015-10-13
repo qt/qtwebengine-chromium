@@ -5,7 +5,8 @@
     is: 'paper-tab',
 
     behaviors: [
-      Polymer.IronControlState
+      Polymer.IronControlState,
+      Polymer.IronButtonState
     ],
 
     properties: {
@@ -27,7 +28,11 @@
     },
 
     listeners: {
-      down: '_onDown'
+      down: '_updateNoink'
+    },
+
+    attached: function() {
+      this._updateNoink();
     },
 
     get _parentNoink () {
@@ -35,7 +40,7 @@
       return !!parent && !!parent.noink;
     },
 
-    _onDown: function(e) {
+    _updateNoink: function() {
       this.noink = !!this.noink || !!this._parentNoink;
     }
   });

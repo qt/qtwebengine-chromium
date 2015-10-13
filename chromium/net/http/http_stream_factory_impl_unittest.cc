@@ -4,11 +4,14 @@
 
 #include "net/http/http_stream_factory_impl.h"
 
+#include <stdint.h>
+
 #include <string>
 #include <vector>
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
+#include "net/base/port_util.h"
 #include "net/base/test_completion_callback.h"
 #include "net/cert/mock_cert_verifier.h"
 #include "net/dns/mock_host_resolver.h"
@@ -80,17 +83,17 @@ class MockWebSocketHandshakeStream : public WebSocketHandshakeStreamBase {
   }
   void Close(bool not_reusable) override {}
   bool IsResponseBodyComplete() const override { return false; }
-  bool CanFindEndOfResponse() const override { return false; }
   bool IsConnectionReused() const override { return false; }
   void SetConnectionReused() override {}
-  bool IsConnectionReusable() const override { return false; }
-  int64 GetTotalReceivedBytes() const override { return 0; }
+  bool CanReuseConnection() const override { return false; }
+  int64_t GetTotalReceivedBytes() const override { return 0; }
+  int64_t GetTotalSentBytes() const override { return 0; }
   bool GetLoadTimingInfo(LoadTimingInfo* load_timing_info) const override {
     return false;
   }
   void GetSSLInfo(SSLInfo* ssl_info) override {}
   void GetSSLCertRequestInfo(SSLCertRequestInfo* cert_request_info) override {}
-  bool IsSpdyHttpStream() const override { return false; }
+  bool GetRemoteEndpoint(IPEndPoint* endpoint) override { return false; }
   void Drain(HttpNetworkSession* session) override {}
   void SetPriority(RequestPriority priority) override {}
   UploadProgress GetUploadProgress() const override { return UploadProgress(); }
@@ -300,17 +303,17 @@ void PreconnectHelperForURL(int num_streams,
   request.url = url;
   request.load_flags = 0;
 
-  session->http_stream_factory()->PreconnectStreams(
-      num_streams, request, DEFAULT_PRIORITY, ssl_config, ssl_config);
+  session->http_stream_factory()->PreconnectStreams(num_streams, request,
+                                                    ssl_config, ssl_config);
   mock_factory->WaitForPreconnects();
-};
+}
 
 void PreconnectHelper(const TestCase& test,
                       HttpNetworkSession* session) {
   GURL url = test.ssl ? GURL("https://www.google.com") :
       GURL("http://www.google.com");
   PreconnectHelperForURL(test.num_streams, url, session);
-};
+}
 
 template<typename ParentPool>
 class CapturePreconnectsSocketPool : public ParentPool {
@@ -422,7 +425,6 @@ class HttpStreamFactoryTest : public ::testing::Test,
 INSTANTIATE_TEST_CASE_P(NextProto,
                         HttpStreamFactoryTest,
                         testing::Values(kProtoSPDY31,
-                                        kProtoHTTP2_14,
                                         kProtoHTTP2));
 
 TEST_P(HttpStreamFactoryTest, PreconnectDirect) {
@@ -613,13 +615,12 @@ TEST_P(HttpStreamFactoryTest, JobNotifiesProxy) {
 }
 
 TEST_P(HttpStreamFactoryTest, UnreachableQuicProxyMarkedAsBad) {
-  for (int i = 1; i <= 2; i++) {
-    int mock_error =
-        i == 1 ? ERR_QUIC_PROTOCOL_ERROR : ERR_QUIC_HANDSHAKE_FAILED;
-
+  const int mock_error[] = {ERR_QUIC_PROTOCOL_ERROR, ERR_QUIC_HANDSHAKE_FAILED,
+                            ERR_MSG_TOO_BIG};
+  for (size_t i = 0; i < arraysize(mock_error); ++i) {
     scoped_ptr<ProxyService> proxy_service;
-    proxy_service.reset(
-        ProxyService::CreateFixedFromPacResult("QUIC bad:99; DIRECT"));
+    proxy_service =
+        ProxyService::CreateFixedFromPacResult("QUIC bad:99; DIRECT");
 
     HttpNetworkSession::Params params;
     params.enable_quic = true;
@@ -642,7 +643,7 @@ TEST_P(HttpStreamFactoryTest, UnreachableQuicProxyMarkedAsBad) {
     session->quic_stream_factory()->set_require_confirmation(false);
 
     StaticSocketDataProvider socket_data1;
-    socket_data1.set_connect_data(MockConnect(ASYNC, mock_error));
+    socket_data1.set_connect_data(MockConnect(ASYNC, mock_error[i]));
     socket_factory.AddSocketDataProvider(&socket_data1);
 
     // Second connection attempt succeeds.
@@ -667,11 +668,11 @@ TEST_P(HttpStreamFactoryTest, UnreachableQuicProxyMarkedAsBad) {
     // The proxy that failed should now be known to the proxy_service as bad.
     const ProxyRetryInfoMap& retry_info =
         session->proxy_service()->proxy_retry_info();
-    EXPECT_EQ(1u, retry_info.size()) << i;
+    EXPECT_EQ(1u, retry_info.size()) << mock_error[i];
     EXPECT_TRUE(waiter.used_proxy_info().is_direct());
 
     ProxyRetryInfoMap::const_iterator iter = retry_info.find("quic://bad:99");
-    EXPECT_TRUE(iter != retry_info.end()) << i;
+    EXPECT_TRUE(iter != retry_info.end()) << mock_error[i];
   }
 }
 
@@ -680,8 +681,7 @@ TEST_P(HttpStreamFactoryTest, UnreachableQuicProxyMarkedAsBad) {
 TEST_P(HttpStreamFactoryTest, QuicLossyProxyMarkedAsBad) {
   // Checks if a
   scoped_ptr<ProxyService> proxy_service;
-  proxy_service.reset(
-      ProxyService::CreateFixedFromPacResult("QUIC bad:99; DIRECT"));
+  proxy_service = ProxyService::CreateFixedFromPacResult("QUIC bad:99; DIRECT");
 
   HttpNetworkSession::Params params;
   params.enable_quic = true;
@@ -778,6 +778,7 @@ TEST_P(HttpStreamFactoryTest, PrivacyModeDisablesChannelId) {
 }
 
 namespace {
+
 // Return count of distinct groups in given socket pool.
 int GetSocketPoolGroupCount(ClientSocketPool* pool) {
   int count = 0;
@@ -789,6 +790,17 @@ int GetSocketPoolGroupCount(ClientSocketPool* pool) {
   }
   return count;
 }
+
+// Return count of distinct spdy sessions.
+int GetSpdySessionCount(HttpNetworkSession* session) {
+  scoped_ptr<base::Value> value(
+      session->spdy_session_pool()->SpdySessionPoolInfoToValue());
+  base::ListValue* session_list;
+  if (!value || !value->GetAsList(&session_list))
+    return -1;
+  return session_list->GetSize();
+}
+
 }  // namespace
 
 TEST_P(HttpStreamFactoryTest, PrivacyModeUsesDifferentSocketPoolGroup) {
@@ -903,8 +915,8 @@ TEST_P(HttpStreamFactoryTest, RequestHttpStream) {
   EXPECT_TRUE(waiter.stream_done());
   ASSERT_TRUE(nullptr != waiter.stream());
   EXPECT_TRUE(nullptr == waiter.websocket_stream());
-  EXPECT_FALSE(waiter.stream()->IsSpdyHttpStream());
 
+  EXPECT_EQ(0, GetSpdySessionCount(session.get()));
   EXPECT_EQ(1, GetSocketPoolGroupCount(
       session->GetTransportSocketPool(HttpNetworkSession::NORMAL_SOCKET_POOL)));
   EXPECT_EQ(0, GetSocketPoolGroupCount(session->GetSSLSocketPool(
@@ -952,7 +964,8 @@ TEST_P(HttpStreamFactoryTest, RequestHttpStreamOverSSL) {
   EXPECT_TRUE(waiter.stream_done());
   ASSERT_TRUE(nullptr != waiter.stream());
   EXPECT_TRUE(nullptr == waiter.websocket_stream());
-  EXPECT_FALSE(waiter.stream()->IsSpdyHttpStream());
+
+  EXPECT_EQ(0, GetSpdySessionCount(session.get()));
   EXPECT_EQ(1, GetSocketPoolGroupCount(
       session->GetTransportSocketPool(HttpNetworkSession::NORMAL_SOCKET_POOL)));
   EXPECT_EQ(1, GetSocketPoolGroupCount(
@@ -997,7 +1010,8 @@ TEST_P(HttpStreamFactoryTest, RequestHttpStreamOverProxy) {
   EXPECT_TRUE(waiter.stream_done());
   ASSERT_TRUE(nullptr != waiter.stream());
   EXPECT_TRUE(nullptr == waiter.websocket_stream());
-  EXPECT_FALSE(waiter.stream()->IsSpdyHttpStream());
+
+  EXPECT_EQ(0, GetSpdySessionCount(session.get()));
   EXPECT_EQ(0, GetSocketPoolGroupCount(
       session->GetTransportSocketPool(HttpNetworkSession::NORMAL_SOCKET_POOL)));
   EXPECT_EQ(0, GetSocketPoolGroupCount(
@@ -1169,7 +1183,7 @@ TEST_P(HttpStreamFactoryTest, RequestSpdyHttpStream) {
   SpdySessionDependencies session_deps(GetParam(),
                                        ProxyService::CreateDirect());
 
-  MockRead mock_read(ASYNC, OK);
+  MockRead mock_read(SYNCHRONOUS, ERR_IO_PENDING);
   SequencedSocketData socket_data(&mock_read, 1, nullptr, 0);
   socket_data.set_connect_data(MockConnect(ASYNC, OK));
   session_deps.socket_factory->AddSocketDataProvider(&socket_data);
@@ -1202,7 +1216,8 @@ TEST_P(HttpStreamFactoryTest, RequestSpdyHttpStream) {
   EXPECT_TRUE(waiter.stream_done());
   EXPECT_TRUE(nullptr == waiter.websocket_stream());
   ASSERT_TRUE(nullptr != waiter.stream());
-  EXPECT_TRUE(waiter.stream()->IsSpdyHttpStream());
+
+  EXPECT_EQ(1, GetSpdySessionCount(session.get()));
   EXPECT_EQ(1, GetSocketPoolGroupCount(
       session->GetTransportSocketPool(HttpNetworkSession::NORMAL_SOCKET_POOL)));
   EXPECT_EQ(1, GetSocketPoolGroupCount(
@@ -1349,7 +1364,7 @@ TEST_P(HttpStreamFactoryTest, DISABLED_RequestWebSocketSpdyHandshakeStream) {
 TEST_P(HttpStreamFactoryTest, DISABLED_OrphanedWebSocketStream) {
   SpdySessionDependencies session_deps(GetParam(),
                                        ProxyService::CreateDirect());
-  session_deps.use_alternate_protocols = true;
+  session_deps.use_alternative_services = true;
 
   MockRead mock_read(ASYNC, OK);
   SequencedSocketData socket_data(&mock_read, 1, nullptr, 0);
@@ -1374,9 +1389,10 @@ TEST_P(HttpStreamFactoryTest, DISABLED_OrphanedWebSocketStream) {
   request_info.url = GURL("ws://www.google.com:8888");
   request_info.load_flags = 0;
 
+  base::Time expiration = base::Time::Now() + base::TimeDelta::FromDays(1);
   session->http_server_properties()->SetAlternativeService(
       HostPortPair("www.google.com", 8888),
-      AlternativeService(NPN_HTTP_2, "www.google.com", 9999), 1.0);
+      AlternativeService(NPN_HTTP_2, "www.google.com", 9999), 1.0, expiration);
 
   SSLConfig ssl_config;
   StreamRequestWaiter waiter;

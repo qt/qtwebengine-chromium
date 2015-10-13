@@ -47,24 +47,32 @@ enum PaintPhase {
     PaintPhaseChildOutlines = 6,
     PaintPhaseSelfOutline = 7,
     PaintPhaseSelection = 8,
-    PaintPhaseCollapsedTableBorders = 9,
-    PaintPhaseTextClip = 10,
-    PaintPhaseMask = 11,
-    PaintPhaseClippingMask = 12,
+    PaintPhaseTextClip = 9,
+    PaintPhaseMask = 10,
+    PaintPhaseClippingMask = 11,
     PaintPhaseMax = PaintPhaseClippingMask,
     // These values must be kept in sync with DisplayItem::Type and DisplayItem::typeAsDebugString().
 };
 
-enum PaintBehaviorFlags {
-    PaintBehaviorNormal = 0,
-    PaintBehaviorSelectionOnly = 1 << 0,
-    PaintBehaviorFlattenCompositingLayers = 1 << 2,
-    PaintBehaviorRenderingClipPathAsMask = 1 << 3,
-    PaintBehaviorSkipRootBackground = 1 << 4,
-    PaintBehaviorRootBackgroundOnly = 1 << 5
+// Those flags are meant as global tree operations. This means
+// that they should be constant for a paint phase.
+enum GlobalPaintFlag {
+    GlobalPaintNormalPhase = 0,
+    // Used when painting selection as part of a drag-image. This
+    // flag disables a lot of the painting code and specifically
+    // triggers a PaintPhaseSelection.
+    GlobalPaintSelectionOnly = 1 << 0,
+    // Used when painting a drag-image or printing in order to
+    // ignore the hardware layers and paint the whole tree
+    // into the topmost layer.
+    GlobalPaintFlattenCompositingLayers = 1 << 1,
+    // Used when printing in order to adapt the output to the medium, for
+    // instance by not painting shadows and selections on text, and add
+    // URL metadata for links.
+    GlobalPaintPrinting = 1 << 2
 };
 
-typedef unsigned PaintBehavior;
+typedef unsigned GlobalPaintFlags;
 
 } // namespace blink
 

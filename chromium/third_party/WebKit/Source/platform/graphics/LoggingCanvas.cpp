@@ -31,8 +31,17 @@
 #include "config.h"
 #include "platform/graphics/LoggingCanvas.h"
 
+#include "platform/geometry/IntSize.h"
+#include "platform/graphics/ImageBuffer.h"
+#include "platform/graphics/skia/ImagePixelLocker.h"
 #include "platform/image-encoders/skia/PNGImageEncoder.h"
+#include "third_party/skia/include/core/SkImage.h"
+#include "third_party/skia/include/core/SkImageInfo.h"
+#include "third_party/skia/include/core/SkPaint.h"
+#include "third_party/skia/include/core/SkPath.h"
 #include "third_party/skia/include/core/SkPicture.h"
+#include "third_party/skia/include/core/SkRRect.h"
+#include "third_party/skia/include/core/SkRect.h"
 #include "wtf/HexNumber.h"
 #include "wtf/text/Base64.h"
 #include "wtf/text/TextEncoding.h"
@@ -232,9 +241,17 @@ String colorTypeName(SkColorType colorType)
 
 PassRefPtr<JSONObject> objectForBitmapData(const SkBitmap& bitmap)
 {
-    RefPtr<JSONObject> dataItem = JSONObject::create();
     Vector<unsigned char> output;
-    PNGImageEncoder::encode(bitmap, &output);
+
+    if (RefPtr<SkImage> image = adoptRef(SkImage::NewFromBitmap(bitmap))) {
+        ImagePixelLocker pixelLocker(image, kUnpremul_SkAlphaType);
+        ImageDataBuffer imageData(IntSize(image->width(), image->height()),
+            static_cast<const unsigned char*>(pixelLocker.pixels()));
+
+        PNGImageEncoder::encode(imageData, &output);
+    }
+
+    RefPtr<JSONObject> dataItem = JSONObject::create();
     dataItem->setString("base64", WTF::base64Encode(reinterpret_cast<char*>(output.data()), output.size()));
     dataItem->setString("mimeType", "image/png");
     return dataItem.release();
@@ -598,7 +615,7 @@ void LoggingCanvas::onDrawBitmap(const SkBitmap& bitmap, SkScalar left, SkScalar
     this->SkCanvas::onDrawBitmap(bitmap, left, top, paint);
 }
 
-void LoggingCanvas::onDrawBitmapRect(const SkBitmap& bitmap, const SkRect* src, const SkRect& dst, const SkPaint* paint, DrawBitmapRectFlags flags)
+void LoggingCanvas::onDrawBitmapRect(const SkBitmap& bitmap, const SkRect* src, const SkRect& dst, const SkPaint* paint, SrcRectConstraint constraint)
 {
     AutoLogger logger(this);
     RefPtr<JSONObject> params = logger.logItemWithParams("drawBitmapRectToRect");
@@ -608,8 +625,8 @@ void LoggingCanvas::onDrawBitmapRect(const SkBitmap& bitmap, const SkRect* src, 
     params->setObject("dst", objectForSkRect(dst));
     if (paint)
         params->setObject("paint", objectForSkPaint(*paint));
-    params->setNumber("flags", flags);
-    this->SkCanvas::onDrawBitmapRect(bitmap, src, dst, paint, flags);
+    params->setNumber("flags", constraint);
+    this->SkCanvas::onDrawBitmapRect(bitmap, src, dst, paint, constraint);
 }
 
 void LoggingCanvas::onDrawBitmapNine(const SkBitmap& bitmap, const SkIRect& center, const SkRect& dst, const SkPaint* paint)
@@ -636,7 +653,7 @@ void LoggingCanvas::onDrawImage(const SkImage* image, SkScalar left, SkScalar to
     this->SkCanvas::onDrawImage(image, left, top, paint);
 }
 
-void LoggingCanvas::onDrawImageRect(const SkImage* image, const SkRect* src, const SkRect& dst, const SkPaint* paint)
+void LoggingCanvas::onDrawImageRect(const SkImage* image, const SkRect* src, const SkRect& dst, const SkPaint* paint, SrcRectConstraint constraint)
 {
     AutoLogger logger(this);
     RefPtr<JSONObject> params = logger.logItemWithParams("drawImageRect");
@@ -646,7 +663,7 @@ void LoggingCanvas::onDrawImageRect(const SkImage* image, const SkRect* src, con
     params->setObject("dst", objectForSkRect(dst));
     if (paint)
         params->setObject("paint", objectForSkPaint(*paint));
-    this->SkCanvas::onDrawImageRect(image, src, dst, paint);
+    this->SkCanvas::onDrawImageRect(image, src, dst, paint, constraint);
 }
 
 void LoggingCanvas::onDrawSprite(const SkBitmap& bitmap, int left, int top, const SkPaint* paint)

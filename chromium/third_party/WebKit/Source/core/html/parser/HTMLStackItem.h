@@ -134,8 +134,8 @@ public:
             return false;
         const AtomicString& tagName = localName();
         return tagName == HTMLNames::addressTag
-            || tagName == HTMLNames::appletTag
             || tagName == HTMLNames::areaTag
+            || tagName == HTMLNames::appletTag
             || tagName == HTMLNames::articleTag
             || tagName == HTMLNames::asideTag
             || tagName == HTMLNames::baseTag
@@ -220,8 +220,8 @@ private:
             m_isDocumentFragmentNode = true;
             break;
         case ItemForContextElement:
-            m_tokenLocalName = m_node->localName();
-            m_namespaceURI = m_node->namespaceURI();
+            m_tokenLocalName = element()->localName();
+            m_namespaceURI = element()->namespaceURI();
             m_isDocumentFragmentNode = false;
             break;
         }

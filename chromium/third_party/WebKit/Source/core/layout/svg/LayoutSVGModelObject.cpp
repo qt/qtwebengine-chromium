@@ -36,7 +36,7 @@
 #include "core/layout/svg/LayoutSVGRoot.h"
 #include "core/layout/svg/SVGLayoutSupport.h"
 #include "core/layout/svg/SVGResourcesCache.h"
-#include "core/paint/DeprecatedPaintLayer.h"
+#include "core/paint/PaintLayer.h"
 #include "core/svg/SVGGraphicsElement.h"
 
 namespace blink {
@@ -90,7 +90,7 @@ void LayoutSVGModelObject::computeLayerHitTestRects(LayerHitTestRects& rects) co
     SVGLayoutSupport::findTreeRootObject(this)->computeLayerHitTestRects(rects);
 }
 
-void LayoutSVGModelObject::addLayerHitTestRects(LayerHitTestRects&, const DeprecatedPaintLayer* currentLayer, const LayoutPoint& layerOffset, const LayoutRect& containerRect) const
+void LayoutSVGModelObject::addLayerHitTestRects(LayerHitTestRects&, const PaintLayer* currentLayer, const LayoutPoint& layerOffset, const LayoutRect& containerRect) const
 {
     // We don't walk into SVG trees at all - just report their container.
 }
@@ -119,9 +119,9 @@ bool LayoutSVGModelObject::nodeAtPoint(HitTestResult&, const HitTestLocation&, c
     return false;
 }
 
-// The SVG addFocusRingRects() method adds rects in local coordinates so the default absoluteFocusRingBoundingBoxRect
+// The SVG addOutlineRects() method adds rects in local coordinates so the default absoluteElementBoundingBoxRect()
 // returns incorrect values for SVG objects. Overriding this method provides access to the absolute bounds.
-IntRect LayoutSVGModelObject::absoluteFocusRingBoundingBoxRect() const
+IntRect LayoutSVGModelObject::absoluteElementBoundingBoxRect() const
 {
     return localToAbsoluteQuad(FloatQuad(paintInvalidationRectInLocalCoordinates())).enclosingBoundingBox();
 }

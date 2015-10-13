@@ -92,7 +92,7 @@ public:
 
         if (fStack.empty()) {
             SkASSERT(false);
-            return NULL;
+            return nullptr;
         }
 
         GrClipStackFrame* back = (GrClipStackFrame*) fStack.back();
@@ -104,7 +104,7 @@ public:
 
         if (fStack.empty()) {
             SkASSERT(false);
-            return NULL;
+            return nullptr;
         }
 
         GrClipStackFrame* back = (GrClipStackFrame*) fStack.back();
@@ -135,7 +135,7 @@ public:
 
         GrClipStackFrame* back = (GrClipStackFrame*) fStack.back();
 
-        if (NULL == back->fLastMask) {
+        if (nullptr == back->fLastMask) {
             return -1;
         }
 
@@ -151,7 +151,7 @@ public:
 
         GrClipStackFrame* back = (GrClipStackFrame*) fStack.back();
 
-        if (NULL == back->fLastMask) {
+        if (nullptr == back->fLastMask) {
             return -1;
         }
 
@@ -175,7 +175,7 @@ public:
     void purgeResources() {
         SkDeque::F2BIter iter(fStack);
         for (GrClipStackFrame* frame = (GrClipStackFrame*) iter.next();
-                frame != NULL;
+                frame != nullptr;
                 frame = (GrClipStackFrame*) iter.next()) {
             frame->reset();
         }
@@ -195,10 +195,10 @@ private:
 
             fLastClipGenID = clipGenID;
 
-            // HACK: set the last param to true to indicate that this request is at
-            // flush time and therefore we require a scratch texture with no pending IO operations.
-            fLastMask.reset(resourceProvider->refScratchTexture(
-                desc, GrTextureProvider::kApprox_ScratchTexMatch, /*flushing=*/true));
+            // TODO: Determine if we really need the NoPendingIO flag anymore.
+            // (http://skbug.com/4156)
+            static const uint32_t kFlags = GrResourceProvider::kNoPendingIO_Flag;
+            fLastMask.reset(resourceProvider->createApproxTexture(desc, kFlags));
 
             fLastBound = bound;
         }
@@ -208,7 +208,7 @@ private:
 
             GrSurfaceDesc desc;
 
-            fLastMask.reset(NULL);
+            fLastMask.reset(nullptr);
             fLastBound.setEmpty();
         }
 

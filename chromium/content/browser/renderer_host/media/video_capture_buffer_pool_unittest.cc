@@ -32,8 +32,8 @@ static const PixelFormatAndStorage kCapturePixelFormatAndStorages[] = {
     {media::PIXEL_FORMAT_ARGB, media::PIXEL_STORAGE_CPU},
     {media::PIXEL_FORMAT_ARGB, media::PIXEL_STORAGE_TEXTURE},
 #if !defined(OS_ANDROID)
-    {media::PIXEL_FORMAT_I420, media::PIXEL_STORAGE_GPUMEMORYBUFFER},
-    {media::PIXEL_FORMAT_ARGB, media::PIXEL_STORAGE_GPUMEMORYBUFFER},
+    {media::PIXEL_FORMAT_I420,
+     media::PIXEL_STORAGE_GPUMEMORYBUFFER},
 #endif
 };
 
@@ -62,10 +62,15 @@ class VideoCaptureBufferPoolTest
       mapped_ = false;
     }
     bool IsMapped() const override { return mapped_; }
-    Format GetFormat() const override { return BGRA_8888; }
+    gfx::BufferFormat GetFormat() const override {
+      return gfx::BufferFormat::BGRA_8888;
+    }
     void GetStride(int* stride) const override {
       *stride = size_.width() * 4;
       return;
+    }
+    gfx::GpuMemoryBufferId GetId() const override {
+      return gfx::GpuMemoryBufferId(0);
     }
     gfx::GpuMemoryBufferHandle GetHandle() const override {
       return gfx::GpuMemoryBufferHandle();
@@ -84,12 +89,12 @@ class VideoCaptureBufferPoolTest
   class StubBrowserGpuMemoryBufferManager
       : public BrowserGpuMemoryBufferManager {
    public:
-    StubBrowserGpuMemoryBufferManager() : BrowserGpuMemoryBufferManager(1) {}
+    StubBrowserGpuMemoryBufferManager() : BrowserGpuMemoryBufferManager(1, 1) {}
 
     scoped_ptr<gfx::GpuMemoryBuffer> AllocateGpuMemoryBuffer(
         const gfx::Size& size,
-        gfx::GpuMemoryBuffer::Format format,
-        gfx::GpuMemoryBuffer::Usage usage) override {
+        gfx::BufferFormat format,
+        gfx::BufferUsage usage) override {
       return make_scoped_ptr(new MockGpuMemoryBuffer(size));
     }
   };
@@ -97,8 +102,10 @@ class VideoCaptureBufferPoolTest
    public:
     MockBufferQueue(scoped_refptr<cc::ContextProvider> context_provider,
                     BrowserGpuMemoryBufferManager* gpu_memory_buffer_manager,
+                    unsigned int target,
                     unsigned int internalformat)
         : BufferQueue(context_provider,
+                      target,
                       internalformat,
                       nullptr,
                       gpu_memory_buffer_manager,
@@ -117,8 +124,8 @@ class VideoCaptureBufferPoolTest
         : id_(id), pool_(pool), buffer_handle_(buffer_handle.Pass()) {}
     ~Buffer() { pool_->RelinquishProducerReservation(id()); }
     int id() const { return id_; }
-    size_t size() { return buffer_handle_->size(); }
-    void* data() { return buffer_handle_->data(); }
+    size_t mapped_size() { return buffer_handle_->mapped_size(); }
+    void* data() { return buffer_handle_->data(0); }
 
    private:
     const int id_;
@@ -136,8 +143,9 @@ class VideoCaptureBufferPoolTest
         cc::TestContextProvider::Create(cc::TestWebGraphicsContext3D::Create());
     context_provider->BindToCurrentThread();
     gpu_memory_buffer_manager_.reset(new StubBrowserGpuMemoryBufferManager);
-    output_surface_.reset(new MockBufferQueue(
-        context_provider, gpu_memory_buffer_manager_.get(), GL_RGBA));
+    output_surface_.reset(new MockBufferQueue(context_provider,
+                                              gpu_memory_buffer_manager_.get(),
+                                              GL_TEXTURE_2D, GL_RGBA));
     output_surface_->Initialize();
   }
 #endif
@@ -153,9 +161,8 @@ class VideoCaptureBufferPoolTest
     int buffer_id_to_drop = ~expected_dropped_id_;
     DVLOG(1) << media::VideoCaptureFormat::PixelStorageToString(
                     format_and_storage.pixel_storage) << " "
-             << media::VideoCaptureFormat::PixelFormatToString(
-                    format_and_storage.pixel_format) << " "
-             << dimensions.ToString();
+             << media::VideoPixelFormatToString(format_and_storage.pixel_format)
+             << " " << dimensions.ToString();
     const int buffer_id = pool_->ReserveForProducer(
         format_and_storage.pixel_format, format_and_storage.pixel_storage,
         dimensions, &buffer_id_to_drop);
@@ -199,31 +206,34 @@ TEST_P(VideoCaptureBufferPoolTest, BufferPool) {
 
   scoped_ptr<Buffer> buffer1 = ReserveBuffer(size_lo, GetParam());
   ASSERT_NE(nullptr, buffer1.get());
-  ASSERT_LE(format_lo.ImageAllocationSize(), buffer1->size());
   ASSERT_EQ(1.0 / kTestBufferPoolSize, pool_->GetBufferPoolUtilization());
   scoped_ptr<Buffer> buffer2 = ReserveBuffer(size_lo, GetParam());
   ASSERT_NE(nullptr, buffer2.get());
-  ASSERT_LE(format_lo.ImageAllocationSize(), buffer2->size());
   ASSERT_EQ(2.0 / kTestBufferPoolSize, pool_->GetBufferPoolUtilization());
   scoped_ptr<Buffer> buffer3 = ReserveBuffer(size_lo, GetParam());
   ASSERT_NE(nullptr, buffer3.get());
-  ASSERT_LE(format_lo.ImageAllocationSize(), buffer3->size());
   ASSERT_EQ(3.0 / kTestBufferPoolSize, pool_->GetBufferPoolUtilization());
+
+  // GMB backed frames have their platform and format specific allocations.
+  if (GetParam().pixel_storage != media::PIXEL_STORAGE_GPUMEMORYBUFFER) {
+    ASSERT_LE(format_lo.ImageAllocationSize(), buffer1->mapped_size());
+    ASSERT_LE(format_lo.ImageAllocationSize(), buffer2->mapped_size());
+    ASSERT_LE(format_lo.ImageAllocationSize(), buffer3->mapped_size());
+  }
 
   // Texture backed Frames cannot be manipulated via mapping.
   if (GetParam().pixel_storage != media::PIXEL_STORAGE_TEXTURE) {
     ASSERT_NE(nullptr, buffer1->data());
     ASSERT_NE(nullptr, buffer2->data());
     ASSERT_NE(nullptr, buffer3->data());
-
   }
   // Touch the memory.
   if (buffer1->data() != nullptr)
-    memset(buffer1->data(), 0x11, buffer1->size());
+    memset(buffer1->data(), 0x11, buffer1->mapped_size());
   if (buffer2->data() != nullptr)
-    memset(buffer2->data(), 0x44, buffer2->size());
+    memset(buffer2->data(), 0x44, buffer2->mapped_size());
   if (buffer3->data() != nullptr)
-    memset(buffer3->data(), 0x77, buffer3->size());
+    memset(buffer3->data(), 0x77, buffer3->mapped_size());
 
   // Fourth buffer should fail.  Buffer pool utilization should be at 100%.
   ASSERT_FALSE(ReserveBuffer(size_lo, GetParam())) << "Pool should be empty";
@@ -314,7 +324,8 @@ TEST_P(VideoCaptureBufferPoolTest, BufferPool) {
   ASSERT_EQ(2.0 / kTestBufferPoolSize, pool_->GetBufferPoolUtilization());
   buffer2 = ReserveBuffer(size_hi, GetParam());
   ASSERT_NE(nullptr, buffer2.get());
-  ASSERT_LE(format_hi.ImageAllocationSize(), buffer2->size());
+  if (GetParam().pixel_storage != media::PIXEL_STORAGE_GPUMEMORYBUFFER)
+    ASSERT_LE(format_hi.ImageAllocationSize(), buffer2->mapped_size());
   ASSERT_EQ(3, buffer2->id());
   ASSERT_EQ(3.0 / kTestBufferPoolSize, pool_->GetBufferPoolUtilization());
   void* const memory_pointer_hi = buffer2->data();
@@ -327,7 +338,8 @@ TEST_P(VideoCaptureBufferPoolTest, BufferPool) {
       << "Decrease in resolution should not reallocate buffer";
   ASSERT_NE(nullptr, buffer2.get());
   ASSERT_EQ(3, buffer2->id());
-  ASSERT_LE(format_lo.ImageAllocationSize(), buffer2->size());
+  if (GetParam().pixel_storage != media::PIXEL_STORAGE_GPUMEMORYBUFFER)
+    ASSERT_LE(format_lo.ImageAllocationSize(), buffer2->mapped_size());
   ASSERT_EQ(3.0 / kTestBufferPoolSize, pool_->GetBufferPoolUtilization());
   ASSERT_FALSE(ReserveBuffer(size_lo, GetParam())) << "Pool should be empty";
   ASSERT_EQ(1.0, pool_->GetBufferPoolUtilization());
@@ -340,13 +352,13 @@ TEST_P(VideoCaptureBufferPoolTest, BufferPool) {
 
   // Touch the memory.
   if (buffer2->data() != nullptr)
-    memset(buffer2->data(), 0x22, buffer2->size());
+    memset(buffer2->data(), 0x22, buffer2->mapped_size());
   if (buffer4->data() != nullptr)
-    memset(buffer4->data(), 0x55, buffer4->size());
+    memset(buffer4->data(), 0x55, buffer4->mapped_size());
   buffer2.reset();
 
   if (buffer4->data() != nullptr)
-    memset(buffer4->data(), 0x77, buffer4->size());
+    memset(buffer4->data(), 0x77, buffer4->mapped_size());
   buffer4.reset();
 }
 

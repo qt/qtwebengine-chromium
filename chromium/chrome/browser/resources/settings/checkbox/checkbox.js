@@ -16,32 +16,48 @@
 Polymer({
   is: 'cr-settings-checkbox',
 
+  behaviors: [PolicyControllable],
+
   properties: {
     /**
      * The boolean preference object to control.
-     * @type {?PrefObject}
+     * @type {?chrome.settingsPrivate.PrefObject}
      */
     pref: {
       type: Object,
-      notify: true
+      notify: true,
     },
 
+    /** Whether the checkbox should represent the inverted value. */
     inverted: {
       type: Boolean,
-      value: false
+      value: false,
     },
 
+    /** Whether the checkbox is checked. */
     checked: {
       type: Boolean,
       value: false,
-      observer: 'checkedChanged_'
+      notify: true,
+      observer: 'checkedChanged_',
+      reflectToAttribute: true
     },
 
+    /** Disabled property for the element. */
+    disabled: {
+      type: Boolean,
+      value: false,
+      notify: true,
+      reflectToAttribute: true
+    },
+
+    /** Checkbox label. */
     label: {
       type: String,
       value: '',
     },
 
+    /** Additional sub-label for the checkbox. */
     subLabel: {
       type: String,
       value: '',
@@ -57,23 +73,39 @@ Polymer({
     this.$.events.forward(this.$.checkbox, ['change']);
   },
 
-  /** @private */
+  /**
+   * Polymer observer for pref.value.
+   * @param {*} prefValue
+   * @private
+   */
   prefValueChanged_: function(prefValue) {
-    // prefValue is initially undefined when Polymer initializes pref.
-    if (prefValue !== undefined) {
-      this.checked = this.getNewValue_(prefValue);
-    }
+    this.checked = this.getNewValue_(prefValue);
   },
 
-  /** @private */
+  /**
+   * Polymer observer for checked.
+   * @private
+   */
   checkedChanged_: function() {
-    if (this.pref) {
-      this.pref.value = this.getNewValue_(this.checked);
-    }
+    this.set('pref.value', this.getNewValue_(this.checked));
   },
 
-  /** @private */
-  getNewValue_: function(val) {
-    return this.inverted ? !val : val;
-  }
+  /**
+   * @param {*} value
+   * @return {boolean} The value as a boolean, inverted if |inverted| is true.
+   * @private
+   */
+  getNewValue_: function(value) {
+    return this.inverted ? !value : !!value;
+  },
+
+  /**
+   * @param {boolean} disabled
+   * @param {?chrome.settingsPrivate.PrefObject} pref
+   * @return {boolean} Whether the checkbox should be disabled.
+   * @private
+   */
+  checkboxDisabled_: function(disabled, pref) {
+    return disabled || this.isPolicyControlled(pref);
+  },
 });

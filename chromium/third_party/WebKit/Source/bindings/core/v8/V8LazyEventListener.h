@@ -45,9 +45,15 @@ class Node;
 // A V8LazyEventListener is either a HTML or SVG event handler.
 class V8LazyEventListener final : public V8AbstractEventListener {
 public:
-    static PassRefPtr<V8LazyEventListener> create(const AtomicString& functionName, const AtomicString& eventParameterName, const String& code, const String& sourceURL, const TextPosition& position, Node* node, v8::Isolate* isolate)
+    static PassRefPtrWillBeRawPtr<V8LazyEventListener> create(const AtomicString& functionName, const AtomicString& eventParameterName, const String& code, const String& sourceURL, const TextPosition& position, Node* node, v8::Isolate* isolate)
     {
-        return adoptRef(new V8LazyEventListener(isolate, functionName, eventParameterName, code, sourceURL, position, node));
+        return adoptRefWillBeNoop(new V8LazyEventListener(isolate, functionName, eventParameterName, code, sourceURL, position, node));
+    }
+
+    DEFINE_INLINE_VIRTUAL_TRACE()
+    {
+        visitor->trace(m_node);
+        V8AbstractEventListener::trace(visitor);
     }
 
 protected:
@@ -64,11 +70,13 @@ private:
     // SVGUseElement::transferEventListenersToShadowTree
     bool wasCreatedFromMarkup() const override { return true; }
 
+    void fireErrorEvent(v8::Local<v8::Context>, ExecutionContext*, v8::Local<v8::Message>);
+
     AtomicString m_functionName;
     AtomicString m_eventParameterName;
     String m_code;
     String m_sourceURL;
-    Node* m_node;
+    RawPtrWillBeMember<Node> m_node;
     TextPosition m_position;
 };
 

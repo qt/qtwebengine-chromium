@@ -111,11 +111,6 @@ typedef struct stack_st {
 
 #define STACK_OF(type) struct stack_st_##type
 
-#define DEFINE_STACK_OF(type) \
-STACK_OF(type) {\
-  _STACK stack; \
-}
-
 #define DECLARE_STACK_OF(type) STACK_OF(type);
 
 /* The make_macros.sh script in this directory parses the following lines and
@@ -147,6 +142,7 @@ STACK_OF(type) {\
  * STACK_OF:POLICY_MAPPING
  * STACK_OF:RSA_additional_prime
  * STACK_OF:SSL_COMP
+ * STACK_OF:SSL_CUSTOM_EXTENSION
  * STACK_OF:STACK_OF_X509_NAME_ENTRY
  * STACK_OF:SXNETID
  * STACK_OF:X509

@@ -22,11 +22,12 @@ class LayoutRect;
 // the layout viewport. Thus, we could say this class is a decorator on the
 // FrameView scrollable area that adds pinch-zoom semantics to scrolling.
 class CORE_EXPORT RootFrameViewport final : public NoBaseWillBeGarbageCollectedFinalized<RootFrameViewport>, public ScrollableArea {
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(RootFrameViewport);
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(RootFrameViewport);
 public:
-    static PassOwnPtrWillBeRawPtr<RootFrameViewport> create(ScrollableArea& visualViewport, ScrollableArea& layoutViewport)
+    static PassOwnPtrWillBeRawPtr<RootFrameViewport> create(ScrollableArea& visualViewport, ScrollableArea& layoutViewport, bool invertScrollOrder = false)
     {
-        return adoptPtrWillBeNoop(new RootFrameViewport(visualViewport, layoutViewport));
+        return adoptPtrWillBeNoop(new RootFrameViewport(visualViewport, layoutViewport, invertScrollOrder));
     }
 
     DECLARE_VIRTUAL_TRACE();
@@ -67,16 +68,14 @@ public:
     HostWindow* hostWindow() const override;
     void serviceScrollAnimations(double) override;
     void updateCompositorScrollAnimations() override;
-    virtual ScrollBehavior scrollBehaviorStyle() const override;
-    // TODO(bokan): This method should be removed. It should be replaced by
-    // making EventHandler::handleWheelEvent unpack the WheelEvent and make a
-    // call to this class' scroll method.
-    ScrollResult handleWheel(const PlatformWheelEvent&) override;
+    ScrollBehavior scrollBehaviorStyle() const override;
 
 private:
-    RootFrameViewport(ScrollableArea& visualViewport, ScrollableArea& layoutViewport);
+    RootFrameViewport(ScrollableArea& visualViewport, ScrollableArea& layoutViewport, bool invertScrollOrder);
 
     DoublePoint scrollOffsetFromScrollAnimators() const;
+
+    void distributeScrollBetweenViewports(const DoublePoint&, ScrollType, ScrollBehavior);
 
     // If either of the layout or visual viewports are scrolled explicitly (i.e. not
     // through this class), their updated offset will not be reflected in this class'
@@ -88,6 +87,10 @@ private:
 
     RawPtrWillBeMember<ScrollableArea> m_visualViewport;
     RawPtrWillBeMember<ScrollableArea> m_layoutViewport;
+
+    // Experimental flag. If the experiment is enabled, scroll the visual viewport first,
+    // the bubble scrolls to the layout viewport.
+    bool m_invertScrollOrder;
 };
 
 } // namespace blink

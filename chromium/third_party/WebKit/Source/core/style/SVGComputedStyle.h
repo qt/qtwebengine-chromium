@@ -92,7 +92,7 @@ public:
     static const AtomicString& initialMarkerMidResource() { return nullAtom; }
     static const AtomicString& initialMarkerEndResource() { return nullAtom; }
     static EMaskType initialMaskType() { return MT_LUMINANCE; }
-    static EPaintOrder initialPaintOrder() { return PO_NORMAL; }
+    static EPaintOrder initialPaintOrder() { return PaintOrderNormal; }
     static Length initialCx() { return Length(Fixed); }
     static Length initialCy() { return Length(Fixed); }
     static Length initialX() { return Length(Fixed); }
@@ -103,7 +103,7 @@ public:
 
     // SVG CSS Property setters
     void setAlignmentBaseline(EAlignmentBaseline val) { svg_noninherited_flags.f._alignmentBaseline = val; }
-    void setDominantBaseline(EDominantBaseline val) { svg_noninherited_flags.f._dominantBaseline = val; }
+    void setDominantBaseline(EDominantBaseline val) { svg_inherited_flags.dominantBaseline = val; }
     void setBaselineShift(EBaselineShift val) { svg_noninherited_flags.f._baselineShift = val; }
     void setVectorEffect(EVectorEffect val) { svg_noninherited_flags.f._vectorEffect = val; }
     void setBufferedRendering(EBufferedRendering val) { svg_noninherited_flags.f.bufferedRendering = val; }
@@ -120,7 +120,7 @@ public:
     void setGlyphOrientationHorizontal(EGlyphOrientation val) { svg_inherited_flags._glyphOrientationHorizontal = val; }
     void setGlyphOrientationVertical(EGlyphOrientation val) { svg_inherited_flags._glyphOrientationVertical = val; }
     void setMaskType(EMaskType val) { svg_noninherited_flags.f.maskType = val; }
-    void setPaintOrder(EPaintOrder val) { svg_inherited_flags._paintOrder = (int)val; }
+    void setPaintOrder(EPaintOrder val) { svg_inherited_flags.paintOrder = (int)val; }
     void setCx(const Length& obj)
     {
         if (!(layout->cx == obj))
@@ -308,7 +308,7 @@ public:
 
     // Read accessors for all the properties
     EAlignmentBaseline alignmentBaseline() const { return (EAlignmentBaseline) svg_noninherited_flags.f._alignmentBaseline; }
-    EDominantBaseline dominantBaseline() const { return (EDominantBaseline) svg_noninherited_flags.f._dominantBaseline; }
+    EDominantBaseline dominantBaseline() const { return (EDominantBaseline) svg_inherited_flags.dominantBaseline; }
     EBaselineShift baselineShift() const { return (EBaselineShift) svg_noninherited_flags.f._baselineShift; }
     EVectorEffect vectorEffect() const { return (EVectorEffect) svg_noninherited_flags.f._vectorEffect; }
     EBufferedRendering bufferedRendering() const { return (EBufferedRendering) svg_noninherited_flags.f.bufferedRendering; }
@@ -356,7 +356,7 @@ public:
     const AtomicString& markerMidResource() const { return inheritedResources->markerMid; }
     const AtomicString& markerEndResource() const { return inheritedResources->markerEnd; }
     EMaskType maskType() const { return (EMaskType) svg_noninherited_flags.f.maskType; }
-    EPaintOrder paintOrder() const { return (EPaintOrder) svg_inherited_flags._paintOrder; }
+    EPaintOrder paintOrder() const { return (EPaintOrder) svg_inherited_flags.paintOrder; }
     EPaintOrderType paintOrderType(unsigned index) const;
 
     const SVGPaintType& visitedLinkFillPaintType() const { return fill->visitedLinkPaintType; }
@@ -395,7 +395,8 @@ protected:
                 && (_writingMode == other._writingMode)
                 && (_glyphOrientationHorizontal == other._glyphOrientationHorizontal)
                 && (_glyphOrientationVertical == other._glyphOrientationVertical)
-                && (_paintOrder == other._paintOrder);
+                && (paintOrder == other.paintOrder)
+                && (dominantBaseline == other.dominantBaseline);
         }
 
         bool operator!=(const InheritedFlags& other) const
@@ -415,7 +416,8 @@ protected:
         unsigned _writingMode : 3; // SVGWritingMode
         unsigned _glyphOrientationHorizontal : 3; // EGlyphOrientation
         unsigned _glyphOrientationVertical : 3; // EGlyphOrientation
-        unsigned _paintOrder : 6; // EPaintOrder
+        unsigned paintOrder : 3; // EPaintOrder
+        unsigned dominantBaseline : 4; // EDominantBaseline
     } svg_inherited_flags;
 
     // don't inherit
@@ -427,7 +429,6 @@ protected:
         union {
             struct {
                 unsigned _alignmentBaseline : 4; // EAlignmentBaseline
-                unsigned _dominantBaseline : 4; // EDominantBaseline
                 unsigned _baselineShift : 2; // EBaselineShift
                 unsigned _vectorEffect: 1; // EVectorEffect
                 unsigned bufferedRendering: 2; // EBufferedRendering
@@ -473,11 +474,11 @@ private:
         svg_inherited_flags._writingMode = initialWritingMode();
         svg_inherited_flags._glyphOrientationHorizontal = initialGlyphOrientationHorizontal();
         svg_inherited_flags._glyphOrientationVertical = initialGlyphOrientationVertical();
-        svg_inherited_flags._paintOrder = initialPaintOrder();
+        svg_inherited_flags.paintOrder = initialPaintOrder();
+        svg_inherited_flags.dominantBaseline = initialDominantBaseline();
 
         svg_noninherited_flags._niflags = 0;
         svg_noninherited_flags.f._alignmentBaseline = initialAlignmentBaseline();
-        svg_noninherited_flags.f._dominantBaseline = initialDominantBaseline();
         svg_noninherited_flags.f._baselineShift = initialBaselineShift();
         svg_noninherited_flags.f._vectorEffect = initialVectorEffect();
         svg_noninherited_flags.f.bufferedRendering = initialBufferedRendering();

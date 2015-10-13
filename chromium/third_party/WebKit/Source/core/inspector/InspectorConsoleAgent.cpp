@@ -31,12 +31,12 @@
 #include "core/inspector/IdentifiersFactory.h"
 #include "core/inspector/InjectedScript.h"
 #include "core/inspector/InjectedScriptManager.h"
-#include "core/inspector/InspectorDebuggerAgent.h"
 #include "core/inspector/InspectorState.h"
 #include "core/inspector/InstrumentingAgents.h"
 #include "core/inspector/ScriptArguments.h"
 #include "core/inspector/ScriptAsyncCallStack.h"
-#include "core/inspector/V8Debugger.h"
+#include "core/inspector/v8/V8Debugger.h"
+#include "core/inspector/v8/V8DebuggerAgent.h"
 #include "wtf/text/WTFString.h"
 
 namespace blink {
@@ -63,7 +63,6 @@ InspectorConsoleAgent::~InspectorConsoleAgent()
 DEFINE_TRACE(InspectorConsoleAgent)
 {
     visitor->trace(m_injectedScriptManager);
-    visitor->trace(m_debuggerAgent);
     InspectorBaseAgent::trace(visitor);
 }
 
@@ -226,7 +225,8 @@ void InspectorConsoleAgent::sendConsoleMessageToFrontend(ConsoleMessage* console
         }
     }
     if (consoleMessage->callStack()) {
-        jsonObj->setStackTrace(consoleMessage->callStack()->buildInspectorArray());
+        if (consoleMessage->callStack()->size())
+            jsonObj->setStackTrace(consoleMessage->callStack()->buildInspectorArray());
         RefPtrWillBeRawPtr<ScriptAsyncCallStack> asyncCallStack = consoleMessage->callStack()->asyncCallStack();
         if (asyncCallStack)
             jsonObj->setAsyncStackTrace(asyncCallStack->buildInspectorObject());

@@ -11,10 +11,10 @@ namespace blink {
 
 LayoutPagedFlowThread* LayoutPagedFlowThread::createAnonymous(Document& document, const ComputedStyle& parentStyle)
 {
-    LayoutPagedFlowThread* LayoutObject = new LayoutPagedFlowThread();
-    LayoutObject->setDocumentForAnonymous(&document);
-    LayoutObject->setStyle(ComputedStyle::createAnonymousStyleWithDisplay(parentStyle, BLOCK));
-    return LayoutObject;
+    LayoutPagedFlowThread* pagedFlowThread = new LayoutPagedFlowThread();
+    pagedFlowThread->setDocumentForAnonymous(&document);
+    pagedFlowThread->setStyle(ComputedStyle::createAnonymousStyleWithDisplay(parentStyle, BLOCK));
+    return pagedFlowThread;
 }
 
 int LayoutPagedFlowThread::pageCount()
@@ -46,7 +46,7 @@ void LayoutPagedFlowThread::layout()
     LayoutMultiColumnSet* columnSet = firstMultiColumnSet();
     if (!columnSet)
         return;
-    LayoutUnit pageLogicalHeight = columnSet->pageLogicalHeight();
+    LayoutUnit pageLogicalHeight = columnSet->pageLogicalHeightForOffset(LayoutUnit());
     if (!pageLogicalHeight)
         return; // Page height not calculated yet. Happens in the first layout pass when height is auto.
     // Ensure uniform page height. We don't want the last page to be shorter than the others,

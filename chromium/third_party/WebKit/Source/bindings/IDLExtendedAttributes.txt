@@ -52,10 +52,9 @@ DeprecateAs=*
 DoNotCheckConstants
 DoNotCheckSecurity=|Setter
 DoNotCheckSignature
-DoNotExposeJSAccessors
 EnforceRange
-ExposeJSAccessors
 Exposed=*
+FlexibleArrayBufferView
 GarbageCollected
 Global=|*
 Immutable

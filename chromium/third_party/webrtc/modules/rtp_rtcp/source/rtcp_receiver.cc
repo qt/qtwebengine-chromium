@@ -17,6 +17,7 @@
 
 #include "webrtc/base/checks.h"
 #include "webrtc/modules/rtp_rtcp/source/rtcp_utility.h"
+#include "webrtc/modules/rtp_rtcp/source/rtcp_packet/transport_feedback.h"
 #include "webrtc/modules/rtp_rtcp/source/rtp_rtcp_impl.h"
 #include "webrtc/system_wrappers/interface/critical_section_wrapper.h"
 #include "webrtc/system_wrappers/interface/logging.h"
@@ -29,24 +30,27 @@ using namespace RTCPHelp;
 // The number of RTCP time intervals needed to trigger a timeout.
 const int kRrTimeoutIntervals = 3;
 
+const int64_t kMaxWarningLogIntervalMs = 10000;
+
 RTCPReceiver::RTCPReceiver(
-    int32_t id,
     Clock* clock,
     bool receiver_only,
     RtcpPacketTypeCounterObserver* packet_type_counter_observer,
     RtcpBandwidthObserver* rtcp_bandwidth_observer,
     RtcpIntraFrameObserver* rtcp_intra_frame_observer,
+    TransportFeedbackObserver* transport_feedback_observer,
     ModuleRtpRtcpImpl* owner)
     : TMMBRHelp(),
       _clock(clock),
       receiver_only_(receiver_only),
-      _method(kRtcpOff),
+      _method(RtcpMode::kOff),
       _lastReceived(0),
       _rtpRtcp(*owner),
       _criticalSectionFeedbacks(
           CriticalSectionWrapper::CreateCriticalSection()),
       _cbRtcpBandwidthObserver(rtcp_bandwidth_observer),
       _cbRtcpIntraFrameObserver(rtcp_intra_frame_observer),
+      _cbTransportFeedbackObserver(transport_feedback_observer),
       _criticalSectionRTCPReceiver(
           CriticalSectionWrapper::CreateCriticalSection()),
       main_ssrc_(0),
@@ -62,7 +66,9 @@ RTCPReceiver::RTCPReceiver(
       _lastReceivedRrMs(0),
       _lastIncreasedSequenceNumberMs(0),
       stats_callback_(NULL),
-      packet_type_counter_observer_(packet_type_counter_observer) {
+      packet_type_counter_observer_(packet_type_counter_observer),
+      num_skipped_packets_(0),
+      last_skipped_packets_warning_(clock->TimeInMilliseconds()) {
   memset(&_remoteSenderInfo, 0, sizeof(_remoteSenderInfo));
 }
 
@@ -93,12 +99,12 @@ RTCPReceiver::~RTCPReceiver() {
   }
 }
 
-RTCPMethod RTCPReceiver::Status() const {
+RtcpMode RTCPReceiver::Status() const {
   CriticalSectionScoped lock(_criticalSectionRTCPReceiver);
   return _method;
 }
 
-void RTCPReceiver::SetRTCPStatus(RTCPMethod method) {
+void RTCPReceiver::SetRTCPStatus(RtcpMode method) {
   CriticalSectionScoped lock(_criticalSectionRTCPReceiver);
   _method = method;
 }
@@ -295,7 +301,7 @@ RTCPReceiver::IncomingRTCPPacket(RTCPPacketInformation& rtcpPacketInformation,
             HandleSenderReceiverReport(*rtcpParser, rtcpPacketInformation);
             break;
           case RTCPPacketTypes::kSdes:
-            HandleSDES(*rtcpParser);
+            HandleSDES(*rtcpParser, rtcpPacketInformation);
             break;
           case RTCPPacketTypes::kXrHeader:
             HandleXrHeader(*rtcpParser, rtcpPacketInformation);
@@ -350,6 +356,9 @@ RTCPReceiver::IncomingRTCPPacket(RTCPPacketInformation& rtcpPacketInformation,
             // generic application messages
             HandleAPPItem(*rtcpParser, rtcpPacketInformation);
             break;
+          case RTCPPacketTypes::kTransportFeedback:
+            HandleTransportFeedback(rtcpParser, &rtcpPacketInformation);
+            break;
         default:
             rtcpParser->Iterate();
             break;
@@ -360,6 +369,19 @@ RTCPReceiver::IncomingRTCPPacket(RTCPPacketInformation& rtcpPacketInformation,
     if (packet_type_counter_observer_ != NULL) {
       packet_type_counter_observer_->RtcpPacketTypesCounterUpdated(
           main_ssrc_, packet_type_counter_);
+    }
+
+    num_skipped_packets_ += rtcpParser->NumSkippedBlocks();
+
+    int64_t now = _clock->TimeInMilliseconds();
+    if (now - last_skipped_packets_warning_ >= kMaxWarningLogIntervalMs &&
+        num_skipped_packets_ > 0) {
+      last_skipped_packets_warning_ = now;
+      LOG(LS_WARNING)
+          << num_skipped_packets_
+          << " RTCP blocks were skipped due to being malformed or of "
+             "unrecognized/unsupported type, during the past "
+          << (kMaxWarningLogIntervalMs / 1000) << " second period.";
     }
 
     return 0;
@@ -754,12 +776,14 @@ int32_t RTCPReceiver::BoundingSet(bool &tmmbrOwner, TMMBRSet* boundingSetRec) {
 }
 
 // no need for critsect we have _criticalSectionRTCPReceiver
-void RTCPReceiver::HandleSDES(RTCPUtility::RTCPParserV2& rtcpParser) {
+void RTCPReceiver::HandleSDES(RTCPUtility::RTCPParserV2& rtcpParser,
+                              RTCPPacketInformation& rtcpPacketInformation) {
   RTCPUtility::RTCPPacketTypes pktType = rtcpParser.Iterate();
   while (pktType == RTCPPacketTypes::kSdesChunk) {
     HandleSDESChunk(rtcpParser);
     pktType = rtcpParser.Iterate();
   }
+  rtcpPacketInformation.rtcpPacketTypeFlags |= kRtcpSdes;
 }
 
 // no need for critsect we have _criticalSectionRTCPReceiver
@@ -1251,6 +1275,17 @@ void RTCPReceiver::HandleAPPItem(RTCPUtility::RTCPParserV2& rtcpParser,
   rtcpParser.Iterate();
 }
 
+void RTCPReceiver::HandleTransportFeedback(
+    RTCPUtility::RTCPParserV2* rtcp_parser,
+    RTCPHelp::RTCPPacketInformation* rtcp_packet_information) {
+  rtcp::RtcpPacket* packet = rtcp_parser->ReleaseRtcpPacket();
+  RTC_DCHECK(packet != nullptr);
+  rtcp_packet_information->rtcpPacketTypeFlags |= kRtcpTransportFeedback;
+  rtcp_packet_information->transport_feedback_.reset(
+      static_cast<rtcp::TransportFeedback*>(packet));
+
+  rtcp_parser->Iterate();
+}
 int32_t RTCPReceiver::UpdateTMMBR() {
   int32_t numBoundingSet = 0;
   uint32_t bitrate = 0;
@@ -1320,11 +1355,11 @@ void RTCPReceiver::TriggerCallbacksFromRTCPPacket(
     local_ssrc = main_ssrc_;
   }
   if (!receiver_only_ &&
-      rtcpPacketInformation.rtcpPacketTypeFlags & kRtcpSrReq) {
+      (rtcpPacketInformation.rtcpPacketTypeFlags & kRtcpSrReq)) {
     _rtpRtcp.OnRequestSendReport();
   }
   if (!receiver_only_ &&
-      rtcpPacketInformation.rtcpPacketTypeFlags & kRtcpNack) {
+      (rtcpPacketInformation.rtcpPacketTypeFlags & kRtcpNack)) {
     if (rtcpPacketInformation.nackSequenceNumbers.size() > 0) {
       LOG(LS_VERBOSE) << "Incoming NACK length: "
                    << rtcpPacketInformation.nackSequenceNumbers.size();
@@ -1337,7 +1372,7 @@ void RTCPReceiver::TriggerCallbacksFromRTCPPacket(
     // report can generate several RTCP packets, based on number relayed/mixed
     // a send report block should go out to all receivers.
     if (_cbRtcpIntraFrameObserver) {
-      DCHECK(!receiver_only_);
+      RTC_DCHECK(!receiver_only_);
       if ((rtcpPacketInformation.rtcpPacketTypeFlags & kRtcpPli) ||
           (rtcpPacketInformation.rtcpPacketTypeFlags & kRtcpFir)) {
         if (rtcpPacketInformation.rtcpPacketTypeFlags & kRtcpPli) {
@@ -1359,7 +1394,7 @@ void RTCPReceiver::TriggerCallbacksFromRTCPPacket(
       }
     }
     if (_cbRtcpBandwidthObserver) {
-      DCHECK(!receiver_only_);
+      RTC_DCHECK(!receiver_only_);
       if (rtcpPacketInformation.rtcpPacketTypeFlags & kRtcpRemb) {
         LOG(LS_VERBOSE) << "Incoming REMB: "
                         << rtcpPacketInformation.receiverEstimatedMaxBitrate;
@@ -1373,6 +1408,17 @@ void RTCPReceiver::TriggerCallbacksFromRTCPPacket(
             rtcpPacketInformation.report_blocks,
             rtcpPacketInformation.rtt,
             now);
+      }
+    }
+    if (_cbTransportFeedbackObserver &&
+        (rtcpPacketInformation.rtcpPacketTypeFlags & kRtcpTransportFeedback)) {
+      uint32_t media_source_ssrc =
+          rtcpPacketInformation.transport_feedback_->GetMediaSourceSsrc();
+      if (media_source_ssrc == main_ssrc_ ||
+          registered_ssrcs_.find(media_source_ssrc) !=
+              registered_ssrcs_.end()) {
+        _cbTransportFeedbackObserver->OnTransportFeedback(
+            *rtcpPacketInformation.transport_feedback_.get());
       }
     }
   }

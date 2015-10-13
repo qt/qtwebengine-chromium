@@ -34,6 +34,7 @@
 #include "core/fetch/Resource.h"
 #include "core/fetch/ResourceLoaderOptions.h"
 #include "core/fetch/ResourcePtr.h"
+#include "core/fetch/SubstituteData.h"
 #include "platform/Timer.h"
 #include "platform/network/ResourceError.h"
 #include "platform/network/ResourceLoadPriority.h"
@@ -52,7 +53,6 @@ class ImageResource;
 class MHTMLArchive;
 class RawResource;
 class ScriptResource;
-class SubstituteData;
 class XSLStyleSheetResource;
 class KURL;
 class ResourceTimingInfo;
@@ -68,12 +68,13 @@ class ResourceLoaderSet;
 // alive past detach if scripts still reference the Document.
 class CORE_EXPORT ResourceFetcher : public GarbageCollectedFinalized<ResourceFetcher> {
     WTF_MAKE_NONCOPYABLE(ResourceFetcher);
+    WILL_BE_USING_PRE_FINALIZER(ResourceFetcher, clearPreloads);
 public:
     static ResourceFetcher* create(FetchContext* context) { return new ResourceFetcher(context); }
     virtual ~ResourceFetcher();
     DECLARE_VIRTUAL_TRACE();
 
-    ResourcePtr<Resource> requestResource(FetchRequest&, const ResourceFactory&);
+    ResourcePtr<Resource> requestResource(FetchRequest&, const ResourceFactory&, const SubstituteData& = SubstituteData());
 
     Resource* cachedResource(const KURL&) const;
 
@@ -137,7 +138,7 @@ public:
         ResourceLoadingFromNetwork,
         ResourceLoadingFromCache
     };
-    void requestLoadStarted(Resource*, const FetchRequest&, ResourceLoadStartType);
+    void requestLoadStarted(Resource*, const FetchRequest&, ResourceLoadStartType, bool isStaticData = false);
     static const ResourceLoaderOptions& defaultResourceOptions();
 
     String getCacheIdentifier() const;
@@ -155,15 +156,14 @@ private:
     ResourcePtr<Resource> createResourceForLoading(FetchRequest&, const String& charset, const ResourceFactory&);
     void storeResourceTimingInitiatorInformation(Resource*);
     bool scheduleArchiveLoad(Resource*, const ResourceRequest&);
+    void preCacheData(const FetchRequest&, const ResourceFactory&, const SubstituteData&);
 
     enum RevalidationPolicy { Use, Revalidate, Reload, Load };
-    RevalidationPolicy determineRevalidationPolicy(Resource::Type, const FetchRequest&, Resource* existingResource) const;
+    RevalidationPolicy determineRevalidationPolicy(Resource::Type, const FetchRequest&, Resource* existingResource, bool isStaticData) const;
 
-    void addAdditionalRequestHeaders(ResourceRequest&, Resource::Type);
+    void initializeResourceRequest(ResourceRequest&, Resource::Type);
 
     static bool resourceNeedsLoad(Resource*, const FetchRequest&, RevalidationPolicy);
-
-    void notifyLoadedFromMemoryCache(Resource*);
 
     void garbageCollectDocumentResourcesTimerFired(Timer<ResourceFetcher>*);
 
@@ -173,18 +173,27 @@ private:
 
     void willTerminateResourceLoader(ResourceLoader*);
 
+    ResourceLoadPriority modifyPriorityForExperiments(ResourceLoadPriority, Resource::Type, const FetchRequest&);
+
     Member<FetchContext> m_context;
 
     HashSet<String> m_validatedURLs;
     mutable DocumentResourceMap m_documentResources;
 
-    OwnPtr<ListHashSet<Resource*>> m_preloads;
+    // We intentionally use a Member instead of a ResourcePtr.
+    // Using a ResourcePtrs can lead to a wrong behavior because
+    // the underlying Resource of the ResourcePtr is updated when the Resource
+    // is revalidated. What we really want to hold here is not the ResourcePtr
+    // but the underlying Resource.
+    OwnPtrWillBeMember<WillBeHeapListHashSet<RawPtrWillBeMember<Resource>>> m_preloads;
     OwnPtrWillBeMember<ArchiveResourceCollection> m_archiveResourceCollection;
 
     Timer<ResourceFetcher> m_garbageCollectDocumentResourcesTimer;
     Timer<ResourceFetcher> m_resourceTimingReportTimer;
 
-    typedef HashMap<Resource*, OwnPtr<ResourceTimingInfo>> ResourceTimingInfoMap;
+    // We intentionally use a Member instead of a ResourcePtr.
+    // See the comment on m_preloads.
+    typedef WillBeHeapHashMap<RawPtrWillBeMember<Resource>, OwnPtr<ResourceTimingInfo>> ResourceTimingInfoMap;
     ResourceTimingInfoMap m_resourceTimingInfoMap;
 
     Vector<OwnPtr<ResourceTimingInfo>> m_scheduledResourceTimingReports;
@@ -194,6 +203,7 @@ private:
 
     // Used in hit rate histograms.
     class DeadResourceStatsRecorder {
+        DISALLOW_ALLOCATION();
     public:
         DeadResourceStatsRecorder();
         ~DeadResourceStatsRecorder();
@@ -207,7 +217,7 @@ private:
     };
     DeadResourceStatsRecorder m_deadStatsRecorder;
 
-    // 29 bits left
+    // 28 bits left
     bool m_autoLoadImages : 1;
     bool m_imagesEnabled : 1;
     bool m_allowStaleResources : 1;

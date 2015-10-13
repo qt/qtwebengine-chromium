@@ -121,7 +121,8 @@ void WebRtcLocalAudioRenderer::Start() {
   MediaStreamAudioSink::AddToAudioTrack(this, audio_track_);
   // ...and |sink_| will get audio data from us.
   DCHECK(!sink_.get());
-  sink_ = AudioDeviceFactory::NewOutputDevice(source_render_frame_id_);
+  sink_ = AudioDeviceFactory::NewOutputDevice(
+      source_render_frame_id_, session_id_, std::string(), url::Origin());
 
   base::AutoLock auto_lock(thread_lock_);
   last_render_time_ = base::TimeTicks::Now();
@@ -207,18 +208,10 @@ void WebRtcLocalAudioRenderer::SetVolume(float volume) {
     sink_->SetVolume(volume);
 }
 
-void WebRtcLocalAudioRenderer::SwitchOutputDevice(
-    const std::string& device_id,
-    const GURL& security_origin,
-    const media::SwitchOutputDeviceCB& callback) {
-  DVLOG(1) << __FUNCTION__
-           << "(" << device_id << ", " << security_origin << ")";
+media::OutputDevice* WebRtcLocalAudioRenderer::GetOutputDevice() {
+  DVLOG(1) << __FUNCTION__;
   DCHECK(task_runner_->BelongsToCurrentThread());
-
-  if (sink_.get())
-    sink_->SwitchOutputDevice(device_id, security_origin, callback);
-  else
-    callback.Run(media::SWITCH_OUTPUT_DEVICE_RESULT_ERROR_NOT_SUPPORTED);
+  return sink_.get();
 }
 
 base::TimeDelta WebRtcLocalAudioRenderer::GetCurrentRenderTime() const {
@@ -250,7 +243,7 @@ void WebRtcLocalAudioRenderer::MaybeStartSink() {
     return;
 
   DVLOG(1) << "WebRtcLocalAudioRenderer::MaybeStartSink() -- Starting sink_.";
-  sink_->InitializeWithSessionId(sink_params_, this, session_id_);
+  sink_->Initialize(sink_params_, this);
   sink_->Start();
   sink_started_ = true;
   UMA_HISTOGRAM_ENUMERATION("Media.LocalRendererSinkStates",
@@ -263,18 +256,6 @@ void WebRtcLocalAudioRenderer::ReconfigureSink(
 
   DVLOG(1) << "WebRtcLocalAudioRenderer::ReconfigureSink()";
 
-  int implicit_ducking_effect = 0;
-  RenderFrameImpl* const frame =
-      RenderFrameImpl::FromRoutingID(source_render_frame_id_);
-  MediaStreamDispatcher* const dispatcher = frame ?
-      frame->GetMediaStreamDispatcher() : NULL;
-  if (dispatcher && dispatcher->IsAudioDuckingActive()) {
-    DVLOG(1) << "Forcing DUCKING to be ON for output";
-    implicit_ducking_effect = media::AudioParameters::DUCKING;
-  } else {
-    DVLOG(1) << "DUCKING not forced ON for output";
-  }
-
   if (source_params_.Equals(params))
     return;
 
@@ -282,16 +263,9 @@ void WebRtcLocalAudioRenderer::ReconfigureSink(
   // the new format.
 
   source_params_ = params;
-
-  sink_params_ = media::AudioParameters(source_params_.format(),
-      source_params_.channel_layout(), source_params_.sample_rate(),
-      source_params_.bits_per_sample(),
-      WebRtcAudioRenderer::GetOptimalBufferSize(source_params_.sample_rate(),
-                                                frames_per_buffer_),
-      // If DUCKING is enabled on the source, it needs to be enabled on the
-      // sink as well.
-      source_params_.effects() | implicit_ducking_effect);
-
+  sink_params_ = source_params_;
+  sink_params_.set_frames_per_buffer(WebRtcAudioRenderer::GetOptimalBufferSize(
+      source_params_.sample_rate(), frames_per_buffer_));
   {
     // Note: The max buffer is fairly large, but will rarely be used.
     // Cast needs the buffer to hold at least one second of audio.
@@ -313,12 +287,11 @@ void WebRtcLocalAudioRenderer::ReconfigureSink(
 
   // Stop |sink_| and re-create a new one to be initialized with different audio
   // parameters.  Then, invoke MaybeStartSink() to restart everything again.
-  if (sink_started_) {
-    sink_->Stop();
-    sink_started_ = false;
-  }
+  sink_->Stop();
+  sink_started_ = false;
 
-  sink_ = AudioDeviceFactory::NewOutputDevice(source_render_frame_id_);
+  sink_ = AudioDeviceFactory::NewOutputDevice(
+      source_render_frame_id_, session_id_, std::string(), url::Origin());
   MaybeStartSink();
 }
 

@@ -70,6 +70,12 @@ class Candidate {
   const std::string & protocol() const { return protocol_; }
   void set_protocol(const std::string & protocol) { protocol_ = protocol; }
 
+  // The protocol used to talk to relay.
+  const std::string& relay_protocol() const { return relay_protocol_; }
+  void set_relay_protocol(const std::string& protocol) {
+    relay_protocol_ = protocol;
+  }
+
   const rtc::SocketAddress & address() const { return address_; }
   void set_address(const rtc::SocketAddress & address) {
     address_ = address;
@@ -78,10 +84,8 @@ class Candidate {
   uint32 priority() const { return priority_; }
   void set_priority(const uint32 priority) { priority_ = priority; }
 
-//  void set_type_preference(uint32 type_preference) {
-//    priority_ = GetPriority(type_preference);
-//  }
-
+  // TODO(pthatcher): Remove once Chromium's jingle/glue/utils.cc
+  // doesn't use it.
   // Maps old preference (which was 0.0-1.0) to match priority (which
   // is 0-2^32-1) to to match RFC 5245, section 4.1.2.1.  Also see
   // https://docs.google.com/a/google.com/document/d/
@@ -91,6 +95,8 @@ class Candidate {
     return static_cast<float>(((priority_ >> 24) * 100 / 127) / 100.0);
   }
 
+  // TODO(pthatcher): Remove once Chromium's jingle/glue/utils.cc
+  // doesn't use it.
   void set_preference(float preference) {
     // Limiting priority to UINT_MAX when value exceeds uint32 max.
     // This can happen for e.g. when preference = 3.
@@ -214,6 +220,7 @@ class Candidate {
   std::string id_;
   int component_;
   std::string protocol_;
+  std::string relay_protocol_;
   rtc::SocketAddress address_;
   uint32 priority_;
   std::string username_;

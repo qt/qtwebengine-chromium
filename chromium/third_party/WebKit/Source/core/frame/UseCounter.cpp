@@ -292,7 +292,7 @@ int UseCounter::mapCSSPropertyIdToCSSSampleIdForHistogram(int id)
     case CSSPropertyGridAutoFlow: return 250;
     case CSSPropertyWebkitHighlight: return 251;
     case CSSPropertyWebkitHyphenateCharacter: return 252;
-    case CSSPropertyWebkitLineBoxContain: return 257;
+    // case CSSPropertyWebkitLineBoxContain: return 257;
     // case CSSPropertyWebkitLineAlign: return 258;
     case CSSPropertyWebkitLineBreak: return 259;
     case CSSPropertyWebkitLineClamp: return 260;
@@ -389,7 +389,7 @@ int UseCounter::mapCSSPropertyIdToCSSSampleIdForHistogram(int id)
     case CSSPropertyClipPath: return 355;
     case CSSPropertyClipRule: return 356;
     case CSSPropertyMask: return 357;
-    case CSSPropertyEnableBackground: return 358;
+    // CSSPropertyEnableBackground has been removed, was return 358;
     case CSSPropertyFilter: return 359;
     case CSSPropertyFloodColor: return 360;
     case CSSPropertyFloodOpacity: return 361;
@@ -489,7 +489,6 @@ int UseCounter::mapCSSPropertyIdToCSSSampleIdForHistogram(int id)
     case CSSPropertyGrid: return 453;
     case CSSPropertyAll: return 454;
     case CSSPropertyJustifyItems: return 455;
-    case CSSPropertyScrollBlocksOn: return 456;
     case CSSPropertyMotionPath: return 457;
     case CSSPropertyMotionOffset: return 458;
     case CSSPropertyMotionRotation: return 459;
@@ -540,6 +539,8 @@ int UseCounter::mapCSSPropertyIdToCSSSampleIdForHistogram(int id)
     case CSSPropertyTranslate: return 504;
     case CSSPropertyRotate: return 505;
     case CSSPropertyScale: return 506;
+    case CSSPropertyImageOrientation: return 507;
+    case CSSPropertyBackdropFilter: return 508;
 
     // 1. Add new features above this line (don't change the assigned numbers of the existing
     // items).
@@ -556,7 +557,7 @@ int UseCounter::mapCSSPropertyIdToCSSSampleIdForHistogram(int id)
     return 0;
 }
 
-static int maximumCSSSampleId() { return 506; }
+static int maximumCSSSampleId() { return 508; }
 
 void UseCounter::muteForInspector()
 {
@@ -859,10 +860,10 @@ String UseCounter::deprecationMessage(Feature feature)
     case PrefixedMediaAddKey:
     case PrefixedMediaGenerateKeyRequest:
     case PrefixedMediaCancelKeyRequest:
-        return "The prefixed Encrypted Media Extensions APIs are deprecated and will be removed in M46 (beta around September 2015). Please use 'navigator.requestMediaKeySystemAccess()' instead.";
+        return "The prefixed Encrypted Media Extensions APIs are deprecated. Please use 'navigator.requestMediaKeySystemAccess()' instead.";
 
     case CanPlayTypeKeySystem:
-        return "canPlayType()'s 'keySystem' parameter is deprecated and will be ignored in M46 (beta around September 2015). Please use 'navigator.requestMediaKeySystemAccess()' instead.";
+        return "canPlayType()'s 'keySystem' parameter is deprecated. Please use 'navigator.requestMediaKeySystemAccess()' instead.";
 
     case SVGSVGElementForceRedraw:
         return "'SVGSVGElement.forceRedraw()' is deprecated, please do not use it. It is a no-op, as per SVG2 (https://svgwg.org/svg2-draft/struct.html#__svg__SVGSVGElement__forceRedraw).";
@@ -877,14 +878,17 @@ String UseCounter::deprecationMessage(Feature feature)
         return "'SVGSVGElement.unsuspendRedrawAll()' is deprecated, please do not use it. It is a no-op, as per SVG2 (https://svgwg.org/svg2-draft/struct.html#__svg__SVGSVGElement__unsuspendRedrawAll).";
 
     // Powerful features on insecure origins (https://goo.gl/rStTGz)
+    case DeviceMotionInsecureOrigin:
+        return "The devicemotion event is deprecated on insecure origins, and support will be removed in the future. You should consider switching your application to a secure origin, such as HTTPS. See https://goo.gl/rStTGz for more details.";
+
+    case DeviceOrientationInsecureOrigin:
+        return "The deviceorientation event is deprecated on insecure origins, and support will be removed in the future. You should consider switching your application to a secure origin, such as HTTPS. See https://goo.gl/rStTGz for more details.";
+
     case GeolocationInsecureOrigin:
         return "getCurrentPosition() and watchPosition() are deprecated on insecure origins, and support will be removed in the future. You should consider switching your application to a secure origin, such as HTTPS. See https://goo.gl/rStTGz for more details.";
 
     case GetUserMediaInsecureOrigin:
-        return "getUserMedia() is deprecated on insecure origins, and support will be removed in the future. You should consider switching your application to a secure origin, such as HTTPS. See https://goo.gl/rStTGz for more details.";
-
-    case FullscreenInsecureOrigin:
-        return "requestFullscreen() is deprecated on insecure origins, and support will be removed in the future. You should consider switching your application to a secure origin, such as HTTPS. See https://goo.gl/rStTGz for more details.";
+        return "getUserMedia() no longer works on insecure origins. To use this feature, you should consider switching your application to a secure origin, such as HTTPS. See https://goo.gl/rStTGz for more details.";
 
     case EncryptedMediaInsecureOrigin:
         return "requestMediaKeySystemAccess() is deprecated on insecure origins in the specification. Support will be removed in the future. You should consider switching your application to a secure origin, such as HTTPS. See https://goo.gl/rStTGz for more details.";
@@ -898,18 +902,6 @@ String UseCounter::deprecationMessage(Feature feature)
     case ElementCreateShadowRootMultipleWithUserAgentShadowRoot:
         return "Calling Element.createShadowRoot() for an element which already hosts a user-agent shadow root is deprecated. See https://www.chromestatus.com/features/4668884095336448 for more details.";
 
-    case PrefixedTouchRadiusX:
-        return "'Touch.webkitRadiusX' is deprecated and will be removed in M47, around November 2015. Please use 'Touch.radiusX' instead.";
-
-    case PrefixedTouchRadiusY:
-        return "'Touch.webkitRadiusY' is deprecated and will be removed in M47, around November 2015. Please use 'Touch.radiusY' instead.";
-
-    case PrefixedTouchRotationAngle:
-        return "'Touch.webkitRotationAngle' is deprecated and will be removed in M47, around November 2015. Please use 'Touch.rotationAngle' instead.";
-
-    case PrefixedTouchForce:
-        return "'Touch.webkitForce' is deprecated and will be removed in M47, around November 2015. Please use 'Touch.force' instead.";
-
     case CSSDeepCombinator:
         return "/deep/ combinator is deprecated. See https://www.chromestatus.com/features/6750456638341120 for more details.";
 
@@ -922,27 +914,29 @@ String UseCounter::deprecationMessage(Feature feature)
     case PrefixedMouseEventMovementY:
         return replacedBy("webkitMovementY", "movementY");
 
-    case VideoFullscreenAllowedExemption:
-        return "Entering fullscreen in an <iframe> with no allowfullscreen attribute is deprecated and will stop working in M46, around October 2015. Please use the allowfullscreen attribute.";
-
     case SVGSMILElementInDocument:
     case SVGSMILAnimationInImageRegardlessOfCache:
         return "SVG's SMIL animations (<animate>, <set>, etc.) are deprecated and will be removed. Please use CSS animations or Web animations instead.";
+    case PrefixedPerformanceClearResourceTimings:
+        return replacedBy("Performance.webkitClearResourceTimings", "Performance.clearResourceTimings");
 
-    case MediaStreamLabel:
-        return "'MediaStream.label' is deprecated and will be removed in M47, around November 2015. Please use 'MediaStream.id' instead.";
+    case PrefixedPerformanceSetResourceTimingBufferSize:
+        return replacedBy("Performance.webkitSetResourceTimingBufferSize", "Performance.setResourceTimingBufferSize");
 
-    case MediaStreamStop:
-        return "'MediaStream.stop()' is deprecated and will be removed in M47, around November 2015. Please use 'MediaStream.active' instead.";
-
-    case MediaStreamEnded:
-        return "'MediaStream.ended' is deprecated and will be removed in M47, around November 2015. Please use 'MediaStream.active' instead.";
-
-    case PermissionStatusStatus:
-        return "PermissionStatus.status is deprecated and will be removed in M47, around November 2015. Please use PermissionStatus.state instead.";
+    case PrefixedPerformanceResourceTimingBufferFull:
+        return replacedBy("Performance.onwebkitresourcetimingbufferfull", "Performance.onresourcetimingbufferfull");
 
     case FetchAPIRequestContext:
         return "Request.context is deprecated and will be removed in M46 (see: https://www.chromestatus.com/feature/5534702526005248).";
+
+    case HeaderValueNotMatchingRFC7230:
+        return "Header values not matching to RFC 7230, will be deprecated (see: https://www.chromestatus.com/feature/6457425448140800).";
+
+    case LegacyCSSValueIntrinsic:
+        return "The 'intrinsic' CSS keyword is deprecated and will be removed in M48, around January 2015. Use the standard 'max-content' keyword instead.";
+
+    case LegacyCSSValueMinIntrinsic:
+        return "The 'min-intrinsic' CSS keyword is deprecated and will be removed in M48, around January 2015. Use the standard 'min-content' keyword instead.";
 
     // Features that aren't deprecated don't have a deprecation message.
     default:

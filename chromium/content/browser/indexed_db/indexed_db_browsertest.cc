@@ -187,6 +187,16 @@ class IndexedDBBrowserTest : public ContentBrowserTest {
   DISALLOW_COPY_AND_ASSIGN(IndexedDBBrowserTest);
 };
 
+class IndexedDBBrowserTestWithExperimentalAPIs
+    : public IndexedDBBrowserTest,
+      public ::testing::WithParamInterface<const char*> {
+ public:
+  void SetUpCommandLine(base::CommandLine* command_line) override {
+    command_line->AppendSwitch(
+        switches::kEnableExperimentalWebPlatformFeatures);
+  }
+};
+
 IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTest, CursorTest) {
   SimpleTest(GetTestUrl("indexeddb", "cursor_test.html"));
 }
@@ -230,6 +240,11 @@ IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTest, TransactionTest) {
 
 IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTest, CallbackAccounting) {
   SimpleTest(GetTestUrl("indexeddb", "callback_accounting.html"));
+}
+
+IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTestWithExperimentalAPIs,
+                       GetAllMaxMessageSize) {
+  SimpleTest(GetTestUrl("indexeddb", "getall_max_message_size.html"));
 }
 
 IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTest, DoesntHangTest) {
@@ -452,7 +467,14 @@ IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTestWithGCExposed, DISABLED_BlobDidAck) {
   EXPECT_EQ(0UL, blob_context->context()->blob_count());
 }
 
-IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTestWithGCExposed, BlobDidAckPrefetch) {
+// Very flaky on Linux. See crbug.com/459835.
+#if defined(OS_LINUX)
+#define MAYBE_BlobDidAckPrefetch DISABLED_BlobDidAckPrefetch
+#else
+#define MAYBE_BlobDidAckPrefetch BlobDidAckPrefetch
+#endif
+IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTestWithGCExposed,
+                       MAYBE_BlobDidAckPrefetch) {
   SimpleTest(GetTestUrl("indexeddb", "blob_did_ack_prefetch.html"));
   // Wait for idle so that the blob ack has time to be received/processed by
   // the browser process.
@@ -679,16 +701,8 @@ static scoped_ptr<net::test_server::HttpResponse> CorruptDBRequestHandler(
 
 }  // namespace
 
-class IndexedDBBrowserCorruptionTest
-    : public IndexedDBBrowserTest,
-      public ::testing::WithParamInterface<const char*> {
- public:
-  void SetUpCommandLine(base::CommandLine* command_line) override {
-    // Experimental for IDBObjectStore.getAll()
-    command_line->AppendSwitch(
-        switches::kEnableExperimentalWebPlatformFeatures);
-  }
-};
+// Experimental for IDBObjectStore.getAll()
+using IndexedDBBrowserCorruptionTest = IndexedDBBrowserTestWithExperimentalAPIs;
 
 IN_PROC_BROWSER_TEST_P(IndexedDBBrowserCorruptionTest,
                        OperationOnCorruptedOpenDatabase) {

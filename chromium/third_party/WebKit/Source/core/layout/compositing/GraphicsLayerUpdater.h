@@ -28,13 +28,14 @@
 #define GraphicsLayerUpdater_h
 
 #include "platform/graphics/GraphicsLayer.h"
+#include "wtf/Allocator.h"
 
 namespace blink {
 
-class DeprecatedPaintLayer;
+class PaintLayer;
 
 class GraphicsLayerUpdater {
-
+    STACK_ALLOCATED();
 public:
     GraphicsLayerUpdater();
     ~GraphicsLayerUpdater();
@@ -44,18 +45,18 @@ public:
         ForceUpdate,
     };
 
-    void update(DeprecatedPaintLayer&, Vector<DeprecatedPaintLayer*>& layersNeedingPaintInvalidation);
+    void update(PaintLayer&, Vector<PaintLayer*>& layersNeedingPaintInvalidation);
 
     bool needsRebuildTree() const { return m_needsRebuildTree; }
 
 #if ENABLE(ASSERT)
-    static void assertNeedsToUpdateGraphicsLayerBitsCleared(DeprecatedPaintLayer&);
+    static void assertNeedsToUpdateGraphicsLayerBitsCleared(PaintLayer&);
 #endif
 
 private:
     class UpdateContext;
 
-    void updateRecursive(DeprecatedPaintLayer&, UpdateType, const UpdateContext&, Vector<DeprecatedPaintLayer*>& layersNeedingPaintInvalidation);
+    void updateRecursive(PaintLayer&, UpdateType, const UpdateContext&, Vector<PaintLayer*>& layersNeedingPaintInvalidation);
 
     bool m_needsRebuildTree;
 };

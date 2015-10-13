@@ -7,7 +7,7 @@
 
 #include <vector>
 
-#include "base/callback.h"
+#include "base/memory/scoped_vector.h"
 #include "base/memory/weak_ptr.h"
 #include "mojo/application/public/cpp/app_lifetime_helper.h"
 #include "mojo/application/public/cpp/application_connection.h"
@@ -15,10 +15,13 @@
 #include "mojo/application/public/cpp/lib/service_registry.h"
 #include "mojo/application/public/interfaces/application.mojom.h"
 #include "mojo/application/public/interfaces/shell.mojom.h"
+#include "mojo/public/cpp/bindings/binding.h"
+#include "mojo/public/cpp/bindings/callback.h"
 #include "mojo/public/cpp/system/core.h"
 
 namespace mojo {
 
+// TODO(beng): This comment is hilariously out of date.
 // Utility class for communicating with the Shell, and providing Services
 // to clients.
 //
@@ -52,19 +55,32 @@ namespace mojo {
 // app.AddService<BarImpl>(&context);
 //
 //
-class ApplicationImpl : public Application,
-                        public ErrorHandler {
+class ApplicationImpl : public Application {
  public:
+  class TestApi {
+   public:
+    explicit TestApi(ApplicationImpl* application)
+        : application_(application) {}
+
+    void UnbindConnections(InterfaceRequest<Application>* application_request,
+                           ShellPtr* shell) {
+      application_->UnbindConnections(application_request, shell);
+    }
+
+   private:
+    ApplicationImpl* application_;
+  };
+
   // Does not take ownership of |delegate|, which must remain valid for the
   // lifetime of ApplicationImpl.
   ApplicationImpl(ApplicationDelegate* delegate,
                   InterfaceRequest<Application> request);
   // Constructs an ApplicationImpl with a custom termination closure. This
-  // closure is invoked on Terminate() instead of the default behavior of
-  // quitting the current MessageLoop.
+  // closure is invoked on Quit() instead of the default behavior of quitting
+  // the current base::MessageLoop.
   ApplicationImpl(ApplicationDelegate* delegate,
                   InterfaceRequest<Application> request,
-                  const base::Closure& termination_closure);
+                  const Closure& termination_closure);
   ~ApplicationImpl() override;
 
   // The Mojo shell. This will return a valid pointer after Initialize() has
@@ -78,31 +94,43 @@ class ApplicationImpl : public Application,
 
   // Requests a new connection to an application. Returns a pointer to the
   // connection if the connection is permitted by this application's delegate,
-  // or nullptr otherwise. Caller does not take ownership. The pointer remains
-  // valid until an error occurs on the connection with the Shell, until the
-  // ApplicationImpl is destroyed, or until the connection is closed through a
-  // call to ApplicationConnection::CloseConnection.
-  ApplicationConnection* ConnectToApplication(mojo::URLRequestPtr request);
-
-  // Closes the |connection|.
-  void CloseConnection(ApplicationConnection* connection);
+  // or nullptr otherwise. Caller takes ownership.
+  scoped_ptr<ApplicationConnection> ConnectToApplication(URLRequestPtr request);
+  scoped_ptr<ApplicationConnection> ConnectToApplicationWithCapabilityFilter(
+      URLRequestPtr request,
+      CapabilityFilterPtr filter);
 
   // Connect to application identified by |request->url| and connect to the
   // service implementation of the interface identified by |Interface|.
   template <typename Interface>
   void ConnectToService(mojo::URLRequestPtr request,
                         InterfacePtr<Interface>* ptr) {
-    ApplicationConnection* connection = ConnectToApplication(request.Pass());
-    if (!connection)
+    scoped_ptr<ApplicationConnection> connection =
+        ConnectToApplication(request.Pass());
+    if (!connection.get())
       return;
     connection->ConnectToService(ptr);
   }
 
+  // Initiate shutdown of this application. This may involve a round trip to the
+  // Shell to ensure there are no inbound service requests.
+  void Quit();
+
+ private:
   // Application implementation.
   void Initialize(ShellPtr shell, const mojo::String& url) override;
+  void AcceptConnection(const String& requestor_url,
+                        InterfaceRequest<ServiceProvider> services,
+                        ServiceProviderPtr exposed_services,
+                        Array<String> allowed_interfaces,
+                        const String& url) override;
+  void OnQuitRequested(const Callback<void(bool)>& callback) override;
 
-  // Block until the Application is initialized, if it is not already.
-  void WaitForInitialize();
+  void OnConnectionError();
+
+  // Called from Quit() when there is no Shell connection, or asynchronously
+  // from Quit() once the Shell has OK'ed shutdown.
+  void QuitNow();
 
   // Unbinds the Shell and Application connections. Can be used to re-bind the
   // handles to another implementation of ApplicationImpl, for instance when
@@ -110,38 +138,16 @@ class ApplicationImpl : public Application,
   void UnbindConnections(InterfaceRequest<Application>* application_request,
                          ShellPtr* shell);
 
-  // Quits the main run loop for this application. It first checks with the
-  // shell to ensure there are no outstanding service requests.
-  void Terminate();
-
-  // Quits without waiting to check with the shell.
-  void QuitNow();
-
- private:
-  // Application implementation.
-  void AcceptConnection(const String& requestor_url,
-                        InterfaceRequest<ServiceProvider> services,
-                        ServiceProviderPtr exposed_services,
-                        const String& url) override;
-  void OnQuitRequested(const Callback<void(bool)>& callback) override;
-
-  // ErrorHandler implementation.
-  void OnConnectionError() override;
-
-  void ClearConnections();
-
-  typedef std::vector<internal::ServiceRegistry*> ServiceRegistryList;
-
-  ServiceRegistryList incoming_service_registries_;
-  ServiceRegistryList outgoing_service_registries_;
+  // We track the lifetime of incoming connection registries as it more
+  // convenient for the client.
+  ScopedVector<ApplicationConnection> incoming_connections_;
   ApplicationDelegate* delegate_;
   Binding<Application> binding_;
   ShellPtr shell_;
   std::string url_;
-  base::Closure termination_closure_;
+  Closure termination_closure_;
   AppLifetimeHelper app_lifetime_helper_;
   bool quit_requested_;
-  bool in_destructor_;
   base::WeakPtrFactory<ApplicationImpl> weak_factory_;
 
   MOJO_DISALLOW_COPY_AND_ASSIGN(ApplicationImpl);

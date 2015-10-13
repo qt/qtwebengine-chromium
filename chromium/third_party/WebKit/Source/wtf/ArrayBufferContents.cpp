@@ -102,14 +102,14 @@ void ArrayBufferContents::allocateMemory(size_t size, InitializationPolicy polic
 {
     if (s_adjustAmountOfExternalAllocatedMemoryFunction)
         s_adjustAmountOfExternalAllocatedMemoryFunction(static_cast<int>(size));
-    data = partitionAllocGenericFlags(WTF::Partitions::bufferPartition(), PartitionAllocReturnNull, size);
+    data = partitionAllocGeneric(WTF::Partitions::bufferPartition(), size);
     if (policy == ZeroInitialize && data)
         memset(data, '\0', size);
 }
 
 void ArrayBufferContents::freeMemory(void* data, size_t size)
 {
-    partitionFreeGeneric(WTF::Partitions::bufferPartition(), data);
+    Partitions::bufferFree(data);
     if (s_adjustAmountOfExternalAllocatedMemoryFunction)
         s_adjustAmountOfExternalAllocatedMemoryFunction(-static_cast<int>(size));
 }

@@ -177,6 +177,7 @@ bool GenericV4L2Device::CanCreateEGLImageFrom(uint32_t v4l2_pixfmt) {
     DRM_FORMAT_ARGB8888,
 #if defined(ARCH_CPU_ARMEL)
     DRM_FORMAT_NV12,
+    DRM_FORMAT_MT21,
 #endif
   };
 
@@ -200,8 +201,7 @@ EGLImageKHR GenericV4L2Device::CreateEGLImage(EGLDisplay egl_display,
     return EGL_NO_IMAGE_KHR;
   }
 
-  media::VideoFrame::Format vf_format =
-      V4L2PixFmtToVideoFrameFormat(v4l2_pixfmt);
+  media::VideoPixelFormat vf_format = V4L2PixFmtToVideoPixelFormat(v4l2_pixfmt);
   // Number of components, as opposed to the number of V4L2 planes, which is
   // just a buffer count.
   size_t num_planes = media::VideoFrame::NumPlanes(vf_format);

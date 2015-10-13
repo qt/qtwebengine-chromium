@@ -4,11 +4,11 @@
 
 /**
  * @fileoverview
- * 'cr-settings-menu' shows a menu with the given pages.
+ * 'cr-settings-menu' shows a menu with a hardcoded set of pages and subpages.
  *
  * Example:
  *
- *     <cr-settings-menu pages="[[pages]]" selected-id="{{selectedId}}">
+ *     <cr-settings-menu selected-page-id="{{selectedPageId}}">
  *     </cr-settings-menu>
  *
  * @group Chrome Settings Elements
@@ -19,21 +19,32 @@ Polymer({
 
   properties: {
     /**
-     * Pages to show menu items for.
-     * @type {!Array<!HTMLElement>}
+     * The current active route.
      */
-    pages: {
-      type: Array,
-      value: function() { return []; },
-    },
-
-    /**
-     * ID of the currently selected page.
-     */
-    selectedId: {
-      type: String,
-      value: '',
+    currentRoute: {
+      type: Object,
       notify: true,
+      observer: 'currentRouteChanged_',
     },
   },
+
+  /** @private */
+  currentRouteChanged_: function() {
+    var submenu = this.shadowRoot.querySelector(
+        'paper-submenu[data-page="' + this.currentRoute.page + '"]');
+    if (submenu)
+      submenu.opened = true;
+  },
+
+  /** @private */
+  openPage_: function(event) {
+    var submenuRoute = event.currentTarget.dataset.page;
+    if (submenuRoute) {
+      this.currentRoute = {
+        page: submenuRoute,
+        section: '',
+        subpage: [],
+      };
+    }
+  }
 });

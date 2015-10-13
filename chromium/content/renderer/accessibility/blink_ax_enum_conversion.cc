@@ -67,14 +67,20 @@ uint32 AXStateFromBlink(const blink::WebAXObject& o) {
   if (o.canSetSelectedAttribute())
     state |= (1 << ui::AX_STATE_SELECTABLE);
 
-  if (o.isSelected())
-    state |= (1 << ui::AX_STATE_SELECTED);
-
-  if (o.isVisited())
-    state |= (1 << ui::AX_STATE_VISITED);
+  if (o.isEditable())
+    state |= (1 << ui::AX_STATE_EDITABLE);
 
   if (o.isEnabled())
     state |= (1 << ui::AX_STATE_ENABLED);
+
+  if (o.isSelected())
+    state |= (1 << ui::AX_STATE_SELECTED);
+
+  if (o.isRichlyEditable())
+    state |= (1 << ui::AX_STATE_RICHLY_EDITABLE);
+
+  if (o.isVisited())
+    state |= (1 << ui::AX_STATE_VISITED);
 
   if (o.orientation() == blink::WebAXOrientationVertical)
     state |= (1 << ui::AX_STATE_VERTICAL);
@@ -346,12 +352,16 @@ ui::AXEvent AXEventFromBlink(blink::WebAXEvent event) {
       return ui::AX_EVENT_ARIA_ATTRIBUTE_CHANGED;
     case blink::WebAXEventAutocorrectionOccured:
       return ui::AX_EVENT_AUTOCORRECTION_OCCURED;
+    case blink::WebAXEventBlur:
+      return ui::AX_EVENT_BLUR;
     case blink::WebAXEventCheckedStateChanged:
       return ui::AX_EVENT_CHECKED_STATE_CHANGED;
     case blink::WebAXEventChildrenChanged:
       return ui::AX_EVENT_CHILDREN_CHANGED;
     case blink::WebAXEventFocus:
       return ui::AX_EVENT_FOCUS;
+    case blink::WebAXEventHover:
+      return ui::AX_EVENT_HOVER;
     case blink::WebAXEventInvalidStatusChanged:
       return ui::AX_EVENT_INVALID_STATUS_CHANGED;
     case blink::WebAXEventLayoutComplete:

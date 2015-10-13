@@ -34,7 +34,6 @@ class AudioDecoderJob : public MediaDecoderJob {
 
   // Sets the volume of the audio output.
   void SetVolume(double volume);
-  double volume() const { return volume_; }
 
   // Sets the base timestamp for |audio_timestamp_helper_|.
   void SetBaseTimestamp(base::TimeDelta base_timestamp);
@@ -43,8 +42,10 @@ class AudioDecoderJob : public MediaDecoderJob {
   // MediaDecoderJob implementation.
   void ReleaseOutputBuffer(
       int output_buffer_index,
+      size_t offset,
       size_t size,
       bool render_output,
+      bool is_late_frame,
       base::TimeDelta current_presentation_timestamp,
       const ReleaseOutputCompletionCallback& callback) override;
   bool ComputeTimeToRender() const override;
@@ -78,6 +79,9 @@ class AudioDecoderJob : public MediaDecoderJob {
 
   // Object to calculate the current audio timestamp for A/V sync.
   scoped_ptr<AudioTimestampHelper> audio_timestamp_helper_;
+
+  // The time limit for the next frame to avoid underrun.
+  base::TimeTicks next_frame_time_limit_;
 
   DISALLOW_COPY_AND_ASSIGN(AudioDecoderJob);
 };

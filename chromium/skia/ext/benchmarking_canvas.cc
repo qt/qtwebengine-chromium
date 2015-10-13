@@ -8,11 +8,14 @@
 #include "skia/ext/benchmarking_canvas.h"
 #include "third_party/skia/include/core/SkColorFilter.h"
 #include "third_party/skia/include/core/SkImageFilter.h"
-#include "third_party/skia/include/core/SkTLazy.h"
+#include "third_party/skia/include/core/SkPaint.h"
+#include "third_party/skia/include/core/SkPath.h"
 #include "third_party/skia/include/core/SkPicture.h"
 #include "third_party/skia/include/core/SkRegion.h"
+#include "third_party/skia/include/core/SkRRect.h"
 #include "third_party/skia/include/core/SkString.h"
 #include "third_party/skia/include/core/SkTextBlob.h"
+#include "third_party/skia/include/core/SkTLazy.h"
 #include "third_party/skia/include/core/SkXfermode.h"
 
 namespace {
@@ -307,14 +310,6 @@ scoped_ptr<base::Value> AsValue(const SkRegion& region) {
 }
 
 WARN_UNUSED_RESULT
-scoped_ptr<base::Value> AsValue(const SkPicture& picture) {
-  scoped_ptr<base::DictionaryValue> val(new base::DictionaryValue());
-  val->Set("cull-rect", AsValue(picture.cullRect()));
-
-  return val.Pass();
-}
-
-WARN_UNUSED_RESULT
 scoped_ptr<base::Value> AsValue(const SkBitmap& bitmap) {
   scoped_ptr<base::DictionaryValue> val(new base::DictionaryValue());
   val->Set("size", AsValue(SkSize::Make(bitmap.width(), bitmap.height())));
@@ -360,15 +355,15 @@ scoped_ptr<base::Value> AsValue(const SkPath& path) {
       { "move", "line", "quad", "conic", "cubic", "close", "done" };
   static const int gPtsPerVerb[] = { 1, 1, 2, 2, 3, 0, 0 };
   static const int gPtOffsetPerVerb[] = { 0, 1, 1, 1, 1, 0, 0 };
-  SK_COMPILE_ASSERT(
+  static_assert(
       SK_ARRAY_COUNT(gVerbStrings) == static_cast<size_t>(SkPath::kDone_Verb + 1),
-      gVerbStrings_size_mismatch);
-  SK_COMPILE_ASSERT(
+      "gVerbStrings size mismatch");
+  static_assert(
       SK_ARRAY_COUNT(gVerbStrings) == SK_ARRAY_COUNT(gPtsPerVerb),
-      gPtsPerVerb_size_mismatch);
-  SK_COMPILE_ASSERT(
+      "gPtsPerVerb size mismatch");
+  static_assert(
       SK_ARRAY_COUNT(gVerbStrings) == SK_ARRAY_COUNT(gPtOffsetPerVerb),
-      gPtOffsetPerVerb_size_mismatch);
+      "gPtOffsetPerVerb size mismatch");
 
   scoped_ptr<base::ListValue> verbs_val(new base::ListValue());
   SkPath::Iter iter(const_cast<SkPath&>(path), false);
@@ -702,14 +697,14 @@ void BenchmarkingCanvas::onDrawBitmapRect(const SkBitmap& bitmap,
                                           const SkRect* src,
                                           const SkRect& dst,
                                           const SkPaint* paint,
-                                          DrawBitmapRectFlags flags) {
+                                          SrcRectConstraint constraint) {
   AutoOp op(this, "DrawBitmapRect", paint);
   op.addParam("bitmap", AsValue(bitmap));
   if (src)
     op.addParam("src", AsValue(*src));
   op.addParam("dst", AsValue(dst));
 
-  INHERITED::onDrawBitmapRect(bitmap, src, dst, op.paint(), flags);
+  INHERITED::onDrawBitmapRect(bitmap, src, dst, op.paint(), constraint);
 }
 
 void BenchmarkingCanvas::onDrawImage(const SkImage* image,
@@ -726,7 +721,8 @@ void BenchmarkingCanvas::onDrawImage(const SkImage* image,
 }
 
 void BenchmarkingCanvas::onDrawImageRect(const SkImage* image, const SkRect* src,
-                                         const SkRect& dst, const SkPaint* paint) {
+                                         const SkRect& dst, const SkPaint* paint,
+                                         SrcRectConstraint constraint) {
   DCHECK(image);
   AutoOp op(this, "DrawImageRect", paint);
   op.addParam("image", AsValue(*image));
@@ -734,7 +730,7 @@ void BenchmarkingCanvas::onDrawImageRect(const SkImage* image, const SkRect* src
     op.addParam("src", AsValue(*src));
   op.addParam("dst", AsValue(dst));
 
-  INHERITED::onDrawImageRect(image, src, dst, op.paint());
+  INHERITED::onDrawImageRect(image, src, dst, op.paint(), constraint);
 }
 
 void BenchmarkingCanvas::onDrawBitmapNine(const SkBitmap& bitmap,

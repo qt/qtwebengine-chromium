@@ -25,7 +25,7 @@ namespace content {
 // MediaStreams are used by WebKit to open media devices such as Video Capture
 // and Audio input devices.
 // It's the complement of MediaStreamDispatcherHost (owned by
-// BrowserRenderProcessHost).
+// RenderProcessHostImpl).
 class CONTENT_EXPORT MediaStreamDispatcher
     : public RenderFrameObserver,
       public base::SupportsWeakPtr<MediaStreamDispatcher> {
@@ -86,11 +86,6 @@ class CONTENT_EXPORT MediaStreamDispatcher
   // Returns an audio session_id given a label and an index.
   virtual int audio_session_id(const std::string& label, int index);
 
-  // Returns true if an audio input stream is currently active that was opened
-  // with audio ducking enabled.  This is information is used when playing out
-  // audio so that rendered audio can be excluded from the ducking operation.
-  bool IsAudioDuckingActive() const;
-
  protected:
   int GetNextIpcIdForTest() { return next_ipc_id_; }
 
@@ -98,7 +93,6 @@ class CONTENT_EXPORT MediaStreamDispatcher
   FRIEND_TEST_ALL_PREFIXES(MediaStreamDispatcherTest, BasicVideoDevice);
   FRIEND_TEST_ALL_PREFIXES(MediaStreamDispatcherTest, TestFailure);
   FRIEND_TEST_ALL_PREFIXES(MediaStreamDispatcherTest, CancelGenerateStream);
-  FRIEND_TEST_ALL_PREFIXES(MediaStreamDispatcherTest, CheckDuckingState);
 
   struct Request;
 

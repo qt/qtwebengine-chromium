@@ -15,19 +15,6 @@
 namespace gl
 {
 
-bool operator==(const Rectangle &a, const Rectangle &b)
-{
-    return a.x == b.x &&
-           a.y == b.y &&
-           a.width == b.width &&
-           a.height == b.height;
-}
-
-bool operator!=(const Rectangle &a, const Rectangle &b)
-{
-    return !(a == b);
-}
-
 SamplerState::SamplerState()
     : minFilter(GL_NEAREST_MIPMAP_LINEAR),
       magFilter(GL_LINEAR),
@@ -35,47 +22,30 @@ SamplerState::SamplerState()
       wrapT(GL_REPEAT),
       wrapR(GL_REPEAT),
       maxAnisotropy(1.0f),
-      baseLevel(0),
-      maxLevel(1000),
       minLod(-1000.0f),
       maxLod(1000.0f),
       compareMode(GL_NONE),
-      compareFunc(GL_LEQUAL),
-      swizzleRed(GL_RED),
+      compareFunc(GL_LEQUAL)
+{
+}
+
+TextureState::TextureState()
+    : swizzleRed(GL_RED),
       swizzleGreen(GL_GREEN),
       swizzleBlue(GL_BLUE),
-      swizzleAlpha(GL_ALPHA)
-{}
+      swizzleAlpha(GL_ALPHA),
+      samplerState(),
+      baseLevel(0),
+      maxLevel(1000),
+      immutableFormat(false),
+      immutableLevels(0)
+{
+}
 
-bool SamplerState::swizzleRequired() const
+bool TextureState::swizzleRequired() const
 {
     return swizzleRed != GL_RED || swizzleGreen != GL_GREEN ||
            swizzleBlue != GL_BLUE || swizzleAlpha != GL_ALPHA;
-}
-
-bool SamplerState::operator==(const SamplerState &other) const
-{
-    return minFilter == other.minFilter &&
-           magFilter == other.magFilter &&
-           wrapS == other.wrapS &&
-           wrapT == other.wrapT &&
-           wrapR == other.wrapR &&
-           maxAnisotropy == other.maxAnisotropy &&
-           baseLevel == other.baseLevel &&
-           maxLevel == other.maxLevel &&
-           minLod == other.minLod &&
-           maxLod == other.maxLod &&
-           compareMode == other.compareMode &&
-           compareFunc == other.compareFunc &&
-           swizzleRed == other.swizzleRed &&
-           swizzleGreen == other.swizzleGreen &&
-           swizzleBlue == other.swizzleBlue &&
-           swizzleAlpha == other.swizzleAlpha;
-}
-
-bool SamplerState::operator!=(const SamplerState &other) const
-{
-    return !(*this == other);
 }
 
 static void MinMax(int a, int b, int *minimum, int *maximum)

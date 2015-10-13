@@ -2,18 +2,19 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/lazy_instance.h"
 #include "base/location.h"
 #include "base/thread_task_runner_handle.h"
 #include "base/time/time.h"
 #include "cc/debug/lap_timer.h"
 #include "cc/raster/raster_buffer.h"
 #include "cc/test/begin_frame_args_test.h"
+#include "cc/test/fake_display_list_raster_source.h"
 #include "cc/test/fake_impl_proxy.h"
 #include "cc/test/fake_layer_tree_host_impl.h"
 #include "cc/test/fake_output_surface.h"
 #include "cc/test/fake_output_surface_client.h"
 #include "cc/test/fake_picture_layer_impl.h"
-#include "cc/test/fake_picture_pile_impl.h"
 #include "cc/test/fake_tile_manager.h"
 #include "cc/test/fake_tile_manager_client.h"
 #include "cc/test/test_shared_bitmap_manager.h"
@@ -59,14 +60,15 @@ class FakeTileTaskRunnerImpl : public TileTaskRunner, public TileTaskClient {
       task->WillComplete();
       task->CompleteOnOriginThread(this);
       task->DidComplete();
-
-      task->RunReplyOnOriginThread();
     }
     completed_tasks_.clear();
   }
-  ResourceFormat GetResourceFormat() const override { return RGBA_8888; }
-  bool GetResourceRequiresSwizzle() const override {
-    return !PlatformColor::SameComponentOrder(GetResourceFormat());
+  ResourceFormat GetResourceFormat(bool must_support_alpha) const override {
+    return RGBA_8888;
+  }
+  bool GetResourceRequiresSwizzle(bool must_support_alpha) const override {
+    return !PlatformColor::SameComponentOrder(
+        GetResourceFormat(must_support_alpha));
   }
 
   // Overridden from TileTaskClient:
@@ -91,6 +93,7 @@ class TileManagerPerfTest : public testing::Test {
         max_tiles_(10000),
         id_(7),
         proxy_(base::ThreadTaskRunnerHandle::Get()),
+        output_surface_(FakeOutputSurface::Create3d()),
         host_impl_(LayerTreeSettings(),
                    &proxy_,
                    &shared_bitmap_manager_,
@@ -111,7 +114,7 @@ class TileManagerPerfTest : public testing::Test {
 
     global_state_ = state;
     host_impl_.resource_pool()->SetResourceUsageLimits(
-        state.soft_memory_limit_in_bytes, 0, state.num_resources_limit);
+        state.soft_memory_limit_in_bytes, state.num_resources_limit);
     host_impl_.tile_manager()->SetGlobalStateForTesting(state);
   }
 
@@ -121,18 +124,18 @@ class TileManagerPerfTest : public testing::Test {
   }
 
   virtual void InitializeRenderer() {
-    host_impl_.InitializeRenderer(FakeOutputSurface::Create3d().Pass());
+    host_impl_.InitializeRenderer(output_surface_.get());
     tile_manager()->SetTileTaskRunnerForTesting(
         g_fake_tile_task_runner.Pointer());
   }
 
   void SetupDefaultTrees(const gfx::Size& layer_bounds) {
-    scoped_refptr<FakePicturePileImpl> pending_pile =
-        FakePicturePileImpl::CreateFilledPile(kDefaultTileSize, layer_bounds);
-    scoped_refptr<FakePicturePileImpl> active_pile =
-        FakePicturePileImpl::CreateFilledPile(kDefaultTileSize, layer_bounds);
+    scoped_refptr<FakeDisplayListRasterSource> pending_raster_source =
+        FakeDisplayListRasterSource::CreateFilled(layer_bounds);
+    scoped_refptr<FakeDisplayListRasterSource> active_raster_source =
+        FakeDisplayListRasterSource::CreateFilled(layer_bounds);
 
-    SetupTrees(pending_pile, active_pile);
+    SetupTrees(pending_raster_source, active_raster_source);
   }
 
   void ActivateTree() {
@@ -150,21 +153,22 @@ class TileManagerPerfTest : public testing::Test {
     active_root_layer_->set_fixed_tile_size(tile_size);
   }
 
-  void SetupTrees(scoped_refptr<PicturePileImpl> pending_pile,
-                  scoped_refptr<PicturePileImpl> active_pile) {
-    SetupPendingTree(active_pile);
+  void SetupTrees(scoped_refptr<RasterSource> pending_raster_source,
+                  scoped_refptr<RasterSource> active_raster_source) {
+    SetupPendingTree(active_raster_source);
     ActivateTree();
-    SetupPendingTree(pending_pile);
+    SetupPendingTree(pending_raster_source);
   }
 
-  void SetupPendingTree(scoped_refptr<PicturePileImpl> pile) {
+  void SetupPendingTree(scoped_refptr<RasterSource> raster_source) {
     host_impl_.CreatePendingTree();
     LayerTreeImpl* pending_tree = host_impl_.pending_tree();
     // Clear recycled tree.
     pending_tree->DetachLayerTree();
 
     scoped_ptr<FakePictureLayerImpl> pending_layer =
-        FakePictureLayerImpl::CreateWithRasterSource(pending_tree, id_, pile);
+        FakePictureLayerImpl::CreateWithRasterSource(pending_tree, id_,
+                                                     raster_source);
     pending_layer->SetDrawsContent(true);
     pending_layer->SetHasRenderSurface(true);
     pending_tree->SetRootLayer(pending_layer.Pass());
@@ -346,12 +350,12 @@ class TileManagerPerfTest : public testing::Test {
     int next_id = id_ + 1;
 
     // Create the rest of the layers as children of the root layer.
-    scoped_refptr<FakePicturePileImpl> pile =
-        FakePicturePileImpl::CreateFilledPile(kDefaultTileSize, layer_bounds);
+    scoped_refptr<FakeDisplayListRasterSource> raster_source =
+        FakeDisplayListRasterSource::CreateFilled(layer_bounds);
     while (static_cast<int>(layers.size()) < layer_count) {
       scoped_ptr<FakePictureLayerImpl> layer =
           FakePictureLayerImpl::CreateWithRasterSource(
-              host_impl_.pending_tree(), next_id, pile);
+              host_impl_.pending_tree(), next_id, raster_source);
       layer->SetBounds(layer_bounds);
       layer->SetDrawsContent(true);
       layers.push_back(layer.get());
@@ -414,16 +418,13 @@ class TileManagerPerfTest : public testing::Test {
   int max_tiles_;
   int id_;
   FakeImplProxy proxy_;
+  scoped_ptr<OutputSurface> output_surface_;
   FakeLayerTreeHostImpl host_impl_;
   FakePictureLayerImpl* pending_root_layer_;
   FakePictureLayerImpl* active_root_layer_;
   LapTimer timer_;
   LayerTreeSettings settings_;
-
-  static const gfx::Size kDefaultTileSize;
 };
-
-const gfx::Size TileManagerPerfTest::kDefaultTileSize(100, 100);
 
 TEST_F(TileManagerPerfTest, PrepareTiles) {
   RunPrepareTilesTest("2_100", 2, 100);

@@ -38,18 +38,17 @@ class RasterBufferImpl : public RasterBuffer {
                 const gfx::Rect& raster_full_rect,
                 const gfx::Rect& raster_dirty_rect,
                 uint64_t new_content_id,
-                float scale) override {
+                float scale,
+                bool include_images) override {
     TRACE_EVENT0("cc", "RasterBufferImpl::Playback");
+    // GPU raster doesn't do low res tiles, so should always include images.
+    DCHECK(include_images);
     ContextProvider* context_provider = rasterizer_->resource_provider()
                                             ->output_surface()
                                             ->worker_context_provider();
+    DCHECK(context_provider);
 
-    // The context lock must be held while accessing the context on a
-    // worker thread.
-    base::AutoLock context_lock(*context_provider->GetLock());
-
-    // Allow this worker thread to bind to context_provider.
-    context_provider->DetachFromThread();
+    ContextProvider::ScopedContextLock scoped_context(context_provider);
 
     gfx::Rect playback_rect = raster_full_rect;
     if (resource_has_previous_content_) {
@@ -64,10 +63,7 @@ class RasterBufferImpl : public RasterBuffer {
                                  playback_rect, scale);
 
     // Barrier to sync worker context output to cc context.
-    context_provider->ContextGL()->OrderingBarrierCHROMIUM();
-
-    // Allow compositor thread to bind to context_provider.
-    context_provider->DetachFromThread();
+    scoped_context.ContextGL()->OrderingBarrierCHROMIUM();
   }
 
  private:
@@ -205,24 +201,24 @@ void GpuTileTaskWorkerPool::CheckForCompletedTasks() {
   completed_tasks_.clear();
 }
 
-ResourceFormat GpuTileTaskWorkerPool::GetResourceFormat() const {
+ResourceFormat GpuTileTaskWorkerPool::GetResourceFormat(
+    bool must_support_alpha) const {
   return rasterizer_->resource_provider()->best_render_buffer_format();
 }
 
-bool GpuTileTaskWorkerPool::GetResourceRequiresSwizzle() const {
+bool GpuTileTaskWorkerPool::GetResourceRequiresSwizzle(
+    bool must_support_alpha) const {
   // This doesn't require a swizzle because we rasterize to the correct format.
   return false;
 }
 
 void GpuTileTaskWorkerPool::CompleteTasks(const Task::Vector& tasks) {
   for (auto& task : tasks) {
-    RasterTask* raster_task = static_cast<RasterTask*>(task.get());
+    TileTask* tile_task = static_cast<TileTask*>(task.get());
 
-    raster_task->WillComplete();
-    raster_task->CompleteOnOriginThread(this);
-    raster_task->DidComplete();
-
-    raster_task->RunReplyOnOriginThread();
+    tile_task->WillComplete();
+    tile_task->CompleteOnOriginThread(this);
+    tile_task->DidComplete();
   }
   completed_tasks_.clear();
 }

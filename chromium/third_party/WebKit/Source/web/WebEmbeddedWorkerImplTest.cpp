@@ -11,8 +11,8 @@
 #include "public/platform/WebURLResponse.h"
 #include "public/platform/WebUnitTestSupport.h"
 #include "public/web/WebEmbeddedWorkerStartData.h"
-#include "public/web/WebServiceWorkerContextClient.h"
 #include "public/web/WebSettings.h"
+#include "public/web/modules/serviceworker/WebServiceWorkerContextClient.h"
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
@@ -48,7 +48,6 @@ protected:
 
         m_startData.scriptURL = invalidScriptURL;
         m_startData.userAgent = WebString("dummy user agent");
-        m_startData.pauseAfterDownloadMode = WebEmbeddedWorkerStartData::DontPauseAfterDownload;
         m_startData.waitForDebuggerMode = WebEmbeddedWorkerStartData::DontWaitForDebugger;
         m_startData.v8CacheOptions = WebSettings::V8CacheOptionsDefault;
     }

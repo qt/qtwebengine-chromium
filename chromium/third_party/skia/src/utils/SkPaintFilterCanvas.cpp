@@ -86,9 +86,9 @@ void SkPaintFilterCanvas::onDrawBitmap(const SkBitmap& bm, SkScalar left, SkScal
 }
 
 void SkPaintFilterCanvas::onDrawBitmapRect(const SkBitmap& bm, const SkRect* src, const SkRect& dst,
-                                           const SkPaint* paint, DrawBitmapRectFlags flags) {
+                                           const SkPaint* paint, SrcRectConstraint constraint) {
     AutoPaintFilter apf(this, kBitmap_Type, paint);
-    this->INHERITED::onDrawBitmapRect(bm, src, dst, apf.paint(), flags);
+    this->INHERITED::onDrawBitmapRect(bm, src, dst, apf.paint(), constraint);
 }
 
 void SkPaintFilterCanvas::onDrawImage(const SkImage* image, SkScalar left, SkScalar top,
@@ -98,9 +98,10 @@ void SkPaintFilterCanvas::onDrawImage(const SkImage* image, SkScalar left, SkSca
 }
 
 void SkPaintFilterCanvas::onDrawImageRect(const SkImage* image, const SkRect* src,
-                                          const SkRect& dst, const SkPaint* paint) {
+                                          const SkRect& dst, const SkPaint* paint,
+                                          SrcRectConstraint constraint) {
     AutoPaintFilter apf(this, kBitmap_Type, paint);
-    this->INHERITED::onDrawImageRect(image, src, dst, apf.paint());
+    this->INHERITED::onDrawImageRect(image, src, dst, apf.paint(), constraint);
 }
 
 void SkPaintFilterCanvas::onDrawBitmapNine(const SkBitmap& bm, const SkIRect& center,

@@ -48,8 +48,6 @@ using webrtc::PeerConnectionInterface;
 
 namespace {
 
-const char kExternalGiceUfrag[] = "1234567890123456";
-const char kExternalGicePwd[] = "123456789012345678901234";
 const size_t kMaxWait = 10000;
 
 void RemoveLinesFromSdp(const std::string& line_start,
@@ -96,24 +94,6 @@ void UseExternalSdes(std::string* sdp) {
   InjectAfter("a=mid:audio\r\n", kAudioSdes, sdp);
   InjectAfter("a=mid:video\r\n", kVideoSdes, sdp);
   InjectAfter("a=mid:data\r\n", kDataSdes, sdp);
-}
-
-void UseGice(std::string* sdp) {
-  InjectAfter("t=0 0\r\n", "a=ice-options:google-ice\r\n", sdp);
-
-  std::string ufragline = "a=ice-ufrag:";
-  std::string pwdline = "a=ice-pwd:";
-  RemoveLinesFromSdp(ufragline, sdp);
-  RemoveLinesFromSdp(pwdline, sdp);
-  ufragline.append(kExternalGiceUfrag);
-  ufragline.append("\r\n");
-  pwdline.append(kExternalGicePwd);
-  pwdline.append("\r\n");
-  const std::string ufrag_pwd = ufragline + pwdline;
-
-  InjectAfter("a=mid:audio\r\n", ufrag_pwd, sdp);
-  InjectAfter("a=mid:video\r\n", ufrag_pwd, sdp);
-  InjectAfter("a=mid:data\r\n", ufrag_pwd, sdp);
 }
 
 void RemoveBundle(std::string* sdp) {
@@ -179,37 +159,6 @@ class PeerConnectionEndToEndTest
     callee_->WaitForConnection();
   }
 
-  void SetupLegacySdpConverter() {
-    caller_->SignalOnSdpCreated.connect(
-      this, &PeerConnectionEndToEndTest::ConvertToLegacySdp);
-    callee_->SignalOnSdpCreated.connect(
-      this, &PeerConnectionEndToEndTest::ConvertToLegacySdp);
-  }
-
-  void ConvertToLegacySdp(std::string* sdp) {
-    UseExternalSdes(sdp);
-    UseGice(sdp);
-    RemoveBundle(sdp);
-    LOG(LS_INFO) << "ConvertToLegacySdp: " << *sdp;
-  }
-
-  void SetupGiceConverter() {
-    caller_->SignalOnIceCandidateCreated.connect(
-      this, &PeerConnectionEndToEndTest::AddGiceCredsToCandidate);
-    callee_->SignalOnIceCandidateCreated.connect(
-      this, &PeerConnectionEndToEndTest::AddGiceCredsToCandidate);
-  }
-
-  void AddGiceCredsToCandidate(std::string* sdp) {
-    std::string gice_creds = " username ";
-    gice_creds.append(kExternalGiceUfrag);
-    gice_creds.append(" password ");
-    gice_creds.append(kExternalGicePwd);
-    gice_creds.append("\r\n");
-    Replace("\r\n", gice_creds, sdp);
-    LOG(LS_INFO) << "AddGiceCredsToCandidate: " << *sdp;
-  }
-
   void OnCallerAddedDataChanel(DataChannelInterface* dc) {
     caller_signaled_data_channels_.push_back(dc);
   }
@@ -268,17 +217,7 @@ class PeerConnectionEndToEndTest
   DataChannelList callee_signaled_data_channels_;
 };
 
-// Disable for TSan v2, see
-// https://code.google.com/p/webrtc/issues/detail?id=1205 for details.
-#if !defined(THREAD_SANITIZER)
-
-// Flaky on Windows. Disabled per issue 4464.
-#ifdef WEBRTC_WIN
-#define MAYBE_Call DISABLED_Call
-#else
-#define MAYBE_Call Call
-#endif
-TEST_F(PeerConnectionEndToEndTest, MAYBE_Call) {
+TEST_F(PeerConnectionEndToEndTest, Call) {
   CreatePcs();
   GetAndAddUserMedia();
   Negotiate();
@@ -291,8 +230,6 @@ TEST_F(PeerConnectionEndToEndTest, DISABLED_CallWithLegacySdp) {
   pc_constraints.AddMandatory(MediaConstraintsInterface::kEnableDtlsSrtp,
                               false);
   CreatePcs(&pc_constraints);
-  SetupLegacySdpConverter();
-  SetupGiceConverter();
   GetAndAddUserMedia();
   Negotiate();
   WaitForCallEstablished();
@@ -427,4 +364,3 @@ TEST_F(PeerConnectionEndToEndTest,
   EXPECT_EQ(1U, dc_1_observer->received_message_count());
   EXPECT_EQ(1U, dc_2_observer->received_message_count());
 }
-#endif // if !defined(THREAD_SANITIZER)

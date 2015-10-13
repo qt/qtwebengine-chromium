@@ -27,6 +27,7 @@
         'pref_registry',
         'query_parser',
         'startup_metric_utils',
+        'url_formatter/url_formatter.gyp:url_formatter',
       ],
       'sources': [
         'bookmarks/browser/base_bookmark_model_observer.cc',
@@ -112,8 +113,13 @@
       'dependencies': [
         'bookmarks_browser',
         'components_strings.gyp:components_strings',
+        'keyed_service_core',
       ],
       'sources': [
+        'bookmarks/managed/managed_bookmark_service.cc',
+        'bookmarks/managed/managed_bookmark_service.h',
+        'bookmarks/managed/managed_bookmark_util.cc',
+        'bookmarks/managed/managed_bookmark_util.h',
         'bookmarks/managed/managed_bookmarks_tracker.cc',
         'bookmarks/managed/managed_bookmarks_tracker.h',
       ],

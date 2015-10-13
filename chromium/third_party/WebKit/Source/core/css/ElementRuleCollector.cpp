@@ -110,7 +110,7 @@ void ElementRuleCollector::addElementStyleProperties(const StylePropertySet* pro
         return;
     m_result.addMatchedProperties(propertySet);
     if (!isCacheable)
-        m_result.isCacheable = false;
+        m_result.setIsCacheable(false);
 }
 
 static bool rulesApplicableInCurrentTreeScope(const Element* element, const ContainerNode* scopingNode, bool matchingTreeBoundaryRules)
@@ -236,7 +236,7 @@ template<class CSSRuleCollection>
 CSSRule* ElementRuleCollector::findStyleRule(CSSRuleCollection* cssRules, StyleRule* styleRule)
 {
     if (!cssRules)
-        return 0;
+        return nullptr;
     CSSRule* result = 0;
     for (unsigned i = 0; i < cssRules->length() && !result; ++i) {
         CSSRule* cssRule = cssRules->item(i);
@@ -293,9 +293,6 @@ void ElementRuleCollector::sortAndTransferMatchedRules()
         const RuleData* ruleData = m_matchedRules[i].ruleData();
         m_result.addMatchedProperties(&ruleData->rule()->properties(), ruleData->linkMatchType(), ruleData->propertyWhitelistType(m_matchingUARules));
     }
-
-    if (m_matchingUARules)
-        m_result.uaEnd = m_result.matchedProperties.size();
 }
 
 void ElementRuleCollector::didMatchRule(const RuleData& ruleData, const SelectorChecker::MatchResult& result, CascadeOrder cascadeOrder, const MatchRequest& matchRequest)

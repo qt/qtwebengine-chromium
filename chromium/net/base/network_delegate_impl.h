@@ -5,6 +5,8 @@
 #ifndef NET_BASE_NETWORK_DELEGATE_IMPL_H_
 #define NET_BASE_NETWORK_DELEGATE_IMPL_H_
 
+#include <stdint.h>
+
 #include "base/strings/string16.h"
 #include "net/base/completion_callback.h"
 #include "net/base/network_delegate.h"
@@ -115,8 +117,26 @@ class NET_EXPORT NetworkDelegateImpl : public NetworkDelegate {
   // This corresponds to URLRequestDelegate::OnResponseStarted.
   void OnResponseStarted(URLRequest* request) override;
 
-  // Called every time we read raw bytes.
-  void OnRawBytesRead(const URLRequest& request, int bytes_read) override;
+  // Called when bytes are received from the network, such as after receiving
+  // headers or reading raw response bytes. This includes localhost requests.
+  // |bytes_received| is the number of bytes measured at the application layer
+  // that have been received over the network for this request since the last
+  // time OnNetworkBytesReceived was called. |bytes_received| will always be
+  // greater than 0.
+  // Currently, this is only implemented for HTTP transactions, and
+  // |bytes_received| does not include TLS overhead or TCP retransmits.
+  void OnNetworkBytesReceived(const URLRequest& request,
+                              int64_t bytes_received) override;
+
+  // Called when bytes are sent over the network, such as when sending request
+  // headers or uploading request body bytes. This includes localhost requests.
+  // |bytes_sent| is the number of bytes measured at the application layer that
+  // have been sent over the network for this request since the last time
+  // OnNetworkBytesSent was called. |bytes_sent| will always be greater than 0.
+  // Currently, this is only implemented for HTTP transactions, and |bytes_sent|
+  // does not include TLS overhead or TCP retransmits.
+  void OnNetworkBytesSent(const URLRequest& request,
+                          int64_t bytes_sent) override;
 
   // Indicates that the URL request has been completed or failed.
   // |started| indicates whether the request has been started. If false,
@@ -127,6 +147,13 @@ class NET_EXPORT NetworkDelegateImpl : public NetworkDelegate {
   // being deleted, so it's not safe to call any methods that may result in
   // a virtual method call.
   void OnURLRequestDestroyed(URLRequest* request) override;
+
+  // Called when the current job for |request| is orphaned. This is a temporary
+  // callback to diagnose https://crbug.com/289715 and may not be used for other
+  // purposes. Note that it may be called after OnURLRequestDestroyed.
+  //
+  // TODO(davidben): Remove this once data has been gathered.
+  void OnURLRequestJobOrphaned(URLRequest* request) override;
 
   // Corresponds to ProxyResolverJSBindings::OnError.
   void OnPACScriptError(int line_number, const base::string16& error) override;

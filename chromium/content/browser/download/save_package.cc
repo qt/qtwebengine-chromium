@@ -18,6 +18,7 @@
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread.h"
+#include "components/url_formatter/url_formatter.h"
 #include "content/browser/download/download_item_impl.h"
 #include "content/browser/download/download_manager_impl.h"
 #include "content/browser/download/download_stats.h"
@@ -28,6 +29,7 @@
 #include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/browser/renderer_host/render_view_host_delegate.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
+#include "content/common/frame_messages.h"
 #include "content/common/view_messages.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
@@ -36,6 +38,7 @@
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/resource_context.h"
 #include "content/public/browser/web_contents.h"
 #include "net/base/filename_util.h"
@@ -138,6 +141,7 @@ SavePackage::SavePackage(WebContents* web_contents,
                          const base::FilePath& file_full_path,
                          const base::FilePath& directory_full_path)
     : WebContentsObserver(web_contents),
+      number_of_frames_pending_response_(0),
       file_manager_(NULL),
       download_manager_(NULL),
       download_(NULL),
@@ -171,6 +175,7 @@ SavePackage::SavePackage(WebContents* web_contents,
 
 SavePackage::SavePackage(WebContents* web_contents)
     : WebContentsObserver(web_contents),
+      number_of_frames_pending_response_(0),
       file_manager_(NULL),
       download_manager_(NULL),
       download_(NULL),
@@ -200,6 +205,7 @@ SavePackage::SavePackage(WebContents* web_contents,
                          const base::FilePath& file_full_path,
                          const base::FilePath& directory_full_path)
     : WebContentsObserver(web_contents),
+      number_of_frames_pending_response_(0),
       file_manager_(NULL),
       download_manager_(NULL),
       download_(NULL),
@@ -217,8 +223,7 @@ SavePackage::SavePackage(WebContents* web_contents,
       contents_id_(0),
       unique_id_(g_save_package_id++),
       wrote_to_completed_file_(false),
-      wrote_to_failed_file_(false) {
-}
+      wrote_to_failed_file_(false) {}
 
 SavePackage::~SavePackage() {
   // Stop receiving saving job's updates
@@ -334,7 +339,7 @@ void SavePackage::InitWithDownloadItem(
   if (save_type_ == SAVE_PAGE_TYPE_AS_COMPLETE_HTML) {
     // Get directory
     DCHECK(!saved_main_directory_path_.empty());
-    GetAllSavableResourceLinksForCurrentPage();
+    GetSavableResourceLinks();
   } else if (save_type_ == SAVE_PAGE_TYPE_AS_MHTML) {
     web_contents()->GenerateMHTML(saved_main_file_path_, base::Bind(
         &SavePackage::OnMHTMLGenerated, this));
@@ -621,7 +626,7 @@ void SavePackage::StartSave(const SaveFileCreateInfo* info) {
       wait_state_ == HTML_DATA) {
     // Inform backend to serialize the all frames' DOM and send serialized
     // HTML data back.
-    GetSerializedHtmlDataForCurrentPageWithLocalLinks();
+    GetSerializedHtmlWithLocalLinks();
   }
 }
 
@@ -752,7 +757,7 @@ void SavePackage::CheckFinish() {
                  final_names,
                  dir,
                  web_contents()->GetRenderProcessHost()->GetID(),
-                 web_contents()->GetRenderViewHost()->GetRoutingID(),
+                 web_contents()->GetMainFrame()->GetRoutingID(),
                  id()));
 }
 
@@ -932,6 +937,7 @@ void SavePackage::SaveNextFile(bool process_all_remaining_items) {
                            save_item->referrer(),
                            web_contents()->GetRenderProcessHost()->GetID(),
                            routing_id(),
+                           web_contents()->GetMainFrame()->GetRoutingID(),
                            save_item->save_source(),
                            save_item->full_path(),
                            web_contents()->
@@ -997,13 +1003,16 @@ void SavePackage::DoSavingProcess() {
   }
 }
 
-bool SavePackage::OnMessageReceived(const IPC::Message& message) {
+bool SavePackage::OnMessageReceived(const IPC::Message& message,
+                                    RenderFrameHost* render_frame_host) {
   bool handled = true;
-  IPC_BEGIN_MESSAGE_MAP(SavePackage, message)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_SendCurrentPageAllSavableResourceLinks,
-                        OnReceivedSavableResourceLinksForCurrentPage)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_SendSerializedHtmlData,
-                        OnReceivedSerializedHtmlData)
+  IPC_BEGIN_MESSAGE_MAP_WITH_PARAM(SavePackage, message, render_frame_host)
+    IPC_MESSAGE_HANDLER(FrameHostMsg_SavableResourceLinksResponse,
+                        OnSavableResourceLinksResponse)
+    IPC_MESSAGE_HANDLER(FrameHostMsg_SavableResourceLinksError,
+                        OnSavableResourceLinksError)
+    IPC_MESSAGE_HANDLER(FrameHostMsg_SerializedHtmlWithLocalLinksResponse,
+                        OnSerializedHtmlWithLocalLinksResponse)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
@@ -1013,7 +1022,7 @@ bool SavePackage::OnMessageReceived(const IPC::Message& message) {
 // We collect all URLs which have local storage and send the
 // map:(originalURL:currentLocalPath) to render process (backend).
 // Then render process will serialize DOM and send data to us.
-void SavePackage::GetSerializedHtmlDataForCurrentPageWithLocalLinks() {
+void SavePackage::GetSerializedHtmlWithLocalLinks() {
   if (wait_state_ != HTML_DATA)
     return;
   std::vector<GURL> saved_links;
@@ -1050,41 +1059,48 @@ void SavePackage::GetSerializedHtmlDataForCurrentPageWithLocalLinks() {
   // Get the relative directory name.
   base::FilePath relative_dir_name = saved_main_directory_path_.BaseName();
 
-  Send(new ViewMsg_GetSerializedHtmlDataForCurrentPageWithLocalLinks(
-      routing_id(), saved_links, saved_file_paths, relative_dir_name));
+  // Ask all frames for their serialized data.
+  DCHECK_EQ(0, number_of_frames_pending_response_);
+  web_contents()->ForEachFrame(base::Bind(
+      &SavePackage::GetSerializedHtmlWithLocalLinksForFrame,
+      base::Unretained(this),  // Safe, because ForEachFrame is synchronous.
+      saved_links, saved_file_paths, relative_dir_name));
+  DCHECK_LT(0, number_of_frames_pending_response_);
 }
 
-// Process the serialized HTML content data of a specified web page
-// retrieved from render process.
-void SavePackage::OnReceivedSerializedHtmlData(const GURL& frame_url,
-                                               const std::string& data,
-                                               int32 status) {
+void SavePackage::GetSerializedHtmlWithLocalLinksForFrame(
+    const std::vector<GURL>& saved_links,
+    const std::vector<base::FilePath>& saved_file_paths,
+    const base::FilePath& relative_dir_name,
+    RenderFrameHost* target) {
+  number_of_frames_pending_response_++;
+  target->Send(new FrameMsg_GetSerializedHtmlWithLocalLinks(
+      target->GetRoutingID(), saved_links, saved_file_paths,
+      relative_dir_name));
+}
+
+// Process the serialized HTML content data of a specified frame
+// retrieved from the renderer process.
+void SavePackage::OnSerializedHtmlWithLocalLinksResponse(
+    RenderFrameHost* sender,
+    const GURL& frame_url,
+    const std::string& data,
+    int32 status) {
   WebPageSerializerClient::PageSerializationStatus flag =
       static_cast<WebPageSerializerClient::PageSerializationStatus>(status);
+
+  // When calling WebPageSerializer::serialize in non-recursive mode, the
+  // AllFramesAreFinished is redundant - it is sent by each frame right after
+  // CurrentFrameIsFinished.  Therefore we ignore AllFramesAreFinished and
+  // instead track pending frames in |number_of_frames_pending_response_|.
+  if (flag == WebPageSerializerClient::AllFramesAreFinished)
+    return;
+
   // Check current state.
   if (wait_state_ != HTML_DATA)
     return;
 
   int id = contents_id();
-  // If the all frames are finished saving, we need to close the
-  // remaining SaveItems.
-  if (flag == WebPageSerializerClient::AllFramesAreFinished) {
-    for (SaveUrlItemMap::iterator it = in_progress_items_.begin();
-         it != in_progress_items_.end(); ++it) {
-      DVLOG(20) << " " << __FUNCTION__ << "()"
-                << " save_id = " << it->second->save_id()
-                << " url = \"" << it->second->url().spec() << "\"";
-      BrowserThread::PostTask(
-          BrowserThread::FILE, FROM_HERE,
-          base::Bind(&SaveFileManager::SaveFinished,
-                     file_manager_,
-                     it->second->save_id(),
-                     it->second->url(),
-                     id,
-                     true));
-    }
-    return;
-  }
 
   SaveUrlItemMap::iterator it = in_progress_items_.find(frame_url.spec());
   if (it == in_progress_items_.end()) {
@@ -1134,35 +1150,105 @@ void SavePackage::OnReceivedSerializedHtmlData(const GURL& frame_url,
                    save_item->url(),
                    id,
                    true));
+    number_of_frames_pending_response_--;
+    DCHECK_LE(0, number_of_frames_pending_response_);
+  }
+
+  // If all frames are finished saving, we need to close the remaining
+  // SaveItems.
+  if (number_of_frames_pending_response_ == 0) {
+    for (SaveUrlItemMap::iterator it = in_progress_items_.begin();
+         it != in_progress_items_.end(); ++it) {
+      DVLOG(20) << " " << __FUNCTION__ << "()"
+                << " save_id = " << it->second->save_id() << " url = \""
+                << it->second->url().spec() << "\"";
+      BrowserThread::PostTask(
+          BrowserThread::FILE, FROM_HERE,
+          base::Bind(&SaveFileManager::SaveFinished, file_manager_,
+                     it->second->save_id(), it->second->url(), id, true));
+    }
   }
 }
 
 // Ask for all savable resource links from backend, include main frame and
 // sub-frame.
-void SavePackage::GetAllSavableResourceLinksForCurrentPage() {
+void SavePackage::GetSavableResourceLinks() {
   if (wait_state_ != START_PROCESS)
     return;
 
   wait_state_ = RESOURCES_LIST;
-  Send(new ViewMsg_GetAllSavableResourceLinksForCurrentPage(routing_id(),
-                                                            page_url_));
+
+  DCHECK_EQ(0, number_of_frames_pending_response_);
+  web_contents()->ForEachFrame(base::Bind(
+      &SavePackage::GetSavableResourceLinksForFrame,
+      base::Unretained(this)));  // Safe, because ForEachFrame is synchronous.
+  DCHECK_LT(0, number_of_frames_pending_response_);
 }
 
-// Give backend the lists which contain all resource links that have local
-// storage, after which, render process will serialize DOM for generating
-// HTML data.
-void SavePackage::OnReceivedSavableResourceLinksForCurrentPage(
+void SavePackage::GetSavableResourceLinksForFrame(RenderFrameHost* target) {
+  number_of_frames_pending_response_++;
+  target->Send(new FrameMsg_GetSavableResourceLinks(target->GetRoutingID()));
+}
+
+void SavePackage::OnSavableResourceLinksResponse(
+    RenderFrameHost* sender,
+    const GURL& frame_url,
     const std::vector<GURL>& resources_list,
-    const std::vector<Referrer>& referrers_list,
-    const std::vector<GURL>& frames_list) {
+    const std::vector<Referrer>& referrers_list) {
   if (wait_state_ != RESOURCES_LIST)
     return;
 
   if (resources_list.size() != referrers_list.size())
     return;
 
-  all_save_items_count_ = static_cast<int>(resources_list.size()) +
-                           static_cast<int>(frames_list.size());
+  // Add all sub-resources to wait list.
+  for (int i = 0; i < static_cast<int>(resources_list.size()); ++i) {
+    const GURL& u = resources_list[i];
+    if (!u.is_valid())
+      continue;
+    if (unique_urls_to_save_.count(u))
+      continue;
+    unique_urls_to_save_.insert(u);
+
+    SaveFileCreateInfo::SaveFileSource save_source =
+        u.SchemeIsFile() ? SaveFileCreateInfo::SAVE_FILE_FROM_FILE
+                         : SaveFileCreateInfo::SAVE_FILE_FROM_NET;
+    SaveItem* save_item = new SaveItem(u, referrers_list[i], this, save_source);
+    waiting_item_queue_.push(save_item);
+  }
+
+  // Store savable frame_url for later processing.
+  if (frame_url.is_valid())
+    frame_urls_to_save_.push_back(frame_url);
+
+  CompleteSavableResourceLinksResponse();
+}
+
+void SavePackage::OnSavableResourceLinksError(RenderFrameHost* sender) {
+  CompleteSavableResourceLinksResponse();
+}
+
+void SavePackage::CompleteSavableResourceLinksResponse() {
+  --number_of_frames_pending_response_;
+  DCHECK_LE(0, number_of_frames_pending_response_);
+  if (number_of_frames_pending_response_ != 0)
+    return;  // Need to wait for more responses from RenderFrames.
+
+  // Add frame urls to the waiting_item_queue_.  This is done *after* processing
+  // all savable resource links (i.e. in OnSavableResourceLinksResponse), to
+  // prefer their referrers in cases where the frame url has already been
+  // covered by savable resource links.
+  for (auto& frame_url : frame_urls_to_save_) {
+    DCHECK(frame_url.is_valid());
+    if (0 == unique_urls_to_save_.count(frame_url)) {
+      unique_urls_to_save_.insert(frame_url);
+      SaveItem* save_item = new SaveItem(
+          frame_url, Referrer(), this, SaveFileCreateInfo::SAVE_FILE_FROM_DOM);
+      waiting_item_queue_.push(save_item);
+    }
+  }
+
+  all_save_items_count_ = static_cast<int>(waiting_item_queue_.size());
 
   // We use total bytes as the total number of files we want to save.
   // Hack to avoid touching download_ after user cancel.
@@ -1172,29 +1258,14 @@ void SavePackage::OnReceivedSavableResourceLinksForCurrentPage(
     download_->SetTotalBytes(all_save_items_count_);
 
   if (all_save_items_count_) {
-    // Put all sub-resources to wait list.
-    for (int i = 0; i < static_cast<int>(resources_list.size()); ++i) {
-      const GURL& u = resources_list[i];
-      DCHECK(u.is_valid());
-      SaveFileCreateInfo::SaveFileSource save_source = u.SchemeIsFile() ?
-          SaveFileCreateInfo::SAVE_FILE_FROM_FILE :
-          SaveFileCreateInfo::SAVE_FILE_FROM_NET;
-      SaveItem* save_item = new SaveItem(u, referrers_list[i],
-                                         this, save_source);
-      waiting_item_queue_.push(save_item);
-    }
-    // Put all HTML resources to wait list.
-    for (int i = 0; i < static_cast<int>(frames_list.size()); ++i) {
-      const GURL& u = frames_list[i];
-      DCHECK(u.is_valid());
-      SaveItem* save_item = new SaveItem(
-          u, Referrer(), this, SaveFileCreateInfo::SAVE_FILE_FROM_DOM);
-      waiting_item_queue_.push(save_item);
-    }
     wait_state_ = NET_FILES;
+
+    // Give backend the lists which contain all resource links that have local
+    // storage, after which, render process will serialize DOM for generating
+    // HTML data.
     DoSavingProcess();
   } else {
-    // No resource files need to be saved, treat it as user cancel.
+    // No savable frames and/or resources - treat it as user cancel.
     Cancel(true);
   }
 }
@@ -1214,11 +1285,11 @@ base::FilePath SavePackage::GetSuggestedNameForSaveAs(
   // back to a URL, and if it matches the original page URL, we know the page
   // had no title (or had a title equal to its URL, which is fine to treat
   // similarly).
-  if (title_ == net::FormatUrl(page_url_, accept_langs)) {
+  if (title_ == url_formatter::FormatUrl(page_url_, accept_langs)) {
     std::string url_path;
     if (!page_url_.SchemeIs(url::kDataScheme)) {
-      std::vector<std::string> url_parts;
-      base::SplitString(page_url_.path(), '/', &url_parts);
+      std::vector<std::string> url_parts = base::SplitString(
+          page_url_.path(), "/", base::TRIM_WHITESPACE, base::SPLIT_WANT_ALL);
       if (!url_parts.empty()) {
         for (int i = static_cast<int>(url_parts.size()) - 1; i >= 0; --i) {
           url_path = url_parts[i];

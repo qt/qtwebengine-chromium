@@ -47,7 +47,7 @@ TEST_F(CachingWordShaperTest, LatinLeftToRightByWord)
     TextRun textRun(reinterpret_cast<const LChar*>("ABC DEF."), 8);
 
     RefPtr<ShapeResult> result;
-    CachingWordShapeIterator iterator(cache, textRun, font, fallbackFonts);
+    CachingWordShapeIterator iterator(cache, textRun, font);
     ASSERT_TRUE(iterator.next(&result));
     ASSERT_TRUE(result->runInfoForTesting(0, startIndex, numGlyphs, script));
     EXPECT_EQ(0u, startIndex);
@@ -76,7 +76,7 @@ TEST_F(CachingWordShaperTest, CommonAccentLeftToRightByWord)
 
     unsigned offset = 0;
     RefPtr<ShapeResult> result;
-    CachingWordShapeIterator iterator(cache, textRun, font, fallbackFonts);
+    CachingWordShapeIterator iterator(cache, textRun, font);
     ASSERT_TRUE(iterator.next(&result));
     ASSERT_TRUE(result->runInfoForTesting(0, startIndex, numGlyphs, script));
     EXPECT_EQ(0u, offset + startIndex);
@@ -176,5 +176,27 @@ TEST_F(CachingWordShaperTest, SubRunWithZeroGlyphs)
     shaper.selectionRect(font, textRun, point, height, 0, 8);
 }
 
+TEST_F(CachingWordShaperTest, TextOrientationFallbackShouldNotInFallbackList)
+{
+    const UChar str[] = {
+        'A', // code point for verticalRightOrientationFontData()
+        // Ideally we'd like to test uprightOrientationFontData() too
+        // using code point such as U+3042, but it'd fallback to system
+        // fonts as the glyph is missing.
+        0x0
+    };
+    TextRun textRun(str, 1);
+
+    fontDescription.setOrientation(FontOrientation::VerticalMixed);
+    OwnPtr<Font> verticalMixedFont = adoptPtr(new Font(fontDescription));
+    verticalMixedFont->update(nullptr);
+    ASSERT_TRUE(verticalMixedFont->canShapeWordByWord());
+
+    CachingWordShaper shaper;
+    FloatRect glyphBounds;
+    HashSet<const SimpleFontData*> fallbackFonts;
+    ASSERT_GT(shaper.width(verticalMixedFont.get(), textRun, &fallbackFonts, &glyphBounds), 0);
+    EXPECT_EQ(0u, fallbackFonts.size());
+}
 
 } // namespace blink

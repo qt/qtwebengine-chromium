@@ -141,7 +141,7 @@ SourceBuffer* MediaSource::addSourceBuffer(const String& type, ExceptionState& e
 
     // 5. Create a new SourceBuffer object and associated resources.
     ContentType contentType(type);
-    Vector<String> codecs = contentType.codecs();
+    String codecs = contentType.parameter("codecs");
     OwnPtr<WebSourceBuffer> webSourceBuffer = createWebSourceBuffer(contentType.type(), codecs, exceptionState);
 
     if (!webSourceBuffer) {
@@ -156,6 +156,7 @@ SourceBuffer* MediaSource::addSourceBuffer(const String& type, ExceptionState& e
     m_sourceBuffers->add(buffer);
 
     // 7. Return the new object to the caller.
+    WTF_LOG(Media, "MediaSource::addSourceBuffer(%s) %p -> %p", type.ascii().data(), this, buffer);
     return buffer;
 }
 
@@ -226,31 +227,37 @@ bool MediaSource::isUpdating() const
 
 bool MediaSource::isTypeSupported(const String& type)
 {
-    WTF_LOG(Media, "MediaSource::isTypeSupported(%s)", type.ascii().data());
-
     // Section 2.2 isTypeSupported() method steps.
     // https://dvcs.w3.org/hg/html-media/raw-file/tip/media-source/media-source.html#widl-MediaSource-isTypeSupported-boolean-DOMString-type
     // 1. If type is an empty string, then return false.
-    if (type.isNull() || type.isEmpty())
+    if (type.isEmpty()) {
+        WTF_LOG(Media, "MediaSource::isTypeSupported(%s) -> false (empty input)", type.ascii().data());
         return false;
+    }
 
     ContentType contentType(type);
     String codecs = contentType.parameter("codecs");
 
     // 2. If type does not contain a valid MIME type string, then return false.
-    if (contentType.type().isEmpty())
+    if (contentType.type().isEmpty()) {
+        WTF_LOG(Media, "MediaSource::isTypeSupported(%s) -> false (invalid mime type)", type.ascii().data());
         return false;
+    }
 
     // Note: MediaSource.isTypeSupported() returning true implies that HTMLMediaElement.canPlayType() will return "maybe" or "probably"
     // since it does not make sense for a MediaSource to support a type the HTMLMediaElement knows it cannot play.
-    if (HTMLMediaElement::supportsType(contentType, String()) == WebMimeRegistry::IsNotSupported)
+    if (HTMLMediaElement::supportsType(contentType, String()) == WebMimeRegistry::IsNotSupported) {
+        WTF_LOG(Media, "MediaSource::isTypeSupported(%s) -> false (not supported by HTMLMediaElement)", type.ascii().data());
         return false;
+    }
 
     // 3. If type contains a media type or media subtype that the MediaSource does not support, then return false.
     // 4. If type contains at a codec that the MediaSource does not support, then return false.
     // 5. If the MediaSource does not support the specified combination of media type, media subtype, and codecs then return false.
     // 6. Return true.
-    return MIMETypeRegistry::isSupportedMediaSourceMIMEType(contentType.type(), codecs);
+    bool result = MIMETypeRegistry::isSupportedMediaSourceMIMEType(contentType.type(), codecs);
+    WTF_LOG(Media, "MediaSource::isTypeSupported(%s) -> %s", type.ascii().data(), result ? "true" : "false");
+    return result;
 }
 
 const AtomicString& MediaSource::interfaceName() const
@@ -265,9 +272,7 @@ ExecutionContext* MediaSource::executionContext() const
 
 DEFINE_TRACE(MediaSource)
 {
-#if ENABLE(OILPAN)
     visitor->trace(m_asyncEventQueue);
-#endif
     visitor->trace(m_attachedElement);
     visitor->trace(m_sourceBuffers);
     visitor->trace(m_activeSourceBuffers);
@@ -302,11 +307,11 @@ double MediaSource::duration() const
     return isClosed() ? std::numeric_limits<float>::quiet_NaN() : m_webMediaSource->duration();
 }
 
-PassRefPtrWillBeRawPtr<TimeRanges> MediaSource::buffered() const
+TimeRanges* MediaSource::buffered() const
 {
     // Implements MediaSource algorithm for HTMLMediaElement.buffered.
     // https://dvcs.w3.org/hg/html-media/raw-file/default/media-source/media-source.html#htmlmediaelement-extensions
-    WillBeHeapVector<RefPtrWillBeMember<TimeRanges>> ranges(m_activeSourceBuffers->length());
+    HeapVector<Member<TimeRanges>> ranges(m_activeSourceBuffers->length());
     for (size_t i = 0; i < m_activeSourceBuffers->length(); ++i)
         ranges[i] = m_activeSourceBuffers->item(i)->buffered(ASSERT_NO_EXCEPTION);
 
@@ -328,7 +333,7 @@ PassRefPtrWillBeRawPtr<TimeRanges> MediaSource::buffered() const
         return TimeRanges::create();
 
     // 4. Let intersection ranges equal a TimeRange object containing a single range from 0 to highest end time.
-    RefPtrWillBeRawPtr<TimeRanges> intersectionRanges = TimeRanges::create(0, highestEndTime);
+    TimeRanges* intersectionRanges = TimeRanges::create(0, highestEndTime);
 
     // 5. For each SourceBuffer object in activeSourceBuffers run the following steps:
     bool ended = readyState() == endedKeyword();
@@ -345,10 +350,10 @@ PassRefPtrWillBeRawPtr<TimeRanges> MediaSource::buffered() const
         intersectionRanges->intersectWith(sourceRanges);
     }
 
-    return intersectionRanges.release();
+    return intersectionRanges;
 }
 
-PassRefPtrWillBeRawPtr<TimeRanges> MediaSource::seekable() const
+TimeRanges* MediaSource::seekable() const
 {
     // Implements MediaSource algorithm for HTMLMediaElement.seekable.
     // https://dvcs.w3.org/hg/html-media/raw-file/default/media-source/media-source.html#htmlmediaelement-extensions
@@ -360,7 +365,7 @@ PassRefPtrWillBeRawPtr<TimeRanges> MediaSource::seekable() const
 
     // If duration equals positive Infinity:
     if (sourceDuration == std::numeric_limits<double>::infinity()) {
-        RefPtrWillBeRawPtr<TimeRanges> buffered = m_attachedElement->buffered();
+        TimeRanges* buffered = m_attachedElement->buffered();
 
         // 1. If the HTMLMediaElement.buffered attribute returns an empty TimeRanges object, then
         // return an empty TimeRanges object and abort these steps.
@@ -517,6 +522,11 @@ void MediaSource::setSourceBufferActive(SourceBuffer* sourceBuffer)
     m_activeSourceBuffers->insert(insertPosition, sourceBuffer);
 }
 
+HTMLMediaElement* MediaSource::mediaElement() const
+{
+    return m_attachedElement.get();
+}
+
 bool MediaSource::isClosed() const
 {
     return readyState() == closedKeyword();
@@ -563,7 +573,7 @@ void MediaSource::stop()
     m_webMediaSource.clear();
 }
 
-PassOwnPtr<WebSourceBuffer> MediaSource::createWebSourceBuffer(const String& type, const Vector<String>& codecs, ExceptionState& exceptionState)
+PassOwnPtr<WebSourceBuffer> MediaSource::createWebSourceBuffer(const String& type, const String& codecs, ExceptionState& exceptionState)
 {
     WebSourceBuffer* webSourceBuffer = 0;
 

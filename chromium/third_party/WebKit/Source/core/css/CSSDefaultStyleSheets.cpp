@@ -66,8 +66,8 @@ static PassRefPtrWillBeRawPtr<StyleSheetContents> parseUASheet(const String& str
 {
     RefPtrWillBeRawPtr<StyleSheetContents> sheet = StyleSheetContents::create(CSSParserContext(UASheetMode, 0));
     sheet->parseString(str);
-    // User Agent stylesheets are parsed once for the lifetime of the layoutObject
-    // and are intentionally leaked.
+    // User Agent stylesheets are parsed once for the lifetime of the renderer
+    // process and are intentionally leaked.
     WTF_ANNOTATE_LEAKING_OBJECT_PTR(sheet.get());
     return sheet.release();
 }
@@ -156,7 +156,10 @@ void CSSDefaultStyleSheets::ensureDefaultStyleSheetsForElement(const Element& el
 
     // FIXME: We should assert that this sheet only contains rules for <video> and <audio>.
     if (!m_mediaControlsStyleSheet && (isHTMLVideoElement(element) || isHTMLAudioElement(element))) {
-        String mediaRules = loadResourceAsASCIIString("mediaControls.css") + LayoutTheme::theme().extraMediaControlsStyleSheet();
+        String mediaRules = loadResourceAsASCIIString(
+            RuntimeEnabledFeatures::newMediaPlaybackUiEnabled() ?
+            "mediaControlsNew.css" : "mediaControls.css") +
+            LayoutTheme::theme().extraMediaControlsStyleSheet();
         m_mediaControlsStyleSheet = parseUASheet(mediaRules);
         m_defaultStyle->addRulesFromSheet(mediaControlsStyleSheet(), screenEval());
         m_defaultPrintStyle->addRulesFromSheet(mediaControlsStyleSheet(), printEval());

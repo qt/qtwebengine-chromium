@@ -38,7 +38,8 @@ interface Document : Node {
     readonly attribute DOMString compatMode;
 
     readonly attribute DOMString characterSet;
-    [MeasureAs=DocumentInputEncoding, ImplementedAs=characterSet] readonly attribute DOMString inputEncoding; // legacy alias of .characterSet
+    [ImplementedAs=characterSet] readonly attribute DOMString charset; // legacy alias of .characterSet
+    [ImplementedAs=characterSet] readonly attribute DOMString inputEncoding; // legacy alias of .characterSet
     readonly attribute DOMString contentType;
 
     readonly attribute DocumentType? doctype;
@@ -80,6 +81,12 @@ interface Document : Node {
     // https://html.spec.whatwg.org/#the-document-object
 
     // resource metadata management
+
+    // Inheritance of [Unforgeable] attributes is not supported.  So we have to
+    // define the same unforgeable attributes in derived interfaces as well.
+    // See that HTMLDocument and XMLDocument redefine 'location' attribute.
+    // Keep all the definitions consistent.
+    // TODO(yukishiino): Support inheritance of attributes defined on instance.
     [PutForwards=href, Unforgeable] readonly attribute Location? location;
     [RaisesException=Setter] attribute DOMString domain;
     readonly attribute DOMString referrer;
@@ -114,8 +121,7 @@ interface Document : Node {
     [ImplementedAs=domWindow] readonly attribute Window? defaultView;
     readonly attribute Element? activeElement;
     boolean hasFocus();
-    // FIXME: designMode should not have [TreatNullAs=NullString].
-    [TreatNullAs=NullString, CustomElementCallbacks, MeasureAs=DocumentDesignMode] attribute DOMString designMode;
+    [CustomElementCallbacks, MeasureAs=DocumentDesignMode] attribute DOMString designMode;
     [CustomElementCallbacks, RaisesException] boolean execCommand(DOMString commandId, optional boolean showUI = false, optional DOMString value = "");
     [RaisesException] boolean queryCommandEnabled(DOMString commandId);
     [RaisesException] boolean queryCommandIndeterm(DOMString commandId);
@@ -196,7 +202,6 @@ interface Document : Node {
     readonly attribute VisibilityState visibilityState;
 
     // Non-standard APIs
-    [MeasureAs=DocumentCharset] readonly attribute DOMString charset;
     [MeasureAs=DocumentDefaultCharset, TreatReturnedNullStringAs=Undefined] readonly attribute DOMString defaultCharset;
     [MeasureAs=DocumentCaretRangeFromPoint] Range caretRangeFromPoint([Default=Undefined] optional long x, [Default=Undefined] optional long y);
     [CallWith=ScriptState, DeprecateAs=DocumentGetCSSCanvasContext] any getCSSCanvasContext(DOMString contextId, DOMString name, long width, long height);

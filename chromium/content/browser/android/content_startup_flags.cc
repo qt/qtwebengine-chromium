@@ -59,7 +59,6 @@ void SetContentCommandLineFlags(bool single_process,
   parsed_command_line->AppendSwitch(cc::switches::kEnableBeginFrameScheduling);
 
   parsed_command_line->AppendSwitch(switches::kEnablePinch);
-  parsed_command_line->AppendSwitch(switches::kEnableOverlayFullscreenVideo);
   parsed_command_line->AppendSwitch(switches::kEnableOverlayScrollbar);
   parsed_command_line->AppendSwitch(switches::kValidateInputEventStream);
 
@@ -81,7 +80,6 @@ void SetContentCommandLineFlags(bool single_process,
   if (base::SysInfo::IsLowEndDevice())
     parsed_command_line->AppendSwitch(switches::kInProcessGPU);
 
-  parsed_command_line->AppendSwitch(switches::kEnableViewportMeta);
   parsed_command_line->AppendSwitch(
       switches::kMainFrameResizesAreOrientationChanges);
 
@@ -90,8 +88,6 @@ void SetContentCommandLineFlags(bool single_process,
       cc::switches::kDisableCompositedAntialiasing);
 
   parsed_command_line->AppendSwitch(switches::kUIPrioritizeInGpuProcess);
-
-  parsed_command_line->AppendSwitch(switches::kEnableDelegatedRenderer);
 
   if (!plugin_descriptor.empty()) {
     parsed_command_line->AppendSwitchNative(

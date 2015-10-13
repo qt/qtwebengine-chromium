@@ -31,6 +31,10 @@ namespace gfx {
 class Range;
 }
 
+namespace url {
+class Origin;
+}
+
 namespace v8 {
 template <typename T> class Local;
 class Context;
@@ -111,6 +115,9 @@ class CONTENT_EXPORT RenderFrame : public IPC::Listener,
   // Execute a string of JavaScript in this frame's context.
   virtual void ExecuteJavaScript(const base::string16& javascript) = 0;
 
+  // Returns true if this is the main (top-level) frame.
+  virtual bool IsMainFrame() = 0;
+
   // Return true if this frame is hidden.
   virtual bool IsHidden() = 0;
 
@@ -122,7 +129,7 @@ class CONTENT_EXPORT RenderFrame : public IPC::Listener,
   // whitelist is later updated and includes |content_origin|, then
   // |unthrottle_callback| will be called.
   virtual void RegisterPeripheralPlugin(
-      const GURL& content_origin,
+      const url::Origin& content_origin,
       const base::Closure& unthrottle_callback) = 0;
 #endif
 

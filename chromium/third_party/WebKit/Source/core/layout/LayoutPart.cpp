@@ -34,7 +34,7 @@
 #include "core/layout/LayoutView.h"
 #include "core/layout/svg/LayoutSVGRoot.h"
 #include "core/paint/BoxPainter.h"
-#include "core/paint/DeprecatedPaintLayer.h"
+#include "core/paint/PaintLayer.h"
 #include "core/paint/PartPainter.h"
 #include "core/plugins/PluginView.h"
 
@@ -96,7 +96,7 @@ LayoutPart::~LayoutPart()
 
 Widget* LayoutPart::widget() const
 {
-    // Plugin widgets are stored in their DOM node. This includes HTMLAppletElement.
+    // Plugin widgets are stored in their DOM node.
     Element* element = toElement(node());
 
     if (element && element->isFrameOwnerElement())
@@ -105,12 +105,12 @@ Widget* LayoutPart::widget() const
     return nullptr;
 }
 
-DeprecatedPaintLayerType LayoutPart::layerTypeRequired() const
+PaintLayerType LayoutPart::layerTypeRequired() const
 {
-    DeprecatedPaintLayerType type = LayoutReplaced::layerTypeRequired();
-    if (type != NoDeprecatedPaintLayer)
+    PaintLayerType type = LayoutReplaced::layerTypeRequired();
+    if (type != NoPaintLayer)
         return type;
-    return ForcedDeprecatedPaintLayer;
+    return ForcedPaintLayer;
 }
 
 bool LayoutPart::requiresAcceleratedCompositing() const
@@ -160,31 +160,46 @@ bool LayoutPart::nodeAtPoint(HitTestResult& result, const HitTestLocation& locat
     if (!widget() || !widget()->isFrameView() || !result.hitTestRequest().allowsChildFrameContent())
         return nodeAtPointOverWidget(result, locationInContainer, accumulatedOffset, action);
 
-    FrameView* childFrameView = toFrameView(widget());
-    LayoutView* childRoot = childFrameView->layoutView();
+    if (action == HitTestForeground) {
+        FrameView* childFrameView = toFrameView(widget());
+        LayoutView* childRoot = childFrameView->layoutView();
 
-    if (visibleToHitTestRequest(result.hitTestRequest()) && childRoot) {
-        LayoutPoint adjustedLocation = accumulatedOffset + location();
-        LayoutPoint contentOffset = LayoutPoint(borderLeft() + paddingLeft(), borderTop() + paddingTop()) - LayoutSize(childFrameView->scrollOffset());
-        HitTestLocation newHitTestLocation(locationInContainer, -adjustedLocation - contentOffset);
-        HitTestRequest newHitTestRequest(result.hitTestRequest().type() | HitTestRequest::ChildFrameHitTest);
-        HitTestResult childFrameResult(newHitTestRequest, newHitTestLocation);
+        if (visibleToHitTestRequest(result.hitTestRequest()) && childRoot) {
+            LayoutPoint adjustedLocation = accumulatedOffset + location();
+            LayoutPoint contentOffset = LayoutPoint(borderLeft() + paddingLeft(), borderTop() + paddingTop()) - LayoutSize(childFrameView->scrollOffset());
+            HitTestLocation newHitTestLocation(locationInContainer, -adjustedLocation - contentOffset);
+            HitTestRequest newHitTestRequest(result.hitTestRequest().type() | HitTestRequest::ChildFrameHitTest);
+            HitTestResult childFrameResult(newHitTestRequest, newHitTestLocation);
 
-        // The frame's layout and style must be up-to-date if we reach here.
-        bool isInsideChildFrame = childRoot->hitTestNoLifecycleUpdate(childFrameResult);
+            // The frame's layout and style must be up-to-date if we reach here.
+            bool isInsideChildFrame = childRoot->hitTestNoLifecycleUpdate(childFrameResult);
 
-        if (result.hitTestRequest().listBased()) {
-            result.append(childFrameResult);
-        } else if (isInsideChildFrame) {
-            // Force the result not to be cacheable because the parent
-            // frame should not cache this result; as it won't be notified of
-            // changes in the child.
-            childFrameResult.setCacheable(false);
-            result = childFrameResult;
+            if (result.hitTestRequest().listBased()) {
+                result.append(childFrameResult);
+            } else if (isInsideChildFrame) {
+                // Force the result not to be cacheable because the parent
+                // frame should not cache this result; as it won't be notified of
+                // changes in the child.
+                childFrameResult.setCacheable(false);
+                result = childFrameResult;
+            }
+
+            // Don't trust |isInsideChildFrame|. For rect-based hit-test, returns
+            // true only when the hit test rect is totally within the iframe,
+            // i.e. nodeAtPointOverWidget() also returns true.
+            // Use a temporary HitTestResult because we don't want to collect the
+            // iframe element itself if the hit-test rect is totally within the iframe.
+            if (isInsideChildFrame) {
+                if (!locationInContainer.isRectBasedTest())
+                    return true;
+                HitTestResult pointOverWidgetResult = result;
+                bool pointOverWidget = nodeAtPointOverWidget(pointOverWidgetResult, locationInContainer, accumulatedOffset, action);
+                if (pointOverWidget)
+                    return true;
+                result = pointOverWidgetResult;
+                return false;
+            }
         }
-
-        if (isInsideChildFrame)
-            return true;
     }
 
     return nodeAtPointOverWidget(result, locationInContainer, accumulatedOffset, action);
@@ -223,12 +238,12 @@ void LayoutPart::layout()
     clearNeedsLayout();
 }
 
-void LayoutPart::paint(const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
+void LayoutPart::paint(const PaintInfo& paintInfo, const LayoutPoint& paintOffset) const
 {
     PartPainter(*this).paint(paintInfo, paintOffset);
 }
 
-void LayoutPart::paintContents(const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
+void LayoutPart::paintContents(const PaintInfo& paintInfo, const LayoutPoint& paintOffset) const
 {
     PartPainter(*this).paintContents(paintInfo, paintOffset);
 }
@@ -295,7 +310,7 @@ bool LayoutPart::updateWidgetGeometry()
     ASSERT(widget);
 
     LayoutRect contentBox = contentBoxRect();
-    LayoutRect absoluteContentBox(localToAbsoluteQuad(FloatQuad(contentBox)).boundingBox());
+    LayoutRect absoluteContentBox(localToAbsoluteQuad(FloatQuad(FloatRect(contentBox))).boundingBox());
     if (widget->isFrameView()) {
         contentBox.setLocation(absoluteContentBox.location());
         return setWidgetGeometry(contentBox);

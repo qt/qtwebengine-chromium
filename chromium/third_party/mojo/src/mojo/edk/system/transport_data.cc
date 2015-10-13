@@ -2,14 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "mojo/edk/system/transport_data.h"
+#include "third_party/mojo/src/mojo/edk/system/transport_data.h"
 
 #include <string.h>
 
 #include "base/logging.h"
-#include "mojo/edk/system/channel.h"
-#include "mojo/edk/system/configuration.h"
-#include "mojo/edk/system/message_in_transit.h"
+#include "third_party/mojo/src/mojo/edk/system/channel.h"
+#include "third_party/mojo/src/mojo/edk/system/configuration.h"
+#include "third_party/mojo/src/mojo/edk/system/message_in_transit.h"
 
 namespace mojo {
 namespace system {
@@ -20,7 +20,7 @@ namespace system {
 // |TransportData::kMaxBufferSize|. This value should be a multiple of the
 // alignment in order to simplify calculations, even though the actual amount of
 // space needed need not be a multiple of the alignment.
-const size_t kMaxSizePerPlatformHandle = 8;
+const size_t kMaxSizePerPlatformHandle = 16;
 static_assert(kMaxSizePerPlatformHandle % MessageInTransit::kMessageAlignment ==
                   0,
               "kMaxSizePerPlatformHandle not a multiple of alignment");

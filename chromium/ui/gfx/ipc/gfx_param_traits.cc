@@ -7,6 +7,7 @@
 #include <string>
 
 #include "third_party/skia/include/core/SkBitmap.h"
+#include "ui/gfx/geometry/point3_f.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/geometry/rect_f.h"
 #include "ui/gfx/range/range.h"
@@ -53,16 +54,15 @@ struct SkBitmap_Data {
 namespace IPC {
 
 void ParamTraits<gfx::Point>::Write(Message* m, const gfx::Point& p) {
-  m->WriteInt(p.x());
-  m->WriteInt(p.y());
+  WriteParam(m, p.x());
+  WriteParam(m, p.y());
 }
 
 bool ParamTraits<gfx::Point>::Read(const Message* m,
                                    base::PickleIterator* iter,
                                    gfx::Point* r) {
   int x, y;
-  if (!iter->ReadInt(&x) ||
-      !iter->ReadInt(&y))
+  if (!ReadParam(m, iter, &x) || !ReadParam(m, iter, &y))
     return false;
   r->set_x(x);
   r->set_y(y);
@@ -73,25 +73,47 @@ void ParamTraits<gfx::Point>::Log(const gfx::Point& p, std::string* l) {
   l->append(base::StringPrintf("(%d, %d)", p.x(), p.y()));
 }
 
-void ParamTraits<gfx::PointF>::Write(Message* m, const gfx::PointF& v) {
-  ParamTraits<float>::Write(m, v.x());
-  ParamTraits<float>::Write(m, v.y());
+void ParamTraits<gfx::PointF>::Write(Message* m, const gfx::PointF& p) {
+  WriteParam(m, p.x());
+  WriteParam(m, p.y());
 }
 
 bool ParamTraits<gfx::PointF>::Read(const Message* m,
                                     base::PickleIterator* iter,
                                     gfx::PointF* r) {
   float x, y;
-  if (!ParamTraits<float>::Read(m, iter, &x) ||
-      !ParamTraits<float>::Read(m, iter, &y))
+  if (!ReadParam(m, iter, &x) || !ReadParam(m, iter, &y))
     return false;
   r->set_x(x);
   r->set_y(y);
   return true;
 }
 
-void ParamTraits<gfx::PointF>::Log(const gfx::PointF& v, std::string* l) {
-  l->append(base::StringPrintf("(%f, %f)", v.x(), v.y()));
+void ParamTraits<gfx::PointF>::Log(const gfx::PointF& p, std::string* l) {
+  l->append(base::StringPrintf("(%f, %f)", p.x(), p.y()));
+}
+
+void ParamTraits<gfx::Point3F>::Write(Message* m, const gfx::Point3F& p) {
+  WriteParam(m, p.x());
+  WriteParam(m, p.y());
+  WriteParam(m, p.z());
+}
+
+bool ParamTraits<gfx::Point3F>::Read(const Message* m,
+                                     base::PickleIterator* iter,
+                                     gfx::Point3F* r) {
+  float x, y, z;
+  if (!ReadParam(m, iter, &x) || !ReadParam(m, iter, &y) ||
+      !ReadParam(m, iter, &z))
+    return false;
+  r->set_x(x);
+  r->set_y(y);
+  r->set_z(z);
+  return true;
+}
+
+void ParamTraits<gfx::Point3F>::Log(const gfx::Point3F& p, std::string* l) {
+  l->append(base::StringPrintf("(%f, %f, %f)", p.x(), p.y(), p.z()));
 }
 
 void ParamTraits<gfx::Size>::Write(Message* m, const gfx::Size& p) {
@@ -287,5 +309,25 @@ void ParamTraits<gfx::Range>::Log(const gfx::Range& r, std::string* l) {
   l->append(base::StringPrintf("(%" PRIuS ", %" PRIuS ")", r.start(), r.end()));
 }
 
+}  // namespace IPC
 
+// Generate param traits write methods.
+#include "ipc/param_traits_write_macros.h"
+namespace IPC {
+#undef UI_GFX_IPC_GFX_PARAM_TRAITS_MACROS_H_
+#include "ui/gfx/ipc/gfx_param_traits_macros.h"
+}  // namespace IPC
+
+// Generate param traits read methods.
+#include "ipc/param_traits_read_macros.h"
+namespace IPC {
+#undef UI_GFX_IPC_GFX_PARAM_TRAITS_MACROS_H_
+#include "ui/gfx/ipc/gfx_param_traits_macros.h"
+}  // namespace IPC
+
+// Generate param traits log methods.
+#include "ipc/param_traits_log_macros.h"
+namespace IPC {
+#undef UI_GFX_IPC_GFX_PARAM_TRAITS_MACROS_H_
+#include "ui/gfx/ipc/gfx_param_traits_macros.h"
 }  // namespace IPC

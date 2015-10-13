@@ -39,6 +39,15 @@ bool ContentBrowserClient::ShouldUseProcessPerSite(
   return false;
 }
 
+bool ContentBrowserClient::ShouldLockToOrigin(BrowserContext* browser_context,
+                                              const GURL& effective_url) {
+  return true;
+}
+
+bool ContentBrowserClient::LogWebUIUrl(const GURL& web_ui_url) const {
+  return false;
+}
+
 net::URLRequestContextGetter* ContentBrowserClient::CreateRequestContext(
     BrowserContext* browser_context,
     ProtocolHandlerMap* protocol_handlers,
@@ -63,6 +72,12 @@ bool ContentBrowserClient::IsHandledURL(const GURL& url) {
 bool ContentBrowserClient::CanCommitURL(RenderProcessHost* process_host,
                                         const GURL& site_url) {
   return true;
+}
+
+bool ContentBrowserClient::IsIllegalOrigin(ResourceContext* resource_context,
+                                           int child_process_id,
+                                           const GURL& origin) {
+  return false;
 }
 
 bool ContentBrowserClient::ShouldAllowOpenURL(SiteInstance* site_instance,
@@ -285,6 +300,10 @@ std::string ContentBrowserClient::GetDefaultDownloadName() {
   return std::string();
 }
 
+base::FilePath ContentBrowserClient::GetShaderDiskCacheDirectory() {
+  return base::FilePath();
+}
+
 BrowserPpapiHost*
     ContentBrowserClient::GetExternalBrowserPpapiHost(int plugin_process_id) {
   return nullptr;
@@ -342,6 +361,12 @@ void ContentBrowserClient::OpenURL(
     const content::OpenURLParams& params,
     const base::Callback<void(content::WebContents*)>& callback) {
   callback.Run(nullptr);
+}
+
+ScopedVector<NavigationThrottle>
+ContentBrowserClient::CreateThrottlesForNavigation(
+    NavigationHandle* navigation_handle) {
+  return ScopedVector<NavigationThrottle>();
 }
 
 #if defined(OS_WIN)

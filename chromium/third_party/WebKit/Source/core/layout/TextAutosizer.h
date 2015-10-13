@@ -52,6 +52,7 @@ class LayoutBlock;
 // http://tinyurl.com/TextAutosizer
 
 class CORE_EXPORT TextAutosizer final : public NoBaseWillBeGarbageCollectedFinalized<TextAutosizer> {
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(TextAutosizer);
     WTF_MAKE_NONCOPYABLE(TextAutosizer);
 public:
     static PassOwnPtrWillBeRawPtr<TextAutosizer> create(const Document* document)
@@ -65,18 +66,22 @@ public:
     void record(const LayoutBlock*);
     void destroy(const LayoutBlock*);
 
+    bool pageNeedsAutosizing() const;
+
     DECLARE_TRACE();
 
     class LayoutScope {
+        STACK_ALLOCATED();
     public:
         explicit LayoutScope(LayoutBlock*);
         ~LayoutScope();
     protected:
-        TextAutosizer* m_textAutosizer;
+        RawPtrWillBeMember<TextAutosizer> m_textAutosizer;
         LayoutBlock* m_block;
     };
 
     class TableLayoutScope : LayoutScope {
+        STACK_ALLOCATED();
     public:
         explicit TableLayoutScope(LayoutTable*);
     };
@@ -135,6 +140,8 @@ private:
     // belong to a supercluster will share a common multiplier and
     // text-length-based autosizing status.
     struct Supercluster {
+        WTF_MAKE_FAST_ALLOCATED(Supercluster);
+    public:
         explicit Supercluster(const BlockSet* roots)
             : m_roots(roots)
             , m_hasEnoughTextToAutosize(UnknownAmountOfText)
@@ -148,6 +155,8 @@ private:
     };
 
     struct Cluster {
+        WTF_MAKE_FAST_ALLOCATED(Cluster);
+    public:
         explicit Cluster(const LayoutBlock* root, BlockFlags flags, Cluster* parent, Supercluster* supercluster = nullptr)
             : m_root(root)
             , m_flags(flags)
@@ -183,6 +192,7 @@ private:
     };
 
     struct FingerprintSourceData {
+        STACK_ALLOCATED();
         FingerprintSourceData()
             : m_parentHash(0)
             , m_qualifiedNameHash(0)
@@ -210,6 +220,7 @@ private:
     // Fingerprints are computed during style recalc, for (some subset of)
     // blocks that will become cluster roots.
     class FingerprintMapper {
+        DISALLOW_ALLOCATION();
     public:
         void add(const LayoutObject*, Fingerprint);
         void addTentativeClusterRoot(const LayoutBlock*, Fingerprint);
@@ -230,6 +241,7 @@ private:
     };
 
     struct PageInfo {
+        DISALLOW_ALLOCATION();
         PageInfo()
             : m_frameWidth(0)
             , m_layoutWidth(0)

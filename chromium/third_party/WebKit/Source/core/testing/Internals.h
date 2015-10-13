@@ -50,12 +50,10 @@ class DOMArrayBuffer;
 class DOMPoint;
 class DictionaryTest;
 class Document;
-class DocumentFragment;
 class DocumentMarker;
 class Element;
 class ExceptionState;
 class GCObservation;
-class HTMLElement;
 class HTMLMediaElement;
 class InternalRuntimeFlags;
 class InternalSettings;
@@ -65,7 +63,6 @@ class LocalDOMWindow;
 class LocalFrame;
 class Node;
 class Page;
-class PluginPlaceholderOptions;
 class PrivateScriptTest;
 class Range;
 class SerializedScriptValue;
@@ -113,10 +110,16 @@ public:
     // Animation testing.
     void pauseAnimations(double pauseTime, ExceptionState&);
     bool isCompositedAnimation(Animation*);
+    void disableCompositedAnimation(Animation*);
 
     // Modifies m_desiredFrameStartTime in BitmapImage to advance the next frame time
     // for testing whether animated images work properly.
     void advanceTimeForImage(Element* image, double deltaTimeInSeconds, ExceptionState&);
+
+    // Advances an animated image. For BitmapImage (e.g., animated gifs) this
+    // will advance to the next frame. For SVGImage, this will trigger an
+    // animation update for CSS and advance the SMIL timeline by one frame.
+    void advanceImageAnimation(Element* image, ExceptionState&);
 
     bool isValidContentSelect(Element* insertionPoint, ExceptionState&);
     Node* treeScopeRootNode(Node*);
@@ -169,7 +172,6 @@ public:
     void setSuggestedValue(Element*, const String&, ExceptionState&);
     void setEditingValue(Element* inputElement, const String&, ExceptionState&);
     void setAutofilled(Element*, bool enabled, ExceptionState&);
-    void scrollElementToRect(Element*, long x, long y, long w, long h, ExceptionState&);
 
     PassRefPtrWillBeRawPtr<Range> rangeFromLocationAndLength(Element* scope, int rangeLocation, int rangeLength);
     unsigned locationFromRange(Element* scope, const Range*);
@@ -260,12 +262,15 @@ public:
     void setPageScaleFactor(float scaleFactor, ExceptionState&);
     void setPageScaleFactorLimits(float minScaleFactor, float maxScaleFactor, ExceptionState&);
 
+    bool magnifyScaleAroundAnchor(float factor, float x, float y);
+
     void setIsCursorVisible(Document*, bool, ExceptionState&);
 
     double effectiveMediaVolume(HTMLMediaElement*);
 
     void mediaPlayerRemoteRouteAvailabilityChanged(HTMLMediaElement*, bool);
     void mediaPlayerPlayingRemotelyChanged(HTMLMediaElement*, bool);
+    void setAllowHiddenVolumeControls(HTMLMediaElement*, bool);
 
     void registerURLSchemeAsBypassingContentSecurityPolicy(const String& scheme);
     void registerURLSchemeAsBypassingContentSecurityPolicy(const String& scheme, const Vector<String>& policyAreas);
@@ -282,6 +287,10 @@ public:
     void stopTrackingRepaints(Document*, ExceptionState&);
     void updateLayoutIgnorePendingStylesheetsAndRunPostLayoutTasks(Node*, ExceptionState&);
     void forceFullRepaint(Document*, ExceptionState&);
+
+    void startTrackingPaintInvalidationObjects();
+    void stopTrackingPaintInvalidationObjects();
+    Vector<String> trackedPaintInvalidationObjects();
 
     ClientRectList* draggableRegions(Document*, ExceptionState&);
     ClientRectList* nonDraggableRegions(Document*, ExceptionState&);
@@ -303,6 +312,7 @@ public:
     bool isSelectPopupVisible(Node*);
     bool selectPopupItemStyleIsRtl(Node*, int);
     int selectPopupItemStyleFontHeight(Node*, int);
+    void resetTypeAheadSession(HTMLSelectElement*);
 
     ClientRect* selectionBounds(ExceptionState&);
 
@@ -335,9 +345,10 @@ public:
 
     bool ignoreLayoutWithPendingStylesheets(Document*);
 
+    // Test must call setNetworkStateNotifierTestOnly(true) before calling setNetworkConnectionInfo or
+    // setNetworkStateMaxBandwidth.
     void setNetworkStateNotifierTestOnly(bool);
-    // Test must call setNetworkStateNotifierTestOnly(true) before calling setNetworkConnectionInfo.
-    void setNetworkConnectionInfo(const String&, ExceptionState&);
+    void setNetworkConnectionInfo(const String&, double downlinkMaxMbps, ExceptionState&);
 
     ClientRect* boundsInViewportSpace(Element*);
 
@@ -346,10 +357,9 @@ public:
     bool isInCanvasFontCache(Document*, const String&);
     unsigned canvasFontCacheMaxFonts();
 
-    void forcePluginPlaceholder(HTMLElement* plugin, PassRefPtrWillBeRawPtr<DocumentFragment>, ExceptionState&);
-    void forcePluginPlaceholder(HTMLElement* plugin, const PluginPlaceholderOptions&, ExceptionState&);
+    void setScrollChain(ScrollState*, const WillBeHeapVector<RefPtrWillBeMember<Element>>& elements, ExceptionState&);
 
-    // Scheudle a forced Blink GC run (Oilpan) at the end of event loop.
+    // Schedule a forced Blink GC run (Oilpan) at the end of event loop.
     // Note: This is designed to be only used from PerformanceTests/BlinkGC to explicitly measure only Blink GC time.
     //       Normal LayoutTests should use gc() instead as it would trigger both Blink GC and V8 GC.
     void forceBlinkGCWithoutV8GC();
@@ -367,9 +377,19 @@ public:
     String unscopeableMethod();
 
     ClientRectList* focusRingRects(Element*);
+    ClientRectList* outlineRects(Element*);
 
     void setCapsLockState(bool enabled);
 
+    void setSelectionPaintingWithoutSelectionGapsEnabled(bool);
+
+    bool setScrollbarVisibilityInScrollableArea(Node*, bool visible);
+
+    void forceRestrictIFramePermissions();
+
+    // Translate given platform monotonic time in seconds to high resolution
+    // document time in seconds
+    double monotonicTimeToZeroBasedDocumentTime(double, ExceptionState&);
 private:
     explicit Internals(ScriptState*);
     Document* contextDocument() const;

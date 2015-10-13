@@ -34,6 +34,7 @@ class StylePropertySet;
 class StylePropertyShorthand;
 
 class StylePropertySerializer {
+    STACK_ALLOCATED();
 public:
     explicit StylePropertySerializer(const StylePropertySet&);
 
@@ -57,6 +58,7 @@ private:
 
     // Only StylePropertySerializer uses the following two classes.
     class PropertyValueForSerializer {
+        STACK_ALLOCATED();
     public:
         explicit PropertyValueForSerializer(StylePropertySet::PropertyReference property)
             : m_value(property.value())
@@ -80,14 +82,15 @@ private:
         bool isValid() const { return m_value; }
 
     private:
-        const CSSValue* m_value;
+        RawPtrWillBeMember<const CSSValue> m_value;
         CSSPropertyID m_id;
         bool m_isImportant;
         bool m_isImplicit;
         bool m_isInherited;
     };
 
-    class StylePropertySetForSerializer {
+    class StylePropertySetForSerializer final {
+        DISALLOW_ALLOCATION();
     public:
         explicit StylePropertySetForSerializer(const StylePropertySet&);
 
@@ -100,11 +103,13 @@ private:
         bool isPropertyImplicit(CSSPropertyID) const;
         bool propertyIsImportant(CSSPropertyID) const;
 
+        DECLARE_TRACE();
+
     private:
         bool hasExpandedAllProperty() const { return hasAllProperty() && m_needToExpandAll; }
         bool hasAllProperty() const { return m_allIndex != -1; }
 
-        const StylePropertySet& m_propertySet;
+        RawPtrWillBeMember<const StylePropertySet> m_propertySet;
         int m_allIndex;
         BitArray<numCSSProperties> m_longhandPropertyUsed;
         bool m_needToExpandAll;
@@ -115,4 +120,4 @@ private:
 
 } // namespace blink
 
-#endif
+#endif // StylePropertySerializer_h

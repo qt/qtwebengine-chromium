@@ -1,0 +1,46 @@
+{
+    "AutofillFieldMetadata": [
+        {
+            "group_name": "Enabled"
+        }
+    ],
+    "ChromotingQUIC": [
+        {
+            "group_name": "Enabled"
+        }
+    ],
+    "QUIC": [
+        {
+            "group_name": "Enabled",
+            "params": {
+                "alternate_protocol_probability_threshold": "0.001"
+            }
+        }
+    ],
+    "SdchPersistence": [
+        {
+            "group_name": "Enabled"
+        }
+    ],
+    "SyncHttpContentCompression": [
+        {
+            "group_name": "Enabled"
+        },
+        {
+            "group_name": "Disabled"
+        }
+    ],
+    "TabSyncByRecency": [
+        {
+            "group_name": "Enabled"
+        }
+    ],
+    "VarationsServiceControl": [
+        {
+            "group_name": "Interval_30min",
+            "params": {
+                "fetch_period_min": "30"
+            }
+        }
+    ]
+}

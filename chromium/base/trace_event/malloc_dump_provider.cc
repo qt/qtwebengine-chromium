@@ -28,7 +28,8 @@ MallocDumpProvider::~MallocDumpProvider() {
 
 // Called at trace dump point time. Creates a snapshot the memory counters for
 // the current process.
-bool MallocDumpProvider::OnMemoryDump(ProcessMemoryDump* pmd) {
+bool MallocDumpProvider::OnMemoryDump(const MemoryDumpArgs& args,
+                                      ProcessMemoryDump* pmd) {
   struct mallinfo info = mallinfo();
   DCHECK_GE(info.arena + info.hblkhd, info.uordblks);
 
@@ -38,7 +39,7 @@ bool MallocDumpProvider::OnMemoryDump(ProcessMemoryDump* pmd) {
   // dlmalloc the total is given by |arena| + |hblkhd|.
   // For more details see link: http://goo.gl/fMR8lF.
   MemoryAllocatorDump* outer_dump = pmd->CreateAllocatorDump("malloc");
-  outer_dump->AddScalar("heap_virtual_size",
+  outer_dump->AddScalar("virtual_size",
                         MemoryAllocatorDump::kUnitsBytes,
                         info.arena + info.hblkhd);
 

@@ -57,6 +57,8 @@ bool ContainsUppercaseAscii(const std::string& str) {
 
 }  // namespace
 
+void SpdyStream::Delegate::OnTrailers(const SpdyHeaderBlock& trailers) {}
+
 // A wrapper around a stream that calls into ProduceSynStreamFrame().
 class SpdyStream::SynStreamBufferProducer : public SpdyBufferProducer {
  public:
@@ -106,6 +108,7 @@ SpdyStream::SpdyStream(SpdyStreamType type,
       response_status_(OK),
       net_log_(net_log),
       raw_received_bytes_(0),
+      raw_sent_bytes_(0),
       send_bytes_(0),
       recv_bytes_(0),
       write_handler_guard_(false),
@@ -440,12 +443,18 @@ int SpdyStream::OnInitialResponseHeadersReceived(
 int SpdyStream::OnAdditionalResponseHeadersReceived(
     const SpdyHeaderBlock& additional_response_headers) {
   if (type_ == SPDY_REQUEST_RESPONSE_STREAM) {
-    session_->ResetStream(
-        stream_id_, RST_STREAM_PROTOCOL_ERROR,
-        "Additional headers received for request/response stream");
-    return ERR_SPDY_PROTOCOL_ERROR;
-  } else if (type_ == SPDY_PUSH_STREAM &&
-             response_headers_status_ == RESPONSE_HEADERS_ARE_COMPLETE) {
+    if (response_headers_status_ != RESPONSE_HEADERS_ARE_COMPLETE) {
+      session_->ResetStream(
+          stream_id_, RST_STREAM_PROTOCOL_ERROR,
+          "Additional headers received for request/response stream");
+      return ERR_SPDY_PROTOCOL_ERROR;
+    }
+    response_headers_status_ = TRAILERS_RECEIVED;
+    delegate_->OnTrailers(additional_response_headers);
+    return OK;
+  }
+  if (type_ == SPDY_PUSH_STREAM &&
+      response_headers_status_ == RESPONSE_HEADERS_ARE_COMPLETE) {
     session_->ResetStream(
         stream_id_, RST_STREAM_PROTOCOL_ERROR,
         "Additional headers received for push stream");
@@ -481,6 +490,14 @@ void SpdyStream::OnDataReceived(scoped_ptr<SpdyBuffer> buffer) {
       // Note: we leave the stream open in the session until the stream
       //       is claimed.
     }
+    return;
+  }
+
+  if (response_headers_status_ == TRAILERS_RECEIVED && buffer) {
+    // TRAILERS_RECEIVED is only used in SPDY_REQUEST_RESPONSE_STREAM.
+    DCHECK_EQ(type_, SPDY_REQUEST_RESPONSE_STREAM);
+    session_->ResetStream(stream_id_, RST_STREAM_PROTOCOL_ERROR,
+                          "Data received after trailers");
     return;
   }
 
@@ -744,6 +761,14 @@ NextProto SpdyStream::GetProtocol() const {
   return session_->protocol();
 }
 
+void SpdyStream::AddRawReceivedBytes(size_t received_bytes) {
+  raw_received_bytes_ += received_bytes;
+}
+
+void SpdyStream::AddRawSentBytes(size_t sent_bytes) {
+  raw_sent_bytes_ += sent_bytes;
+}
+
 bool SpdyStream::GetLoadTimingInfo(LoadTimingInfo* load_timing_info) const {
   if (stream_id_ == 0)
     return false;
@@ -857,21 +882,23 @@ int SpdyStream::MergeWithResponseHeaders(
   for (SpdyHeaderBlock::const_iterator it = new_response_headers.begin();
       it != new_response_headers.end(); ++it) {
     // Disallow uppercase headers.
-    if (ContainsUppercaseAscii(it->first)) {
-      session_->ResetStream(stream_id_, RST_STREAM_PROTOCOL_ERROR,
-                            "Upper case characters in header: " + it->first);
+    if (ContainsUppercaseAscii(it->first.as_string())) {
+      session_->ResetStream(
+          stream_id_, RST_STREAM_PROTOCOL_ERROR,
+          "Upper case characters in header: " + it->first.as_string());
       return ERR_SPDY_PROTOCOL_ERROR;
     }
 
-    SpdyHeaderBlock::iterator it2 = response_headers_.lower_bound(it->first);
+    SpdyHeaderBlock::iterator it2 =
+        response_headers_.find(it->first.as_string());
     // Disallow duplicate headers.  This is just to be conservative.
-    if (it2 != response_headers_.end() && it2->first == it->first) {
+    if (it2 != response_headers_.end()) {
       session_->ResetStream(stream_id_, RST_STREAM_PROTOCOL_ERROR,
-                            "Duplicate header: " + it->first);
+                            "Duplicate header: " + it->first.as_string());
       return ERR_SPDY_PROTOCOL_ERROR;
     }
 
-    response_headers_.insert(it2, *it);
+    response_headers_.insert(*it);
   }
 
   // If delegate_ is not yet attached, we'll call

@@ -41,28 +41,30 @@ public:
 
     void registerScrollbar(ScrollbarThemeClient*) override;
     void unregisterScrollbar(ScrollbarThemeClient*) override;
-    void preferencesChanged(float initialButtonDelay, float autoscrollButtonDelay, NSScrollerStyle preferredScrollerStyle, bool redraw);
+    void preferencesChanged(float initialButtonDelay, float autoscrollButtonDelay, NSScrollerStyle preferredScrollerStyle, bool redraw, bool scrollAnimationEnabled, ScrollbarButtonsPlacement);
 
     bool supportsControlTints() const override { return true; }
 
     double initialAutoscrollTimerDelay() override;
     double autoscrollTimerDelay() override;
 
-    void paintTickmarks(GraphicsContext*, ScrollbarThemeClient*, const IntRect&) override;
+    void paintTickmarks(GraphicsContext*, const ScrollbarThemeClient*, const IntRect&) override;
 
     static NSScrollerStyle recommendedScrollerStyle();
 
     static bool isOverlayAPIAvailable();
 
+    static bool scrollAnimationEnabledForSystem();
+
 protected:
     int maxOverlapBetweenPages() override { return 40; }
 
-    bool shouldDragDocumentInsteadOfThumb(ScrollbarThemeClient*, const PlatformMouseEvent&) override;
+    bool shouldDragDocumentInsteadOfThumb(const ScrollbarThemeClient*, const PlatformMouseEvent&) override;
     int scrollbarPartToHIPressedState(ScrollbarPart);
 
-    virtual void updateButtonPlacement() { }
+    virtual void updateButtonPlacement(ScrollbarButtonsPlacement) {}
 
-    void paintGivenTickmarks(SkCanvas*, ScrollbarThemeClient*, const IntRect&, const Vector<IntRect>&);
+    void paintGivenTickmarks(SkCanvas*, const ScrollbarThemeClient*, const IntRect&, const Vector<IntRect>&);
 
     RefPtr<Pattern> m_overhangPattern;
 };

@@ -27,12 +27,13 @@
 #define TransformationMatrix_h
 
 #include "SkMatrix44.h"
-#include <string.h> //for memcpy
 #include "platform/geometry/FloatPoint.h"
 #include "platform/geometry/FloatPoint3D.h"
 #include "platform/geometry/IntPoint.h"
+#include "wtf/Alignment.h"
 #include "wtf/CPU.h"
 #include "wtf/FastAllocBase.h"
+#include <string.h> // for memcpy
 
 namespace blink {
 
@@ -46,49 +47,85 @@ class FloatBox;
 #define TRANSFORMATION_MATRIX_USE_X86_64_SSE2
 #endif
 
+// TransformationMatrix must not be allocated on Oilpan's heap since
+// Oilpan doesn't (yet) have an ability to allocate the TransformationMatrix
+// with 16-byte alignment. PartitionAlloc has the ability.
 class PLATFORM_EXPORT TransformationMatrix {
     WTF_MAKE_FAST_ALLOCATED(TransformationMatrix);
 public:
 
 #if CPU(APPLE_ARMV7S) || defined(TRANSFORMATION_MATRIX_USE_X86_64_SSE2)
-#if COMPILER(MSVC)
-    __declspec(align(16)) typedef double Matrix4[4][4];
-#else
-    typedef double Matrix4[4][4] __attribute__((aligned (16)));
-#endif
+    typedef WTF_ALIGNED(double, Matrix4[4][4], 16);
 #else
     typedef double Matrix4[4][4];
 #endif
 
-    TransformationMatrix() { makeIdentity(); }
-    TransformationMatrix(const AffineTransform& t);
-    TransformationMatrix(const TransformationMatrix& t) { *this = t; }
-    TransformationMatrix(double a, double b, double c, double d, double e, double f) { setMatrix(a, b, c, d, e, f); }
-    TransformationMatrix(double m11, double m12, double m13, double m14,
-                         double m21, double m22, double m23, double m24,
-                         double m31, double m32, double m33, double m34,
-                         double m41, double m42, double m43, double m44)
+    TransformationMatrix()
     {
+        checkAlignment();
+        makeIdentity();
+    }
+    TransformationMatrix(const AffineTransform&);
+    TransformationMatrix(const TransformationMatrix& t)
+    {
+        checkAlignment();
+        *this = t;
+    }
+    TransformationMatrix(double a, double b, double c, double d, double e, double f)
+    {
+        checkAlignment();
+        setMatrix(a, b, c, d, e, f);
+    }
+    TransformationMatrix(double m11, double m12, double m13, double m14,
+        double m21, double m22, double m23, double m24,
+        double m31, double m32, double m33, double m34,
+        double m41, double m42, double m43, double m44)
+    {
+        checkAlignment();
         setMatrix(m11, m12, m13, m14, m21, m22, m23, m24, m31, m32, m33, m34, m41, m42, m43, m44);
     }
 
     void setMatrix(double a, double b, double c, double d, double e, double f)
     {
-        m_matrix[0][0] = a; m_matrix[0][1] = b; m_matrix[0][2] = 0; m_matrix[0][3] = 0;
-        m_matrix[1][0] = c; m_matrix[1][1] = d; m_matrix[1][2] = 0; m_matrix[1][3] = 0;
-        m_matrix[2][0] = 0; m_matrix[2][1] = 0; m_matrix[2][2] = 1; m_matrix[2][3] = 0;
-        m_matrix[3][0] = e; m_matrix[3][1] = f; m_matrix[3][2] = 0; m_matrix[3][3] = 1;
+        m_matrix[0][0] = a;
+        m_matrix[0][1] = b;
+        m_matrix[0][2] = 0;
+        m_matrix[0][3] = 0;
+        m_matrix[1][0] = c;
+        m_matrix[1][1] = d;
+        m_matrix[1][2] = 0;
+        m_matrix[1][3] = 0;
+        m_matrix[2][0] = 0;
+        m_matrix[2][1] = 0;
+        m_matrix[2][2] = 1;
+        m_matrix[2][3] = 0;
+        m_matrix[3][0] = e;
+        m_matrix[3][1] = f;
+        m_matrix[3][2] = 0;
+        m_matrix[3][3] = 1;
     }
 
     void setMatrix(double m11, double m12, double m13, double m14,
-                   double m21, double m22, double m23, double m24,
-                   double m31, double m32, double m33, double m34,
-                   double m41, double m42, double m43, double m44)
+        double m21, double m22, double m23, double m24,
+        double m31, double m32, double m33, double m34,
+        double m41, double m42, double m43, double m44)
     {
-        m_matrix[0][0] = m11; m_matrix[0][1] = m12; m_matrix[0][2] = m13; m_matrix[0][3] = m14;
-        m_matrix[1][0] = m21; m_matrix[1][1] = m22; m_matrix[1][2] = m23; m_matrix[1][3] = m24;
-        m_matrix[2][0] = m31; m_matrix[2][1] = m32; m_matrix[2][2] = m33; m_matrix[2][3] = m34;
-        m_matrix[3][0] = m41; m_matrix[3][1] = m42; m_matrix[3][2] = m43; m_matrix[3][3] = m44;
+        m_matrix[0][0] = m11;
+        m_matrix[0][1] = m12;
+        m_matrix[0][2] = m13;
+        m_matrix[0][3] = m14;
+        m_matrix[1][0] = m21;
+        m_matrix[1][1] = m22;
+        m_matrix[1][2] = m23;
+        m_matrix[1][3] = m24;
+        m_matrix[2][0] = m31;
+        m_matrix[2][1] = m32;
+        m_matrix[2][2] = m33;
+        m_matrix[2][3] = m34;
+        m_matrix[3][0] = m41;
+        m_matrix[3][1] = m42;
+        m_matrix[3][2] = m43;
+        m_matrix[3][3] = m44;
     }
 
     TransformationMatrix& operator =(const TransformationMatrix &t)
@@ -105,10 +142,10 @@ public:
 
     bool isIdentity() const
     {
-        return m_matrix[0][0] == 1 && m_matrix[0][1] == 0 && m_matrix[0][2] == 0 && m_matrix[0][3] == 0 &&
-               m_matrix[1][0] == 0 && m_matrix[1][1] == 1 && m_matrix[1][2] == 0 && m_matrix[1][3] == 0 &&
-               m_matrix[2][0] == 0 && m_matrix[2][1] == 0 && m_matrix[2][2] == 1 && m_matrix[2][3] == 0 &&
-               m_matrix[3][0] == 0 && m_matrix[3][1] == 0 && m_matrix[3][2] == 0 && m_matrix[3][3] == 1;
+        return m_matrix[0][0] == 1 && m_matrix[0][1] == 0 && m_matrix[0][2] == 0 && m_matrix[0][3] == 0
+            && m_matrix[1][0] == 0 && m_matrix[1][1] == 1 && m_matrix[1][2] == 0 && m_matrix[1][3] == 0
+            && m_matrix[2][0] == 0 && m_matrix[2][1] == 0 && m_matrix[2][2] == 1 && m_matrix[2][3] == 0
+            && m_matrix[3][0] == 0 && m_matrix[3][1] == 0 && m_matrix[3][2] == 0 && m_matrix[3][3] == 1;
     }
 
     // Map a 3D point through the transform, returning a 3D point.
@@ -223,6 +260,13 @@ public:
 
     TransformationMatrix& applyPerspective(double p);
 
+    // Changes the transform to apply as if the origin were at (x, y, z).
+    TransformationMatrix& applyTransformOrigin(double x, double y, double z);
+    TransformationMatrix& applyTransformOrigin(const FloatPoint3D& origin)
+    {
+        return applyTransformOrigin(origin.x(), origin.y(), origin.z());
+    }
+
     bool isInvertible() const;
 
     // This method returns the identity matrix if it is not invertible.
@@ -245,8 +289,8 @@ public:
 
     bool isAffine() const
     {
-        return (m13() == 0 && m14() == 0 && m23() == 0 && m24() == 0 &&
-                m31() == 0 && m32() == 0 && m33() == 1 && m34() == 0 && m43() == 0 && m44() == 1);
+        return m13() == 0 && m14() == 0 && m23() == 0 && m24() == 0
+            && m31() == 0 && m32() == 0 && m33() == 1 && m34() == 0 && m43() == 0 && m44() == 1;
     }
 
     // Throw away the non-affine parts of the matrix (lossy!)
@@ -256,22 +300,22 @@ public:
 
     bool operator==(const TransformationMatrix& m2) const
     {
-        return (m_matrix[0][0] == m2.m_matrix[0][0] &&
-                m_matrix[0][1] == m2.m_matrix[0][1] &&
-                m_matrix[0][2] == m2.m_matrix[0][2] &&
-                m_matrix[0][3] == m2.m_matrix[0][3] &&
-                m_matrix[1][0] == m2.m_matrix[1][0] &&
-                m_matrix[1][1] == m2.m_matrix[1][1] &&
-                m_matrix[1][2] == m2.m_matrix[1][2] &&
-                m_matrix[1][3] == m2.m_matrix[1][3] &&
-                m_matrix[2][0] == m2.m_matrix[2][0] &&
-                m_matrix[2][1] == m2.m_matrix[2][1] &&
-                m_matrix[2][2] == m2.m_matrix[2][2] &&
-                m_matrix[2][3] == m2.m_matrix[2][3] &&
-                m_matrix[3][0] == m2.m_matrix[3][0] &&
-                m_matrix[3][1] == m2.m_matrix[3][1] &&
-                m_matrix[3][2] == m2.m_matrix[3][2] &&
-                m_matrix[3][3] == m2.m_matrix[3][3]);
+        return m_matrix[0][0] == m2.m_matrix[0][0]
+            && m_matrix[0][1] == m2.m_matrix[0][1]
+            && m_matrix[0][2] == m2.m_matrix[0][2]
+            && m_matrix[0][3] == m2.m_matrix[0][3]
+            && m_matrix[1][0] == m2.m_matrix[1][0]
+            && m_matrix[1][1] == m2.m_matrix[1][1]
+            && m_matrix[1][2] == m2.m_matrix[1][2]
+            && m_matrix[1][3] == m2.m_matrix[1][3]
+            && m_matrix[2][0] == m2.m_matrix[2][0]
+            && m_matrix[2][1] == m2.m_matrix[2][1]
+            && m_matrix[2][2] == m2.m_matrix[2][2]
+            && m_matrix[2][3] == m2.m_matrix[2][3]
+            && m_matrix[3][0] == m2.m_matrix[3][0]
+            && m_matrix[3][1] == m2.m_matrix[3][1]
+            && m_matrix[3][2] == m2.m_matrix[3][2]
+            && m_matrix[3][3] == m2.m_matrix[3][3];
     }
 
     bool operator!=(const TransformationMatrix& other) const { return !(*this == other); }
@@ -340,6 +384,15 @@ private:
     {
         if (m && m != m_matrix)
             memcpy(m_matrix, m, sizeof(Matrix4));
+    }
+
+    void checkAlignment()
+    {
+#if CPU(APPLE_ARMV7S) || defined(TRANSFORMATION_MATRIX_USE_X86_64_SSE2)
+        // m_matrix can cause this class to require higher than usual alignment.
+        // Make sure the allocator handles this.
+        ASSERT((reinterpret_cast<uintptr_t>(this) & (WTF_ALIGN_OF(TransformationMatrix) - 1)) == 0);
+#endif
     }
 
     Matrix4 m_matrix;

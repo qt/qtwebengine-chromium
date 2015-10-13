@@ -9,10 +9,13 @@
 #include "device/bluetooth/bluetooth_device.h"
 #include "device/bluetooth/bluetooth_discovery_session.h"
 #include "device/bluetooth/test/bluetooth_test.h"
+#include "device/bluetooth/test/test_bluetooth_adapter_observer.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 #if defined(OS_ANDROID)
 #include "device/bluetooth/test/bluetooth_test_android.h"
+#elif defined(OS_MACOSX)
+#include "device/bluetooth/test/bluetooth_test_mac.h"
 #endif
 
 using device::BluetoothDevice;
@@ -105,17 +108,20 @@ class TestBluetoothAdapter : public BluetoothAdapter {
  protected:
   ~TestBluetoothAdapter() override {}
 
-  void AddDiscoverySession(BluetoothDiscoveryFilter* discovery_filter,
-                           const base::Closure& callback,
-                           const ErrorCallback& error_callback) override {}
+  void AddDiscoverySession(
+      BluetoothDiscoveryFilter* discovery_filter,
+      const base::Closure& callback,
+      const DiscoverySessionErrorCallback& error_callback) override {}
 
-  void RemoveDiscoverySession(BluetoothDiscoveryFilter* discovery_filter,
-                              const base::Closure& callback,
-                              const ErrorCallback& error_callback) override {}
+  void RemoveDiscoverySession(
+      BluetoothDiscoveryFilter* discovery_filter,
+      const base::Closure& callback,
+      const DiscoverySessionErrorCallback& error_callback) override {}
 
-  void SetDiscoveryFilter(scoped_ptr<BluetoothDiscoveryFilter> discovery_filter,
-                          const base::Closure& callback,
-                          const ErrorCallback& error_callback) override {}
+  void SetDiscoveryFilter(
+      scoped_ptr<BluetoothDiscoveryFilter> discovery_filter,
+      const base::Closure& callback,
+      const DiscoverySessionErrorCallback& error_callback) override {}
 
   void RemovePairingDelegateInternal(
       BluetoothDevice::PairingDelegate* pairing_delegate) override {}
@@ -400,7 +406,7 @@ TEST(BluetoothAdapterTest, GetMergedDiscoveryFilterAllFields) {
 }
 
 // TODO(scheib): Enable BluetoothTest fixture tests on all platforms.
-#if defined(OS_ANDROID)
+#if defined(OS_ANDROID) || defined(OS_MACOSX)
 TEST_F(BluetoothTest, ConstructDefaultAdapter) {
   InitWithDefaultAdapter();
   if (!adapter_->IsPresent()) {
@@ -416,10 +422,10 @@ TEST_F(BluetoothTest, ConstructDefaultAdapter) {
   EXPECT_FALSE(adapter_->IsDiscoverable());
   EXPECT_FALSE(adapter_->IsDiscovering());
 }
-#endif  // defined(OS_ANDROID)
+#endif  // defined(OS_ANDROID) || defined(OS_MACOSX)
 
 // TODO(scheib): Enable BluetoothTest fixture tests on all platforms.
-#if defined(OS_ANDROID)
+#if defined(OS_ANDROID) || defined(OS_MACOSX)
 TEST_F(BluetoothTest, ConstructWithoutDefaultAdapter) {
   InitWithoutDefaultAdapter();
   EXPECT_EQ(adapter_->GetAddress(), "");
@@ -429,19 +435,162 @@ TEST_F(BluetoothTest, ConstructWithoutDefaultAdapter) {
   EXPECT_FALSE(adapter_->IsDiscoverable());
   EXPECT_FALSE(adapter_->IsDiscovering());
 }
-#endif  // defined(OS_ANDROID)
+#endif  // defined(OS_ANDROID) || defined(OS_MACOSX)
 
 // TODO(scheib): Enable BluetoothTest fixture tests on all platforms.
-#if defined(OS_ANDROID)
+#if defined(OS_ANDROID) || defined(OS_MACOSX)
 TEST_F(BluetoothTest, ConstructFakeAdapter) {
   InitWithFakeAdapter();
-  EXPECT_EQ(adapter_->GetAddress(), "A1:B2:C3:D4:E5:F6");
-  EXPECT_EQ(adapter_->GetName(), "FakeBluetoothAdapter");
+  EXPECT_EQ(adapter_->GetAddress(), kTestAdapterAddress);
+  EXPECT_EQ(adapter_->GetName(), kTestAdapterName);
   EXPECT_TRUE(adapter_->IsPresent());
   EXPECT_TRUE(adapter_->IsPowered());
   EXPECT_FALSE(adapter_->IsDiscoverable());
   EXPECT_FALSE(adapter_->IsDiscovering());
 }
+#endif  // defined(OS_ANDROID) || defined(OS_MACOSX)
+
+// TODO(scheib): Enable BluetoothTest fixture tests on all platforms.
+#if defined(OS_ANDROID)
+// Starts and Stops a discovery session.
+TEST_F(BluetoothTest, DiscoverySession) {
+  InitWithFakeAdapter();
+  EXPECT_FALSE(adapter_->IsDiscovering());
+
+  adapter_->StartDiscoverySession(GetDiscoverySessionCallback(),
+                                  GetErrorCallback());
+  EXPECT_EQ(1, callback_count_);
+  EXPECT_EQ(0, error_callback_count_);
+  EXPECT_TRUE(adapter_->IsDiscovering());
+  ASSERT_EQ((size_t)1, discovery_sessions_.size());
+  EXPECT_TRUE(discovery_sessions_[0]->IsActive());
+
+  ResetEventCounts();
+  discovery_sessions_[0]->Stop(GetCallback(), GetErrorCallback());
+  EXPECT_EQ(1, callback_count_);
+  EXPECT_EQ(0, error_callback_count_);
+  EXPECT_FALSE(adapter_->IsDiscovering());
+  EXPECT_FALSE(discovery_sessions_[0]->IsActive());
+}
 #endif  // defined(OS_ANDROID)
+
+#if defined(OS_ANDROID) || defined(OS_MACOSX)
+// Discovers a device.
+TEST_F(BluetoothTest, DiscoverLowEnergyDevice) {
+  if (!PlatformSupportsLowEnergy()) {
+    LOG(WARNING) << "Low Energy Bluetooth unavailable, skipping unit test.";
+    return;
+  }
+  InitWithFakeAdapter();
+  TestBluetoothAdapterObserver observer(adapter_);
+
+  // Start discovery and find a device.
+  scoped_ptr<BluetoothDiscoveryFilter> discovery_filter(
+      new BluetoothDiscoveryFilter(
+          BluetoothDiscoveryFilter::Transport::TRANSPORT_LE));
+  adapter_->StartDiscoverySessionWithFilter(discovery_filter.Pass(),
+                                            GetDiscoverySessionCallback(),
+                                            GetErrorCallback());
+  DiscoverLowEnergyDevice(1);
+  EXPECT_EQ(1, observer.device_added_count());
+  BluetoothDevice* device = adapter_->GetDevice(observer.last_device_address());
+  EXPECT_TRUE(device);
+}
+#endif  // defined(OS_ANDROID) || defined(OS_MACOSX)
+
+#if defined(OS_ANDROID) || defined(OS_MACOSX)
+// Discovers the same device multiple times.
+TEST_F(BluetoothTest, DiscoverLowEnergyDeviceTwice) {
+  if (!PlatformSupportsLowEnergy()) {
+    LOG(WARNING) << "Low Energy Bluetooth unavailable, skipping unit test.";
+    return;
+  }
+  InitWithFakeAdapter();
+  TestBluetoothAdapterObserver observer(adapter_);
+
+  // Start discovery and find a device.
+  adapter_->StartDiscoverySession(GetDiscoverySessionCallback(),
+                                  GetErrorCallback());
+  DiscoverLowEnergyDevice(1);
+  EXPECT_EQ(1, observer.device_added_count());
+  BluetoothDevice* device = adapter_->GetDevice(observer.last_device_address());
+  EXPECT_TRUE(device);
+
+  // Find the same device again. This should not create a new device object.
+  observer.Reset();
+  DiscoverLowEnergyDevice(1);
+  base::RunLoop().RunUntilIdle();
+  EXPECT_EQ(0, observer.device_added_count());
+  EXPECT_EQ(1u, adapter_->GetDevices().size());
+}
+#endif  // defined(OS_ANDROID) || defined(OS_MACOSX)
+
+#if defined(OS_ANDROID) || defined(OS_MACOSX)
+// Discovers a device, and then again with new Service UUIDs.
+TEST_F(BluetoothTest, DiscoverLowEnergyDeviceWithUpdatedUUIDs) {
+  if (!PlatformSupportsLowEnergy()) {
+    LOG(WARNING) << "Low Energy Bluetooth unavailable, skipping unit test.";
+    return;
+  }
+  InitWithFakeAdapter();
+  TestBluetoothAdapterObserver observer(adapter_);
+
+  // Start discovery and find a device.
+  adapter_->StartDiscoverySession(GetDiscoverySessionCallback(),
+                                  GetErrorCallback());
+  BluetoothDevice* device = DiscoverLowEnergyDevice(1);
+
+  // Check the initial UUIDs:
+  EXPECT_TRUE(
+      ContainsValue(device->GetUUIDs(), BluetoothUUID(kTestUUIDGenericAccess)));
+  EXPECT_FALSE(ContainsValue(device->GetUUIDs(),
+                             BluetoothUUID(kTestUUIDImmediateAlert)));
+
+  // Discover same device again with updated UUIDs:
+  observer.Reset();
+  DiscoverLowEnergyDevice(2);
+  EXPECT_EQ(0, observer.device_added_count());
+  EXPECT_EQ(1, observer.device_changed_count());
+  EXPECT_EQ(1u, adapter_->GetDevices().size());
+  EXPECT_EQ(device, observer.last_device());
+
+  // Expect new UUIDs:
+  EXPECT_FALSE(
+      ContainsValue(device->GetUUIDs(), BluetoothUUID(kTestUUIDGenericAccess)));
+  EXPECT_TRUE(ContainsValue(device->GetUUIDs(),
+                            BluetoothUUID(kTestUUIDImmediateAlert)));
+
+  // Discover same device again with empty UUIDs:
+  observer.Reset();
+  DiscoverLowEnergyDevice(3);
+  EXPECT_EQ(0, observer.device_added_count());
+  EXPECT_EQ(1, observer.device_changed_count());
+  EXPECT_EQ(1u, adapter_->GetDevices().size());
+  EXPECT_EQ(device, observer.last_device());
+
+  // Expect empty UUIDs:
+  EXPECT_EQ(0u, device->GetUUIDs().size());
+}
+#endif  // defined(OS_ANDROID) || defined(OS_MACOSX)
+
+#if defined(OS_ANDROID) || defined(OS_MACOSX)
+// Discovers multiple devices when addresses vary.
+TEST_F(BluetoothTest, DiscoverMultipleLowEnergyDevices) {
+  if (!PlatformSupportsLowEnergy()) {
+    LOG(WARNING) << "Low Energy Bluetooth unavailable, skipping unit test.";
+    return;
+  }
+  InitWithFakeAdapter();
+  TestBluetoothAdapterObserver observer(adapter_);
+
+  // Start discovery and find a device.
+  adapter_->StartDiscoverySession(GetDiscoverySessionCallback(),
+                                  GetErrorCallback());
+  DiscoverLowEnergyDevice(1);
+  DiscoverLowEnergyDevice(4);
+  EXPECT_EQ(2, observer.device_added_count());
+  EXPECT_EQ(2u, adapter_->GetDevices().size());
+}
+#endif  // defined(OS_ANDROID) || defined(OS_MACOSX)
 
 }  // namespace device

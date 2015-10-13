@@ -40,7 +40,6 @@
         'crashpad_client_win.cc',
         'crashpad_info.cc',
         'crashpad_info.h',
-        'registration_protocol_win.h',
         'settings.cc',
         'settings.h',
         'simple_string_dictionary.cc',
@@ -48,6 +47,7 @@
         'simulate_crash.h',
         'simulate_crash_mac.cc',
         'simulate_crash_mac.h',
+        'simulate_crash_win.h',
       ],
       'conditions': [
         ['OS=="win"', {

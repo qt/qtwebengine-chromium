@@ -244,7 +244,7 @@ class WebSocketEndToEndTest : public ::testing::Test {
     if (!initialised_context_) {
       InitialiseContext();
     }
-    url::Origin origin("http://localhost");
+    url::Origin origin(GURL("http://localhost"));
     event_interface_ = new ConnectTestingEventInterface;
     channel_.reset(
         new WebSocketChannel(make_scoped_ptr(event_interface_), &context_));

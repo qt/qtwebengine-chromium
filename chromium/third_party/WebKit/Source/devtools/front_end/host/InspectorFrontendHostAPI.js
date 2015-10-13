@@ -33,17 +33,22 @@ InspectorFrontendHostAPI.Events = {
     ContextMenuCleared: "contextMenuCleared",
     ContextMenuItemSelected: "contextMenuItemSelected",
     DeviceCountUpdated: "deviceCountUpdated",
+    DevicesDiscoveryConfigChanged: "devicesDiscoveryConfigChanged",
     DevicesUpdated: "devicesUpdated",
     DispatchMessage: "dispatchMessage",
     DispatchMessageChunk: "dispatchMessageChunk",
+    DispatchFrontendAPIMessage: "dispatchFrontendAPIMessage",
     EnterInspectElementMode: "enterInspectElementMode",
     FileSystemsLoaded: "fileSystemsLoaded",
     FileSystemRemoved: "fileSystemRemoved",
     FileSystemAdded: "fileSystemAdded",
+    FrontendAPIAttached: "frontendAPIAttached",
+    FrontendAPIDetached: "frontendAPIDetached",
     IndexingTotalWorkCalculated: "indexingTotalWorkCalculated",
     IndexingWorked: "indexingWorked",
     IndexingDone: "indexingDone",
     KeyEventUnhandled: "keyEventUnhandled",
+    ReloadInspectedPage: "reloadInspectedPage",
     RevealSourceLine: "revealSourceLine",
     SavedURL: "savedURL",
     SearchCompleted: "searchCompleted",
@@ -59,17 +64,22 @@ InspectorFrontendHostAPI.EventDescriptors = [
     [InspectorFrontendHostAPI.Events.ContextMenuCleared, []],
     [InspectorFrontendHostAPI.Events.ContextMenuItemSelected, ["id"]],
     [InspectorFrontendHostAPI.Events.DeviceCountUpdated, ["count"]],
+    [InspectorFrontendHostAPI.Events.DevicesDiscoveryConfigChanged, ["discoverUsbDevices", "portForwardingEnabled", "portForwardingConfig"]],
     [InspectorFrontendHostAPI.Events.DevicesUpdated, ["devices"]],
     [InspectorFrontendHostAPI.Events.DispatchMessage, ["messageObject"]],
     [InspectorFrontendHostAPI.Events.DispatchMessageChunk, ["messageChunk", "messageSize"]],
+    [InspectorFrontendHostAPI.Events.DispatchFrontendAPIMessage, ["messageObject"]],
     [InspectorFrontendHostAPI.Events.EnterInspectElementMode, []],
     [InspectorFrontendHostAPI.Events.FileSystemsLoaded, ["fileSystems"]],
     [InspectorFrontendHostAPI.Events.FileSystemRemoved, ["fileSystemPath"]],
     [InspectorFrontendHostAPI.Events.FileSystemAdded, ["errorMessage", "fileSystem"]],
+    [InspectorFrontendHostAPI.Events.FrontendAPIAttached, ["frontendAPIAttached"]],
+    [InspectorFrontendHostAPI.Events.FrontendAPIDetached, ["frontendAPIDetached"]],
     [InspectorFrontendHostAPI.Events.IndexingTotalWorkCalculated, ["requestId", "fileSystemPath", "totalWork"]],
     [InspectorFrontendHostAPI.Events.IndexingWorked, ["requestId", "fileSystemPath", "worked"]],
     [InspectorFrontendHostAPI.Events.IndexingDone, ["requestId", "fileSystemPath"]],
     [InspectorFrontendHostAPI.Events.KeyEventUnhandled, ["event"]],
+    [InspectorFrontendHostAPI.Events.ReloadInspectedPage, ["hard"]],
     [InspectorFrontendHostAPI.Events.RevealSourceLine, ["url", "lineNumber", "columnNumber"]],
     [InspectorFrontendHostAPI.Events.SavedURL, ["url"]],
     [InspectorFrontendHostAPI.Events.SearchCompleted, ["requestId", "fileSystemPath", "files"]],
@@ -216,9 +226,22 @@ InspectorFrontendHostAPI.prototype = {
     sendMessageToBackend: function(message) { },
 
     /**
+     * @param {boolean} discoverUsbDevices
+     * @param {boolean} portForwardingEnabled
+     * @param {!Adb.PortForwardingConfig} portForwardingConfig
+     */
+    setDevicesDiscoveryConfig: function(discoverUsbDevices, portForwardingEnabled, portForwardingConfig) { },
+
+    /**
      * @param {boolean} enabled
      */
     setDevicesUpdatesEnabled: function(enabled) { },
+
+    /**
+     * @param {string} pageId
+     * @param {string} action
+     */
+    performActionOnRemotePage: function(pageId, action) { },
 
     /**
      * @param {string} origin
@@ -259,5 +282,10 @@ InspectorFrontendHostAPI.prototype = {
     /**
      * @return {boolean}
      */
-    isHostedMode: function() { }
+    isHostedMode: function() { },
+
+    /**
+     * @param {string} message
+     */
+    sendFrontendAPINotification: function(message) { }
 }

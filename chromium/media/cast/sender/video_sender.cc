@@ -5,6 +5,7 @@
 #include "media/cast/sender/video_sender.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 
 #include "base/bind.h"
@@ -160,6 +161,10 @@ void VideoSender::InsertRawVideoFrame(
                             last_enqueued_frame_rtp_timestamp_) ||
        reference_time <= last_enqueued_frame_reference_time_)) {
     VLOG(1) << "Dropping video frame: RTP or reference time did not increase.";
+    TRACE_EVENT_INSTANT2("cast.stream", "Video Frame Drop",
+                        TRACE_EVENT_SCOPE_THREAD,
+                        "rtp_timestamp", rtp_timestamp,
+                        "reason", "time did not increase");
     return;
   }
 
@@ -189,20 +194,27 @@ void VideoSender::InsertRawVideoFrame(
     // drop every subsequent frame for the rest of the session.
     video_encoder_->EmitFrames();
 
+    TRACE_EVENT_INSTANT2("cast.stream", "Video Frame Drop",
+                        TRACE_EVENT_SCOPE_THREAD,
+                        "rtp_timestamp", rtp_timestamp,
+                        "reason", "too much in flight");
     return;
-  }
-
-  uint32 bitrate = congestion_control_->GetBitrate(
-        reference_time + target_playout_delay_, target_playout_delay_);
-  if (bitrate != last_bitrate_) {
-    video_encoder_->SetBitRate(bitrate);
-    last_bitrate_ = bitrate;
   }
 
   if (video_frame->visible_rect().IsEmpty()) {
     VLOG(1) << "Rejecting empty video frame.";
     return;
   }
+
+  const int bitrate = congestion_control_->GetBitrate(
+      reference_time + target_playout_delay_, target_playout_delay_,
+      GetMaximumTargetBitrateForFrame(*video_frame));
+  if (bitrate != last_bitrate_) {
+    video_encoder_->SetBitRate(bitrate);
+    last_bitrate_ = bitrate;
+  }
+
+  TRACE_COUNTER_ID1("cast.stream", "Video Target Bitrate", this, bitrate);
 
   MaybeRenderPerformanceMetricsOverlay(bitrate,
                                        frames_in_encoder_ + 1,
@@ -217,12 +229,17 @@ void VideoSender::InsertRawVideoFrame(
                      weak_factory_.GetWeakPtr(),
                      video_frame,
                      bitrate))) {
+    TRACE_EVENT_ASYNC_BEGIN1("cast.stream", "Video Encode", video_frame.get(),
+                             "rtp_timestamp", rtp_timestamp);
     frames_in_encoder_++;
     duration_in_encoder_ += duration_added_by_next_frame;
     last_enqueued_frame_rtp_timestamp_ = rtp_timestamp;
     last_enqueued_frame_reference_time_ = reference_time;
   } else {
     VLOG(1) << "Encoder rejected a frame.  Skipping...";
+    TRACE_EVENT_INSTANT1("cast.stream", "Video Encode Reject",
+                        TRACE_EVENT_SCOPE_THREAD,
+                        "rtp_timestamp", rtp_timestamp);
   }
 }
 
@@ -248,6 +265,57 @@ void VideoSender::OnAck(uint32 frame_id) {
   video_encoder_->LatestFrameIdToReference(frame_id);
 }
 
+// static
+int VideoSender::GetMaximumTargetBitrateForFrame(
+    const media::VideoFrame& frame) {
+  enum {
+    // Constants used to linearly translate between lines of resolution and a
+    // maximum target bitrate.  These values are based on observed quality
+    // trade-offs over a wide range of content.  The math will use these values
+    // to compute a bitrate of 2 Mbps for 360 lines of resolution and 4 Mbps for
+    // 720 lines.
+    BITRATE_FOR_HIGH_RESOLUTION = 4000000,
+    BITRATE_FOR_STANDARD_RESOLUTION = 2000000,
+    HIGH_RESOLUTION_LINES = 720,
+    STANDARD_RESOLUTION_LINES = 360,
+
+    // The smallest maximum target bitrate, regardless of what the math says.
+    MAX_BITRATE_LOWER_BOUND = 1000000,
+
+    // Constants used to boost the result for high frame rate content.
+    HIGH_FRAME_RATE_THRESHOLD_USEC = 25000,  // 40 FPS
+    HIGH_FRAME_RATE_BOOST_NUMERATOR = 3,
+    HIGH_FRAME_RATE_BOOST_DENOMINATOR = 2,
+  };
+
+  // Determine the approximate height of a 16:9 frame having the same area
+  // (number of pixels) as |frame|.
+  const gfx::Size& resolution = frame.visible_rect().size();
+  const int lines_of_resolution =
+      ((resolution.width() * 9) == (resolution.height() * 16)) ?
+          resolution.height() :
+          static_cast<int>(sqrt(resolution.GetArea() * 9.0 / 16.0));
+
+  // Linearly translate from |lines_of_resolution| to a maximum target bitrate.
+  int64 result = lines_of_resolution - STANDARD_RESOLUTION_LINES;
+  result *= BITRATE_FOR_HIGH_RESOLUTION - BITRATE_FOR_STANDARD_RESOLUTION;
+  result /= HIGH_RESOLUTION_LINES - STANDARD_RESOLUTION_LINES;
+  result += BITRATE_FOR_STANDARD_RESOLUTION;
+
+  // Boost the result for high frame rate content.
+  base::TimeDelta frame_duration;
+  if (frame.metadata()->GetTimeDelta(media::VideoFrameMetadata::FRAME_DURATION,
+                                     &frame_duration) &&
+      frame_duration > base::TimeDelta() &&
+      frame_duration.InMicroseconds() <= HIGH_FRAME_RATE_THRESHOLD_USEC) {
+    result *= HIGH_FRAME_RATE_BOOST_NUMERATOR;
+    result /= HIGH_FRAME_RATE_BOOST_DENOMINATOR;
+  }
+
+  // Return a lower-bounded result.
+  return std::max<int>(result, MAX_BITRATE_LOWER_BOUND);
+}
+
 void VideoSender::OnEncodedVideoFrame(
     const scoped_refptr<media::VideoFrame>& video_frame,
     int encoder_bitrate,
@@ -262,6 +330,10 @@ void VideoSender::OnEncodedVideoFrame(
 
   last_reported_deadline_utilization_ = encoded_frame->deadline_utilization;
   last_reported_lossy_utilization_ = encoded_frame->lossy_utilization;
+
+  TRACE_EVENT_ASYNC_END2("cast.stream", "Video Encode", video_frame.get(),
+      "deadline_utilization", last_reported_deadline_utilization_,
+      "lossy_utilization", last_reported_lossy_utilization_);
 
   // Report the resource utilization for processing this frame.  Take the
   // greater of the two utilization values and attenuate them such that the

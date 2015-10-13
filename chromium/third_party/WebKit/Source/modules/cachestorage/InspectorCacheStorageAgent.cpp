@@ -13,14 +13,15 @@
 #include "platform/weborigin/KURL.h"
 #include "platform/weborigin/SecurityOrigin.h"
 #include "public/platform/Platform.h"
-#include "public/platform/WebServiceWorkerCache.h"
-#include "public/platform/WebServiceWorkerCacheError.h"
-#include "public/platform/WebServiceWorkerCacheStorage.h"
-#include "public/platform/WebServiceWorkerRequest.h"
-#include "public/platform/WebServiceWorkerResponse.h"
+#include "public/platform/WebPassOwnPtr.h"
 #include "public/platform/WebString.h"
 #include "public/platform/WebURL.h"
 #include "public/platform/WebVector.h"
+#include "public/platform/modules/serviceworker/WebServiceWorkerCache.h"
+#include "public/platform/modules/serviceworker/WebServiceWorkerCacheError.h"
+#include "public/platform/modules/serviceworker/WebServiceWorkerCacheStorage.h"
+#include "public/platform/modules/serviceworker/WebServiceWorkerRequest.h"
+#include "public/platform/modules/serviceworker/WebServiceWorkerResponse.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassRefPtr.h"
@@ -69,6 +70,11 @@ bool parseCacheId(ErrorString* errorString, const String& id, String* securityOr
 PassOwnPtr<WebServiceWorkerCacheStorage> assertCacheStorage(ErrorString* errorString, const String& securityOrigin)
 {
     RefPtr<SecurityOrigin> secOrigin = SecurityOrigin::createFromString(securityOrigin);
+
+    // Cache Storage API is restricted to trustworthy origins.
+    if (!secOrigin->isPotentiallyTrustworthy(*errorString))
+        return nullptr;
+
     String identifier = createDatabaseIdentifierFromSecurityOrigin(secOrigin.get());
     OwnPtr<WebServiceWorkerCacheStorage> cache = adoptPtr(Platform::current()->cacheStorage(identifier));
     if (!cache)
@@ -85,9 +91,9 @@ PassOwnPtr<WebServiceWorkerCacheStorage> assertCacheStorageAndNameForId(ErrorStr
     return assertCacheStorage(errorString, securityOrigin);
 }
 
-CString serviceWorkerCacheErrorString(WebServiceWorkerCacheError* error)
+CString serviceWorkerCacheErrorString(WebServiceWorkerCacheError error)
 {
-    switch (*error) {
+    switch (error) {
     case WebServiceWorkerCacheErrorNotImplemented:
         return CString("not implemented.");
         break;
@@ -116,11 +122,11 @@ public:
 
     ~RequestCacheNames() override { }
 
-    void onSuccess(WebVector<WebString>* caches)
+    void onSuccess(const WebVector<WebString>& caches) override
     {
         RefPtr<Array<Cache>> array = Array<Cache>::create();
-        for (size_t i = 0; i < caches->size(); i++) {
-            String name = String((*caches)[i]);
+        for (size_t i = 0; i < caches.size(); i++) {
+            String name = String(caches[i]);
             RefPtr<Cache> entry = Cache::create()
                 .setSecurityOrigin(m_securityOrigin)
                 .setCacheName(name)
@@ -130,7 +136,7 @@ public:
         m_callback->sendSuccess(array);
     }
 
-    void onError(WebServiceWorkerCacheError* error)
+    void onError(WebServiceWorkerCacheError error) override
     {
         m_callback->sendFailure(String::format("Error requesting cache names: %s", serviceWorkerCacheErrorString(error).data()));
     }
@@ -223,12 +229,12 @@ public:
     }
     ~GetCacheResponsesForRequestData() override { }
 
-    void onSuccess(WebServiceWorkerResponse* response)
+    void onSuccess(const WebServiceWorkerResponse& response) override
     {
-        m_accumulator->addRequestResponsePair(m_request, *response);
+        m_accumulator->addRequestResponsePair(m_request, response);
     }
 
-    void onError(WebServiceWorkerCacheError* error)
+    void onError(WebServiceWorkerCacheError error) override
     {
         m_callback->sendFailure(String::format("Error requesting responses for cache  %s: %s", m_params.cacheName.utf8().data(), serviceWorkerCacheErrorString(error).data()));
     }
@@ -252,23 +258,24 @@ public:
     }
     ~GetCacheKeysForRequestData() override { }
 
-    void onSuccess(WebVector<WebServiceWorkerRequest>* requests)
+    WebServiceWorkerCache* cache() { return m_cache.get(); }
+    void onSuccess(const WebVector<WebServiceWorkerRequest>& requests) override
     {
-        if (requests->isEmpty()) {
+        if (requests.isEmpty()) {
             RefPtr<Array<DataEntry>> array = Array<DataEntry>::create();
             m_callback->sendSuccess(array, false);
             return;
         }
-        RefPtr<ResponsesAccumulator> accumulator = adoptRef(new ResponsesAccumulator(requests->size(), m_params, m_callback));
+        RefPtr<ResponsesAccumulator> accumulator = adoptRef(new ResponsesAccumulator(requests.size(), m_params, m_callback));
 
-        for (size_t i = 0; i < requests->size(); i++) {
-            const auto& request = (*requests)[i];
+        for (size_t i = 0; i < requests.size(); i++) {
+            const auto& request = requests[i];
             auto* cacheRequest = new GetCacheResponsesForRequestData(m_params, request, accumulator, m_callback);
             m_cache->dispatchMatch(cacheRequest, request, WebServiceWorkerCache::QueryParams());
         }
     }
 
-    void onError(WebServiceWorkerCacheError* error)
+    void onError(WebServiceWorkerCacheError error) override
     {
         m_callback->sendFailure(String::format("Error requesting requests for cache %s: %s", m_params.cacheName.utf8().data(), serviceWorkerCacheErrorString(error).data()));
     }
@@ -291,13 +298,13 @@ public:
     }
     ~GetCacheForRequestData() override { }
 
-    void onSuccess(WebServiceWorkerCache* cache)
+    void onSuccess(WebPassOwnPtr<WebServiceWorkerCache> cache) override
     {
-        auto* cacheRequest = new GetCacheKeysForRequestData(m_params, adoptPtr(cache), m_callback);
-        cache->dispatchKeys(cacheRequest, nullptr, WebServiceWorkerCache::QueryParams());
+        auto* cacheRequest = new GetCacheKeysForRequestData(m_params, cache.release(), m_callback);
+        cacheRequest->cache()->dispatchKeys(cacheRequest, nullptr, WebServiceWorkerCache::QueryParams());
     }
 
-    void onError(WebServiceWorkerCacheError* error)
+    void onError(WebServiceWorkerCacheError error) override
     {
         m_callback->sendFailure(String::format("Error requesting cache %s: %s", m_params.cacheName.utf8().data(), serviceWorkerCacheErrorString(error).data()));
     }
@@ -317,12 +324,12 @@ public:
     }
     ~DeleteCache() override { }
 
-    void onSuccess()
+    void onSuccess() override
     {
         m_callback->sendSuccess();
     }
 
-    void onError(WebServiceWorkerCacheError* error)
+    void onError(WebServiceWorkerCacheError error) override
     {
         m_callback->sendFailure(String::format("Error requesting cache names: %s", serviceWorkerCacheErrorString(error).data()));
     }
@@ -341,12 +348,12 @@ public:
     }
     ~DeleteCacheEntry() override { }
 
-    void onSuccess()
+    void onSuccess() override
     {
         m_callback->sendSuccess();
     }
 
-    void onError(WebServiceWorkerCacheError* error)
+    void onError(WebServiceWorkerCacheError error) override
     {
         m_callback->sendFailure(String::format("Error requesting cache names: %s", serviceWorkerCacheErrorString(error).data()));
     }
@@ -368,18 +375,18 @@ public:
     }
     ~GetCacheForDeleteEntry() override { }
 
-    void onSuccess(WebServiceWorkerCache* cache)
+    void onSuccess(WebPassOwnPtr<WebServiceWorkerCache> cache) override
     {
-        auto* deleteRequest = new DeleteCacheEntry( m_callback);
+        auto* deleteRequest = new DeleteCacheEntry(m_callback);
         BatchOperation deleteOperation;
         deleteOperation.operationType = WebServiceWorkerCache::OperationTypeDelete;
         deleteOperation.request.setURL(KURL(ParsedURLString, m_requestSpec));
         Vector<BatchOperation> operations;
         operations.append(deleteOperation);
-        cache->dispatchBatch(deleteRequest, WebVector<BatchOperation>(operations));
+        cache.release()->dispatchBatch(deleteRequest, WebVector<BatchOperation>(operations));
     }
 
-    void onError(WebServiceWorkerCacheError* error)
+    void onError(WebServiceWorkerCacheError error) override
     {
         m_callback->sendFailure(String::format("Error requesting cache %s: %s", m_cacheName.utf8().data(), serviceWorkerCacheErrorString(error).data()));
     }
@@ -406,6 +413,16 @@ DEFINE_TRACE(InspectorCacheStorageAgent)
 
 void InspectorCacheStorageAgent::requestCacheNames(ErrorString* errorString, const String& securityOrigin, PassRefPtrWillBeRawPtr<RequestCacheNamesCallback> callback)
 {
+    RefPtr<SecurityOrigin> secOrigin = SecurityOrigin::createFromString(securityOrigin);
+
+    // Cache Storage API is restricted to trustworthy origins.
+    String ignoredMessage;
+    if (!secOrigin->isPotentiallyTrustworthy(ignoredMessage)) {
+        // Don't treat this as an error, just don't attempt to open and enumerate the caches.
+        callback->sendSuccess(Array<TypeBuilder::CacheStorage::Cache>::create());
+        return;
+    }
+
     OwnPtr<WebServiceWorkerCacheStorage> cache = assertCacheStorage(errorString, securityOrigin);
     if (!cache) {
         callback->sendFailure(*errorString);

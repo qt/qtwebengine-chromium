@@ -4,8 +4,11 @@
 
 #include "base/i18n/rtl.h"
 
+#include <algorithm>
+
 #include "base/files/file_path.h"
 #include "base/logging.h"
+#include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
@@ -13,6 +16,10 @@
 #include "third_party/icu/source/common/unicode/uchar.h"
 #include "third_party/icu/source/common/unicode/uscript.h"
 #include "third_party/icu/source/i18n/unicode/coll.h"
+
+#if defined(OS_IOS)
+#include "base/ios/ios_util.h"
+#endif
 
 namespace {
 
@@ -31,11 +38,8 @@ std::string GetLocaleString(const icu::Locale& locale) {
     result += country;
   }
 
-  if (variant != NULL && *variant != '\0') {
-    std::string variant_str(variant);
-    base::StringToLowerASCII(&variant_str);
-    result += '@' + variant_str;
-  }
+  if (variant != NULL && *variant != '\0')
+    result += '@' + base::ToLowerASCII(variant);
 
   return result;
 }
@@ -125,12 +129,38 @@ bool IsRTL() {
 bool ICUIsRTL() {
   if (g_icu_text_direction == UNKNOWN_DIRECTION) {
     const icu::Locale& locale = icu::Locale::getDefault();
-    g_icu_text_direction = GetTextDirectionForLocale(locale.getName());
+    g_icu_text_direction = GetTextDirectionForLocaleInStartUp(locale.getName());
   }
   return g_icu_text_direction == RIGHT_TO_LEFT;
 }
 
+TextDirection GetTextDirectionForLocaleInStartUp(const char* locale_name) {
+// On iOS, check for RTL forcing.
+#if defined(OS_IOS)
+  if (ios::IsInForcedRTL())
+    return RIGHT_TO_LEFT;
+#endif
+
+  // This list needs to be updated in alphabetical order if we add more RTL
+  // locales.
+  static const char* kRTLLanguageCodes[] = {"ar", "fa", "he", "iw", "ur"};
+  std::vector<StringPiece> locale_split =
+      SplitStringPiece(locale_name, "-_", KEEP_WHITESPACE, SPLIT_WANT_ALL);
+  const StringPiece& language_code = locale_split[0];
+  if (std::binary_search(kRTLLanguageCodes,
+                         kRTLLanguageCodes + arraysize(kRTLLanguageCodes),
+                         language_code))
+    return RIGHT_TO_LEFT;
+  return LEFT_TO_RIGHT;
+}
+
 TextDirection GetTextDirectionForLocale(const char* locale_name) {
+  // On iOS, check for RTL forcing.
+#if defined(OS_IOS)
+  if (ios::IsInForcedRTL())
+    return RIGHT_TO_LEFT;
+#endif
+
   UErrorCode status = U_ZERO_ERROR;
   ULayoutType layout_dir = uloc_getCharacterOrientation(locale_name, &status);
   DCHECK(U_SUCCESS(status));

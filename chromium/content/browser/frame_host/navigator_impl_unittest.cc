@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/command_line.h"
 #include "base/macros.h"
 #include "base/time/time.h"
 #include "content/browser/frame_host/navigation_controller_impl.h"
@@ -16,11 +15,12 @@
 #include "content/browser/streams/stream.h"
 #include "content/common/frame_messages.h"
 #include "content/common/navigation_params.h"
+#include "content/common/site_isolation_policy.h"
 #include "content/public/browser/stream_handle.h"
-#include "content/public/common/content_switches.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/common/url_utils.h"
 #include "content/public/test/mock_render_process_host.h"
+#include "content/public/test/test_utils.h"
 #include "content/test/browser_side_navigation_test_utils.h"
 #include "content/test/test_navigation_url_loader.h"
 #include "content/test/test_render_frame_host.h"
@@ -55,10 +55,10 @@ class NavigatorTestWithBrowserSideNavigation
   }
 
   void TearDown() override {
+    RenderViewHostImplTestHarness::TearDown();
 #if !defined(OS_ANDROID)
     ImageTransportFactory::Terminate();
 #endif
-    RenderViewHostImplTestHarness::TearDown();
   }
 
   TestNavigationURLLoader* GetLoaderForNavigationRequest(
@@ -101,12 +101,10 @@ class NavigatorTestWithBrowserSideNavigation
   // the tracked commit happens to clear up commit messages from previous
   // navigations.
   bool DidRenderFrameHostRequestCommit(TestRenderFrameHost* rfh) {
-    const FrameMsg_CommitNavigation* commit_message =
-        static_cast<const FrameMsg_CommitNavigation*>(
-            rfh->GetProcess()->sink().GetUniqueMessageMatching(
-                FrameMsg_CommitNavigation::ID));
-    return commit_message &&
-           rfh->GetRoutingID() == commit_message->routing_id();
+    const IPC::Message* message =
+        rfh->GetProcess()->sink().GetUniqueMessageMatching(
+            FrameMsg_CommitNavigation::ID);
+    return message && rfh->GetRoutingID() == message->routing_id();
   }
 
   SiteInstance* ConvertToSiteInstance(RenderFrameHostManager* rfhm,
@@ -273,11 +271,14 @@ TEST_F(NavigatorTestWithBrowserSideNavigation,
   EXPECT_TRUE(request->browser_initiated());
   EXPECT_EQ(NavigationRequest::WAITING_FOR_RENDERER_RESPONSE, request->state());
   EXPECT_TRUE(GetSpeculativeRenderFrameHost(node));
+  RenderFrameDeletedObserver rfh_deleted_observer(
+      GetSpeculativeRenderFrameHost(node));
 
   // Simulate a beforeUnload denial.
   main_test_rfh()->SendBeforeUnloadACK(false);
   EXPECT_FALSE(node->navigation_request());
   EXPECT_FALSE(GetSpeculativeRenderFrameHost(node));
+  EXPECT_TRUE(rfh_deleted_observer.deleted());
 }
 
 // PlzNavigate: Test that a proper NavigationRequest is created by
@@ -318,8 +319,7 @@ TEST_F(NavigatorTestWithBrowserSideNavigation, BeginNavigation) {
   // Subframe navigations should never create a speculative RenderFrameHost,
   // unless site-per-process is enabled. In that case, as the subframe
   // navigation is to a different site and is still ongoing, it should have one.
-  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kSitePerProcess)) {
+  if (AreAllSitesIsolatedForTesting()) {
     EXPECT_TRUE(GetSpeculativeRenderFrameHost(subframe_node));
   } else {
     EXPECT_FALSE(GetSpeculativeRenderFrameHost(subframe_node));
@@ -353,8 +353,7 @@ TEST_F(NavigatorTestWithBrowserSideNavigation, BeginNavigation) {
 
   // As the main frame hasn't yet committed the subframe still exists. Thus, the
   // above situation regarding subframe navigations is valid here.
-  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kSitePerProcess)) {
+  if (AreAllSitesIsolatedForTesting()) {
     EXPECT_TRUE(GetSpeculativeRenderFrameHost(subframe_node));
   } else {
     EXPECT_FALSE(GetSpeculativeRenderFrameHost(subframe_node));
@@ -872,6 +871,7 @@ TEST_F(NavigatorTestWithBrowserSideNavigation,
   TestRenderFrameHost* speculative_rfh = GetSpeculativeRenderFrameHost(node);
   ASSERT_TRUE(speculative_rfh);
   int32 site_instance_id = speculative_rfh->GetSiteInstance()->GetId();
+  RenderFrameDeletedObserver rfh_deleted_observer(speculative_rfh);
   EXPECT_NE(init_site_instance_id, site_instance_id);
   EXPECT_EQ(init_site_instance_id, main_test_rfh()->GetSiteInstance()->GetId());
   EXPECT_NE(speculative_rfh, main_test_rfh());
@@ -896,6 +896,7 @@ TEST_F(NavigatorTestWithBrowserSideNavigation,
   // this next check will be changed to verify that it actually happens.
   EXPECT_EQ(speculative_rfh, GetSpeculativeRenderFrameHost(node));
   EXPECT_EQ(site_instance_id, speculative_rfh->GetSiteInstance()->GetId());
+  EXPECT_FALSE(rfh_deleted_observer.deleted());
 
   // Commit the navigation with Navigator by simulating the call to
   // OnResponseStarted.
@@ -906,6 +907,7 @@ TEST_F(NavigatorTestWithBrowserSideNavigation,
   ASSERT_TRUE(speculative_rfh);
   EXPECT_TRUE(DidRenderFrameHostRequestCommit(speculative_rfh));
   EXPECT_EQ(init_site_instance_id, main_test_rfh()->GetSiteInstance()->GetId());
+  EXPECT_TRUE(rfh_deleted_observer.deleted());
 
   // Once commit happens the speculative RenderFrameHost is updated to match the
   // known final SiteInstance.
@@ -931,7 +933,7 @@ TEST_F(NavigatorTestWithBrowserSideNavigation,
        SpeculativeRendererReuseSwappedOutRFH) {
   // This test doesn't make sense in --site-per-process where swapped out
   // RenderFrameHost is no longer used.
-  if (RenderFrameHostManager::IsSwappedOutStateForbidden())
+  if (SiteIsolationPolicy::IsSwappedOutStateForbidden())
     return;
 
   // Navigate to an initial site.

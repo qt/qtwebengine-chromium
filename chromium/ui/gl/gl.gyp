@@ -115,12 +115,16 @@
         'gpu_switching_observer.h',
         'gpu_timing.cc',
         'gpu_timing.h',
+        'scoped_api.cc',
+        'scoped_api.h',
         'scoped_binders.cc',
         'scoped_binders.h',
         'scoped_make_current.cc',
         'scoped_make_current.h',
         'sync_control_vsync_provider.cc',
         'sync_control_vsync_provider.h',
+        'trace_util.cc',
+        'trace_util.h',
       ],
       'conditions': [
         ['OS in ("win", "android", "linux")', {
@@ -148,12 +152,6 @@
           'sources': [
             'gl_implementation_osmesa.cc',
             'gl_implementation_osmesa.h',
-          ],
-        }],
-        ['OS=="linux"', {
-          'sources': [
-            'gl_image_linux_dma_buffer.cc',
-            'gl_image_linux_dma_buffer.h',
           ],
         }],
         ['use_x11 == 1', {
@@ -225,7 +223,7 @@
             'gl_context_cgl.h',
             'gl_fence_apple.cc',
             'gl_fence_apple.h',
-            'gl_image_io_surface.cc',
+            'gl_image_io_surface.mm',
             'gl_image_io_surface.h',
             'scoped_cgl.cc',
             'scoped_cgl.h',
@@ -234,6 +232,7 @@
             'libraries': [
               '$(SDKROOT)/System/Library/Frameworks/IOSurface.framework',
               '$(SDKROOT)/System/Library/Frameworks/OpenGL.framework',
+              '$(SDKROOT)/System/Library/Frameworks/Quartz.framework',
             ],
           },
         }],
@@ -263,6 +262,10 @@
           'sources/': [ ['exclude', '^android/'] ],
         }],
         ['use_ozone==1', {
+          'sources': [
+            'gl_image_ozone_native_pixmap.cc',
+            'gl_image_ozone_native_pixmap.h',
+          ],
           'dependencies': [
             '../ozone/ozone.gyp:ozone',
             '../ozone/ozone.gyp:ozone_base',
@@ -289,6 +292,30 @@
         'gl_mock_autogen_gl.h',
         'gpu_timing_fake.cc',
         'gpu_timing_fake.h',
+      ],
+    },
+    {
+      'target_name': 'gl_test_support',
+      'type': 'static_library',
+      'dependencies': [
+        '../../third_party/khronos/khronos.gyp:khronos_headers',
+        'gl',
+      ],
+      'include_dirs': [
+        '../..',
+      ],
+      'sources': [
+        'test/gl_surface_test_support.cc',
+        'test/gl_surface_test_support.h',
+      ],
+      'conditions': [
+        ['use_x11==1', {
+          'dependencies': [
+            '../../build/linux/system.gyp:x11',
+            '../gfx/x/gfx_x11.gyp:gfx_x11',
+            '../platform_window/x11/x11_window.gyp:x11_window',
+          ],
+        }],
       ],
     },
   ],

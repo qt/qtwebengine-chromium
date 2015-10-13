@@ -17,37 +17,20 @@ public:
         : InterpolationType(property)
     { }
 
-    virtual PassOwnPtrWillBeRawPtr<InterpolationValue> maybeConvertSingle(const CSSPropertySpecificKeyframe&, const StyleResolverState*, ConversionCheckers&) const override final;
-    virtual void apply(const InterpolableValue&, const NonInterpolableValue*, StyleResolverState&) const override final;
-};
-
-class DefaultNonInterpolableValue : public NonInterpolableValue {
-public:
-    virtual ~DefaultNonInterpolableValue() { }
-    static PassRefPtrWillBeRawPtr<DefaultNonInterpolableValue> create(PassRefPtrWillBeRawPtr<CSSValue> cssValue)
+    PassOwnPtr<PairwisePrimitiveInterpolation> maybeConvertPairwise(const CSSPropertySpecificKeyframe& startKeyframe, const CSSPropertySpecificKeyframe& endKeyframe, const StyleResolverState* state, ConversionCheckers&) const final
     {
-        return adoptRefWillBeNoop(new DefaultNonInterpolableValue(cssValue));
+        return nullptr;
     }
 
-    CSSValue* cssValue() const { return m_cssValue.get(); }
+    PassOwnPtr<InterpolationValue> maybeConvertSingle(const CSSPropertySpecificKeyframe&, const StyleResolverState*, ConversionCheckers&) const final;
 
-    DEFINE_INLINE_VIRTUAL_TRACE()
+    PassOwnPtr<InterpolationValue> maybeConvertUnderlyingValue(const StyleResolverState&) const final
     {
-        NonInterpolableValue::trace(visitor);
-        visitor->trace(m_cssValue);
+        return nullptr;
     }
 
-    DECLARE_NON_INTERPOLABLE_VALUE_TYPE();
-
-private:
-    DefaultNonInterpolableValue(PassRefPtrWillBeRawPtr<CSSValue> cssValue)
-        : m_cssValue(cssValue)
-    { }
-
-    RefPtrWillBeMember<CSSValue> m_cssValue;
+    void apply(const InterpolableValue&, const NonInterpolableValue*, StyleResolverState&) const final;
 };
-
-DEFINE_NON_INTERPOLABLE_VALUE_TYPE_CASTS(DefaultNonInterpolableValue);
 
 } // namespace blink
 

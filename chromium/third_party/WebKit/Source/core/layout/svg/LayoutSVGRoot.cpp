@@ -32,7 +32,7 @@
 #include "core/layout/LayoutView.h"
 #include "core/layout/svg/SVGLayoutSupport.h"
 #include "core/layout/svg/SVGResourcesCache.h"
-#include "core/paint/DeprecatedPaintLayer.h"
+#include "core/paint/PaintLayer.h"
 #include "core/paint/SVGRootPainter.h"
 #include "core/svg/SVGElement.h"
 #include "core/svg/SVGSVGElement.h"
@@ -198,7 +198,7 @@ bool LayoutSVGRoot::shouldApplyViewportClip() const
         || this->isDocumentElement();
 }
 
-void LayoutSVGRoot::paintReplaced(const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
+void LayoutSVGRoot::paintReplaced(const PaintInfo& paintInfo, const LayoutPoint& paintOffset) const
 {
     SVGRootPainter(*this).paint(paintInfo, paintOffset);
 }
@@ -293,10 +293,9 @@ void LayoutSVGRoot::buildLocalToBorderBoxTransform()
     FloatPoint translate = svg->currentTranslate();
     LayoutSize borderAndPadding(borderLeft() + paddingLeft(), borderTop() + paddingTop());
     m_localToBorderBoxTransform = svg->viewBoxToViewTransform(contentWidth() / scale, contentHeight() / scale);
+
     AffineTransform viewToBorderBoxTransform(scale, 0, 0, scale, borderAndPadding.width() + translate.x(), borderAndPadding.height() + translate.y());
-    if (viewToBorderBoxTransform.isIdentity())
-        return;
-    m_localToBorderBoxTransform = viewToBorderBoxTransform * m_localToBorderBoxTransform;
+    m_localToBorderBoxTransform.preMultiply(viewToBorderBoxTransform);
 }
 
 const AffineTransform& LayoutSVGRoot::localToParentTransform() const

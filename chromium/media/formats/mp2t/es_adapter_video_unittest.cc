@@ -11,6 +11,7 @@
 #include "base/strings/string_util.h"
 #include "base/time/time.h"
 #include "media/base/stream_parser_buffer.h"
+#include "media/base/timestamp_constants.h"
 #include "media/base/video_decoder_config.h"
 #include "media/formats/mp2t/es_adapter_video.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -24,14 +25,9 @@ VideoDecoderConfig CreateFakeVideoConfig() {
   gfx::Size coded_size(320, 240);
   gfx::Rect visible_rect(0, 0, 320, 240);
   gfx::Size natural_size(320, 240);
-  return VideoDecoderConfig(
-      kCodecH264,
-      H264PROFILE_MAIN,
-      VideoFrame::I420,
-      coded_size,
-      visible_rect,
-      natural_size,
-      NULL, 0, false);
+  return VideoDecoderConfig(kCodecH264, H264PROFILE_MAIN, PIXEL_FORMAT_I420,
+                            COLOR_SPACE_UNSPECIFIED, coded_size, visible_rect,
+                            natural_size, NULL, 0, false);
 }
 
 StreamParserBuffer::BufferQueue

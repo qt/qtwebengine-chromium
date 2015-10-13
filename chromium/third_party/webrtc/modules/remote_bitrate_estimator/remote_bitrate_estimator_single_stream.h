@@ -24,8 +24,7 @@ namespace webrtc {
 class RemoteBitrateEstimatorSingleStream : public RemoteBitrateEstimator {
  public:
   RemoteBitrateEstimatorSingleStream(RemoteBitrateObserver* observer,
-                                     Clock* clock,
-                                     uint32_t min_bitrate_bps);
+                                     Clock* clock);
   virtual ~RemoteBitrateEstimatorSingleStream();
 
   void IncomingPacket(int64_t arrival_time_ms,
@@ -34,11 +33,12 @@ class RemoteBitrateEstimatorSingleStream : public RemoteBitrateEstimator {
                       bool was_paced) override;
   int32_t Process() override;
   int64_t TimeUntilNextProcess() override;
-  void OnRttUpdate(int64_t rtt) override;
+  void OnRttUpdate(int64_t avg_rtt_ms, int64_t max_rtt_ms) override;
   void RemoveStream(unsigned int ssrc) override;
   bool LatestEstimate(std::vector<unsigned int>* ssrcs,
                       unsigned int* bitrate_bps) const override;
   bool GetStats(ReceiveBandwidthEstimatorStats* output) const override;
+  void SetMinBitrate(int min_bitrate_bps) override;
 
  private:
   struct Detector;
@@ -61,7 +61,7 @@ class RemoteBitrateEstimatorSingleStream : public RemoteBitrateEstimator {
   int64_t last_process_time_;
   int64_t process_interval_ms_ GUARDED_BY(crit_sect_.get());
 
-  DISALLOW_IMPLICIT_CONSTRUCTORS(RemoteBitrateEstimatorSingleStream);
+  RTC_DISALLOW_IMPLICIT_CONSTRUCTORS(RemoteBitrateEstimatorSingleStream);
 };
 
 }  // namespace webrtc

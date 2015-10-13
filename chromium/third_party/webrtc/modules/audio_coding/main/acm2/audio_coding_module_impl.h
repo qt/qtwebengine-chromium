@@ -13,6 +13,7 @@
 
 #include <vector>
 
+#include "webrtc/base/buffer.h"
 #include "webrtc/base/scoped_ptr.h"
 #include "webrtc/base/thread_annotations.h"
 #include "webrtc/common_types.h"
@@ -29,9 +30,7 @@ class AudioCodingImpl;
 
 namespace acm2 {
 
-class ACMDTMFDetection;
-
-class AudioCodingModuleImpl : public AudioCodingModule {
+class AudioCodingModuleImpl final : public AudioCodingModule {
  public:
   friend webrtc::AudioCodingImpl;
 
@@ -42,14 +41,11 @@ class AudioCodingModuleImpl : public AudioCodingModule {
   //   Sender
   //
 
-  // Reset send codec.
-  int ResetEncoder() override;
-
   // Can be called multiple times for Codec, CNG, RED.
   int RegisterSendCodec(const CodecInst& send_codec) override;
 
   void RegisterExternalSendCodec(
-      AudioEncoderMutable* external_speech_encoder) override;
+      AudioEncoder* external_speech_encoder) override;
 
   // Get current send codec.
   int SendCodec(CodecInst* current_codec) const override;
@@ -57,19 +53,10 @@ class AudioCodingModuleImpl : public AudioCodingModule {
   // Get current send frequency.
   int SendFrequency() const override;
 
-  // Get encode bit-rate.
-  // Adaptive rate codecs return their current encode target rate, while other
-  // codecs return there long-term average or their fixed rate.
-  int SendBitrate() const override;
-
   // Sets the bitrate to the specified value in bits/sec. In case the codec does
   // not support the requested value it will choose an appropriate value
   // instead.
   void SetBitRate(int bitrate_bps) override;
-
-  // Set available bandwidth, inform the encoder about the
-  // estimated bandwidth received from the remote party.
-  int SetReceivedEstimatedBandwidth(int bw) override;
 
   // Register a transport callback which will be
   // called to deliver the encoded buffers.
@@ -124,9 +111,6 @@ class AudioCodingModuleImpl : public AudioCodingModule {
   // Initialize receiver, resets codec database etc.
   int InitializeReceiver() override;
 
-  // Reset the decoder state.
-  int ResetDecoder() override;
-
   // Get current receive frequency.
   int ReceiveFrequency() const override;
 
@@ -136,6 +120,11 @@ class AudioCodingModuleImpl : public AudioCodingModule {
   // Register possible receive codecs, can be called multiple times,
   // for codecs, CNG, DTMF, RED.
   int RegisterReceiveCodec(const CodecInst& receive_codec) override;
+
+  int RegisterExternalReceiveCodec(int rtp_payload_type,
+                                   AudioDecoder* external_decoder,
+                                   int sample_rate_hz,
+                                   int num_channels) override;
 
   // Get current received codec.
   int ReceiveCodec(CodecInst* current_codec) const override;
@@ -165,27 +154,6 @@ class AudioCodingModuleImpl : public AudioCodingModule {
   // audio is accumulated in NetEq buffer, then starts decoding payloads.
   int SetInitialPlayoutDelay(int delay_ms) override;
 
-  // TODO(turajs): DTMF playout is always activated in NetEq these APIs should
-  // be removed, as well as all VoE related APIs and methods.
-  //
-  // Configure Dtmf playout status i.e on/off playout the incoming outband Dtmf
-  // tone.
-  int SetDtmfPlayoutStatus(bool enable) override;
-
-  // Get Dtmf playout status.
-  bool DtmfPlayoutStatus() const override;
-
-  // Estimate the Bandwidth based on the incoming stream, needed
-  // for one way audio where the RTCP send the BW estimate.
-  // This is also done in the RTP module .
-  int DecoderEstimatedBandwidth() const override;
-
-  // Set playout mode voice, fax.
-  int SetPlayoutMode(AudioPlayoutMode mode) override;
-
-  // Get playout mode voice, fax.
-  AudioPlayoutMode PlayoutMode() const override;
-
   // Get playout timestamp.
   int PlayoutTimestamp(uint32_t* timestamp) override;
 
@@ -198,26 +166,6 @@ class AudioCodingModuleImpl : public AudioCodingModule {
   //
 
   int GetNetworkStatistics(NetworkStatistics* statistics) override;
-
-  // GET RED payload for iSAC. The method id called when 'this' ACM is
-  // the default ACM.
-  // TODO(henrik.lundin) Not used. Remove?
-  int REDPayloadISAC(int isac_rate,
-                     int isac_bw_estimate,
-                     uint8_t* payload,
-                     int16_t* length_bytes);
-
-  int ReplaceInternalDTXWithWebRtc(bool use_webrtc_dtx) override;
-
-  int IsInternalDTXReplacedWithWebRtc(bool* uses_webrtc_dtx) override;
-
-  int SetISACMaxRate(int max_bit_per_sec) override;
-
-  int SetISACMaxPayloadSize(int max_size_bytes) override;
-
-  int ConfigISACBandwidthEstimator(int frame_size_ms,
-                                   int rate_bit_per_sec,
-                                   bool enforce_frame_size = false) override;
 
   int SetOpusApplication(OpusApplicationMode application) override;
 
@@ -243,7 +191,7 @@ class AudioCodingModuleImpl : public AudioCodingModule {
   struct InputData {
     uint32_t input_timestamp;
     const int16_t* audio;
-    uint16_t length_per_channel;
+    size_t length_per_channel;
     uint8_t audio_channel;
     // If a re-mix is required (up or down), this buffer will store a re-mixed
     // version of the input.
@@ -295,7 +243,8 @@ class AudioCodingModuleImpl : public AudioCodingModule {
   // to |index|.
   int UpdateUponReceivingCodec(int index);
 
-  CriticalSectionWrapper* acm_crit_sect_;
+  const rtc::scoped_ptr<CriticalSectionWrapper> acm_crit_sect_;
+  rtc::Buffer encode_buffer_ GUARDED_BY(acm_crit_sect_);
   int id_;  // TODO(henrik.lundin) Make const.
   uint32_t expected_codec_ts_ GUARDED_BY(acm_crit_sect_);
   uint32_t expected_in_ts_ GUARDED_BY(acm_crit_sect_);
@@ -313,7 +262,7 @@ class AudioCodingModuleImpl : public AudioCodingModule {
   // IMPORTANT: this variable is only used in IncomingPayload(), therefore,
   // no lock acquired when interacting with this variable. If it is going to
   // be used in other methods, locks need to be taken.
-  WebRtcRTPHeader* aux_rtp_header_;
+  rtc::scoped_ptr<WebRtcRTPHeader> aux_rtp_header_;
 
   bool receiver_initialized_ GUARDED_BY(acm_crit_sect_);
 
@@ -324,7 +273,7 @@ class AudioCodingModuleImpl : public AudioCodingModule {
   uint32_t last_timestamp_ GUARDED_BY(acm_crit_sect_);
   uint32_t last_rtp_timestamp_ GUARDED_BY(acm_crit_sect_);
 
-  CriticalSectionWrapper* callback_crit_sect_;
+  const rtc::scoped_ptr<CriticalSectionWrapper> callback_crit_sect_;
   AudioPacketizationCallback* packetization_callback_
       GUARDED_BY(callback_crit_sect_);
   ACMVADCallback* vad_callback_ GUARDED_BY(callback_crit_sect_);

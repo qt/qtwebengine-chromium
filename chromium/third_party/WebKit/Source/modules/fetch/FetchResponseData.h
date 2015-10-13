@@ -8,7 +8,7 @@
 #include "modules/ModulesExport.h"
 #include "platform/heap/Handle.h"
 #include "platform/weborigin/KURL.h"
-#include "public/platform/WebServiceWorkerRequest.h"
+#include "public/platform/modules/serviceworker/WebServiceWorkerRequest.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/text/AtomicString.h"
 
@@ -23,8 +23,9 @@ class MODULES_EXPORT FetchResponseData final : public GarbageCollectedFinalized<
     WTF_MAKE_NONCOPYABLE(FetchResponseData);
 public:
     // "A response has an associated type which is one of basic, CORS, default,
-    // error, and opaque. Unless stated otherwise, it is default."
-    enum Type { BasicType, CORSType, DefaultType, ErrorType, OpaqueType };
+    // error, opaque, and opaqueredirect. Unless stated otherwise, it is
+    // default."
+    enum Type { BasicType, CORSType, DefaultType, ErrorType, OpaqueType, OpaqueRedirectType };
     // "A response can have an associated termination reason which is one of
     // end-user abort, fatal, and timeout."
     enum TerminationReason { EndUserAbortTermination, FatalTermination, TimeoutTermination };
@@ -36,6 +37,7 @@ public:
     FetchResponseData* createBasicFilteredResponse();
     FetchResponseData* createCORSFilteredResponse();
     FetchResponseData* createOpaqueFilteredResponse();
+    FetchResponseData* createOpaqueRedirectFilteredResponse();
 
     FetchResponseData* clone(ExecutionContext*);
 

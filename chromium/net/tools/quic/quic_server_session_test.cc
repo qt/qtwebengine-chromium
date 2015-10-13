@@ -21,7 +21,7 @@
 #include "net/quic/test_tools/quic_test_utils.h"
 #include "net/test/gtest_util.h"
 #include "net/tools/quic/quic_spdy_server_stream.h"
-#include "net/tools/quic/test_tools/quic_test_utils.h"
+#include "net/tools/quic/test_tools/mock_quic_server_session_visitor.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -39,6 +39,8 @@ using net::test::ValueRestore;
 using net::test::kClientDataStreamId1;
 using net::test::kClientDataStreamId2;
 using net::test::kClientDataStreamId3;
+using net::test::kInitialSessionFlowControlWindowForTest;
+using net::test::kInitialStreamFlowControlWindowForTest;
 using std::string;
 using testing::StrictMock;
 using testing::_;
@@ -123,9 +125,7 @@ TEST_P(QuicServerSessionTest, CloseStreamDueToReset) {
   // Open a stream, then reset it.
   // Send two bytes of payload to open it.
   QuicStreamFrame data1(kClientDataStreamId1, false, 0, StringPiece("HT"));
-  vector<QuicStreamFrame> frames;
-  frames.push_back(data1);
-  session_->OnStreamFrames(frames);
+  session_->OnStreamFrame(data1);
   EXPECT_EQ(1u, session_->GetNumOpenStreams());
 
   // Send a reset (and expect the peer to send a RST in response).
@@ -136,7 +136,7 @@ TEST_P(QuicServerSessionTest, CloseStreamDueToReset) {
   EXPECT_EQ(0u, session_->GetNumOpenStreams());
 
   // Send the same two bytes of payload in a new packet.
-  visitor_->OnStreamFrames(frames);
+  visitor_->OnStreamFrame(data1);
 
   // The stream should not be re-opened.
   EXPECT_EQ(0u, session_->GetNumOpenStreams());
@@ -153,9 +153,7 @@ TEST_P(QuicServerSessionTest, NeverOpenStreamDueToReset) {
 
   // Send two bytes of payload.
   QuicStreamFrame data1(kClientDataStreamId1, false, 0, StringPiece("HT"));
-  vector<QuicStreamFrame> frames;
-  frames.push_back(data1);
-  visitor_->OnStreamFrames(frames);
+  visitor_->OnStreamFrame(data1);
 
   // The stream should never be opened, now that the reset is received.
   EXPECT_EQ(0u, session_->GetNumOpenStreams());
@@ -163,13 +161,13 @@ TEST_P(QuicServerSessionTest, NeverOpenStreamDueToReset) {
 }
 
 TEST_P(QuicServerSessionTest, AcceptClosedStream) {
-  vector<QuicStreamFrame> frames;
   // Send (empty) compressed headers followed by two bytes of data.
-  frames.push_back(QuicStreamFrame(kClientDataStreamId1, false, 0,
-                                   StringPiece("\1\0\0\0\0\0\0\0HT")));
-  frames.push_back(QuicStreamFrame(kClientDataStreamId2, false, 0,
-                                   StringPiece("\2\0\0\0\0\0\0\0HT")));
-  visitor_->OnStreamFrames(frames);
+  QuicStreamFrame frame1(kClientDataStreamId1, false, 0,
+                         StringPiece("\1\0\0\0\0\0\0\0HT"));
+  QuicStreamFrame frame2(kClientDataStreamId2, false, 0,
+                         StringPiece("\2\0\0\0\0\0\0\0HT"));
+  visitor_->OnStreamFrame(frame1);
+  visitor_->OnStreamFrame(frame2);
   EXPECT_EQ(2u, session_->GetNumOpenStreams());
 
   // Send a reset (and expect the peer to send a RST in response).
@@ -181,12 +179,10 @@ TEST_P(QuicServerSessionTest, AcceptClosedStream) {
   // If we were tracking, we'd probably want to reject this because it's data
   // past the reset point of stream 3.  As it's a closed stream we just drop the
   // data on the floor, but accept the packet because it has data for stream 5.
-  frames.clear();
-  frames.push_back(
-      QuicStreamFrame(kClientDataStreamId1, false, 2, StringPiece("TP")));
-  frames.push_back(
-      QuicStreamFrame(kClientDataStreamId2, false, 2, StringPiece("TP")));
-  visitor_->OnStreamFrames(frames);
+  QuicStreamFrame frame3(kClientDataStreamId1, false, 2, StringPiece("TP"));
+  QuicStreamFrame frame4(kClientDataStreamId2, false, 2, StringPiece("TP"));
+  visitor_->OnStreamFrame(frame3);
+  visitor_->OnStreamFrame(frame4);
   // The stream should never be opened, now that the reset is received.
   EXPECT_EQ(1u, session_->GetNumOpenStreams());
   EXPECT_TRUE(connection_->connected());
@@ -348,8 +344,8 @@ TEST_P(QuicServerSessionTest, BandwidthEstimates) {
       &bandwidth_recorder, max_bandwidth_estimate_kbytes_per_second,
       max_bandwidth_estimate_timestamp);
   // Queue up some pending data.
-  session_->MarkWriteBlocked(kCryptoStreamId,
-                             QuicWriteBlockedList::kHighestPriority);
+  session_->MarkConnectionLevelWriteBlocked(
+      kCryptoStreamId, QuicWriteBlockedList::kHighestPriority);
   EXPECT_TRUE(session_->HasDataToWrite());
 
   // There will be no update sent yet - not enough time has passed.
@@ -377,7 +373,7 @@ TEST_P(QuicServerSessionTest, BandwidthEstimates) {
 
   // Bandwidth estimate has now changed sufficiently, enough time has passed,
   // and enough packets have been sent.
-  QuicConnectionPeer::SetSequenceNumberOfLastSentPacket(
+  QuicConnectionPeer::SetPacketNumberOfLastSentPacket(
       session_->connection(), kMinPacketsBetweenServerConfigUpdates);
 
   // Verify that the proto has exactly the values we expect.
@@ -408,8 +404,8 @@ TEST_P(QuicServerSessionTest, BandwidthEstimates) {
 
 TEST_P(QuicServerSessionTest, BandwidthResumptionExperiment) {
   // Test that if a client provides a CachedNetworkParameters with the same
-  // serving region as the current server, that this data is passed down to the
-  // send algorithm.
+  // serving region as the current server, and which was made within an hour of
+  // now, that this data is passed down to the send algorithm.
 
   // Client has sent kBWRE connection option to trigger bandwidth resumption.
   QuicTagVector copt;
@@ -418,6 +414,10 @@ TEST_P(QuicServerSessionTest, BandwidthResumptionExperiment) {
 
   const string kTestServingRegion = "a serving region";
   session_->set_serving_region(kTestServingRegion);
+
+  // Set the time to be one hour + one second from the 0 baseline.
+  connection_->AdvanceTime(
+      QuicTime::Delta::FromSeconds(kNumSecondsPerHour + 1));
 
   QuicCryptoServerStream* crypto_stream =
       static_cast<QuicCryptoServerStream*>(
@@ -436,8 +436,16 @@ TEST_P(QuicServerSessionTest, BandwidthResumptionExperiment) {
   EXPECT_CALL(*connection_, ResumeConnectionState(_, _)).Times(0);
   session_->OnConfigNegotiated();
 
-  // Same serving region results in CachedNetworkParameters being stored.
+  // Same serving region, but timestamp is too old, should have no effect.
   cached_network_params.set_serving_region(kTestServingRegion);
+  cached_network_params.set_timestamp(0);
+  crypto_stream->set_previous_cached_network_params(cached_network_params);
+  EXPECT_CALL(*connection_, ResumeConnectionState(_, _)).Times(0);
+  session_->OnConfigNegotiated();
+
+  // Same serving region, and timestamp is recent: estimate is stored.
+  cached_network_params.set_timestamp(
+      connection_->clock()->WallNow().ToUNIXSeconds());
   crypto_stream->set_previous_cached_network_params(cached_network_params);
   EXPECT_CALL(*connection_, ResumeConnectionState(_, _)).Times(1);
   session_->OnConfigNegotiated();

@@ -15,6 +15,7 @@
 #include "media/base/media_log.h"
 #include "media/base/mock_demuxer_host.h"
 #include "media/base/test_helpers.h"
+#include "media/base/timestamp_constants.h"
 #include "media/ffmpeg/ffmpeg_common.h"
 #include "media/filters/ffmpeg_demuxer.h"
 #include "media/filters/file_data_source.h"
@@ -286,7 +287,7 @@ TEST_F(FFmpegDemuxerTest, Initialize_Successful) {
 
   const VideoDecoderConfig& video_config = stream->video_decoder_config();
   EXPECT_EQ(kCodecVP8, video_config.codec());
-  EXPECT_EQ(VideoFrame::YV12, video_config.format());
+  EXPECT_EQ(PIXEL_FORMAT_YV12, video_config.format());
   EXPECT_EQ(320, video_config.coded_size().width());
   EXPECT_EQ(240, video_config.coded_size().height());
   EXPECT_EQ(0, video_config.visible_rect().x());
@@ -594,6 +595,81 @@ TEST_F(FFmpegDemuxerTest, Read_AudioNegativeStartTimeAndOggDiscard_Sync) {
   }
 }
 
+// Similar to the test above, but using an opus clip with a large amount of
+// pre-skip, which ffmpeg encodes as negative timestamps.
+TEST_F(FFmpegDemuxerTest, Read_AudioNegativeStartTimeAndOpusDiscard_Sync) {
+  CreateDemuxer("opus-trimming-video-test.webm");
+  InitializeDemuxer();
+
+  // Attempt a read from the video stream and run the message loop until done.
+  DemuxerStream* video = demuxer_->GetStream(DemuxerStream::VIDEO);
+  DemuxerStream* audio = demuxer_->GetStream(DemuxerStream::AUDIO);
+  EXPECT_EQ(audio->audio_decoder_config().codec_delay(), 65535);
+
+  // Packet size to timestamp (in microseconds) mapping for the first N packets
+  // which should be fully discarded.
+  static const int kTestExpectations[][2] = {
+      {635, 0},      {594, 120000},  {597, 240000}, {591, 360000},
+      {582, 480000}, {583, 600000},  {592, 720000}, {567, 840000},
+      {579, 960000}, {572, 1080000}, {583, 1200000}};
+
+  // Run the test twice with a seek in between.
+  for (int i = 0; i < 2; ++i) {
+    for (size_t j = 0; j < arraysize(kTestExpectations); ++j) {
+      audio->Read(NewReadCB(FROM_HERE, kTestExpectations[j][0],
+                            kTestExpectations[j][1], true));
+      message_loop_.Run();
+    }
+
+    // Though the internal start time may be below zero, the exposed media time
+    // must always be greater than zero.
+    EXPECT_EQ(base::TimeDelta(), demuxer_->GetStartTime());
+
+    video->Read(NewReadCB(FROM_HERE, 16009, 0, true));
+    message_loop_.Run();
+
+    video->Read(NewReadCB(FROM_HERE, 2715, 1000, false));
+    message_loop_.Run();
+
+    video->Read(NewReadCB(FROM_HERE, 427, 33000, false));
+    message_loop_.Run();
+
+    // Seek back to the beginning and repeat the test.
+    WaitableMessageLoopEvent event;
+    demuxer_->Seek(base::TimeDelta(), event.GetPipelineStatusCB());
+    event.RunAndWaitForStatus(PIPELINE_OK);
+  }
+}
+
+// Similar to the test above, but using sfx-opus.ogg, which has a much smaller
+// amount of discard padding and no |start_time| set on the AVStream.
+TEST_F(FFmpegDemuxerTest, Read_AudioNegativeStartTimeAndOpusSfxDiscard_Sync) {
+  CreateDemuxer("sfx-opus.ogg");
+  InitializeDemuxer();
+
+  // Attempt a read from the video stream and run the message loop until done.
+  DemuxerStream* audio = demuxer_->GetStream(DemuxerStream::AUDIO);
+  EXPECT_EQ(audio->audio_decoder_config().codec_delay(), 312);
+
+   // Run the test twice with a seek in between.
+  for (int i = 0; i < 2; ++i) {
+    audio->Read(NewReadCB(FROM_HERE, 314, 0, true));
+    message_loop_.Run();
+
+    audio->Read(NewReadCB(FROM_HERE, 244, 20000, true));
+    message_loop_.Run();
+
+    // Though the internal start time may be below zero, the exposed media time
+    // must always be greater than zero.
+    EXPECT_EQ(base::TimeDelta(), demuxer_->GetStartTime());
+
+    // Seek back to the beginning and repeat the test.
+    WaitableMessageLoopEvent event;
+    demuxer_->Seek(base::TimeDelta(), event.GetPipelineStatusCB());
+    event.RunAndWaitForStatus(PIPELINE_OK);
+  }
+}
+
 TEST_F(FFmpegDemuxerTest, Read_EndOfStream) {
   // Verify that end of stream buffers are created.
   CreateDemuxer("bear-320x240.webm");
@@ -879,6 +955,44 @@ TEST_F(FFmpegDemuxerTest, MP4_ZeroStszEntry) {
   ReadUntilEndOfStream(demuxer_->GetStream(DemuxerStream::AUDIO));
 }
 
+class Mp3SeekFFmpegDemuxerTest
+    : public FFmpegDemuxerTest,
+      public testing::WithParamInterface<const char*> {
+};
+TEST_P(Mp3SeekFFmpegDemuxerTest, TestFastSeek) {
+  // Init demxuer with given MP3 file parameter.
+  CreateDemuxer(GetParam());
+  InitializeDemuxer();
+
+  // We read a bunch of bytes when we first open the file. Reset the count
+  // here to just track the bytes read for the upcoming seek. This allows us
+  // to use a more narrow threshold for passing the test.
+  data_source_->reset_bytes_read_for_testing();
+
+  FFmpegDemuxerStream* audio = static_cast<FFmpegDemuxerStream*>(
+    demuxer_->GetStream(DemuxerStream::AUDIO));
+  ASSERT_TRUE(audio);
+
+  // Seek to near the end of the file
+  WaitableMessageLoopEvent event;
+  demuxer_->Seek(.9 * audio->duration(), event.GetPipelineStatusCB());
+  event.RunAndWaitForStatus(PIPELINE_OK);
+
+  // Verify that seeking to the end read only a small portion of the file.
+  // Slow that read sequentially up to the seek point will fail this check.
+  int64 file_size = 0;
+  ASSERT_TRUE(data_source_->GetSize(&file_size));
+  EXPECT_LT(data_source_->bytes_read_for_testing(), (file_size * .25));
+}
+
+// MP3s should seek quickly without sequentially reading up to the seek point.
+// VBR vs CBR and the presence/absence of TOC influence the seeking algorithm.
+// See http://crbug.com/530043 and FFmpeg flag AVFMT_FLAG_FAST_SEEK.
+INSTANTIATE_TEST_CASE_P(, Mp3SeekFFmpegDemuxerTest,
+                        ::testing::Values("bear-audio-10s-CBR-has-TOC.mp3",
+                                          "bear-audio-10s-CBR-no-TOC.mp3",
+                                          "bear-audio-10s-VBR-has-TOC.mp3",
+                                          "bear-audio-10s-VBR-no-TOC.mp3"));
 
 static void ValidateAnnexB(DemuxerStream* stream,
                            DemuxerStream::Status status,
@@ -980,7 +1094,7 @@ TEST_F(FFmpegDemuxerTest, NaturalSizeWithoutPASP) {
   ASSERT_TRUE(stream);
 
   const VideoDecoderConfig& video_config = stream->video_decoder_config();
-  EXPECT_EQ(gfx::Size(638, 360), video_config.natural_size());
+  EXPECT_EQ(gfx::Size(639, 360), video_config.natural_size());
 }
 
 TEST_F(FFmpegDemuxerTest, NaturalSizeWithPASP) {
@@ -991,9 +1105,25 @@ TEST_F(FFmpegDemuxerTest, NaturalSizeWithPASP) {
   ASSERT_TRUE(stream);
 
   const VideoDecoderConfig& video_config = stream->video_decoder_config();
-  EXPECT_EQ(gfx::Size(638, 360), video_config.natural_size());
+  EXPECT_EQ(gfx::Size(639, 360), video_config.natural_size());
 }
 
+#endif
+
+#if defined(ENABLE_HEVC_DEMUXING)
+TEST_F(FFmpegDemuxerTest, HEVC_in_MP4_container) {
+  CreateDemuxer("bear-hevc-frag.mp4");
+  InitializeDemuxer();
+
+  DemuxerStream* video = demuxer_->GetStream(DemuxerStream::VIDEO);
+  ASSERT_TRUE(video);
+
+  video->Read(NewReadCB(FROM_HERE, 3569, 66733, true));
+  message_loop_.Run();
+
+  video->Read(NewReadCB(FROM_HERE, 1042, 200200, false));
+  message_loop_.Run();
+}
 #endif
 
 }  // namespace media

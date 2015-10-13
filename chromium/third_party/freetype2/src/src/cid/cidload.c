@@ -152,6 +152,7 @@
   {
     FT_Matrix*    matrix;
     FT_Vector*    offset;
+    FT_Int        result;
     CID_FaceDict  dict;
     FT_Face       root = (FT_Face)&face->root;
     FT_Fixed      temp[6];
@@ -164,9 +165,18 @@
       matrix = &dict->font_matrix;
       offset = &dict->font_offset;
 
-      (void)cid_parser_to_fixed_array( parser, 6, temp, 3 );
+      result = cid_parser_to_fixed_array( parser, 6, temp, 3 );
+
+      if ( result < 6 )
+        return CID_Err_Syntax_Error;
 
       temp_scale = FT_ABS( temp[3] );
+
+      if ( temp_scale == 0 )
+      {
+        FT_ERROR(( "cid_parse_font_matrix: invalid font matrix\n" ));
+        return CID_Err_Syntax_Error;
+      }
 
       /* Set units per EM based on FontMatrix values.  We set the value to */
       /* `1000/temp_scale', because temp_scale was already multiplied by   */
@@ -182,7 +192,7 @@
         temp[2] = FT_DivFix( temp[2], temp_scale );
         temp[4] = FT_DivFix( temp[4], temp_scale );
         temp[5] = FT_DivFix( temp[5], temp_scale );
-        temp[3] = 0x10000L;
+        temp[3] = temp[3] < 0 ? -0x10000L : 0x10000L;
       }
 
       matrix->xx = temp[0];
@@ -195,8 +205,7 @@
       offset->y  = temp[5] >> 16;
     }
 
-    return CID_Err_Ok;      /* this is a callback function; */
-                            /* we must return an error code */
+    return CID_Err_Ok;
   }
 
 

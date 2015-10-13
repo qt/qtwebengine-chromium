@@ -59,6 +59,7 @@ int PartitionRootBase::gInitializedLock = 0;
 bool PartitionRootBase::gInitialized = false;
 PartitionPage PartitionRootBase::gSeedPage;
 PartitionBucket PartitionRootBase::gPagedBucket;
+void (*PartitionRootBase::gOomHandlingFunction)() = nullptr;
 
 static uint16_t partitionBucketNumSystemPages(size_t size)
 {
@@ -98,7 +99,7 @@ static uint16_t partitionBucketNumSystemPages(size_t size)
     return bestPages;
 }
 
-static void parititonAllocBaseInit(PartitionRootBase* root)
+static void partitionAllocBaseInit(PartitionRootBase* root)
 {
     ASSERT(!root->initialized);
 
@@ -138,9 +139,15 @@ static void partitionBucketInitBase(PartitionBucket* bucket, PartitionRootBase* 
     bucket->numSystemPagesPerSlotSpan = partitionBucketNumSystemPages(bucket->slotSize);
 }
 
+void partitionAllocGlobalInit(void (*oomHandlingFunction)())
+{
+    ASSERT(oomHandlingFunction);
+    PartitionRootBase::gOomHandlingFunction = oomHandlingFunction;
+}
+
 void partitionAllocInit(PartitionRoot* root, size_t numBuckets, size_t maxAllocation)
 {
-    parititonAllocBaseInit(root);
+    partitionAllocBaseInit(root);
 
     root->numBuckets = numBuckets;
     root->maxAllocation = maxAllocation;
@@ -157,7 +164,7 @@ void partitionAllocInit(PartitionRoot* root, size_t numBuckets, size_t maxAlloca
 
 void partitionAllocGenericInit(PartitionRootGeneric* root)
 {
-    parititonAllocBaseInit(root);
+    partitionAllocBaseInit(root);
 
     root->lock = 0;
 
@@ -308,6 +315,8 @@ static NEVER_INLINE void partitionOutOfMemory(const PartitionRootBase* root)
         partitionOutOfMemoryWithLotsOfUncommitedPages();
     }
 #endif
+    if (PartitionRootBase::gOomHandlingFunction)
+        (*PartitionRootBase::gOomHandlingFunction)();
     IMMEDIATE_CRASH();
 }
 
@@ -1305,7 +1314,7 @@ static void partitionDumpBucketStats(PartitionBucketMemoryStats* statsOut, const
     }
 }
 
-void partitionDumpStatsGeneric(PartitionRootGeneric* partition, const char* partitionName, PartitionStatsDumper* partitionStatsDumper)
+void partitionDumpStatsGeneric(PartitionRootGeneric* partition, const char* partitionName, bool isLightDump, PartitionStatsDumper* partitionStatsDumper)
 {
     PartitionBucketMemoryStats bucketStats[kGenericNumBuckets];
     static const size_t kMaxReportableDirectMaps = 4096;
@@ -1338,10 +1347,21 @@ void partitionDumpStatsGeneric(PartitionRootGeneric* partition, const char* part
     // partitionsDumpBucketStats is called after collecting stats because it
     // can try to allocate using PartitionAllocGeneric and it can't obtain the
     // lock.
+    PartitionMemoryStats partitionStats = { 0 };
+    partitionStats.totalMmappedBytes = partition->totalSizeOfSuperPages + partition->totalSizeOfDirectMappedPages;
+    partitionStats.totalCommittedBytes = partition->totalSizeOfCommittedPages;
     for (size_t i = 0; i < kGenericNumBuckets; ++i) {
-        if (bucketStats[i].isValid)
-            partitionStatsDumper->partitionsDumpBucketStats(partitionName, &bucketStats[i]);
+        if (bucketStats[i].isValid) {
+            partitionStats.totalResidentBytes += bucketStats[i].residentBytes;
+            partitionStats.totalActiveBytes += bucketStats[i].activeBytes;
+            partitionStats.totalDecommittableBytes += bucketStats[i].decommittableBytes;
+            partitionStats.totalDiscardableBytes += bucketStats[i].discardableBytes;
+            if (!isLightDump)
+                partitionStatsDumper->partitionsDumpBucketStats(partitionName, &bucketStats[i]);
+        }
     }
+
+    size_t directMappedAllocationsTotalSize = 0;
     for (size_t i = 0; i < numDirectMappedAllocations; ++i) {
         PartitionBucketMemoryStats stats;
         memset(&stats, '\0', sizeof(stats));
@@ -1353,11 +1373,15 @@ void partitionDumpStatsGeneric(PartitionRootGeneric* partition, const char* part
         stats.bucketSlotSize = size;
         stats.activeBytes = size;
         stats.residentBytes = size;
+        directMappedAllocationsTotalSize += size;
         partitionStatsDumper->partitionsDumpBucketStats(partitionName, &stats);
     }
+    partitionStats.totalResidentBytes += directMappedAllocationsTotalSize;
+    partitionStats.totalActiveBytes += directMappedAllocationsTotalSize;
+    partitionStatsDumper->partitionDumpTotals(partitionName, &partitionStats);
 }
 
-void partitionDumpStats(PartitionRoot* partition, const char* partitionName, PartitionStatsDumper* partitionStatsDumper)
+void partitionDumpStats(PartitionRoot* partition, const char* partitionName, bool isLightDump, PartitionStatsDumper* partitionStatsDumper)
 {
     static const size_t kMaxReportableBuckets = 4096 / sizeof(void*);
     PartitionBucketMemoryStats memoryStats[kMaxReportableBuckets];
@@ -1369,10 +1393,21 @@ void partitionDumpStats(PartitionRoot* partition, const char* partitionName, Par
 
     // partitionsDumpBucketStats is called after collecting stats because it
     // can use PartitionAlloc to allocate and this can affect the statistics.
+    PartitionMemoryStats partitionStats = { 0 };
+    partitionStats.totalMmappedBytes = partition->totalSizeOfSuperPages;
+    partitionStats.totalCommittedBytes = partition->totalSizeOfCommittedPages;
+    ASSERT(!partition->totalSizeOfDirectMappedPages);
     for (size_t i = 0; i < partitionNumBuckets; ++i) {
-        if (memoryStats[i].isValid)
-            partitionStatsDumper->partitionsDumpBucketStats(partitionName, &memoryStats[i]);
+        if (memoryStats[i].isValid) {
+            partitionStats.totalResidentBytes += memoryStats[i].residentBytes;
+            partitionStats.totalActiveBytes += memoryStats[i].activeBytes;
+            partitionStats.totalDecommittableBytes += memoryStats[i].decommittableBytes;
+            partitionStats.totalDiscardableBytes += memoryStats[i].discardableBytes;
+            if (!isLightDump)
+                partitionStatsDumper->partitionsDumpBucketStats(partitionName, &memoryStats[i]);
+        }
     }
+    partitionStatsDumper->partitionDumpTotals(partitionName, &partitionStats);
 }
 
 } // namespace WTF

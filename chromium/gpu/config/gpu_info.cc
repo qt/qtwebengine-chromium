@@ -65,13 +65,13 @@ GPUInfo::GPUInfo()
       direct_rendering(true),
       sandboxed(false),
       process_crash_count(0),
+      in_process_gpu(true),
       basic_info_state(kCollectInfoNone),
-#if defined(OS_WIN)
       context_info_state(kCollectInfoNone),
-      dx_diagnostics_info_state(kCollectInfoNone) {
-#else
-      context_info_state(kCollectInfoNone) {
+#if defined(OS_WIN)
+      dx_diagnostics_info_state(kCollectInfoNone),
 #endif
+      jpeg_decode_accelerator_supported(false) {
 }
 
 GPUInfo::~GPUInfo() { }
@@ -107,6 +107,7 @@ void GPUInfo::EnumerateFields(Enumerator* enumerator) const {
     bool direct_rendering;
     bool sandboxed;
     int process_crash_count;
+    bool in_process_gpu;
     CollectInfoResult basic_info_state;
     CollectInfoResult context_info_state;
 #if defined(OS_WIN)
@@ -117,6 +118,7 @@ void GPUInfo::EnumerateFields(Enumerator* enumerator) const {
         video_decode_accelerator_supported_profiles;
     VideoEncodeAcceleratorSupportedProfiles
         video_encode_accelerator_supported_profiles;
+    bool jpeg_decode_accelerator_supported;
   };
 
   // If this assert fails then most likely something below needs to be updated.
@@ -166,6 +168,7 @@ void GPUInfo::EnumerateFields(Enumerator* enumerator) const {
   enumerator->AddBool("directRendering", direct_rendering);
   enumerator->AddBool("sandboxed", sandboxed);
   enumerator->AddInt("processCrashCount", process_crash_count);
+  enumerator->AddBool("inProcessGpu", in_process_gpu);
   enumerator->AddInt("basicInfoState", basic_info_state);
   enumerator->AddInt("contextInfoState", context_info_state);
 #if defined(OS_WIN)
@@ -176,6 +179,8 @@ void GPUInfo::EnumerateFields(Enumerator* enumerator) const {
     EnumerateVideoDecodeAcceleratorSupportedProfile(profile, enumerator);
   for (const auto& profile : video_encode_accelerator_supported_profiles)
     EnumerateVideoEncodeAcceleratorSupportedProfile(profile, enumerator);
+  enumerator->AddBool("jpegDecodeAcceleratorSupported",
+      jpeg_decode_accelerator_supported);
   enumerator->EndAuxAttributes();
 }
 

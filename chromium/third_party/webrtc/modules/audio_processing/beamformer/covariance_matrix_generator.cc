@@ -32,8 +32,8 @@ void CovarianceMatrixGenerator::UniformCovarianceMatrix(
     float wave_number,
     const std::vector<Point>& geometry,
     ComplexMatrix<float>* mat) {
-  CHECK_EQ(static_cast<int>(geometry.size()), mat->num_rows());
-  CHECK_EQ(static_cast<int>(geometry.size()), mat->num_columns());
+  RTC_CHECK_EQ(static_cast<int>(geometry.size()), mat->num_rows());
+  RTC_CHECK_EQ(static_cast<int>(geometry.size()), mat->num_columns());
 
   complex<float>* const* mat_els = mat->elements();
   for (size_t i = 0; i < geometry.size(); ++i) {
@@ -51,14 +51,14 @@ void CovarianceMatrixGenerator::UniformCovarianceMatrix(
 void CovarianceMatrixGenerator::AngledCovarianceMatrix(
     float sound_speed,
     float angle,
-    int frequency_bin,
-    int fft_size,
-    int num_freq_bins,
+    size_t frequency_bin,
+    size_t fft_size,
+    size_t num_freq_bins,
     int sample_rate,
     const std::vector<Point>& geometry,
     ComplexMatrix<float>* mat) {
-  CHECK_EQ(static_cast<int>(geometry.size()), mat->num_rows());
-  CHECK_EQ(static_cast<int>(geometry.size()), mat->num_columns());
+  RTC_CHECK_EQ(static_cast<int>(geometry.size()), mat->num_rows());
+  RTC_CHECK_EQ(static_cast<int>(geometry.size()), mat->num_columns());
 
   ComplexMatrix<float> interf_cov_vector(1, geometry.size());
   ComplexMatrix<float> interf_cov_vector_transposed(geometry.size(), 1);
@@ -75,15 +75,15 @@ void CovarianceMatrixGenerator::AngledCovarianceMatrix(
 }
 
 void CovarianceMatrixGenerator::PhaseAlignmentMasks(
-    int frequency_bin,
-    int fft_size,
+    size_t frequency_bin,
+    size_t fft_size,
     int sample_rate,
     float sound_speed,
     const std::vector<Point>& geometry,
     float angle,
     ComplexMatrix<float>* mat) {
-  CHECK_EQ(1, mat->num_rows());
-  CHECK_EQ(static_cast<int>(geometry.size()), mat->num_columns());
+  RTC_CHECK_EQ(1, mat->num_rows());
+  RTC_CHECK_EQ(static_cast<int>(geometry.size()), mat->num_columns());
 
   float freq_in_hertz =
       (static_cast<float>(frequency_bin) / fft_size) * sample_rate;

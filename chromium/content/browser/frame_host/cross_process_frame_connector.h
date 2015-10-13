@@ -94,6 +94,7 @@ class CONTENT_EXPORT CrossProcessFrameConnector {
                                     const cc::SurfaceSequence& sequence);
 
   gfx::Rect ChildFrameRect();
+  float device_scale_factor() const { return device_scale_factor_; }
   void GetScreenInfo(blink::WebScreenInfo* results);
 
  private:
@@ -103,6 +104,7 @@ class CONTENT_EXPORT CrossProcessFrameConnector {
   void OnReclaimCompositorResources(
       const FrameHostMsg_ReclaimCompositorResources_Params& params);
   void OnForwardInputEvent(const blink::WebInputEvent* event);
+  void OnFrameRectChanged(const gfx::Rect& frame_rect);
   void OnInitializeChildFrame(gfx::Rect frame_rect, float scale_factor);
   void OnSatisfySequence(const cc::SurfaceSequence& sequence);
   void OnRequireSequence(const cc::SurfaceId& id,

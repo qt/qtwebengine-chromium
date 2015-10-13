@@ -55,7 +55,8 @@ component("chromium_impl") {
   deps = [
     "//base",
     "//base/third_party/dynamic_annotations",
-    "//mojo/common:common_base",
-    "//third_party/mojo/src/mojo/public/c/environment",
+    "//mojo/message_pump",
+    "//third_party/mojo/src/mojo/public/c/system:for_component",
+    "//third_party/mojo/src/mojo/public/cpp/environment:environment",
   ]
 }

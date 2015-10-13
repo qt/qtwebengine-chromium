@@ -58,14 +58,14 @@ static unsigned nextSequenceNumber()
 
 }
 
-PassRefPtrWillBeRawPtr<Animation> Animation::create(AnimationEffect* effect, AnimationTimeline* timeline)
+Animation* Animation::create(AnimationEffect* effect, AnimationTimeline* timeline)
 {
     if (!timeline) {
         // FIXME: Support creating animations without a timeline.
         return nullptr;
     }
 
-    RefPtrWillBeRawPtr<Animation> animation = adoptRefWillBeNoop(new Animation(timeline->document()->contextDocument().get(), *timeline, effect));
+    Animation* animation = new Animation(timeline->document()->contextDocument().get(), *timeline, effect);
     animation->suspendIfNeeded();
 
     if (timeline) {
@@ -73,7 +73,7 @@ PassRefPtrWillBeRawPtr<Animation> Animation::create(AnimationEffect* effect, Ani
         animation->attachCompositorTimeline();
     }
 
-    return animation.release();
+    return animation;
 }
 
 Animation::Animation(ExecutionContext* executionContext, AnimationTimeline& timeline, AnimationEffect* content)
@@ -90,6 +90,7 @@ Animation::Animation(ExecutionContext* executionContext, AnimationTimeline& time
     , m_paused(false)
     , m_held(true)
     , m_isPausedForTesting(false)
+    , m_isCompositedAnimationDisabledForTesting(false)
     , m_outdated(false)
     , m_finished(true)
     , m_compositorState(nullptr)
@@ -105,27 +106,13 @@ Animation::Animation(ExecutionContext* executionContext, AnimationTimeline& time
         }
         m_content->attach(this);
     }
+    InspectorInstrumentation::didCreateAnimation(m_timeline->document(), m_sequenceNumber);
 }
 
 Animation::~Animation()
 {
-#if !ENABLE(OILPAN)
-    if (m_content)
-        m_content->detach();
-    if (m_timeline)
-        m_timeline->animationDestroyed(this);
-#endif
-
     destroyCompositorPlayer();
 }
-
-#if !ENABLE(OILPAN)
-void Animation::detachFromTimeline()
-{
-    m_timeline = nullptr;
-    ActiveDOMObject::clearContext();
-}
-#endif
 
 double Animation::effectEnd() const
 {
@@ -250,7 +237,7 @@ double Animation::unlimitedCurrentTimeInternal() const
         : calculateCurrentTime();
 }
 
-void Animation::preCommit(int compositorGroup, bool startOnCompositor)
+bool Animation::preCommit(int compositorGroup, bool startOnCompositor)
 {
     PlayStateUpdateScope updateScope(*this, TimingUpdateOnDemand, DoNotSetCompositorPending);
 
@@ -264,14 +251,14 @@ void Animation::preCommit(int compositorGroup, bool startOnCompositor)
     bool shouldCancel = (!playing() && m_compositorState) || changed;
     bool shouldStart = playing() && (!m_compositorState || changed);
 
+    if (shouldCancel && shouldStart && m_compositorState && m_compositorState->pendingAction == Start) {
+        // Restarting but still waiting for a start time.
+        return false;
+    }
+
     if (shouldCancel) {
         cancelAnimationOnCompositor();
         m_compositorState = nullptr;
-    }
-
-    if (m_compositorState && m_compositorState->pendingAction == Start) {
-        // Still waiting for a start time.
-        return;
     }
 
     ASSERT(!m_compositorState || !std::isnan(m_compositorState->startTime));
@@ -292,6 +279,8 @@ void Animation::preCommit(int compositorGroup, bool startOnCompositor)
                 cancelIncompatibleAnimationsOnCompositor();
         }
     }
+
+    return true;
 }
 
 void Animation::postCommit(double timelineTime)
@@ -374,7 +363,7 @@ void Animation::notifyStartTime(double timelineTime)
 
 bool Animation::affects(const Element& element, CSSPropertyID property) const
 {
-    if (!m_content || !m_content->isAnimation())
+    if (!m_content || !m_content->isKeyframeEffect())
         return false;
 
     const KeyframeEffect* effect = toKeyframeEffect(m_content.get());
@@ -643,11 +632,11 @@ void Animation::stop()
     m_pendingFinishedEvent = nullptr;
 }
 
-bool Animation::dispatchEvent(PassRefPtrWillBeRawPtr<Event> event)
+bool Animation::dispatchEventInternal(PassRefPtrWillBeRawPtr<Event> event)
 {
     if (m_pendingFinishedEvent == event)
         m_pendingFinishedEvent = nullptr;
-    return EventTargetWithInlineData::dispatchEvent(event);
+    return EventTargetWithInlineData::dispatchEventInternal(event);
 }
 
 double Animation::playbackRate() const
@@ -702,11 +691,14 @@ void Animation::setOutdated()
 
 bool Animation::canStartAnimationOnCompositor() const
 {
+    if (m_isCompositedAnimationDisabledForTesting)
+        return false;
+
     // FIXME: Timeline playback rates should be compositable
     if (m_playbackRate == 0 || (std::isinf(effectEnd()) && m_playbackRate < 0) || (timeline() && timeline()->playbackRate() != 1))
         return false;
 
-    return m_timeline && m_content && m_content->isAnimation() && playing();
+    return m_timeline && m_content && m_content->isKeyframeEffect() && playing();
 }
 
 bool Animation::isCandidateForAnimationOnCompositor() const
@@ -751,13 +743,16 @@ void Animation::setCompositorPending(bool effectChanged)
     if (m_compositorPending || m_isPausedForTesting) {
         return;
     }
+#if !ENABLE(OILPAN)
+    if (!timeline() || !timeline()->document()) {
+        return;
+    }
+#endif
 
-    if (effectChanged || !m_compositorState
+    if (!m_compositorState || m_compositorState->effectChanged
         || !playing() || m_compositorState->playbackRate != m_playbackRate
         || m_compositorState->startTime != m_startTime) {
         m_compositorPending = true;
-        ASSERT(timeline());
-        ASSERT(timeline()->document());
         timeline()->document()->compositorPendingAnimations().add(this);
     }
 }
@@ -778,13 +773,13 @@ void Animation::restartAnimationOnCompositor()
 
 void Animation::cancelIncompatibleAnimationsOnCompositor()
 {
-    if (m_content && m_content->isAnimation())
+    if (m_content && m_content->isKeyframeEffect())
         toKeyframeEffect(m_content.get())->cancelIncompatibleAnimationsOnCompositor();
 }
 
 bool Animation::hasActiveAnimationsOnCompositor()
 {
-    if (!m_content || !m_content->isAnimation())
+    if (!m_content || !m_content->isKeyframeEffect())
         return false;
 
     return toKeyframeEffect(m_content.get())->hasActiveAnimationsOnCompositor();
@@ -899,9 +894,6 @@ void Animation::cancel()
     m_playState = Idle;
     m_startTime = nullValue();
     m_currentTimePending = false;
-
-    if (timeline())
-        InspectorInstrumentation::didCancelAnimation(timeline()->document(), this);
 }
 
 void Animation::beginUpdatingState()
@@ -919,7 +911,8 @@ void Animation::endUpdatingState()
 
 void Animation::createCompositorPlayer()
 {
-    if (RuntimeEnabledFeatures::compositorAnimationTimelinesEnabled() && !m_compositorPlayer && Platform::current()->compositorSupport()) {
+    if (RuntimeEnabledFeatures::compositorAnimationTimelinesEnabled() && Platform::current()->isThreadedAnimationEnabled() && !m_compositorPlayer) {
+        ASSERT(Platform::current()->compositorSupport());
         m_compositorPlayer = adoptPtr(Platform::current()->compositorSupport()->createAnimationPlayer());
         ASSERT(m_compositorPlayer);
         m_compositorPlayer->setAnimationDelegate(this);
@@ -964,7 +957,7 @@ void Animation::attachCompositedLayers()
         return;
 
     ASSERT(m_content);
-    ASSERT(m_content->isAnimation());
+    ASSERT(m_content->isKeyframeEffect());
 
     if (toKeyframeEffect(m_content.get())->canAttachCompositedLayers())
         toKeyframeEffect(m_content.get())->attachCompositedLayers();
@@ -1063,10 +1056,10 @@ Animation::PlayStateUpdateScope::~PlayStateUpdateScope()
     m_animation->endUpdatingState();
 
     if (oldPlayState != newPlayState && newPlayState == Running)
-        InspectorInstrumentation::didCreateAnimation(m_animation->timeline()->document(), m_animation);
+        InspectorInstrumentation::didStartAnimation(m_animation->timeline()->document(), m_animation);
 }
 
-bool Animation::addEventListener(const AtomicString& eventType, PassRefPtr<EventListener> listener, bool useCapture)
+bool Animation::addEventListener(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener> listener, bool useCapture)
 {
     if (eventType == EventTypeNames::finish)
         UseCounter::count(executionContext(), UseCounter::AnimationFinishEvent);
@@ -1083,6 +1076,12 @@ void Animation::pauseForTesting(double pauseTime)
     pause();
 }
 
+void Animation::disableCompositedAnimationForTesting()
+{
+    m_isCompositedAnimationDisabledForTesting = true;
+    cancelAnimationOnCompositor();
+}
+
 DEFINE_TRACE(Animation)
 {
     visitor->trace(m_content);
@@ -1090,7 +1089,7 @@ DEFINE_TRACE(Animation)
     visitor->trace(m_pendingFinishedEvent);
     visitor->trace(m_finishedPromise);
     visitor->trace(m_readyPromise);
-    EventTargetWithInlineData::trace(visitor);
+    RefCountedGarbageCollectedEventTargetWithInlineData<Animation>::trace(visitor);
     ActiveDOMObject::trace(visitor);
 }
 

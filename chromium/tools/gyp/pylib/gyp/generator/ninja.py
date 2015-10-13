@@ -1169,7 +1169,7 @@ class NinjaWriter(object):
         ldflags.append(r'-Wl,-rpath=\$$ORIGIN/%s' % rpath)
         ldflags.append('-Wl,-rpath-link=%s' % rpath)
     self.WriteVariableList(ninja_file, 'ldflags',
-                           gyp.common.uniquer(map(self.ExpandSpecial, ldflags)))
+                           map(self.ExpandSpecial, ldflags))
 
     library_dirs = config.get('library_dirs', [])
     if self.flavor == 'win':
@@ -1696,7 +1696,9 @@ def GetDefaultConcurrentLinks():
     stat.dwLength = ctypes.sizeof(stat)
     ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(stat))
 
-    mem_limit = max(1, stat.ullTotalPhys / (4 * (2 ** 30)))  # total / 4GB
+    # VS 2015 uses 20% more working set than VS 2013 and can consume all RAM
+    # on a 64 GB machine.
+    mem_limit = max(1, stat.ullTotalPhys / (5 * (2 ** 30)))  # total / 5GB
     hard_cap = max(1, int(os.getenv('GYP_LINK_CONCURRENCY_MAX', 2**32)))
     return min(mem_limit, hard_cap)
   elif sys.platform.startswith('linux'):

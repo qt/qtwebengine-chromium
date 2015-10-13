@@ -180,6 +180,7 @@ SpeechRecognizerImpl::SpeechRecognizerImpl(
           media::AudioLogFactory::AUDIO_INPUT_CONTROLLER)),
       is_dispatching_event_(false),
       provisional_results_(provisional_results),
+      end_of_utterance_(false),
       state_(STATE_IDLE) {
   DCHECK(recognition_engine_ != NULL);
   if (!continuous) {
@@ -239,7 +240,7 @@ bool SpeechRecognizerImpl::IsActive() const {
 }
 
 bool SpeechRecognizerImpl::IsCapturingAudio() const {
-  DCHECK_CURRENTLY_ON(BrowserThread::IO); // See IsActive().
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);  // See IsActive().
   const bool is_capturing_audio = state_ >= STATE_STARTING &&
                                   state_ <= STATE_RECOGNIZING;
   DCHECK((is_capturing_audio && (audio_controller_.get() != NULL)) ||
@@ -301,6 +302,11 @@ void SpeechRecognizerImpl::OnSpeechRecognitionEngineResults(
   BrowserThread::PostTask(BrowserThread::IO, FROM_HERE,
                           base::Bind(&SpeechRecognizerImpl::DispatchEvent,
                                      this, event_args));
+}
+
+void SpeechRecognizerImpl::OnSpeechRecognitionEngineEndOfUtterance() {
+  DCHECK(!end_of_utterance_);
+  end_of_utterance_ = true;
 }
 
 void SpeechRecognizerImpl::OnSpeechRecognitionEngineError(
@@ -489,7 +495,7 @@ void SpeechRecognizerImpl::ProcessAudioPipeline(const AudioChunk& raw_audio) {
     endpointer_.ProcessAudio(raw_audio, &rms);
 
   if (route_to_vumeter) {
-    DCHECK(route_to_endpointer); // Depends on endpointer due to |rms|.
+    DCHECK(route_to_endpointer);  // Depends on endpointer due to |rms|.
     UpdateSignalAndNoiseLevels(rms, clip_detected);
   }
   if (route_to_sr_engine) {
@@ -500,6 +506,7 @@ void SpeechRecognizerImpl::ProcessAudioPipeline(const AudioChunk& raw_audio) {
 
 SpeechRecognizerImpl::FSMState
 SpeechRecognizerImpl::StartRecording(const FSMEventArgs&) {
+  DCHECK(state_ == STATE_IDLE);
   DCHECK(recognition_engine_.get() != NULL);
   DCHECK(!IsCapturingAudio());
   const bool unit_test_is_active = (audio_manager_for_tests_ != NULL);
@@ -511,6 +518,7 @@ SpeechRecognizerImpl::StartRecording(const FSMEventArgs&) {
   DVLOG(1) << "SpeechRecognizerImpl starting audio capture.";
   num_samples_recorded_ = 0;
   audio_level_ = 0;
+  end_of_utterance_ = false;
   listener()->OnRecognitionStart(session_id());
 
   // TODO(xians): Check if the OS has the device with |device_id_|, return
@@ -559,14 +567,10 @@ SpeechRecognizerImpl::StartRecording(const FSMEventArgs&) {
     // and the idea is to simplify the audio conversion since each Convert()
     // call will then render exactly one ProvideInput() call.
     // in_params.sample_rate()
+    input_parameters = in_params;
     frames_per_buffer =
         ((in_params.sample_rate() * chunk_duration_ms) / 1000.0) + 0.5;
-    input_parameters.Reset(in_params.format(),
-                           in_params.channel_layout(),
-                           in_params.channels(),
-                           in_params.sample_rate(),
-                           in_params.bits_per_sample(),
-                           frames_per_buffer);
+    input_parameters.set_frames_per_buffer(frames_per_buffer);
     DVLOG(1) << "SRI::input_parameters: "
              << input_parameters.AsHumanReadableString();
   }
@@ -636,7 +640,7 @@ SpeechRecognizerImpl::DetectUserSpeechOrTimeout(const FSMEventArgs&) {
 
 SpeechRecognizerImpl::FSMState
 SpeechRecognizerImpl::DetectEndOfSpeech(const FSMEventArgs& event_args) {
-  if (endpointer_.speech_input_complete())
+  if (end_of_utterance_ || endpointer_.speech_input_complete())
     return StopCaptureAndWaitForResult(event_args);
   return STATE_RECOGNIZING;
 }
@@ -703,9 +707,6 @@ SpeechRecognizerImpl::FSMState SpeechRecognizerImpl::Abort(
 
 SpeechRecognizerImpl::FSMState SpeechRecognizerImpl::ProcessIntermediateResult(
     const FSMEventArgs& event_args) {
-  // Provisional results can occur only if explicitly enabled in the JS API.
-  DCHECK(provisional_results_);
-
   // In continuous recognition, intermediate results can occur even when we are
   // in the ESTIMATING_ENVIRONMENT or WAITING_FOR_SPEECH states (if the
   // recognition engine is "faster" than our endpointer). In these cases we

@@ -15,11 +15,11 @@ namespace blink {
 
 TEST(BlinkGCDumpProviderTest, MemoryDump)
 {
-    WebProcessMemoryDump* dump  = Platform::current()->createProcessMemoryDump();
+    OwnPtr<WebProcessMemoryDump> dump = adoptPtr(Platform::current()->createProcessMemoryDump());
     ASSERT(dump);
-    BlinkGCMemoryDumpProvider::instance()->onMemoryDump(dump);
-    ASSERT(dump->getMemoryAllocatorDump(String::format("blink_gc/thread_%lu", static_cast<unsigned long>(WTF::currentThread()))));
-    ASSERT(dump->getMemoryAllocatorDump(String::format("blink_gc/thread_%lu/allocated_objects", static_cast<unsigned long>(WTF::currentThread()))));
+    BlinkGCMemoryDumpProvider::instance()->onMemoryDump(WebMemoryDumpLevelOfDetail::Detailed, dump.get());
+    ASSERT(dump->getMemoryAllocatorDump(String::format("blink_gc")));
+    ASSERT(dump->getMemoryAllocatorDump(String::format("blink_gc/allocated_objects")));
 }
 
 } // namespace blink

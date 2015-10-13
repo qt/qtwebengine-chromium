@@ -2,20 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-(function() {
-  /**
-   * The possible states of media-router-container. Used to determine which
-   * components of media-router-container to show.
-   *
-   * @enum {string}
-   */
-  var MediaRouterContainerView = {
-    CAST_MODE_LIST: 'cast-mode-list',
-    FILTER: 'filter',
-    ROUTE_DETAILS: 'route-details',
-    SINK_LIST: 'sink-list',
-  };
-
 // This Polymer element contains the entire media router interface. It handles
 // hiding and showing specific components.
 Polymer({
@@ -28,8 +14,26 @@ Polymer({
      */
     castModeList: {
       type: Array,
-      value: function() {
-        return [];
+      value: [],
+    },
+
+    /**
+     * The possible states of media-router-container. Used to determine which
+     * components of media-router-container to show.
+     * This is a property of media-router-container because it is used in
+     * tests.
+     *
+     * @enum {string}
+     * @private
+     */
+    CONTAINER_VIEW_: {
+      type: Object,
+      readOnly: true,
+      value: {
+        CAST_MODE_LIST: 'cast-mode-list',
+        FILTER: 'filter',
+        ROUTE_DETAILS: 'route-details',
+        SINK_LIST: 'sink-list',
       },
     },
 
@@ -44,11 +48,11 @@ Polymer({
 
     /**
      * The current view to be shown.
-     * @private {!MediaRouterContainerView}
+     * @private {CONTAINER_VIEW_}
      */
     currentView_: {
       type: String,
-      value: MediaRouterContainerView.SINK_LIST,
+      value: '',
     },
 
     /**
@@ -61,10 +65,29 @@ Polymer({
     },
 
     /**
+     * The URL to open when the device missing link is clicked.
+     * @private {string}
+     */
+    deviceMissingUrl: {
+      type: String,
+      value: '',
+    },
+
+    /**
      * The header text.
      * @type {string}
      */
     headerText: {
+      type: String,
+      value: '',
+    },
+
+    /**
+     * The header text tooltip. This would be descriptive of the
+     * source origin, whether a host name, tab URL, etc.
+     * @type {string}
+     */
+    headerTextTooltip: {
       type: String,
       value: '',
     },
@@ -79,14 +102,31 @@ Polymer({
     },
 
     /**
+     * Whether the MR UI was just opened.
+     * @private {boolean}
+     */
+    justOpened_: {
+      type: Boolean,
+      value: true,
+      observer: 'computeSpinnerHidden_',
+    },
+
+    /**
+     * The number of current local routes.
+     * @private {number}
+     */
+    localRouteCount_: {
+      type: Number,
+      value: 0,
+    },
+
+    /**
      * The list of current routes.
      * @type {!Array<!media_router.Route>}
      */
     routeList: {
       type: Array,
-      value: function() {
-        return [];
-      },
+      value: [],
       observer: 'rebuildRouteMaps_',
     },
 
@@ -96,9 +136,7 @@ Polymer({
      */
     routeMap_: {
       type: Object,
-      value: function() {
-        return {};
-      },
+      value: {},
     },
 
     /**
@@ -122,14 +160,21 @@ Polymer({
     },
 
     /**
+     * The subheading text for the non-cast-enabled app cast mode list.
+     * @private {string}
+     */
+    shareYourScreenSubheadingText_: {
+      type: String,
+      value: loadTimeData.getString('shareYourScreenSubheading'),
+    },
+
+    /**
      * The list of available sinks.
      * @type {!Array<!media_router.Sink>}
      */
     sinkList: {
       type: Array,
-      value: function() {
-        return [];
-      },
+      value: [],
       observer: 'rebuildSinkMap_',
     },
 
@@ -139,9 +184,7 @@ Polymer({
      */
     sinkMap_: {
       type: Object,
-      value: function() {
-        return {};
-      },
+      value: {},
     },
 
     /**
@@ -150,82 +193,127 @@ Polymer({
      */
     sinkToRouteMap_: {
       type: Object,
-      value: function() {
-        return {};
-      },
+      value: {},
     },
   },
 
   ready: function() {
     this.addEventListener('close-route-click', this.removeRoute);
+    this.showSinkList_();
+  },
+
+  attached: function() {
+    // Turn off the spinner after 3 seconds.
+    this.async(function() {
+      this.justOpened_ = false;
+    }, 3000 /* 3 seconds */);
   },
 
   /**
-   * Adds |route| to |routeList|.
-   *
-   * @param {!media_router.Route} route The route to add.
-   */
-  addRoute: function(route) {
-    // Check if |route| already exists or if its associated sink
-    // does not exist.
-    if (this.routeMap_[route.id] || !this.sinkMap_[route.sinkId])
-      return;
-
-    // If there is an existing route associated with the same sink, its
-    // |sinkToRouteMap_| entry will be overwritten with that of the new route,
-    // which results in the correct sink to route mapping.
-    this.routeList.push(route);
-  },
-
-  /**
-   * @param {!MediaRouterContainerView} view The current view.
+   * @param {CONTAINER_VIEW_} view The current view.
    * @return {string} The current arrow-drop-* icon to use.
    * @private
    */
   computeArrowDropIcon_: function(view) {
-    return view == MediaRouterContainerView.CAST_MODE_LIST ?
+    return view == this.CONTAINER_VIEW_.CAST_MODE_LIST ?
         'arrow-drop-up' : 'arrow-drop-down';
   },
 
   /**
-   * @param {!MediaRouterContainerView} view The current view.
+   * @param {CONTAINER_VIEW_} view The current view.
    * @return {boolean} Whether or not to hide the cast mode list.
    * @private
    */
   computeCastModeHidden_: function(view) {
-    return view != MediaRouterContainerView.CAST_MODE_LIST;
+    return view != this.CONTAINER_VIEW_.CAST_MODE_LIST;
   },
 
   /**
-   * @param {!MediaRouterContainerView} view The current view.
+   * @param {!media_router.CastMode} castMode The cast mode to determine an
+   *     icon for.
+   * @return {string} The Polymer <iron-icon> icon to use. The format is
+   *     <iconset>:<icon>, where <iconset> is the set ID and <icon> is the name
+   *     of the icon. <iconset>: may be ommitted if <icon> is from the default
+   *     set.
+   * @private
+   */
+  computeCastModeIcon_: function(castMode) {
+    switch (castMode.type) {
+      case media_router.CastModeType.DEFAULT:
+        return 'av:web';
+      case media_router.CastModeType.TAB_MIRROR:
+        return 'tab';
+      case media_router.CastModeType.DESKTOP_MIRROR:
+        return 'hardware:laptop';
+      default:
+        return '';
+    }
+  },
+
+  /**
+   * @param {!Array<!media_router.CastMode>} castModeList The current list of
+   *      cast modes.
+   * @return {!Array<!media_router.CastMode>} The list of default cast modes.
+   * @private
+   */
+  computeDefaultCastModeList_: function(castModeList) {
+    return castModeList.filter(function(mode) {
+      return mode.type == media_router.CastModeType.DEFAULT;
+    });
+  },
+
+  /**
+   * @param {CONTAINER_VIEW_} view The current view.
    * @param {?media_router.Issue} issue The current issue.
    * @return {boolean} Whether or not to hide the header.
    * @private
    */
   computeHeaderHidden_: function(view, issue) {
-    return view == MediaRouterContainerView.ROUTE_DETAILS ||
-        (view == MediaRouterContainerView.SINK_LIST &&
+    return view == this.CONTAINER_VIEW_.ROUTE_DETAILS ||
+        (view == this.CONTAINER_VIEW_.SINK_LIST &&
          issue && issue.isBlocking);
   },
 
   /**
-   * @param {!MediaRouterContainerView} view The current view.
+   * @param {?media_router.Issue} issue The current issue.
+   * @return {string} The class for the issue banner.
+   * @private
+   */
+  computeIssueBannerClass_: function(issue) {
+    return issue && !issue.isBlocking ? 'non-blocking' : '';
+  },
+
+  /**
+   * @param {CONTAINER_VIEW_} view The current view.
    * @param {?media_router.Issue} issue The current issue.
    * @return {boolean} Whether or not to hide the issue banner.
    * @private
    */
   computeIssueBannerHidden_: function(view, issue) {
-    return !issue || view == MediaRouterContainerView.CAST_MODE_LIST;
+    return !issue || view == this.CONTAINER_VIEW_.CAST_MODE_LIST;
   },
 
   /**
-   * @param {!MediaRouterContainerView} view The current view.
+   * @param {!Array<!media_router.CastMode>} castModeList The current list of
+   *     cast modes.
+   * @return {!Array<!media_router.CastMode>} The list of non-default cast
+   *     modes.
+   * @private
+   */
+  computeNonDefaultCastModeList_: function(castModeList) {
+    return castModeList.filter(function(mode) {
+      return mode.type != media_router.CastModeType.DEFAULT;
+    });
+  },
+
+  /**
+   * @param {CONTAINER_VIEW_} view The current view.
    * @param {?media_router.Issue} issue The current issue.
    * @return {boolean} Whether or not to hide the route details.
    * @private
    */
   computeRouteDetailsHidden_: function(view, issue) {
-    return view != MediaRouterContainerView.ROUTE_DETAILS ||
+    return view != this.CONTAINER_VIEW_.ROUTE_DETAILS ||
         (issue && issue.isBlocking);
   },
 
@@ -241,12 +329,23 @@ Polymer({
 
   /**
    * @param {!string} sinkId A sink ID.
-   * @return {string} The title value of the route associated with |sinkId|.
+   * @return {string} The description value of the route associated with
+   *     |sinkId|.
    * @private
    */
   computeRouteInSinkListValue_: function(sinkId, sinkToRouteMap) {
     var route = sinkToRouteMap[sinkId];
-    return route ? route.title : '';
+    return route ? route.description : '';
+  },
+
+  /**
+   * @param {!Array<!media_router.CastMode>} castModeList The current list of
+   *     cast modes.
+   * @return {boolean} Whether or not to hide the share screen subheading text.
+   * @private
+   */
+  computeShareScreenSubheadingHidden_: function(castModeList) {
+    return this.computeNonDefaultCastModeList_(castModeList).length == 0;
   },
 
   /**
@@ -259,6 +358,30 @@ Polymer({
   },
 
   /**
+   * @param {!media_router.Sink} sink The sink to determine an icon for.
+   * @return {string} The Polymer <iron-icon> icon to use. The format is
+   *     <iconset>:<icon>, where <iconset> is the set ID and <icon> is the name
+   *     of the icon. <iconset>: may be ommitted if <icon> is from the default
+   *     set.
+   * @private
+   */
+  computeSinkIcon_: function(sink) {
+    switch (sink.iconType) {
+      case media_router.SinkIconType.CAST:
+        // TODO(apacible): Update icon after UX discussion.
+        return 'hardware:tv';
+      case media_router.SinkIconType.CAST_AUDIO:
+        return 'hardware:speaker';
+      case media_router.SinkIconType.GENERIC:
+        return 'hardware:tv';
+      case media_router.SinkIconType.HANGOUT:
+        return 'communication:message';
+      default:
+        return 'hardware:tv';
+    }
+  },
+
+  /**
    * @param {!string} sinkId A sink ID.
    * @param {!Object<!string, ?media_router.Route>} sinkToRouteMap
    *     Maps media_router.Sink.id to corresponding media_router.Route.
@@ -266,7 +389,7 @@ Polymer({
    * @private
    */
   computeSinkIconClass_: function(sinkId, sinkToRouteMap) {
-    return sinkToRouteMap[sinkId] ? 'active-sink' : '';
+    return sinkToRouteMap[sinkId] ? 'sink-icon active-sink' : 'sink-icon';
   },
 
   /**
@@ -279,45 +402,67 @@ Polymer({
   },
 
   /**
-   * @param {!MediaRouterContainerView} view The current view.
+   * @param {CONTAINER_VIEW_} view The current view.
    * @param {?media_router.Issue} issue The current issue.
    * @return {boolean} Whether or not to hide entire the sink list view.
    * @private
    */
   computeSinkListViewHidden_: function(view, issue) {
-    return view != MediaRouterContainerView.SINK_LIST ||
+    return view != this.CONTAINER_VIEW_.SINK_LIST ||
         (issue && issue.isBlocking);
   },
 
   /**
-   * Creates a new route if |route| is null. Otherwise, shows the route
-   * details.
-   *
-   * @param {!media_router.Sink} sink The sink to use.
-   * @param {?media_router.Route} route The current route tied to |sink|.
+   * @param {boolean} justOpened Whether the MR UI was just opened.
+   * @return {boolean} Whether or not to hide the spinner.
    * @private
    */
-  showOrCreateRoute_: function(sink, route) {
-    if (route) {
-      this.showRouteDetails_();
-    } else {
-      this.fire('create-route', {
-        sinkId: sink.id,
-        selectedCastModeValue: this.selectedCastModeValue_
-      });
-    }
+  computeSpinnerHidden_: function(justOpened) {
+    return !justOpened;
   },
 
   /**
-   * Handles a cast mode selection. Updates |headerText| and
-   * |selectedCastModeValue_|.
+   * Checks if there is a sink whose isLaunching is true.
+   *
+   * @param {!Array<!media_router.Sink>} sinks
+   * @return {boolean}
+   * @private
+   */
+  isLaunching_: function(sinks) {
+    return sinks.some(function(sink) { return sink.isLaunching; });
+  },
+
+  /**
+   * Updates |currentView_| if the dialog had just opened and there's
+   * only one local route.
+   *
+   * @param {?media_router.Route} route A local route.
+   * @private
+   */
+  maybeShowRouteDetailsOnOpen_: function(route) {
+    if (this.localRouteCount_ == 1 && this.justOpened_ && route)
+      this.showRouteDetails_(route);
+  },
+
+  /**
+   * Handles a cast mode selection. Updates |headerText|, |headerTextTooltip|,
+   * and |selectedCastModeValue_|.
    *
    * @param {!Event} event The event object.
    * @private
    */
   onCastModeClick_: function(event) {
-    var clickedMode = this.$.castModeList.itemForElement(event.target);
-    this.headerText = clickedMode.title;
+    // The clicked cast mode can come from one of two lists,
+    // defaultCastModeList and nonDefaultCastModeList.
+    var clickedMode =
+        this.$.defaultCastModeList.itemForElement(event.target) ||
+            this.$.nonDefaultCastModeList.itemForElement(event.target);
+
+    if (!clickedMode)
+      return;
+
+    this.headerText = clickedMode.description;
+    this.headerTextTooltip = clickedMode.host;
     this.selectedCastModeValue_ = clickedMode.type;
   },
 
@@ -331,15 +476,39 @@ Polymer({
   },
 
   /**
-   * Called when a sink is clicked. Updates |currentRoute_|.
+   * Handles response of previous create route attempt.
+   *
+   * @param {string} sinkId The ID of the sink to which the Media Route was
+   *     creating a route.
+   * @param {?media_router.Route} route The newly created route to the sink
+   *     if succeeded; null otherwise.
+   */
+  onCreateRouteResponseReceived: function(sinkId, route) {
+    this.setLaunchState_(sinkId, false);
+    // TODO(apacible) Show launch failure.
+    if (!route)
+      return;
+
+    // Check if |route| already exists or if its associated sink
+    // does not exist.
+    if (this.routeMap_[route.id] || !this.sinkMap_[route.sinkId])
+      return;
+
+    // If there is an existing route associated with the same sink, its
+    // |sinkToRouteMap_| entry will be overwritten with that of the new route,
+    // which results in the correct sink to route mapping.
+    this.routeList.push(route);
+    this.showRouteDetails_(route);
+  },
+
+  /**
+   * Called when a sink is clicked.
    *
    * @param {!Event} event The event object.
    * @private
    */
   onSinkClick_: function(event) {
-    var clickedSink = this.$.sinkList.itemForElement(event.target);
-    this.currentRoute_ = this.sinkToRouteMap_[clickedSink.id];
-    this.showOrCreateRoute_(clickedSink, this.currentRoute_);
+    this.showOrCreateRoute_(this.$.sinkList.itemForElement(event.target));
   },
 
   /**
@@ -350,16 +519,43 @@ Polymer({
    */
   rebuildRouteMaps_: function() {
     this.routeMap_ = {};
+    this.localRouteCount_ = 0;
+
+    // Keeps track of the last local route we find in |routeList|. If
+    // |localRouteCount_| is eventually equal to one, |localRoute| would be the
+    // only current local route.
+    var localRoute = null;
+
     // Rebuild |sinkToRouteMap_| with a temporary map to avoid firing the
     // computed functions prematurely.
     var tempSinkToRouteMap = {};
 
+    // We expect that each route in |routeList| maps to a unique sink.
     this.routeList.forEach(function(route) {
       this.routeMap_[route.id] = route;
       tempSinkToRouteMap[route.sinkId] = route;
+
+      if (route.isLocal) {
+        this.localRouteCount_++;
+
+        // It's OK if localRoute is updated multiple times; it is only used if
+        // |localRouteCount_| == 1, which implies it was only set once.
+        localRoute = route;
+      }
     }, this);
 
+    // If |currentRoute_| is no longer active, clear |currentRoute_|. Also
+    // switch back to the SINK_PICKER view if the user is currently in the
+    // ROUTE_DETAILS view.
+    if (!this.currentRoute_ || !this.routeMap_[this.currentRoute_.id]) {
+      if (this.currentView_ == this.CONTAINER_VIEW_.ROUTE_DETAILS)
+        this.showSinkList_();
+      else
+        this.currentRoute_ = null;
+    }
+
     this.sinkToRouteMap_ = tempSinkToRouteMap;
+    this.maybeShowRouteDetailsOnOpen_(localRoute);
   },
 
   /**
@@ -376,21 +572,62 @@ Polymer({
   },
 
   /**
+   * Temporarily overrides the "isLaunching" bit for a sink.
+   *
+   * @param {string} sinkId The ID of the sink.
+   * @param {boolean} isLaunching Whether or not the media router is creating
+   *    a route to the sink.
+   * @private
+   */
+  setLaunchState_: function(sinkId, isLaunching) {
+    for (var index = 0; index < this.sinkList.length; index++) {
+      if (this.sinkList[index].id == sinkId) {
+        this.set(['sinkList', index, 'isLaunching'], isLaunching);
+        return;
+      }
+    }
+  },
+
+  /**
    * Shows the cast mode list.
    *
    * @private
    */
   showCastModeList_: function() {
-    this.currentView_ = MediaRouterContainerView.CAST_MODE_LIST;
+    this.currentRoute_ = null;
+    this.currentView_ = this.CONTAINER_VIEW_.CAST_MODE_LIST;
+  },
+
+  /**
+   * Creates a new route if there is no route to the |sink| . Otherwise,
+   * shows the route details.
+   *
+   * @param {!media_router.Sink} sink The sink to use.
+   * @private
+   */
+  showOrCreateRoute_: function(sink) {
+    var route = this.sinkToRouteMap_[sink.id];
+    if (route) {
+      this.showRouteDetails_(route);
+    } else if (!this.isLaunching_(this.sinkList)) {
+      // Allow one launch at a time.
+      this.setLaunchState_(sink.id, true);
+      this.fire('create-route', {
+        sinkId: sink.id,
+        selectedCastModeValue: this.selectedCastModeValue_
+      });
+    }
   },
 
   /**
    * Shows the route details.
    *
+   * @param {!media_router.Route} route The route to show.
    * @private
    */
-  showRouteDetails_: function() {
-    this.currentView_ = MediaRouterContainerView.ROUTE_DETAILS;
+  showRouteDetails_: function(route) {
+    this.currentRoute_ = route;
+    this.currentView_ = this.CONTAINER_VIEW_.ROUTE_DETAILS;
   },
 
   /**
@@ -399,7 +636,8 @@ Polymer({
    * @private
    */
   showSinkList_: function() {
-    this.currentView_ = MediaRouterContainerView.SINK_LIST;
+    this.currentRoute_ = null;
+    this.currentView_ = this.CONTAINER_VIEW_.SINK_LIST;
   },
 
   /**
@@ -408,11 +646,9 @@ Polymer({
    * @private
    */
   toggleCastModeHidden_: function() {
-    if (this.currentView_ == MediaRouterContainerView.CAST_MODE_LIST) {
+    if (this.currentView_ == this.CONTAINER_VIEW_.CAST_MODE_LIST)
       this.showSinkList_();
-    } else {
+    else
       this.showCastModeList_();
-    }
   },
 });
-})();

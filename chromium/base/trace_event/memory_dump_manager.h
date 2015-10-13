@@ -32,17 +32,27 @@ class MemoryDumpSessionState;
 // RequestDumpPoint(). The extension by Un(RegisterDumpProvider).
 class BASE_EXPORT MemoryDumpManager : public TraceLog::EnabledStateObserver {
  public:
+  static const char* const kTraceCategory;
+
+  // This value is returned as the tracing id of the child processes by
+  // GetTracingProcessId() when tracing is not enabled.
   static const uint64 kInvalidTracingProcessId;
-  static const char* const kTraceCategoryForTesting;
 
   static MemoryDumpManager* GetInstance();
 
-  // Invoked once per process to register the TraceLog observer.
-  void Initialize();
-
-  // See the lifetime and thread-safety requirements on the delegate below in
-  // the |MemoryDumpManagerDelegate| docstring.
-  void SetDelegate(MemoryDumpManagerDelegate* delegate);
+  // Invoked once per process to listen to trace begin / end events.
+  // Initialization can happen after (Un)RegisterMemoryDumpProvider() calls
+  // and the MemoryDumpManager guarantees to support this.
+  // On the other side, the MemoryDumpManager will not be fully operational
+  // (i.e. will NACK any RequestGlobalMemoryDump()) until initialized.
+  // Arguments:
+  //  is_coordinator: if true this MemoryDumpManager instance will act as a
+  //      coordinator and schedule periodic dumps (if enabled via TraceConfig);
+  //      false when the MemoryDumpManager is initialized in a slave process.
+  //  delegate: inversion-of-control interface for embedder-specific behaviors
+  //      (multiprocess handshaking). See the lifetime and thread-safety
+  //      requirements in the |MemoryDumpManagerDelegate| docstring.
+  void Initialize(MemoryDumpManagerDelegate* delegate, bool is_coordinator);
 
   // MemoryDumpManager does NOT take memory ownership of |mdp|, which is
   // expected to either be a singleton or unregister itself.
@@ -62,10 +72,12 @@ class BASE_EXPORT MemoryDumpManager : public TraceLog::EnabledStateObserver {
   // processes have dumped) and its success (true iff all the dumps were
   // successful).
   void RequestGlobalDump(MemoryDumpType dump_type,
+                         MemoryDumpLevelOfDetail level_of_detail,
                          const MemoryDumpCallback& callback);
 
   // Same as above (still asynchronous), but without callback.
-  void RequestGlobalDump(MemoryDumpType dump_type);
+  void RequestGlobalDump(MemoryDumpType dump_type,
+                         MemoryDumpLevelOfDetail level_of_detail);
 
   // TraceLog::EnabledStateObserver implementation.
   void OnTraceLogEnabled() override;
@@ -78,28 +90,25 @@ class BASE_EXPORT MemoryDumpManager : public TraceLog::EnabledStateObserver {
     return session_state_;
   }
 
-  // Derives a tracing process id from a child process id. Child process ids
-  // cannot be used directly in tracing for security reasons (see: discussion in
-  // crrev.com/1173263004). This method is meant to be used when dumping
-  // cross-process shared memory from a process which knows the child process id
-  // of its endpoints. The value returned by this method is guaranteed to be
-  // equal to the value returned by tracing_process_id() in the corresponding
-  // child process.
-  // This will never return kInvalidTracingProcessId.
-  static uint64 ChildProcessIdToTracingProcessId(int child_id);
+  // Returns a unique id for identifying the processes. The id can be
+  // retrieved by child processes only when tracing is enabled. This is
+  // intended to express cross-process sharing of memory dumps on the
+  // child-process side, without having to know its own child process id.
+  uint64 GetTracingProcessId() const;
 
-  // Returns a unique id for the current process. The id can be retrieved only
-  // by child processes and only when tracing is enabled. This is intended to
-  // express cross-process sharing of memory dumps on the child-process side,
-  // without having to know its own child process id.
-  uint64 tracing_process_id() const { return tracing_process_id_; }
+  // Returns the name for a the allocated_objects dump. Use this to declare
+  // suballocator dumps from other dump providers.
+  // It will return nullptr if there is no dump provider for the system
+  // allocator registered (which is currently the case for Mac OS).
+  const char* system_allocator_pool_name() const {
+    return kSystemAllocatorPoolName;
+  };
 
  private:
   friend struct DefaultDeleter<MemoryDumpManager>;  // For the testing instance.
   friend struct DefaultSingletonTraits<MemoryDumpManager>;
   friend class MemoryDumpManagerDelegate;
   friend class MemoryDumpManagerTest;
-  FRIEND_TEST_ALL_PREFIXES(MemoryDumpManagerTest, DisableFailingDumpers);
 
   // Descriptor struct used to hold information about registered MDPs. It is
   // deliberately copyable, in order to allow it to be used as std::set value.
@@ -120,6 +129,11 @@ class BASE_EXPORT MemoryDumpManager : public TraceLog::EnabledStateObserver {
     // as can be safely changed without impacting the order within the set.
     mutable int consecutive_failures;
     mutable bool disabled;
+
+    // When a dump provider unregisters, it is flagged as |unregistered| and it
+    // is removed only upon the next memory dump. This is to avoid altering the
+    // |dump_providers_| collection while a dump is in progress.
+    mutable bool unregistered;
   };
 
   using MemoryDumpProviderInfoSet = std::set<MemoryDumpProviderInfo>;
@@ -159,9 +173,10 @@ class BASE_EXPORT MemoryDumpManager : public TraceLog::EnabledStateObserver {
   };
 
   static const int kMaxConsecutiveFailuresCount;
+  static const char* const kSystemAllocatorPoolName;
 
   MemoryDumpManager();
-  virtual ~MemoryDumpManager();
+  ~MemoryDumpManager() override;
 
   static void SetInstanceForTesting(MemoryDumpManager* instance);
   static void FinalizeDumpAndAddToTrace(
@@ -182,25 +197,17 @@ class BASE_EXPORT MemoryDumpManager : public TraceLog::EnabledStateObserver {
   void ContinueAsyncProcessDump(
       scoped_ptr<ProcessMemoryDumpAsyncState> pmd_async_state);
 
-  // Pass kInvalidTracingProcessId to invalidate the id.
-  void set_tracing_process_id(uint64 id) {
-    DCHECK(tracing_process_id_ == kInvalidTracingProcessId ||
-           id == kInvalidTracingProcessId || tracing_process_id_ == id);
-    tracing_process_id_ = id;
-  }
-
   // An ordererd set of registered MemoryDumpProviderInfo(s), sorted by thread
   // affinity (MDPs belonging to the same thread are adjacent).
   MemoryDumpProviderInfoSet dump_providers_;
-
-  // Flag used to signal that some provider was removed from |dump_providers_|
-  // and therefore the current memory dump (if any) should be aborted.
-  bool did_unregister_dump_provider_;
 
   // Shared among all the PMDs to keep state scoped to the tracing session.
   scoped_refptr<MemoryDumpSessionState> session_state_;
 
   MemoryDumpManagerDelegate* delegate_;  // Not owned.
+
+  // When true, this instance is in charge of coordinating periodic dumps.
+  bool is_coordinator_;
 
   // Protects from concurrent accesses to the |dump_providers_*| and |delegate_|
   // to guard against disabling logging while dumping on another thread.
@@ -211,7 +218,7 @@ class BASE_EXPORT MemoryDumpManager : public TraceLog::EnabledStateObserver {
   subtle::AtomicWord memory_tracing_enabled_;
 
   // For time-triggered periodic dumps.
-  RepeatingTimer<MemoryDumpManager> periodic_dump_timer_;
+  RepeatingTimer periodic_dump_timer_;
 
   // The unique id of the child process. This is created only for tracing and is
   // expected to be valid only when tracing is enabled.
@@ -230,9 +237,9 @@ class BASE_EXPORT MemoryDumpManagerDelegate {
   virtual void RequestGlobalMemoryDump(const MemoryDumpRequestArgs& args,
                                        const MemoryDumpCallback& callback) = 0;
 
-  // Determines whether the MemoryDumpManager instance should be the master
-  // (the ones which initiates and coordinates the multiprocess dumps) or not.
-  virtual bool IsCoordinatorProcess() const = 0;
+  // Returns tracing process id of the current process. This is used by
+  // MemoryDumpManager::GetTracingProcessId.
+  virtual uint64 GetTracingProcessId() const = 0;
 
  protected:
   MemoryDumpManagerDelegate() {}
@@ -241,10 +248,6 @@ class BASE_EXPORT MemoryDumpManagerDelegate {
   void CreateProcessDump(const MemoryDumpRequestArgs& args,
                          const MemoryDumpCallback& callback) {
     MemoryDumpManager::GetInstance()->CreateProcessDump(args, callback);
-  }
-
-  void set_tracing_process_id(uint64 id) {
-    MemoryDumpManager::GetInstance()->set_tracing_process_id(id);
   }
 
  private:

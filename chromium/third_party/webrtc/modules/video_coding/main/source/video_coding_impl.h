@@ -93,12 +93,11 @@ class VideoSender {
   int32_t SetChannelParameters(uint32_t target_bitrate,  // bits/s.
                                uint8_t lossRate,
                                int64_t rtt);
-  int32_t UpdateEncoderParameters();
 
   int32_t RegisterTransportCallback(VCMPacketizationCallback* transport);
   int32_t RegisterSendStatisticsCallback(VCMSendStatisticsCallback* sendStats);
   int32_t RegisterProtectionCallback(VCMProtectionCallback* protection);
-  void SetVideoProtection(bool enable, VCMVideoProtection videoProtection);
+  void SetVideoProtection(VCMVideoProtection videoProtection);
 
   int32_t AddVideoFrame(const VideoFrame& videoFrame,
                         const VideoContentMetrics* _contentMetrics,
@@ -114,17 +113,28 @@ class VideoSender {
   int32_t Process();
 
  private:
-  Clock* clock_;
+  struct EncoderParameters {
+    uint32_t target_bitrate;
+    uint8_t loss_rate;
+    int64_t rtt;
+    uint32_t input_frame_rate;
+    bool updated;
+  };
+
+  void SetEncoderParameters(EncoderParameters params)
+      EXCLUSIVE_LOCKS_REQUIRED(send_crit_);
+
+  Clock* const clock_;
 
   rtc::scoped_ptr<CriticalSectionWrapper> process_crit_sect_;
-  CriticalSectionWrapper* _sendCritSect;
+  mutable rtc::CriticalSection send_crit_;
   VCMGenericEncoder* _encoder;
   VCMEncodedFrameCallback _encodedFrameCallback;
   std::vector<FrameType> _nextFrameTypes;
   media_optimization::MediaOptimization _mediaOpt;
-  VCMSendStatisticsCallback* _sendStatsCallback;
-  VCMCodecDataBase _codecDataBase;
-  bool frame_dropper_enabled_;
+  VCMSendStatisticsCallback* _sendStatsCallback GUARDED_BY(process_crit_sect_);
+  VCMCodecDataBase _codecDataBase GUARDED_BY(send_crit_);
+  bool frame_dropper_enabled_ GUARDED_BY(send_crit_);
   VCMProcessTimer _sendStatsTimer;
 
   // Must be accessed on the construction thread of VideoSender.
@@ -135,13 +145,7 @@ class VideoSender {
   VCMProtectionCallback* protection_callback_;
 
   rtc::CriticalSection params_lock_;
-  struct EncoderParameters {
-    uint32_t target_bitrate;
-    uint8_t loss_rate;
-    int64_t rtt;
-    uint32_t input_frame_rate;
-    bool updated;
-  } encoder_params_ GUARDED_BY(params_lock_);
+  EncoderParameters encoder_params_ GUARDED_BY(params_lock_);
 };
 
 class VideoReceiver {
@@ -206,14 +210,6 @@ class VideoReceiver {
   int32_t RequestSliceLossIndication(const uint64_t pictureID) const;
 
  private:
-  enum VCMKeyRequestMode {
-    kKeyOnError,    // Normal mode, request key frames on decoder error
-    kKeyOnKeyLoss,  // Request key frames on decoder error and on packet loss
-                    // in key frames.
-    kKeyOnLoss,     // Request key frames on decoder error and on packet loss
-                    // in any frame
-  };
-
   Clock* const clock_;
   rtc::scoped_ptr<CriticalSectionWrapper> process_crit_sect_;
   CriticalSectionWrapper* _receiveCritSect;
@@ -234,7 +230,6 @@ class VideoReceiver {
   FILE* _bitStreamBeforeDecoder;
 #endif
   VCMFrameBuffer _frameFromFile;
-  VCMKeyRequestMode _keyRequestMode;
   bool _scheduleKeyRequest GUARDED_BY(process_crit_sect_);
   size_t max_nack_list_size_ GUARDED_BY(process_crit_sect_);
   EncodedImageCallback* pre_decode_image_callback_ GUARDED_BY(_receiveCritSect);

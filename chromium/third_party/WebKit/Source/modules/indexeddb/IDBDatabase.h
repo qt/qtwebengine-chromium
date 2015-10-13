@@ -102,9 +102,6 @@ public:
     const IDBDatabaseMetadata& metadata() const { return m_metadata; }
     void enqueueEvent(PassRefPtrWillBeRawPtr<Event>);
 
-    using EventTarget::dispatchEvent;
-    bool dispatchEvent(PassRefPtrWillBeRawPtr<Event>) override;
-
     int64_t findObjectStoreId(const String& name) const;
     bool containsObjectStore(const String& name) const
     {
@@ -131,7 +128,10 @@ public:
     static const char transactionInactiveErrorMessage[];
     static const char transactionReadOnlyErrorMessage[];
     static const char databaseClosedErrorMessage[];
-    static const char notValidMaxCountErrorMessage[];
+
+protected:
+    // EventTarget
+    bool dispatchEventInternal(PassRefPtrWillBeRawPtr<Event>) override;
 
 private:
     IDBDatabase(ExecutionContext*, PassOwnPtr<WebIDBDatabase>, IDBDatabaseCallbacks*);
@@ -142,11 +142,10 @@ private:
     IDBDatabaseMetadata m_metadata;
     OwnPtr<WebIDBDatabase> m_backend;
     Member<IDBTransaction> m_versionChangeTransaction;
-    typedef HeapHashMap<int64_t, Member<IDBTransaction>> TransactionMap;
-    TransactionMap m_transactions;
+    HeapHashMap<int64_t, Member<IDBTransaction>> m_transactions;
 
-    bool m_closePending;
-    bool m_contextStopped;
+    bool m_closePending = false;
+    bool m_contextStopped = false;
 
     // Keep track of the versionchange events waiting to be fired on this
     // database so that we can cancel them if the database closes.

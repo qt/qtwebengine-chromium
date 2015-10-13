@@ -43,7 +43,7 @@
 #include "core/events/TextEvent.h"
 #include "core/frame/FrameHost.h"
 #include "core/frame/LocalFrame.h"
-#include "core/html/FormDataList.h"
+#include "core/html/FormData.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/shadow/ShadowElementNames.h"
 #include "core/html/shadow/TextControlInnerElements.h"
@@ -51,7 +51,7 @@
 #include "core/layout/LayoutTextControlSingleLine.h"
 #include "core/layout/LayoutTheme.h"
 #include "core/page/ChromeClient.h"
-#include "core/paint/DeprecatedPaintLayer.h"
+#include "core/paint/PaintLayer.h"
 #include "platform/EventDispatchForbiddenScope.h"
 #include "wtf/text/WTFString.h"
 
@@ -230,9 +230,9 @@ void TextFieldInputType::forwardEvent(Event* event)
         LayoutTextControlSingleLine* layoutTextControl = toLayoutTextControlSingleLine(element().layoutObject());
         if (event->type() == EventTypeNames::blur) {
             if (LayoutBox* innerEditorLayoutObject = element().innerEditorElement()->layoutBox()) {
-                // FIXME: This class has no need to know about DeprecatedPaintLayer!
-                if (DeprecatedPaintLayer* innerLayer = innerEditorLayoutObject->layer()) {
-                    if (DeprecatedPaintLayerScrollableArea* innerScrollableArea = innerLayer->scrollableArea()) {
+                // FIXME: This class has no need to know about PaintLayer!
+                if (PaintLayer* innerLayer = innerEditorLayoutObject->layer()) {
+                    if (PaintLayerScrollableArea* innerScrollableArea = innerLayer->scrollableArea()) {
                         IntSize scrollOffset(!layoutTextControl->style()->isLeftToRightDirection() ? innerScrollableArea->scrollWidth().toInt() : 0, 0);
                         innerScrollableArea->scrollToOffset(scrollOffset, ScrollOffsetClamped);
                     }
@@ -419,11 +419,8 @@ void TextFieldInputType::handleBeforeTextInsertedEvent(BeforeTextInsertedEvent* 
     // that case, and nothing in the text field will be removed.
     unsigned selectionLength = 0;
     if (element().focused()) {
-        Position startPosition;
-        Position endPosition;
         const VisibleSelection& selection = element().document().frame()->selection().selection();
-        if (selection.toNormalizedPositions(startPosition, endPosition))
-            selectionLength = plainText(startPosition, endPosition).length();
+        selectionLength = plainText(selection.toNormalizedEphemeralRange()).length();
     }
     ASSERT(oldLength >= selectionLength);
 
@@ -465,6 +462,7 @@ void TextFieldInputType::updatePlaceholderText()
         RefPtrWillBeRawPtr<HTMLElement> newElement = HTMLDivElement::create(element().document());
         placeholder = newElement.get();
         placeholder->setShadowPseudoId(AtomicString("-webkit-input-placeholder", AtomicString::ConstructFromLiteral));
+        placeholder->setInlineStyleProperty(CSSPropertyDisplay, element().isPlaceholderVisible() ? CSSValueBlock : CSSValueNone, true);
         placeholder->setAttribute(idAttr, ShadowElementNames::placeholder());
         Element* container = containerElement();
         Node* previous = container ? container : element().innerEditorElement();
@@ -474,13 +472,12 @@ void TextFieldInputType::updatePlaceholderText()
     placeholder->setTextContent(placeholderText);
 }
 
-bool TextFieldInputType::appendFormData(FormDataList& list, bool multipart) const
+void TextFieldInputType::appendToFormData(FormData& formData) const
 {
-    InputType::appendFormData(list, multipart);
+    InputType::appendToFormData(formData);
     const AtomicString& dirnameAttrValue = element().fastGetAttribute(dirnameAttr);
     if (!dirnameAttrValue.isNull())
-        list.appendData(dirnameAttrValue, element().directionForFormData());
-    return true;
+        formData.append(dirnameAttrValue, element().directionForFormData());
 }
 
 String TextFieldInputType::convertFromVisibleValue(const String& visibleValue) const
@@ -500,7 +497,7 @@ void TextFieldInputType::subtreeHasChanged()
     // sanitizeUserInputValue().
     // sanitizeValue() is needed because IME input doesn't dispatch BeforeTextInsertedEvent.
     element().setValueFromRenderer(sanitizeValue(convertFromVisibleValue(element().innerEditorValue())));
-    element().updatePlaceholderVisibility(false);
+    element().updatePlaceholderVisibility();
     element().pseudoStateChanged(CSSSelector::PseudoValid);
     element().pseudoStateChanged(CSSSelector::PseudoInvalid);
 
@@ -529,7 +526,7 @@ void TextFieldInputType::updateView()
 {
     if (!element().suggestedValue().isNull()) {
         element().setInnerEditorValue(element().suggestedValue());
-        element().updatePlaceholderVisibility(false);
+        element().updatePlaceholderVisibility();
     } else if (element().needsToUpdateViewValue()) {
         // Update the view only if needsToUpdateViewValue is true. It protects
         // an unacceptable view value from being overwritten with the DOM value.
@@ -538,7 +535,7 @@ void TextFieldInputType::updateView()
         // updated. In this case, updateView() is called but we should not
         // update the view value.
         element().setInnerEditorValue(visibleValue());
-        element().updatePlaceholderVisibility(false);
+        element().updatePlaceholderVisibility();
     }
 }
 

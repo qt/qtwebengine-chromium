@@ -98,14 +98,14 @@ void HistoryItem::setTarget(const String& target)
     m_target = target;
 }
 
-const FloatPoint& HistoryItem::pinchViewportScrollPoint() const
+const FloatPoint& HistoryItem::visualViewportScrollPoint() const
 {
-    return m_pinchViewportScrollPoint;
+    return m_visualViewportScrollPoint;
 }
 
-void HistoryItem::setPinchViewportScrollPoint(const FloatPoint& point)
+void HistoryItem::setVisualViewportScrollPoint(const FloatPoint& point)
 {
-    m_pinchViewportScrollPoint = point;
+    m_visualViewportScrollPoint = point;
 }
 
 const IntPoint& HistoryItem::scrollPoint() const
@@ -180,7 +180,7 @@ void HistoryItem::setFormInfoFromRequest(const ResourceRequest& request)
     }
 }
 
-void HistoryItem::setFormData(PassRefPtr<FormData> formData)
+void HistoryItem::setFormData(PassRefPtr<EncodedFormData> formData)
 {
     m_formData = formData;
 }
@@ -190,7 +190,7 @@ void HistoryItem::setFormContentType(const AtomicString& formContentType)
     m_formContentType = formContentType;
 }
 
-FormData* HistoryItem::formData()
+EncodedFormData* HistoryItem::formData()
 {
     return m_formData.get();
 }

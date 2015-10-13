@@ -9,54 +9,81 @@ declare_args() {
   libcast_media_target = ""
 }
 
-source_set("base") {
+source_set("message_loop") {
   sources = [
-    "decrypt_context.cc",
-    "decrypt_context.h",
-    "decrypt_context_clearkey.cc",
-    "decrypt_context_clearkey.h",
-    "key_systems_common.cc",
-    "key_systems_common.h",
-    "media_caps.cc",
-    "media_caps.h",
     "media_message_loop.cc",
     "media_message_loop.h",
-    "switching_media_renderer.cc",
-    "switching_media_renderer.h",
+    "video_plane_controller.cc",
+    "video_plane_controller.h",
+  ]
+
+  public_deps = [
+    "//chromecast/public/media",
   ]
 
   configs += [ "//chromecast:config" ]
 
   deps = [
     "//base",
+    "//chromecast/media/base:libcast_media_1.0",
+    "//chromecast/public",
+  ]
+}
+
+# TODO(slan): See if the dependency on //media can be broken.
+source_set("base") {
+  sources = [
+    "decrypt_context_impl.cc",
+    "decrypt_context_impl.h",
+    "decrypt_context_impl_clearkey.cc",
+    "decrypt_context_impl_clearkey.h",
+    "key_systems_common.cc",
+    "key_systems_common.h",
+    "media_caps.cc",
+    "media_caps.h",
+    "media_codec_support.cc",
+    "media_codec_support.h",
+    "switching_media_renderer.cc",
+    "switching_media_renderer.h",
+  ]
+
+  public_deps = [
+    "//chromecast/public/media",
+    ":message_loop",
+  ]
+
+  configs += [ "//chromecast:config" ]
+
+  deps = [
+    ":libcast_media_1.0",
+    "//base",
+    "//chromecast/public",
     "//crypto",
     "//crypto:platform",
     "//media",
+    "//net",
     "//third_party/widevine/cdm:version_h",
   ]
 
-  if (is_chromecast_chrome_branded) {
-    deps += [
-      "${libcast_media_target}",
-      # TODO(gyp): add dependency on internal/chromecast_internal:media_base_internal
-    ]
-  } else {
+  if (chromecast_branding == "public") {
     sources += [ "key_systems_common_simple.cc" ]
-
-    deps += [ ":libcast_media_default" ]
   }
 }
 
-shared_library("libcast_media_default") {
-  output_name = "libcast_media_1.0"
-
+shared_library("libcast_media_1.0") {
   sources = [
     "cast_media_default.cc",
   ]
 
   configs += [ "//chromecast:config" ]
 
-  deps = [
+  public_deps = [
     "//chromecast/public",
+    "//chromecast/public/media",
+  ]
+
+  deps = [
+    "//build/config/sanitizers:deps",
+    "//chromecast/media/cma/backend",
   ]
 }

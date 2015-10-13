@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "base/memory/shared_memory.h"
+#include "base/process/process_handle.h"
 #include "content/common/media/video_capture_messages.h"
 #include "content/renderer/media/video_capture_message_filter.h"
 #include "ipc/ipc_test_sink.h"
@@ -28,19 +29,24 @@ class MockVideoCaptureDelegate : public VideoCaptureMessageFilter::Delegate {
   MockVideoCaptureDelegate() : device_id_(0) {}
 
   // VideoCaptureMessageFilter::Delegate implementation.
-  MOCK_METHOD3(OnBufferCreated, void(base::SharedMemoryHandle handle,
-                                     int length,
-                                     int buffer_id));
+  MOCK_METHOD3(OnBufferCreated,
+               void(base::SharedMemoryHandle handle,
+                    int length,
+                    int buffer_id));
+  MOCK_METHOD3(OnBufferCreated2,
+               void(const std::vector<gfx::GpuMemoryBufferHandle>& handles,
+                    const gfx::Size& size,
+                    int buffer_id));
   MOCK_METHOD1(OnBufferDestroyed, void(int buffer_id));
   MOCK_METHOD8(OnBufferReceived,
                void(int buffer_id,
                     base::TimeTicks timestamp,
                     const base::DictionaryValue& metadata,
-                    media::VideoFrame::Format pixel_format,
+                    media::VideoPixelFormat pixel_format,
                     media::VideoFrame::StorageType storage_type,
                     const gfx::Size& coded_size,
                     const gfx::Rect& visible_rect,
-                    const gpu::MailboxHolder& mailbox_holder));
+                    const std::vector<gpu::MailboxHolder>& mailbox_holders));
   MOCK_METHOD1(OnStateChanged, void(VideoCaptureState state));
   MOCK_METHOD1(OnDeviceSupportedFormatsEnumerated,
                void(const media::VideoCaptureFormats& formats));
@@ -91,7 +97,8 @@ TEST(VideoCaptureMessageFilterTest, Basic) {
   // VideoCaptureMsg_NewBuffer
   const base::SharedMemoryHandle handle =
 #if defined(OS_WIN)
-      reinterpret_cast<base::SharedMemoryHandle>(10);
+      base::SharedMemoryHandle(reinterpret_cast<HANDLE>(10),
+                               base::GetCurrentProcId());
 #else
       base::SharedMemoryHandle(10, true);
 #endif
@@ -106,19 +113,16 @@ TEST(VideoCaptureMessageFilterTest, Basic) {
   params.buffer_id = 22;
   params.timestamp = base::TimeTicks::FromInternalValue(1);
   params.metadata.SetString("foo", "bar");
-  params.pixel_format = media::VideoFrame::I420;
+  params.pixel_format = media::PIXEL_FORMAT_I420;
   params.storage_type = media::VideoFrame::STORAGE_SHMEM;
   params.coded_size = gfx::Size(234, 512);
   params.visible_rect = gfx::Rect(100, 200, 300, 400);
 
-  EXPECT_CALL(delegate, OnBufferReceived(params.buffer_id,
-                                         params.timestamp,
-                                         _,
-                                         media::VideoFrame::I420,
-                                         media::VideoFrame::STORAGE_SHMEM,
-                                         params.coded_size,
-                                         params.visible_rect,
-                                         _))
+  EXPECT_CALL(delegate,
+              OnBufferReceived(params.buffer_id, params.timestamp, _,
+                               media::PIXEL_FORMAT_I420,
+                               media::VideoFrame::STORAGE_SHMEM,
+                               params.coded_size, params.visible_rect, _))
       .WillRepeatedly(WithArg<2>(Invoke(&ExpectMetadataContainsFooBarBaz)));
   filter->OnMessageReceived(VideoCaptureMsg_BufferReady(params));
   Mock::VerifyAndClearExpectations(&delegate);
@@ -129,32 +133,58 @@ TEST(VideoCaptureMessageFilterTest, Basic) {
   params_m.buffer_id = 33;
   params_m.timestamp = base::TimeTicks::FromInternalValue(2);
   params_m.metadata.SetString("bar", "baz");
-  params_m.pixel_format = media::VideoFrame::ARGB;
+  params_m.pixel_format = media::PIXEL_FORMAT_ARGB;
   params_m.storage_type = media::VideoFrame::STORAGE_OPAQUE;
   params_m.coded_size = gfx::Size(345, 256);
-  gpu::Mailbox mailbox;
-  const int8 mailbox_name[arraysize(mailbox.name)] = "TEST MAILBOX";
-  mailbox.SetName(mailbox_name);
-  params_m.mailbox_holder = gpu::MailboxHolder(mailbox, 0, 44);
+  const gpu::MailboxHolder mailbox(gpu::Mailbox::Generate(), 0, 44);
+  params_m.mailbox_holders.push_back(mailbox);
 
-  gpu::MailboxHolder saved_mailbox_holder;
-  EXPECT_CALL(delegate, OnBufferReceived(params_m.buffer_id,
-                                         params_m.timestamp,
-                                         _,
-                                         media::VideoFrame::ARGB,
+  std::vector<gpu::MailboxHolder> received_mailbox_holders;
+  EXPECT_CALL(delegate, OnBufferReceived(params_m.buffer_id, params_m.timestamp,
+                                         _, media::PIXEL_FORMAT_ARGB,
                                          media::VideoFrame::STORAGE_OPAQUE,
-                                         params_m.coded_size,
-                                         _,
-                                         _))
-      .WillRepeatedly(DoAll(
-          SaveArg<7>(&saved_mailbox_holder),
-          WithArg<2>(Invoke(&ExpectMetadataContainsFooBarBaz))));
+                                         params_m.coded_size, _, _))
+      .WillRepeatedly(
+          DoAll(SaveArg<7>(&received_mailbox_holders),
+                WithArg<2>(Invoke(&ExpectMetadataContainsFooBarBaz))));
   filter->OnMessageReceived(VideoCaptureMsg_BufferReady(params_m));
   Mock::VerifyAndClearExpectations(&delegate);
-  EXPECT_EQ(memcmp(mailbox.name,
-                   saved_mailbox_holder.mailbox.name,
-                   sizeof(mailbox.name)),
-            0);
+  EXPECT_EQ(params_m.mailbox_holders[0].mailbox,
+            received_mailbox_holders[0].mailbox);
+
+  // VideoCaptureMsg_BufferReady_Params with 3 plane Texture
+  VideoCaptureMsg_BufferReady_Params params_planar_m;
+  params_planar_m.device_id = delegate.device_id();
+  params_planar_m.buffer_id = 34;
+  params_planar_m.timestamp = base::TimeTicks::FromInternalValue(3);
+  params_planar_m.metadata.SetString("bar", "baz");
+  params_planar_m.pixel_format = media::PIXEL_FORMAT_I420;
+  params_planar_m.storage_type = media::VideoFrame::STORAGE_OPAQUE;
+  params_planar_m.coded_size = gfx::Size(345, 256);
+  const gpu::MailboxHolder mailbox1(gpu::Mailbox::Generate(), 4, 44);
+  params_planar_m.mailbox_holders.push_back(mailbox1);
+  const gpu::MailboxHolder mailbox2(gpu::Mailbox::Generate(), 5, 46);
+  params_planar_m.mailbox_holders.push_back(mailbox2);
+  const gpu::MailboxHolder mailbox3(gpu::Mailbox::Generate(), 6, 33);
+  params_planar_m.mailbox_holders.push_back(mailbox3);
+
+  std::vector<gpu::MailboxHolder> received_planar_mailbox_holders;
+  EXPECT_CALL(delegate, OnBufferReceived(params_planar_m.buffer_id,
+                                         params_planar_m.timestamp, _,
+                                         media::PIXEL_FORMAT_I420,
+                                         media::VideoFrame::STORAGE_OPAQUE,
+                                         params_planar_m.coded_size, _, _))
+      .WillRepeatedly(
+          DoAll(SaveArg<7>(&received_planar_mailbox_holders),
+                WithArg<2>(Invoke(&ExpectMetadataContainsFooBarBaz))));
+  filter->OnMessageReceived(VideoCaptureMsg_BufferReady(params_planar_m));
+  Mock::VerifyAndClearExpectations(&delegate);
+  for (size_t plane = 0;
+       plane < media::VideoFrame::NumPlanes(media::PIXEL_FORMAT_I420);
+       ++plane) {
+    EXPECT_EQ(params_planar_m.mailbox_holders[plane].mailbox,
+              received_planar_mailbox_holders[plane].mailbox);
+  }
 
   // VideoCaptureMsg_FreeBuffer
   EXPECT_CALL(delegate, OnBufferDestroyed(params_m.buffer_id));

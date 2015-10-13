@@ -12,8 +12,8 @@
 #include "core/html/HTMLIFrameElement.h"
 #include "core/layout/LayoutView.h"
 #include "core/loader/EmptyClients.h"
-#include "core/paint/DeprecatedPaintLayer.h"
-#include "core/paint/DeprecatedPaintLayerPainter.h"
+#include "core/paint/PaintLayer.h"
+#include "core/paint/PaintLayerPainter.h"
 #include "core/testing/DummyPageHolder.h"
 #include "platform/graphics/GraphicsContext.h"
 #include "platform/graphics/paint/SkPictureBuilder.h"
@@ -51,7 +51,7 @@ public:
 
     MockCanvas() : SkCanvas(kPageWidth, kPageHeight) { }
 
-    virtual void onDrawRect(const SkRect& rect, const SkPaint& paint) override
+    void onDrawRect(const SkRect& rect, const SkPaint& paint) override
     {
         if (!paint.getAnnotation())
             return;
@@ -60,7 +60,7 @@ public:
         m_recordedOperations.append(operation);
     }
 
-    virtual void onDrawPoints(PointMode mode, size_t count, const SkPoint pts[], const SkPaint& paint) override
+    void onDrawPoints(PointMode mode, size_t count, const SkPoint pts[], const SkPaint& paint) override
     {
         if (!paint.getAnnotation())
             return;
@@ -78,7 +78,7 @@ private:
 
 class PrintContextTest : public testing::Test {
 protected:
-    PrintContextTest(PassOwnPtr<FrameLoaderClient> frameLoaderClient = PassOwnPtr<FrameLoaderClient>())
+    explicit PrintContextTest(PassOwnPtrWillBeRawPtr<FrameLoaderClient> frameLoaderClient = nullptr)
         : m_pageHolder(DummyPageHolder::create(IntSize(kPageWidth, kPageHeight), nullptr, frameLoaderClient))
         , m_printContext(adoptPtrWillBeNoop(new MockPrintContext(document().frame()))) { }
 
@@ -94,19 +94,15 @@ protected:
     void printSinglePage(SkCanvas& canvas)
     {
         IntRect pageRect(0, 0, kPageWidth, kPageHeight);
+        printContext().begin(pageRect.width(), pageRect.height());
         document().view()->updateAllLifecyclePhases();
-        document().setPrinting(true);
         SkPictureBuilder pictureBuilder(pageRect);
         GraphicsContext& context = pictureBuilder.context();
         context.setPrinting(true);
-        DeprecatedPaintLayer& rootLayer = *document().view()->layoutView()->layer();
-        DeprecatedPaintLayerPaintingInfo paintingInfo(&rootLayer, LayoutRect(pageRect), PaintBehaviorNormal, LayoutSize());
-        DeprecatedPaintLayerPainter(rootLayer).paintLayerContents(&context, paintingInfo, PaintLayerPaintingCompositingAllPhases);
-        printContext().begin(kPageWidth, kPageHeight);
-        printContext().end();
+        document().view()->paintContents(&context, GlobalPaintPrinting, pageRect);
         pictureBuilder.endRecording()->playback(&canvas);
         printContext().outputLinkedDestinations(&canvas, pageRect);
-        document().setPrinting(false);
+        printContext().end();
     }
 
     static String absoluteBlockHtmlForLink(int x, int y, int width, int height, const char* url, const char* children = nullptr)
@@ -138,32 +134,51 @@ private:
     OwnPtrWillBePersistent<MockPrintContext> m_printContext;
 };
 
-class SingleChildFrameLoaderClient : public EmptyFrameLoaderClient {
+class SingleChildFrameLoaderClient final : public EmptyFrameLoaderClient {
 public:
-    SingleChildFrameLoaderClient() : m_child(nullptr) { }
+    static PassOwnPtrWillBeRawPtr<SingleChildFrameLoaderClient> create() { return adoptPtrWillBeNoop(new SingleChildFrameLoaderClient); }
 
-    virtual Frame* firstChild() const override { return m_child; }
-    virtual Frame* lastChild() const override { return m_child; }
+    DEFINE_INLINE_VIRTUAL_TRACE()
+    {
+        visitor->trace(m_child);
+        EmptyFrameLoaderClient::trace(visitor);
+    }
+
+    Frame* firstChild() const override { return m_child.get(); }
+    Frame* lastChild() const override { return m_child.get(); }
 
     void setChild(Frame* child) { m_child = child; }
 
 private:
-    Frame* m_child;
+    SingleChildFrameLoaderClient() : m_child(nullptr) { }
+
+    RefPtrWillBeMember<Frame> m_child;
 };
 
-class FrameLoaderClientWithParent : public EmptyFrameLoaderClient {
+class FrameLoaderClientWithParent final : public EmptyFrameLoaderClient {
 public:
-    FrameLoaderClientWithParent(Frame* parent) : m_parent(parent) { }
+    static PassOwnPtrWillBeRawPtr<FrameLoaderClientWithParent> create(Frame* parent)
+    {
+        return adoptPtrWillBeNoop(new FrameLoaderClientWithParent(parent));
+    }
 
-    virtual Frame* parent() const override { return m_parent; }
+    DEFINE_INLINE_VIRTUAL_TRACE()
+    {
+        visitor->trace(m_parent);
+        EmptyFrameLoaderClient::trace(visitor);
+    }
+
+    Frame* parent() const override { return m_parent.get(); }
 
 private:
-    Frame* m_parent;
+    explicit FrameLoaderClientWithParent(Frame* parent) : m_parent(parent) { }
+
+    RefPtrWillBeMember<Frame> m_parent;
 };
 
 class PrintContextFrameTest : public PrintContextTest {
 public:
-    PrintContextFrameTest() : PrintContextTest(adoptPtr(new SingleChildFrameLoaderClient())) { }
+    PrintContextFrameTest() : PrintContextTest(SingleChildFrameLoaderClient::create()) { }
 };
 
 #define EXPECT_SKRECT_EQ(expectedX, expectedY, expectedWidth, expectedHeight, actualRect) \
@@ -189,33 +204,7 @@ void PrintContextTest::testBasicLinkTarget()
     // SkAnnotation API.
 }
 
-class PrintContextTestWithSlimmingPaint : public PrintContextTest {
-public:
-    PrintContextTestWithSlimmingPaint()
-        : m_originalSlimmingPaintEnabled(RuntimeEnabledFeatures::slimmingPaintEnabled()) { }
-
-protected:
-    virtual void SetUp() override
-    {
-        PrintContextTest::SetUp();
-        RuntimeEnabledFeatures::setSlimmingPaintEnabled(true);
-    }
-    virtual void TearDown() override
-    {
-        RuntimeEnabledFeatures::setSlimmingPaintEnabled(m_originalSlimmingPaintEnabled);
-        PrintContextTest::TearDown();
-    }
-
-private:
-    bool m_originalSlimmingPaintEnabled;
-};
-
 TEST_F(PrintContextTest, LinkTarget)
-{
-    testBasicLinkTarget();
-}
-
-TEST_F(PrintContextTestWithSlimmingPaint, LinkTargetBasic)
 {
     testBasicLinkTarget();
 }
@@ -241,17 +230,15 @@ TEST_F(PrintContextTest, LinkTargetComplex)
     printSinglePage(canvas);
 
     const Vector<MockCanvas::Operation>& operations = canvas.recordedOperations();
-    ASSERT_EQ(5u, operations.size());
+    ASSERT_EQ(4u, operations.size());
     EXPECT_EQ(MockCanvas::DrawRect, operations[0].type);
     EXPECT_SKRECT_EQ(0, 0, 111, 10, operations[0].rect);
     EXPECT_EQ(MockCanvas::DrawRect, operations[1].type);
     EXPECT_SKRECT_EQ(0, 10, 122, 20, operations[1].rect);
     EXPECT_EQ(MockCanvas::DrawRect, operations[2].type);
-    EXPECT_SKRECT_EQ(0, 30, 133, 30, operations[2].rect);
+    EXPECT_SKRECT_EQ(0, 100, 144, 40, operations[2].rect);
     EXPECT_EQ(MockCanvas::DrawRect, operations[3].type);
-    EXPECT_SKRECT_EQ(0, 100, 144, 40, operations[3].rect);
-    EXPECT_EQ(MockCanvas::DrawRect, operations[4].type);
-    EXPECT_SKRECT_EQ(50, 190, 155, 50, operations[4].rect);
+    EXPECT_SKRECT_EQ(50, 190, 155, 50, operations[3].rect);
 }
 
 TEST_F(PrintContextTest, LinkTargetSvg)
@@ -311,7 +298,7 @@ TEST_F(PrintContextFrameTest, WithSubframe)
         " style='border-width: 5px; margin: 5px; position: absolute; top: 90px; left: 90px'></iframe>");
 
     HTMLIFrameElement& iframe = *toHTMLIFrameElement(document().getElementById("frame"));
-    OwnPtr<FrameLoaderClient> frameLoaderClient = adoptPtr(new FrameLoaderClientWithParent(document().frame()));
+    OwnPtrWillBeRawPtr<FrameLoaderClient> frameLoaderClient = FrameLoaderClientWithParent::create(document().frame());
     RefPtrWillBePersistent<LocalFrame> subframe = LocalFrame::create(frameLoaderClient.get(), document().frame()->host(), &iframe);
     subframe->setView(FrameView::create(subframe.get(), IntSize(500, 500)));
     subframe->init();
@@ -348,7 +335,7 @@ TEST_F(PrintContextFrameTest, WithScrolledSubframe)
         " style='border-width: 5px; margin: 5px; position: absolute; top: 90px; left: 90px'></iframe>");
 
     HTMLIFrameElement& iframe = *toHTMLIFrameElement(document().getElementById("frame"));
-    OwnPtr<FrameLoaderClient> frameLoaderClient = adoptPtr(new FrameLoaderClientWithParent(document().frame()));
+    OwnPtrWillBeRawPtr<FrameLoaderClient> frameLoaderClient = FrameLoaderClientWithParent::create(document().frame());
     RefPtrWillBePersistent<LocalFrame> subframe = LocalFrame::create(frameLoaderClient.get(), document().frame()->host(), &iframe);
     subframe->setView(FrameView::create(subframe.get(), IntSize(500, 500)));
     subframe->init();

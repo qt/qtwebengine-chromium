@@ -7,6 +7,7 @@
 
 #include <string>
 
+#include "base/memory/weak_ptr.h"
 #include "mojo/application/public/cpp/lib/interface_factory_connector.h"
 #include "mojo/application/public/interfaces/service_provider.mojom.h"
 
@@ -45,20 +46,31 @@ class ServiceConnector;
 // close a connection, call CloseConnection which will destroy this object.
 class ApplicationConnection {
  public:
-  ApplicationConnection();
+  virtual ~ApplicationConnection() {}
 
-  // Closes the connection and destroys this object. This is the only valid way
-  // to destroy this object.
-  void CloseConnection();
+  class TestApi {
+   public:
+    explicit TestApi(ApplicationConnection* connection)
+        : connection_(connection) {
+    }
+    base::WeakPtr<ApplicationConnection> GetWeakPtr() {
+      return connection_->GetWeakPtr();
+    }
+
+   private:
+    ApplicationConnection* connection_;
+  };
 
   // See class description for details.
   virtual void SetServiceConnector(ServiceConnector* connector) = 0;
 
   // Makes Interface available as a service to the remote application.
   // |factory| will create implementations of Interface on demand.
+  // Returns true if the service was exposed, false if capability filtering
+  // from the shell prevented the service from being exposed.
   template <typename Interface>
-  void AddService(InterfaceFactory<Interface>* factory) {
-    SetServiceConnectorForName(
+  bool AddService(InterfaceFactory<Interface>* factory) {
+    return SetServiceConnectorForName(
         new internal::InterfaceFactoryConnector<Interface>(factory),
         Interface::Name_);
   }
@@ -99,20 +111,29 @@ class ApplicationConnection {
   // value is owned by this connection.
   virtual ServiceProvider* GetLocalServiceProvider() = 0;
 
+  // Register a handler to receive an error notification on the pipe to the
+  // remote application's service provider.
+  virtual void SetRemoteServiceProviderConnectionErrorHandler(
+      const Closure& handler) = 0;
+
+  // Returns the id of the deepest content handler used in connecting to
+  // the application. If the content handler id has not yet been determined
+  // this returns false, use AddContentHandlerIDCallback() to schedule a
+  // callback when the content handler is has been obtained. A value of 0
+  // indicates no content handler was used in connecting to the application.
+  virtual bool GetContentHandlerID(uint32_t* content_handler_id) = 0;
+
+  // See description in GetTargetID(). If the id of the content handler has
+  // been obtained |callback| is run immediately.
+  virtual void AddContentHandlerIDCallback(const Closure& callback) = 0;
+
  protected:
-  virtual ~ApplicationConnection();
-
-  // Called to give the derived type to perform some cleanup before destruction.
-  virtual void OnCloseConnection() = 0;
-
- private:
-  virtual void SetServiceConnectorForName(ServiceConnector* service_connector,
+  // Returns true if the connector was set, false if it was not set (e.g. by
+  // some filtering policy preventing this interface from being exposed).
+  virtual bool SetServiceConnectorForName(ServiceConnector* service_connector,
                                           const std::string& name) = 0;
 
-  // Ensures that CloseConnection can only be called once and the
-  // ApplicationConnection's destructor can only be called after the connection
-  // is closed.
-  bool connection_closed_;
+  virtual base::WeakPtr<ApplicationConnection> GetWeakPtr() = 0;
 };
 
 }  // namespace mojo

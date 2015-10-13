@@ -15,7 +15,6 @@
 #include "cc/test/fake_output_surface.h"
 #include "cc/test/geometry_test_utils.h"
 #include "cc/test/layer_test_common.h"
-#include "cc/test/render_pass_test_common.h"
 #include "cc/test/render_pass_test_utils.h"
 #include "cc/test/test_shared_bitmap_manager.h"
 #include "cc/test/test_task_graph_runner.h"
@@ -33,13 +32,14 @@ class DelegatedRendererLayerImplTest : public testing::Test {
  public:
   DelegatedRendererLayerImplTest()
       : proxy_(),
-        always_impl_thread_and_main_thread_blocked_(&proxy_) {
+        always_impl_thread_and_main_thread_blocked_(&proxy_),
+        output_surface_(FakeOutputSurface::Create3d()) {
     LayerTreeSettings settings;
     settings.minimum_occlusion_tracking_size = gfx::Size();
 
     host_impl_.reset(new FakeLayerTreeHostImpl(
         settings, &proxy_, &shared_bitmap_manager_, &task_graph_runner_));
-    host_impl_->InitializeRenderer(FakeOutputSurface::Create3d());
+    host_impl_->InitializeRenderer(output_surface_.get());
     host_impl_->SetViewportSize(gfx::Size(10, 10));
   }
 
@@ -49,6 +49,7 @@ class DelegatedRendererLayerImplTest : public testing::Test {
       always_impl_thread_and_main_thread_blocked_;
   TestSharedBitmapManager shared_bitmap_manager_;
   TestTaskGraphRunner task_graph_runner_;
+  scoped_ptr<OutputSurface> output_surface_;
   scoped_ptr<LayerTreeHostImpl> host_impl_;
 };
 
@@ -88,21 +89,18 @@ class DelegatedRendererLayerImplTestSimple
     delegated_renderer_layer->SetTransform(transform);
 
     RenderPassList delegated_render_passes;
-    TestRenderPass* pass1 = AddRenderPass(&delegated_render_passes,
-                                          RenderPassId(9, 6),
-                                          gfx::Rect(6, 6, 6, 6),
-                                          gfx::Transform(1, 0, 0, 1, 5, 6));
+    RenderPass* pass1 =
+        AddRenderPass(&delegated_render_passes, RenderPassId(9, 6),
+                      gfx::Rect(6, 6, 6, 6), gfx::Transform(1, 0, 0, 1, 5, 6));
     AddQuad(pass1, gfx::Rect(0, 0, 6, 6), 33u);
-    TestRenderPass* pass2 = AddRenderPass(&delegated_render_passes,
-                                          RenderPassId(9, 7),
-                                          gfx::Rect(7, 7, 7, 7),
-                                          gfx::Transform(1, 0, 0, 1, 7, 8));
+    RenderPass* pass2 =
+        AddRenderPass(&delegated_render_passes, RenderPassId(9, 7),
+                      gfx::Rect(7, 7, 7, 7), gfx::Transform(1, 0, 0, 1, 7, 8));
     AddQuad(pass2, gfx::Rect(0, 0, 7, 7), 22u);
     AddRenderPassQuad(pass2, pass1);
-    TestRenderPass* pass3 = AddRenderPass(&delegated_render_passes,
-                                          RenderPassId(9, 8),
-                                          gfx::Rect(0, 0, 8, 8),
-                                          gfx::Transform(1, 0, 0, 1, 9, 10));
+    RenderPass* pass3 =
+        AddRenderPass(&delegated_render_passes, RenderPassId(9, 8),
+                      gfx::Rect(0, 0, 8, 8), gfx::Transform(1, 0, 0, 1, 9, 10));
     AddRenderPassQuad(pass3, pass2);
     delegated_renderer_layer->SetFrameDataForRenderPasses(
         1.f, delegated_render_passes);
@@ -152,16 +150,16 @@ TEST_F(DelegatedRendererLayerImplTest,
     delegated_renderer_layer->SetTransform(transform);
 
     RenderPassList delegated_render_passes;
-    TestRenderPass* pass1 =
+    RenderPass* pass1 =
         AddRenderPass(&delegated_render_passes, RenderPassId(9, 6),
                       gfx::Rect(6, 6, 6, 6), gfx::Transform(1, 0, 0, 1, 5, 6));
     AddQuad(pass1, gfx::Rect(0, 0, 6, 6), 33u);
-    TestRenderPass* pass2 =
+    RenderPass* pass2 =
         AddRenderPass(&delegated_render_passes, RenderPassId(9, 7),
                       gfx::Rect(7, 7, 7, 7), gfx::Transform(1, 0, 0, 1, 7, 8));
     AddQuad(pass2, gfx::Rect(0, 0, 7, 7), 22u);
     AddRenderPassQuad(pass2, pass1);
-    TestRenderPass* pass3 =
+    RenderPass* pass3 =
         AddRenderPass(&delegated_render_passes, RenderPassId(9, 8),
                       gfx::Rect(0, 0, 8, 8), gfx::Transform(1, 0, 0, 1, 9, 10));
     AddRenderPassQuad(pass3, pass2);
@@ -231,16 +229,16 @@ TEST_F(DelegatedRendererLayerImplTest,
     delegated_renderer_layer->SetTransform(transform);
 
     RenderPassList delegated_render_passes;
-    TestRenderPass* pass1 =
+    RenderPass* pass1 =
         AddRenderPass(&delegated_render_passes, RenderPassId(9, 6),
                       gfx::Rect(6, 6, 6, 6), gfx::Transform(1, 0, 0, 1, 5, 6));
     AddQuad(pass1, gfx::Rect(0, 0, 6, 6), 33u);
-    TestRenderPass* pass2 =
+    RenderPass* pass2 =
         AddRenderPass(&delegated_render_passes, RenderPassId(9, 7),
                       gfx::Rect(7, 7, 7, 7), gfx::Transform(1, 0, 0, 1, 7, 8));
     AddQuad(pass2, gfx::Rect(0, 0, 7, 7), 22u);
     AddRenderPassQuad(pass2, pass1);
-    TestRenderPass* pass3 =
+    RenderPass* pass3 =
         AddRenderPass(&delegated_render_passes, RenderPassId(9, 8),
                       gfx::Rect(0, 0, 8, 8), gfx::Transform(1, 0, 0, 1, 9, 10));
     AddRenderPassQuad(pass3, pass2);
@@ -615,7 +613,7 @@ class DelegatedRendererLayerImplTestTransform
         delegated_device_scale_factor_(2.f) {}
 
   void SetUpTest() {
-    host_impl_->SetDeviceScaleFactor(2.f);
+    host_impl_->active_tree()->SetDeviceScaleFactor(2.f);
 
     scoped_ptr<LayerImpl> root_layer = LayerImpl::Create(
         host_impl_->active_tree(), 1);
@@ -645,10 +643,9 @@ class DelegatedRendererLayerImplTestTransform
     bool child_pass_clipped = false;
 
     {
-      TestRenderPass* pass = AddRenderPass(&delegated_render_passes,
-                                           RenderPassId(10, 7),
-                                           child_pass_rect,
-                                           gfx::Transform());
+      RenderPass* pass =
+          AddRenderPass(&delegated_render_passes, RenderPassId(10, 7),
+                        child_pass_rect, gfx::Transform());
       SharedQuadState* shared_quad_state =
           pass->CreateAndAppendSharedQuadState();
       shared_quad_state->SetAll(child_pass_transform, child_pass_bounds,
@@ -680,10 +677,9 @@ class DelegatedRendererLayerImplTestTransform
     gfx::Rect root_pass_clip_rect(10, 10, 35, 35);
     bool root_pass_clipped = root_delegated_render_pass_is_clipped_;
 
-    TestRenderPass* pass = AddRenderPass(&delegated_render_passes,
-                                         RenderPassId(9, 6),
-                                         root_pass_rect,
-                                         gfx::Transform());
+    RenderPass* pass =
+        AddRenderPass(&delegated_render_passes, RenderPassId(9, 6),
+                      root_pass_rect, gfx::Transform());
     SharedQuadState* shared_quad_state = pass->CreateAndAppendSharedQuadState();
     shared_quad_state->SetAll(root_pass_transform, root_pass_bounds,
                               root_pass_rect, root_pass_clip_rect,
@@ -1067,10 +1063,9 @@ class DelegatedRendererLayerImplTestClip
     bool child_pass_clipped = false;
 
     {
-      TestRenderPass* pass = AddRenderPass(&delegated_render_passes,
-                                           RenderPassId(10, 7),
-                                           child_pass_rect,
-                                           gfx::Transform());
+      RenderPass* pass =
+          AddRenderPass(&delegated_render_passes, RenderPassId(10, 7),
+                        child_pass_rect, gfx::Transform());
       SharedQuadState* shared_quad_state =
           pass->CreateAndAppendSharedQuadState();
       shared_quad_state->SetAll(child_pass_transform, child_pass_bounds,
@@ -1100,10 +1095,9 @@ class DelegatedRendererLayerImplTestClip
     gfx::Rect root_pass_clip_rect(5, 5, 40, 40);
     bool root_pass_clipped = root_delegated_render_pass_is_clipped_;
 
-    TestRenderPass* pass = AddRenderPass(&delegated_render_passes,
-                                         RenderPassId(9, 6),
-                                         root_pass_rect,
-                                         gfx::Transform());
+    RenderPass* pass =
+        AddRenderPass(&delegated_render_passes, RenderPassId(9, 6),
+                      root_pass_rect, gfx::Transform());
     SharedQuadState* shared_quad_state = pass->CreateAndAppendSharedQuadState();
     shared_quad_state->SetAll(root_pass_transform, root_pass_bounds,
                               root_pass_rect, root_pass_clip_rect,
@@ -1250,6 +1244,7 @@ TEST_F(DelegatedRendererLayerImplTestClip,
   SetUpTest();
 
   LayerTreeHostImpl::FrameData frame;
+  host_impl_->active_tree()->BuildPropertyTreesForTesting();
   EXPECT_EQ(DRAW_SUCCESS, host_impl_->PrepareToDraw(&frame));
 
   ASSERT_EQ(2u, frame.render_passes.size());
@@ -1280,6 +1275,7 @@ TEST_F(DelegatedRendererLayerImplTestClip,
   SetUpTest();
 
   LayerTreeHostImpl::FrameData frame;
+  host_impl_->active_tree()->BuildPropertyTreesForTesting();
   EXPECT_EQ(DRAW_SUCCESS, host_impl_->PrepareToDraw(&frame));
 
   ASSERT_EQ(2u, frame.render_passes.size());
@@ -1370,6 +1366,7 @@ TEST_F(DelegatedRendererLayerImplTestClip,
   delegated_renderer_layer_->SetHasRenderSurface(true);
 
   LayerTreeHostImpl::FrameData frame;
+  host_impl_->active_tree()->BuildPropertyTreesForTesting();
   EXPECT_EQ(DRAW_SUCCESS, host_impl_->PrepareToDraw(&frame));
 
   ASSERT_EQ(3u, frame.render_passes.size());
@@ -1398,6 +1395,7 @@ TEST_F(DelegatedRendererLayerImplTestClip, QuadsClipped_LayerClipped_Surface) {
   delegated_renderer_layer_->SetHasRenderSurface(true);
 
   LayerTreeHostImpl::FrameData frame;
+  host_impl_->active_tree()->BuildPropertyTreesForTesting();
   EXPECT_EQ(DRAW_SUCCESS, host_impl_->PrepareToDraw(&frame));
 
   ASSERT_EQ(3u, frame.render_passes.size());
@@ -1443,17 +1441,14 @@ TEST_F(DelegatedRendererLayerImplTest, Occlusion) {
   // translation of (211,300).
   RenderPassId pass2_id =
       delegated_renderer_layer_impl->FirstContributingRenderPassId();
-  TestRenderPass* pass2 = AddRenderPass(&delegated_render_passes,
-                                        pass2_id,
-                                        gfx::Rect(quad_screen_rect.size()),
-                                        transform);
+  RenderPass* pass2 =
+      AddRenderPass(&delegated_render_passes, pass2_id,
+                    gfx::Rect(quad_screen_rect.size()), transform);
   AddQuad(pass2, gfx::Rect(quad_screen_rect.size()), SK_ColorRED);
   // |pass1| covers the whole layer.
   RenderPassId pass1_id = RenderPassId(impl.root_layer()->id(), 0);
-  TestRenderPass* pass1 = AddRenderPass(&delegated_render_passes,
-                                        pass1_id,
-                                        gfx::Rect(layer_size),
-                                        gfx::Transform());
+  RenderPass* pass1 = AddRenderPass(&delegated_render_passes, pass1_id,
+                                    gfx::Rect(layer_size), gfx::Transform());
   AddRenderPassQuad(pass1,
                     pass2,
                     0,
@@ -1610,15 +1605,14 @@ TEST_F(DelegatedRendererLayerImplTest, DeviceScaleFactorOcclusion) {
   // translation of (211,300).
   RenderPassId pass2_id =
       delegated_renderer_layer_impl->FirstContributingRenderPassId();
-  TestRenderPass* pass2 =
+  RenderPass* pass2 =
       AddRenderPass(&delegated_render_passes, pass2_id,
                     gfx::Rect(quad_screen_rect.size()), transform);
   AddQuad(pass2, gfx::Rect(quad_screen_rect.size()), SK_ColorRED);
   // |pass1| covers the whole layer.
   RenderPassId pass1_id = RenderPassId(impl.root_layer()->id(), 0);
-  TestRenderPass* pass1 =
-      AddRenderPass(&delegated_render_passes, pass1_id, gfx::Rect(layer_size),
-                    gfx::Transform());
+  RenderPass* pass1 = AddRenderPass(&delegated_render_passes, pass1_id,
+                                    gfx::Rect(layer_size), gfx::Transform());
   AddRenderPassQuad(pass1, pass2, 0, FilterOperations(), transform,
                     SkXfermode::kSrcOver_Mode);
   delegated_renderer_layer_impl->SetFrameDataForRenderPasses(

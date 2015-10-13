@@ -13,6 +13,7 @@
 #include <assert.h>
 #include <utility>  // pair
 
+#include "webrtc/base/logging.h"
 #include "webrtc/modules/audio_coding/codecs/audio_decoder.h"
 
 namespace webrtc {
@@ -71,7 +72,6 @@ int DecoderDatabase::InsertExternal(uint8_t rtp_payload_type,
   if (!decoder) {
     return kInvalidPointer;
   }
-  decoder->Init();
   std::pair<DecoderMap::iterator, bool> ret;
   DecoderInfo info(codec_type, fs_hz, decoder, true);
   ret = decoders_.insert(std::make_pair(rtp_payload_type, info));
@@ -135,7 +135,6 @@ AudioDecoder* DecoderDatabase::GetDecoder(uint8_t rtp_payload_type) {
     AudioDecoder* decoder = CreateAudioDecoder(info->codec_type);
     assert(decoder);  // Should not be able to have an unsupported codec here.
     info->decoder = decoder;
-    info->decoder->Init();
   }
   return info->decoder;
 }
@@ -249,6 +248,8 @@ int DecoderDatabase::CheckPayloadTypes(const PacketList& packet_list) const {
   for (it = packet_list.begin(); it != packet_list.end(); ++it) {
     if (decoders_.find((*it)->header.payloadType) == decoders_.end()) {
       // Payload type is not found.
+      LOG(LS_WARNING) << "CheckPayloadTypes: unknown RTP payload type "
+                      << static_cast<int>((*it)->header.payloadType);
       return kDecoderNotFound;
     }
   }

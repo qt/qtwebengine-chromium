@@ -41,7 +41,8 @@
 #include "core/events/UIEventWithKeyState.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/Settings.h"
-#include "core/html/HTMLAppletElement.h"
+#include "core/html/HTMLMediaElement.h"
+#include "core/html/HTMLPlugInElement.h"
 #include "core/input/EventHandler.h"
 #include "core/layout/HitTestResult.h"
 #include "core/loader/DocumentLoader.h"
@@ -53,6 +54,7 @@
 #include "modules/device_light/DeviceLightController.h"
 #include "modules/device_orientation/DeviceMotionController.h"
 #include "modules/device_orientation/DeviceOrientationController.h"
+#include "modules/encryptedmedia/HTMLMediaElementEncryptedMedia.h"
 #include "modules/gamepad/NavigatorGamepad.h"
 #include "modules/serviceworkers/NavigatorServiceWorker.h"
 #include "modules/storage/DOMWindowStorageController.h"
@@ -69,13 +71,12 @@
 #include "public/platform/WebMimeRegistry.h"
 #include "public/platform/WebRTCPeerConnectionHandler.h"
 #include "public/platform/WebSecurityOrigin.h"
-#include "public/platform/WebServiceWorkerProvider.h"
-#include "public/platform/WebServiceWorkerProviderClient.h"
 #include "public/platform/WebURL.h"
 #include "public/platform/WebURLError.h"
 #include "public/platform/WebVector.h"
+#include "public/platform/modules/serviceworker/WebServiceWorkerProvider.h"
+#include "public/platform/modules/serviceworker/WebServiceWorkerProviderClient.h"
 #include "public/web/WebAutofillClient.h"
-#include "public/web/WebCachedURLRequest.h"
 #include "public/web/WebContentSettingsClient.h"
 #include "public/web/WebDOMEvent.h"
 #include "public/web/WebDocument.h"
@@ -84,10 +85,8 @@
 #include "public/web/WebNode.h"
 #include "public/web/WebPlugin.h"
 #include "public/web/WebPluginParams.h"
-#include "public/web/WebPluginPlaceholder.h"
 #include "public/web/WebViewClient.h"
 #include "web/DevToolsEmulator.h"
-#include "web/PluginPlaceholderImpl.h"
 #include "web/SharedWorkerRepositoryClientImpl.h"
 #include "web/WebDataSourceImpl.h"
 #include "web/WebDevToolsAgentImpl.h"
@@ -108,8 +107,19 @@ FrameLoaderClientImpl::FrameLoaderClientImpl(WebLocalFrameImpl* frame)
 {
 }
 
+PassOwnPtrWillBeRawPtr<FrameLoaderClientImpl> FrameLoaderClientImpl::create(WebLocalFrameImpl* frame)
+{
+    return adoptPtrWillBeNoop(new FrameLoaderClientImpl(frame));
+}
+
 FrameLoaderClientImpl::~FrameLoaderClientImpl()
 {
+}
+
+DEFINE_TRACE(FrameLoaderClientImpl)
+{
+    visitor->trace(m_webFrame);
+    FrameLoaderClient::trace(visitor);
 }
 
 void FrameLoaderClientImpl::didCreateNewDocument()
@@ -145,6 +155,9 @@ void FrameLoaderClientImpl::documentElementAvailable()
 {
     if (m_webFrame->client())
         m_webFrame->client()->didCreateDocumentElement(m_webFrame);
+
+    if (m_webFrame->viewImpl())
+        m_webFrame->viewImpl()->documentElementAvailable(m_webFrame);
 }
 
 void FrameLoaderClientImpl::didCreateScriptContext(v8::Local<v8::Context> context, int extensionGroup, int worldId)
@@ -276,7 +289,10 @@ Frame* FrameLoaderClientImpl::opener() const
 
 void FrameLoaderClientImpl::setOpener(Frame* opener)
 {
-    m_webFrame->setOpener(WebFrame::fromFrame(opener));
+    WebFrame* openerFrame = WebFrame::fromFrame(opener);
+    if (m_webFrame->client() && m_webFrame->opener() != openerFrame)
+        m_webFrame->client()->didChangeOpener(openerFrame);
+    m_webFrame->setOpener(openerFrame);
 }
 
 Frame* FrameLoaderClientImpl::parent() const
@@ -318,7 +334,7 @@ void FrameLoaderClientImpl::detached(FrameDetachType type)
 {
     // Alert the client that the frame is being detached. This is the last
     // chance we have to communicate with the client.
-    RefPtrWillBeRawPtr<WebLocalFrameImpl> protector(m_webFrame);
+    RefPtrWillBeRawPtr<WebLocalFrameImpl> protector(m_webFrame.get());
 
     WebFrameClient* client = m_webFrame->client();
     if (!client)
@@ -373,10 +389,17 @@ void FrameLoaderClientImpl::dispatchDidFinishLoading(DocumentLoader* loader,
         m_webFrame->client()->didFinishResourceLoad(m_webFrame, identifier);
 }
 
-void FrameLoaderClientImpl::dispatchDidFinishDocumentLoad()
+void FrameLoaderClientImpl::dispatchDidFinishDocumentLoad(bool documentIsEmpty)
 {
+    if (WebViewImpl* webview = m_webFrame->viewImpl())
+        webview->didFinishDocumentLoad(m_webFrame);
+
+    // TODO(dglazkov): Sadly, workers are WebFrameClients, and they can totally
+    // destroy themselves when didFinishDocumentLoad is invoked, and in turn destroy
+    // the fake WebLocalFrame that they create, which means that you should not
+    // put any code touching `this` after the two lines below.
     if (m_webFrame->client())
-        m_webFrame->client()->didFinishDocumentLoad(m_webFrame);
+        m_webFrame->client()->didFinishDocumentLoad(m_webFrame, documentIsEmpty);
 }
 
 void FrameLoaderClientImpl::dispatchDidLoadResourceFromMemoryCache(const ResourceRequest& request, const ResourceResponse& response)
@@ -475,12 +498,6 @@ void FrameLoaderClientImpl::dispatchDidFinishLoad()
     // provisional load succeeds or fails, not the "real" one.
 }
 
-void FrameLoaderClientImpl::dispatchDidFirstVisuallyNonEmptyLayout()
-{
-    if (m_webFrame->client())
-        m_webFrame->client()->didFirstVisuallyNonEmptyLayout(m_webFrame);
-}
-
 void FrameLoaderClientImpl::dispatchDidChangeThemeColor()
 {
     if (m_webFrame->client())
@@ -549,12 +566,12 @@ NavigationPolicy FrameLoaderClientImpl::decidePolicyForNavigation(const Resource
     return static_cast<NavigationPolicy>(webPolicy);
 }
 
-void FrameLoaderClientImpl::dispatchWillRequestResource(FetchRequest* request)
+bool FrameLoaderClientImpl::hasPendingNavigation()
 {
-    if (m_webFrame->client()) {
-        WebCachedURLRequest urlRequest(request);
-        m_webFrame->client()->willRequestResource(m_webFrame, urlRequest);
-    }
+    if (!m_webFrame->client())
+        return false;
+
+    return m_webFrame->client()->hasPendingNavigation(m_webFrame);
 }
 
 void FrameLoaderClientImpl::dispatchWillSendSubmitEvent(HTMLFormElement* form)
@@ -622,25 +639,31 @@ void FrameLoaderClientImpl::didAccessInitialDocument()
 void FrameLoaderClientImpl::didDisplayInsecureContent()
 {
     if (m_webFrame->client())
-        m_webFrame->client()->didDisplayInsecureContent(m_webFrame);
+        m_webFrame->client()->didDisplayInsecureContent();
 }
 
 void FrameLoaderClientImpl::didRunInsecureContent(SecurityOrigin* origin, const KURL& insecureURL)
 {
     if (m_webFrame->client())
-        m_webFrame->client()->didRunInsecureContent(m_webFrame, WebSecurityOrigin(origin), insecureURL);
+        m_webFrame->client()->didRunInsecureContent(WebSecurityOrigin(origin), insecureURL);
 }
 
 void FrameLoaderClientImpl::didDetectXSS(const KURL& insecureURL, bool didBlockEntirePage)
 {
     if (m_webFrame->client())
-        m_webFrame->client()->didDetectXSS(m_webFrame, insecureURL, didBlockEntirePage);
+        m_webFrame->client()->didDetectXSS(insecureURL, didBlockEntirePage);
 }
 
 void FrameLoaderClientImpl::didDispatchPingLoader(const KURL& url)
 {
     if (m_webFrame->client())
         m_webFrame->client()->didDispatchPingLoader(m_webFrame, url);
+}
+
+void FrameLoaderClientImpl::didChangePerformanceTiming()
+{
+    if (m_webFrame->client())
+        m_webFrame->client()->didChangePerformanceTiming();
 }
 
 void FrameLoaderClientImpl::selectorMatchChanged(const Vector<String>& addedSelectors, const Vector<String>& removedSelectors)
@@ -697,32 +720,6 @@ bool FrameLoaderClientImpl::canCreatePluginWithoutRenderer(const String& mimeTyp
     return m_webFrame->client()->canCreatePluginWithoutRenderer(mimeType);
 }
 
-PassOwnPtrWillBeRawPtr<PluginPlaceholder> FrameLoaderClientImpl::createPluginPlaceholder(
-    Document& document,
-    const KURL& url,
-    const Vector<String>& paramNames,
-    const Vector<String>& paramValues,
-    const String& mimeType,
-    bool loadManually)
-{
-    if (!m_webFrame->client())
-        return nullptr;
-
-    WebPluginParams params;
-    params.url = url;
-    params.mimeType = mimeType;
-    params.attributeNames = paramNames;
-    params.attributeValues = paramValues;
-    params.loadManually = loadManually;
-
-    OwnPtr<WebPluginPlaceholder> webPluginPlaceholder = adoptPtr(
-        m_webFrame->client()->createPluginPlaceholder(m_webFrame, params));
-    if (!webPluginPlaceholder)
-        return nullptr;
-
-    return PluginPlaceholderImpl::create(webPluginPlaceholder.release(), document);
-}
-
 PassRefPtrWillBeRawPtr<Widget> FrameLoaderClientImpl::createPlugin(
     HTMLPlugInElement* element,
     const KURL& url,
@@ -767,14 +764,21 @@ PassRefPtrWillBeRawPtr<Widget> FrameLoaderClientImpl::createPlugin(
     return container;
 }
 
-PassRefPtrWillBeRawPtr<Widget> FrameLoaderClientImpl::createJavaAppletWidget(
-    HTMLAppletElement* element,
-    const KURL& /* baseURL */,
-    const Vector<String>& paramNames,
-    const Vector<String>& paramValues)
+PassOwnPtr<WebMediaPlayer> FrameLoaderClientImpl::createWebMediaPlayer(
+    HTMLMediaElement& htmlMediaElement,
+    const WebURL& url,
+    WebMediaPlayerClient* client)
 {
-    return createPlugin(element, KURL(), paramNames, paramValues,
-        "application/x-java-applet", false, FailOnDetachedPlugin);
+    WebLocalFrameImpl* webFrame = WebLocalFrameImpl::fromFrame(
+        htmlMediaElement.document().frame());
+
+    if (!webFrame || !webFrame->client())
+        return nullptr;
+
+    HTMLMediaElementEncryptedMedia& encryptedMedia = HTMLMediaElementEncryptedMedia::from(htmlMediaElement);
+    return adoptPtr(webFrame->client()->createMediaPlayer(webFrame, url,
+        client, &encryptedMedia,
+        encryptedMedia.contentDecryptionModule()));
 }
 
 ObjectContentType FrameLoaderClientImpl::objectContentType(
@@ -940,12 +944,6 @@ void FrameLoaderClientImpl::dispatchDidChangeManifest()
 {
     if (m_webFrame->client())
         m_webFrame->client()->didChangeManifest(m_webFrame);
-}
-
-void FrameLoaderClientImpl::dispatchDidChangeDefaultPresentation()
-{
-    if (m_webFrame->client())
-        m_webFrame->client()->didChangeDefaultPresentation(m_webFrame);
 }
 
 unsigned FrameLoaderClientImpl::backForwardLength()

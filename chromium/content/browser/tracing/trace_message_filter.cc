@@ -5,7 +5,9 @@
 #include "content/browser/tracing/trace_message_filter.h"
 
 #include "components/tracing/tracing_messages.h"
+#include "content/browser/tracing/background_tracing_manager_impl.h"
 #include "content/browser/tracing/tracing_controller_impl.h"
+#include "content/common/child_process_host_impl.h"
 
 namespace content {
 
@@ -13,8 +15,8 @@ TraceMessageFilter::TraceMessageFilter(int child_process_id)
     : BrowserMessageFilter(TracingMsgStart),
       has_child_(false),
       tracing_process_id_(
-          base::trace_event::MemoryDumpManager::
-              ChildProcessIdToTracingProcessId(child_process_id)),
+          ChildProcessHostImpl::ChildProcessUniqueIdToTracingProcessId(
+              child_process_id)),
       is_awaiting_end_ack_(false),
       is_awaiting_capture_monitoring_snapshot_ack_(false),
       is_awaiting_buffer_percent_full_ack_(false) {
@@ -58,6 +60,8 @@ bool TraceMessageFilter::OnMessageReceived(const IPC::Message& message) {
                         OnGlobalMemoryDumpRequest)
     IPC_MESSAGE_HANDLER(TracingHostMsg_ProcessMemoryDumpResponse,
                         OnProcessMemoryDumpResponse)
+    IPC_MESSAGE_HANDLER(TracingHostMsg_TriggerBackgroundTrace,
+                        OnTriggerBackgroundTrace)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
@@ -200,6 +204,10 @@ void TraceMessageFilter::OnProcessMemoryDumpResponse(uint64 dump_guid,
                                                      bool success) {
   TracingControllerImpl::GetInstance()->OnProcessMemoryDumpResponse(
       this, dump_guid, success);
+}
+
+void TraceMessageFilter::OnTriggerBackgroundTrace(const std::string& name) {
+  BackgroundTracingManagerImpl::GetInstance()->OnHistogramTrigger(name);
 }
 
 }  // namespace content

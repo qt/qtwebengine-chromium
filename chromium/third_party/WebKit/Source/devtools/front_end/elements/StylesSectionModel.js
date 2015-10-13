@@ -16,7 +16,6 @@ WebInspector.StylesSectionModel = function(cascade, rule, style, customSelectorT
     this._rule = rule;
     this._style = style;
     this._customSelectorText = customSelectorText;
-    this._isAttribute = false;
     this._editable = !!(this._style && this._style.styleSheetId);
     this._inheritedFromNode = inheritedFromNode || null;
 }
@@ -74,7 +73,7 @@ WebInspector.StylesSectionModel.prototype = {
     {
         if (this._customSelectorText)
             return this._customSelectorText;
-        return this.rule() ? this.rule().selectorText : "";
+        return this.rule() ? this.rule().selectorText() : "";
     },
 
     /**
@@ -117,84 +116,35 @@ WebInspector.StylesSectionModel.prototype = {
         return this.rule() ? this.rule().media : null;
     },
 
-    /**
-     * @return {boolean}
-     */
-    isAttribute: function()
+    resetCachedData: function()
     {
-        return this._isAttribute;
-    },
-
-    /**
-     * @param {boolean} isAttribute
-     */
-    setIsAttribute: function(isAttribute)
-    {
-        this._isAttribute = isAttribute;
-    },
-
-    /**
-     * @param {!WebInspector.CSSRule} rule
-     */
-    updateRule: function(rule)
-    {
-        this._rule = rule;
-        this._style = rule.style;
         this._cascade._resetUsedProperties();
-    },
-
-    /**
-     * @param {!WebInspector.CSSStyleDeclaration} style
-     */
-    updateStyleDeclaration: function(style)
-    {
-        this._style = style;
-        if (this._rule) {
-            style.parentRule = this._rule;
-            this._rule.style = style;
-        }
-        this._cascade._resetUsedProperties();
-    },
-
-    /**
-     * @return {!Set.<string>}
-     */
-    usedProperties: function()
-    {
-        return this._cascade._usedPropertiesForModel(this);
     },
 
     /**
      * @param {string} propertyName
-     * @param {boolean=} isShorthand
      * @return {boolean}
      */
-    isPropertyOverloaded: function(propertyName, isShorthand)
+    isPropertyInCascade: function(propertyName)
     {
         if (!this.hasMatchingSelectors())
             return false;
-
-        if (this.inherited() && !WebInspector.CSSMetadata.isPropertyInherited(propertyName)) {
-            // In the inherited sections, only show overrides for the potentially inherited properties.
+        if (this.inherited() && !WebInspector.CSSMetadata.isPropertyInherited(propertyName))
             return false;
-        }
-
-        var canonicalName = WebInspector.CSSMetadata.canonicalPropertyName(propertyName);
-        var used = this.usedProperties().has(canonicalName);
-        if (used || !isShorthand)
-            return !used;
-
-        // Find out if any of the individual longhand properties of the shorthand
-        // are used, if none are then the shorthand is overloaded too.
-        var longhandProperties = this.style().longhandProperties(propertyName);
-        for (var j = 0; j < longhandProperties.length; ++j) {
-            var individualProperty = longhandProperties[j];
-            var canonicalPropertyName = WebInspector.CSSMetadata.canonicalPropertyName(individualProperty.name);
-            if (this.usedProperties().has(canonicalPropertyName))
-                return false;
-        }
-
         return true;
+    },
+
+    /**
+     * @param {string} propertyName
+     * @return {boolean}
+     */
+    isPropertyOverloaded: function(propertyName)
+    {
+        if (!this.isPropertyInCascade(propertyName))
+            return false;
+        var usedProperties = this._cascade._usedPropertiesForModel(this);
+        var canonicalName = WebInspector.CSSMetadata.canonicalPropertyName(propertyName);
+        return !usedProperties.has(canonicalName);
     }
 }
 
@@ -218,16 +168,6 @@ WebInspector.SectionCascade.prototype = {
 
     /**
      * @param {!WebInspector.CSSRule} rule
-     * @param {?WebInspector.DOMNode=} inheritedFromNode
-     * @return {!WebInspector.StylesSectionModel}
-     */
-    appendModelFromRule: function(rule, inheritedFromNode)
-    {
-        return this._insertModel(new WebInspector.StylesSectionModel(this, rule, rule.style, "", inheritedFromNode));
-    },
-
-    /**
-     * @param {!WebInspector.CSSRule} rule
      * @param {!WebInspector.StylesSectionModel} insertAfterStyleRule
      * @return {!WebInspector.StylesSectionModel}
      */
@@ -244,7 +184,7 @@ WebInspector.SectionCascade.prototype = {
      */
     appendModelFromStyle: function(style, selectorText, inheritedFromNode)
     {
-        return this._insertModel(new WebInspector.StylesSectionModel(this, null, style, selectorText, inheritedFromNode));
+        return this._insertModel(new WebInspector.StylesSectionModel(this, style.parentRule, style, selectorText, inheritedFromNode));
     },
 
     /**
@@ -328,7 +268,7 @@ WebInspector.SectionCascade._computeUsedProperties = function(styleRules, allUse
         var allProperties = style.allProperties;
         for (var j = 0; j < allProperties.length; ++j) {
             var property = allProperties[j];
-            if (!property.isLive || !property.parsedOk)
+            if (!property.activeInStyle())
                 continue;
 
             // Do not pick non-inherited properties from inherited styles.
@@ -359,6 +299,25 @@ WebInspector.SectionCascade._computeUsedProperties = function(styleRules, allUse
             styleRuleUsedProperties.add(canonicalName);
             allUsedProperties.add(canonicalName);
             propertyToEffectiveRule.set(canonicalName, styleRuleUsedProperties);
+        }
+
+        // If every longhand of the shorthand is not active, then the shorthand is not active too.
+        for (var property of style.leadingProperties()) {
+            var canonicalName = WebInspector.CSSMetadata.canonicalPropertyName(property.name);
+            if (!styleRuleUsedProperties.has(canonicalName))
+                continue;
+            var longhands = style.longhandProperties(property.name);
+            if (!longhands.length)
+                continue;
+            var notUsed = true;
+            for (var longhand of longhands) {
+                var longhandCanonicalName = WebInspector.CSSMetadata.canonicalPropertyName(longhand.name);
+                notUsed = notUsed && !styleRuleUsedProperties.has(longhandCanonicalName);
+            }
+            if (!notUsed)
+                continue;
+            styleRuleUsedProperties.delete(canonicalName);
+            allUsedProperties.delete(canonicalName);
         }
     }
     return stylesUsedProperties;

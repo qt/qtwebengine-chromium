@@ -144,7 +144,8 @@ class AURA_EXPORT WindowTreeHost : public ui::internal::InputMethodDelegate,
   void SetSharedInputMethod(ui::InputMethod* input_method);
 
   // Overridden from ui::internal::InputMethodDelegate:
-  bool DispatchKeyEventPostIME(const ui::KeyEvent& event) override;
+  ui::EventDispatchDetails DispatchKeyEventPostIME(
+      ui::KeyEvent* event) override;
 
   // Returns the EventSource responsible for dispatching events to the window
   // tree.
@@ -176,7 +177,8 @@ class AURA_EXPORT WindowTreeHost : public ui::internal::InputMethodDelegate,
   void DestroyCompositor();
   void DestroyDispatcher();
 
-  void CreateCompositor(gfx::AcceleratedWidget accelerated_widget);
+  void CreateCompositor();
+  void OnAcceleratedWidgetAvailable();
 
   // Returns the location of the RootWindow on native screen.
   virtual gfx::Point GetLocationOnNativeScreen() const = 0;
@@ -204,7 +206,6 @@ class AURA_EXPORT WindowTreeHost : public ui::internal::InputMethodDelegate,
 
   // Overridden from ui::EventSource:
   ui::EventProcessor* GetEventProcessor() override;
-  ui::EventDispatchDetails DeliverEventToProcessor(ui::Event* event) override;
 
  private:
   friend class test::WindowTreeHostTestApi;

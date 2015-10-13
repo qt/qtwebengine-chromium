@@ -23,6 +23,7 @@
       'EXPAT_RELATIVE_PATH',
       'FEATURE_ENABLE_SSL',
       'GTEST_RELATIVE_PATH',
+      'HAVE_OPENSSL_SSL_H',
       'HAVE_SRTP',
       'HAVE_WEBRTC_VIDEO',
       'HAVE_WEBRTC_VOICE',
@@ -30,6 +31,7 @@
       'NO_MAIN_THREAD_WRAPPING',
       'NO_SOUND_SYSTEM',
       'SRTP_RELATIVE_PATH',
+      'SSL_USE_OPENSSL',
       'USE_WEBRTC_DEV_BRANCH',
       'WEBRTC_CHROMIUM_BUILD',
     ],
@@ -44,7 +46,7 @@
     },
     'include_dirs': [
       './overrides',
-      '../../third_party/webrtc/overrides',
+      '../../third_party/webrtc_overrides',
       './<(libjingle_source)',
       '../..',
       '../../testing/gtest/include',
@@ -56,6 +58,7 @@
     'dependencies': [
       '<(DEPTH)/base/base.gyp:base',
       '<(DEPTH)/net/net.gyp:net',
+      '<(DEPTH)/third_party/boringssl/boringssl.gyp:boringssl',
       '<(DEPTH)/third_party/expat/expat.gyp:expat',
     ],
     'export_dependent_settings': [
@@ -63,7 +66,7 @@
     ],
     'direct_dependent_settings': {
       'include_dirs': [
-        '../../third_party/webrtc/overrides',
+        '../../third_party/webrtc_overrides',
         './overrides',
         './<(libjingle_source)',
         '../..',
@@ -172,35 +175,6 @@
       ],
     },
     'conditions': [
-      ['use_openssl==1', {
-        'defines': [
-          'SSL_USE_OPENSSL',
-          'HAVE_OPENSSL_SSL_H',
-        ],
-        'dependencies': [
-          '../../third_party/boringssl/boringssl.gyp:boringssl',
-        ],
-      }, {
-        'defines': [
-          'SSL_USE_NSS',
-          'HAVE_NSS_SSL_H',
-          'SSL_USE_NSS_RNG',
-        ],
-        'conditions': [
-          ['os_posix == 1 and OS != "mac" and OS != "ios" and OS != "android"', {
-            'dependencies': [
-              '<(DEPTH)/build/linux/system.gyp:ssl',
-            ],
-          }],
-          ['OS == "mac" or OS == "ios" or OS == "win"', {
-            'dependencies': [
-              '<(DEPTH)/net/third_party/nss/ssl.gyp:libssl',
-              '<(DEPTH)/third_party/nss/nss.gyp:nspr',
-              '<(DEPTH)/third_party/nss/nss.gyp:nss',
-            ],
-          }],
-        ],
-      }],
       ['OS=="win"', {
         'include_dirs': [
           '../third_party/platformsdk_win7/files/Include',
@@ -294,28 +268,6 @@
         '<(webrtc_p2p)/base/constants.h',
       ],
     },  # target libjingle_p2p_constants
-    # GN version: //third_party/libjingle:peerconnection_server
-    {
-      'target_name': 'peerconnection_server',
-      'type': 'executable',
-      'sources': [
-        '<(libjingle_source)/talk/examples/peerconnection/server/data_socket.cc',
-        '<(libjingle_source)/talk/examples/peerconnection/server/data_socket.h',
-        '<(libjingle_source)/talk/examples/peerconnection/server/main.cc',
-        '<(libjingle_source)/talk/examples/peerconnection/server/peer_channel.cc',
-        '<(libjingle_source)/talk/examples/peerconnection/server/peer_channel.h',
-        '<(libjingle_source)/talk/examples/peerconnection/server/utils.cc',
-        '<(libjingle_source)/talk/examples/peerconnection/server/utils.h',
-      ],
-      'include_dirs': [
-        '<(libjingle_source)',
-      ],
-      'dependencies': [
-        'libjingle',
-      ],
-      # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
-      'msvs_disabled_warnings': [ 4309, ],
-    }, # target peerconnection_server
   ],
   'conditions': [
     ['enable_webrtc==1', {
@@ -331,8 +283,6 @@
             '<(libjingle_source)/talk/app/webrtc/audiotrackrenderer.h',
             '<(libjingle_source)/talk/app/webrtc/datachannel.cc',
             '<(libjingle_source)/talk/app/webrtc/datachannel.h',
-            '<(libjingle_source)/talk/app/webrtc/dtlsidentityservice.cc',
-            '<(libjingle_source)/talk/app/webrtc/dtlsidentityservice.h',
             '<(libjingle_source)/talk/app/webrtc/dtlsidentitystore.cc',
             '<(libjingle_source)/talk/app/webrtc/dtlsidentitystore.h',
             '<(libjingle_source)/talk/app/webrtc/dtmfsender.cc',
@@ -346,6 +296,8 @@
             '<(libjingle_source)/talk/app/webrtc/localaudiosource.h',
             '<(libjingle_source)/talk/app/webrtc/mediaconstraintsinterface.cc',
             '<(libjingle_source)/talk/app/webrtc/mediaconstraintsinterface.h',
+            '<(libjingle_source)/talk/app/webrtc/mediacontroller.cc',
+            '<(libjingle_source)/talk/app/webrtc/mediacontroller.h',
             '<(libjingle_source)/talk/app/webrtc/mediastream.cc',
             '<(libjingle_source)/talk/app/webrtc/mediastream.h',
             '<(libjingle_source)/talk/app/webrtc/mediastreamhandler.cc',
@@ -369,6 +321,12 @@
             '<(libjingle_source)/talk/app/webrtc/remoteaudiosource.h',
             '<(libjingle_source)/talk/app/webrtc/remotevideocapturer.cc',
             '<(libjingle_source)/talk/app/webrtc/remotevideocapturer.h',
+            '<(libjingle_source)/talk/app/webrtc/rtpreceiver.cc',
+            '<(libjingle_source)/talk/app/webrtc/rtpreceiver.h',
+            '<(libjingle_source)/talk/app/webrtc/rtpreceiverinterface.h',
+            '<(libjingle_source)/talk/app/webrtc/rtpsender.cc',
+            '<(libjingle_source)/talk/app/webrtc/rtpsender.h',
+            '<(libjingle_source)/talk/app/webrtc/rtpsenderinterface.h',
             '<(libjingle_source)/talk/app/webrtc/sctputils.cc',
             '<(libjingle_source)/talk/app/webrtc/sctputils.h',
             '<(libjingle_source)/talk/app/webrtc/statscollector.cc',
@@ -428,8 +386,6 @@
             '<(libjingle_source)/talk/media/devices/filevideocapturer.cc',
             '<(libjingle_source)/talk/media/devices/filevideocapturer.h',
             '<(libjingle_source)/talk/media/webrtc/webrtccommon.h',
-            '<(libjingle_source)/talk/media/webrtc/webrtcpassthroughrender.cc',
-            '<(libjingle_source)/talk/media/webrtc/webrtcpassthroughrender.h',
             '<(libjingle_source)/talk/media/webrtc/webrtcvideoframe.cc',
             '<(libjingle_source)/talk/media/webrtc/webrtcvideoframe.h',
             '<(libjingle_source)/talk/media/webrtc/webrtcvideoframefactory.cc',
@@ -454,12 +410,8 @@
             '<(libjingle_source)/talk/session/media/mediasink.h',
             '<(libjingle_source)/talk/session/media/rtcpmuxfilter.cc',
             '<(libjingle_source)/talk/session/media/rtcpmuxfilter.h',
-            '<(libjingle_source)/talk/session/media/soundclip.cc',
-            '<(libjingle_source)/talk/session/media/soundclip.h',
             '<(libjingle_source)/talk/session/media/srtpfilter.cc',
             '<(libjingle_source)/talk/session/media/srtpfilter.h',
-            '<(libjingle_source)/talk/session/media/typingmonitor.cc',
-            '<(libjingle_source)/talk/session/media/typingmonitor.h',
             '<(libjingle_source)/talk/session/media/voicechannel.h',
           ],
           'conditions': [

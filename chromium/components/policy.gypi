@@ -62,6 +62,11 @@
           'includes': [
             'policy/policy_browser.gypi',
           ],
+          'conditions': [
+            ['OS=="android"', {
+              'dependencies': ['policy_jni_headers']},
+            ],
+          ],
         },
       ],
     }, {  # component=="shared_library"
@@ -81,6 +86,11 @@
           'type': 'none',
           'dependencies': [
             'policy_component',
+          ],
+          'conditions': [
+            ['OS=="android"', {
+              'dependencies': ['policy_jni_headers']},
+            ],
           ],
         },
         {
@@ -338,6 +348,23 @@
           ],
         },
       ],
+    }],
+    ['OS=="android"',
+     {
+      'targets' : [
+        {
+          'target_name' : 'policy_jni_headers',
+          'type': 'none',
+          'sources': [ 
+            'policy/android/java/src/org/chromium/policy/CombinedPolicyProvider.java',
+            'policy/android/java/src/org/chromium/policy/PolicyConverter.java',
+           ],
+          'variables': {
+            'jni_gen_package': 'policy',
+           },
+          'includes': [ '../build/jni_generator.gypi' ],
+         },
+       ],
     }],
     ['OS=="android" and configuration_policy==1', {
       'targets': [

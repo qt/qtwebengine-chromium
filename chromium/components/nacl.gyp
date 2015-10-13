@@ -119,6 +119,7 @@
           'dependencies': [
             'nacl_common',
             'nacl_switches',
+            'url_formatter/url_formatter.gyp:url_formatter',
             '../native_client/src/trusted/service_runtime/service_runtime.gyp:sel',
             '../content/content.gyp:content_browser',
           ],
@@ -174,7 +175,6 @@
             'nacl_common',
             '../content/content.gyp:content_renderer',
             '../components/nacl/renderer/plugin/plugin.gyp:nacl_trusted_plugin',
-            '../third_party/jsoncpp/jsoncpp.gyp:jsoncpp',
             '../third_party/WebKit/public/blink.gyp:blink',
           ],
         },
@@ -292,7 +292,6 @@
                 'nacl_switches',
                 '../components/tracing.gyp:tracing',
                 '../crypto/crypto.gyp:crypto',
-                '../sandbox/sandbox.gyp:libc_urandom_override',
                 '../sandbox/sandbox.gyp:sandbox',
                 '../ppapi/ppapi_internal.gyp:ppapi_proxy',
               ],

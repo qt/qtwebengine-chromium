@@ -32,6 +32,7 @@
 #include "core/dom/LayoutTreeBuilderTraversal.h"
 #include "core/dom/shadow/InsertionPoint.h"
 #include "core/dom/shadow/ShadowRoot.h"
+#include "wtf/Allocator.h"
 
 namespace blink {
 
@@ -49,6 +50,7 @@ class Node;
 // FIXME: Make some functions inline to optimise the performance.
 // https://bugs.webkit.org/show_bug.cgi?id=82702
 class CORE_EXPORT ComposedTreeTraversal {
+    STATIC_ONLY(ComposedTreeTraversal);
 public:
     typedef LayoutTreeBuilderTraversal::ParentDetails ParentTraversalDetails;
 
@@ -79,6 +81,9 @@ public:
     // Composed tree version of |NodeTraversal::previousSkippingChildren()|
     // similar to |previous()| but skipping child nodes of the specified node.
     static Node* previousSkippingChildren(const Node&);
+
+    // Like previous, but visits parents before their children.
+    static Node* previousPostOrder(const Node&, const Node* stayWithin = nullptr);
 
     // Composed tree version of |Node::isDescendantOf(other)|. This function
     // returns true if |other| contains |node|, otherwise returns

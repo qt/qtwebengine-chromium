@@ -60,6 +60,10 @@ class BitBuffer {
   // Returns false if there isn't enough data left for the specified type, or if
   // the value wouldn't fit in a uint32_t.
   bool ReadExponentialGolomb(uint32_t* val);
+  // Reads signed exponential golomb values at the current offset. Signed
+  // exponential golomb values are just the unsigned values mapped to the
+  // sequence 0, 1, -1, 2, -2, etc. in order.
+  bool ReadSignedExponentialGolomb(int32_t* val);
 
   // Moves current position |byte_count| bytes forward. Returns false if
   // there aren't enough bytes left in the buffer.
@@ -81,7 +85,7 @@ class BitBuffer {
   // The current offset, in bits, into the current byte.
   size_t bit_offset_;
 
-  DISALLOW_COPY_AND_ASSIGN(BitBuffer);
+  RTC_DISALLOW_COPY_AND_ASSIGN(BitBuffer);
 };
 
 // A BitBuffer API for write operations. Supports symmetric write APIs to the
@@ -110,7 +114,7 @@ class BitBufferWriter : public BitBuffer {
   // The buffer, as a writable array.
   uint8_t* const writable_bytes_;
 
-  DISALLOW_COPY_AND_ASSIGN(BitBufferWriter);
+  RTC_DISALLOW_COPY_AND_ASSIGN(BitBufferWriter);
 };
 
 }  // namespace rtc

@@ -82,6 +82,7 @@ class WebGraphicsContext3DProvider;
 class WebIDBFactory;
 class WebMIDIAccessor;
 class WebMIDIAccessorClient;
+class WebMediaRecorderHandler;
 class WebMediaStreamCenter;
 class WebMediaStreamCenterClient;
 class WebMemoryDumpProvider;
@@ -271,6 +272,9 @@ public:
     // zero, if there is no limit.
     virtual size_t virtualMemoryLimitMB() { return 0; }
 
+    // True when Blink runs on low end devices.
+    virtual bool isLowEndDeviceMode() { return false; }
+
     // Return the number of of processors of the current machine.
     virtual size_t numberOfProcessors() { return 0; }
 
@@ -372,9 +376,7 @@ public:
     // WaitableEvent -------------------------------------------------------
 
     // Creates an embedder-defined waitable event object.
-    // TODO(toyoshim): Remove "virtual" from the no arguments version API once
-    // the embedder drops the override implementation.
-    virtual WebWaitableEvent* createWaitableEvent() { return createWaitableEvent(WebWaitableEvent::ResetPolicy::Auto, WebWaitableEvent::InitialState::NonSignaled); }
+    WebWaitableEvent* createWaitableEvent() { return createWaitableEvent(WebWaitableEvent::ResetPolicy::Auto, WebWaitableEvent::InitialState::NonSignaled); }
     virtual WebWaitableEvent* createWaitableEvent(WebWaitableEvent::ResetPolicy, WebWaitableEvent::InitialState) { return nullptr; }
 
     // Waits on multiple events and returns the event object that has been
@@ -544,13 +546,14 @@ public:
         const unsigned char* categoryEnabledFlag,
         const char* name,
         unsigned long long id,
+        unsigned long long bindId,
         double timestamp,
         int numArgs,
         const char** argNames,
         const unsigned char* argTypes,
         const unsigned long long* argValues,
         WebConvertableToTraceFormat* convertableValues,
-        unsigned char flags)
+        unsigned flags)
     {
         return 0;
     }
@@ -610,6 +613,7 @@ public:
     virtual bool canAccelerate2dCanvas() { return false; }
 
     virtual bool isThreadedCompositingEnabled() { return false; }
+    virtual bool isThreadedAnimationEnabled() { return true; }
 
     virtual WebCompositorSupport* compositorSupport() { return nullptr; }
 
@@ -625,9 +629,12 @@ public:
     // May return null if WebRTC functionality is not avaliable or out of resources.
     virtual WebRTCPeerConnectionHandler* createRTCPeerConnectionHandler(WebRTCPeerConnectionHandlerClient*) { return nullptr; }
 
+    // Creates an WebMediaRecorderHandler to record MediaStreams.
+    // May return null if the functionality is not available or out of resources.
+    virtual WebMediaRecorderHandler* createMediaRecorderHandler() { return nullptr; }
+
     // May return null if WebRTC functionality is not avaliable or out of resources.
     virtual WebMediaStreamCenter* createMediaStreamCenter(WebMediaStreamCenterClient*) { return nullptr; }
-
 
     // WebWorker ----------------------------------------------------------
 

@@ -5,6 +5,7 @@
 #include "config.h"
 #include "core/paint/ObjectPainter.h"
 
+#include "core/layout/LayoutInline.h"
 #include "core/layout/LayoutObject.h"
 #include "core/layout/LayoutTheme.h"
 #include "core/paint/BoxBorderPainter.h"
@@ -16,61 +17,233 @@
 
 namespace blink {
 
-LayoutRect ObjectPainter::outlineBounds(const LayoutRect& objectBounds, const ComputedStyle& style)
+namespace {
+
+void paintSingleRectangleOutline(const PaintInfo& paintInfo, const IntRect& rect, const ComputedStyle& style, const Color& color)
 {
-    LayoutRect outlineBounds(objectBounds);
-    outlineBounds.inflate(style.outlineOutset());
-    return outlineBounds;
+    ASSERT(!style.outlineStyleIsAuto());
+
+    LayoutRect inner(rect);
+    inner.inflate(style.outlineOffset());
+    LayoutRect outer(inner);
+    outer.inflate(style.outlineWidth());
+    const BorderEdge commonEdgeInfo(style.outlineWidth(), color, style.outlineStyle());
+    BoxBorderPainter(style, outer, inner, commonEdgeInfo).paintBorder(paintInfo, outer);
 }
 
-void ObjectPainter::paintFocusRing(const PaintInfo& paintInfo, const ComputedStyle& style, const Vector<LayoutRect>& focusRingRects)
+struct OutlineEdgeInfo {
+    int x1;
+    int y1;
+    int x2;
+    int y2;
+    BoxSide side;
+};
+
+// Adjust length of edges if needed. Returns the width of the joint.
+int adjustJoint(int outlineWidth, OutlineEdgeInfo& edge1, OutlineEdgeInfo& edge2)
 {
-    ASSERT(style.outlineStyleIsAuto());
-    Vector<IntRect> focusRingIntRects;
-    for (size_t i = 0; i < focusRingRects.size(); ++i)
-        focusRingIntRects.append(pixelSnappedIntRect(focusRingRects[i]));
-    paintInfo.context->drawFocusRing(focusRingIntRects, style.outlineWidth(), style.outlineOffset(), m_layoutObject.resolveColor(style, CSSPropertyOutlineColor));
-}
-
-void ObjectPainter::paintOutline(const PaintInfo& paintInfo, const LayoutRect& objectBounds, const LayoutRect& visualOverflowBounds)
-{
-    const ComputedStyle& styleToUse = m_layoutObject.styleRef();
-    if (!styleToUse.hasOutline())
-        return;
-
-    if (LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(*paintInfo.context, m_layoutObject, paintInfo.phase))
-        return;
-
-    LayoutObjectDrawingRecorder recorder(*paintInfo.context, m_layoutObject, paintInfo.phase, visualOverflowBounds);
-
-    if (styleToUse.outlineStyleIsAuto()) {
-        if (LayoutTheme::theme().shouldDrawDefaultFocusRing(&m_layoutObject)) {
-            // Only paint the focus ring by hand if the theme isn't able to draw the focus ring.
-            Vector<LayoutRect> focusRingRects;
-            m_layoutObject.addFocusRingRects(focusRingRects, objectBounds.location());
-            paintFocusRing(paintInfo, styleToUse, focusRingRects);
+    // A clockwise joint:
+    // - needs no adjustment of edge length because our edges are along the clockwise outer edge of the outline;
+    // - needs a positive adjacent joint width (required by drawLineForBoxSide).
+    // A counterclockwise joint:
+    // - needs to increase the edge length to include the joint;
+    // - needs a negative adjacent joint width (required by drawLineForBoxSide).
+    switch (edge1.side) {
+    case BSTop:
+        switch (edge2.side) {
+        case BSRight: // Clockwise
+            return outlineWidth;
+        case BSLeft: // Counterclockwise
+            edge1.x2 += outlineWidth;
+            edge2.y2 += outlineWidth;
+            return -outlineWidth;
+        default: // Same side or no joint.
+            return 0;
         }
+    case BSRight:
+        switch (edge2.side) {
+        case BSBottom: // Clockwise
+            return outlineWidth;
+        case BSTop: // Counterclockwise
+            edge1.y2 += outlineWidth;
+            edge2.x1 -= outlineWidth;
+            return -outlineWidth;
+        default: // Same side or no joint.
+            return 0;
+        }
+    case BSBottom:
+        switch (edge2.side) {
+        case BSLeft: // Clockwise
+            return outlineWidth;
+        case BSRight: // Counterclockwise
+            edge1.x1 -= outlineWidth;
+            edge2.y1 -= outlineWidth;
+            return -outlineWidth;
+        default: // Same side or no joint.
+            return 0;
+        }
+    case BSLeft:
+        switch (edge2.side) {
+        case BSTop: // Clockwise
+            return outlineWidth;
+        case BSBottom: // Counterclockwise
+            edge1.y1 -= outlineWidth;
+            edge2.x2 += outlineWidth;
+            return -outlineWidth;
+        default: // Same side or no joint.
+            return 0;
+        }
+    default:
+        ASSERT_NOT_REACHED();
+        return 0;
+    }
+}
+
+void paintComplexOutline(GraphicsContext& graphicsContext, const Vector<IntRect> rects, const ComputedStyle& style, const Color& color)
+{
+    ASSERT(!style.outlineStyleIsAuto());
+
+    // Construct a clockwise path along the outer edge of the outline.
+    SkRegion region;
+    int width = style.outlineWidth();
+    int outset = style.outlineOffset() + style.outlineWidth();
+    for (auto& r : rects) {
+        IntRect rect = r;
+        rect.inflate(outset);
+        region.op(rect, SkRegion::kUnion_Op);
+    }
+    SkPath path;
+    if (!region.getBoundaryPath(&path))
+        return;
+
+    Vector<OutlineEdgeInfo, 4> edges;
+
+    SkPath::Iter iter(path, false);
+    SkPoint points[4];
+    size_t count = 0;
+    for (SkPath::Verb verb = iter.next(points, false); verb != SkPath::kDone_Verb; verb = iter.next(points, false)) {
+        if (verb != SkPath::kLine_Verb)
+            continue;
+
+        edges.grow(++count);
+        OutlineEdgeInfo& edge = edges.last();
+        edge.x1 = SkScalarTruncToInt(points[0].x());
+        edge.y1 = SkScalarTruncToInt(points[0].y());
+        edge.x2 = SkScalarTruncToInt(points[1].x());
+        edge.y2 = SkScalarTruncToInt(points[1].y());
+        if (edge.x1 == edge.x2) {
+            if (edge.y1 < edge.y2) {
+                edge.x1 -= width;
+                edge.side = BSRight;
+            } else {
+                std::swap(edge.y1, edge.y2);
+                edge.x2 += width;
+                edge.side = BSLeft;
+            }
+        } else {
+            ASSERT(edge.y1 == edge.y2);
+            if (edge.x1 < edge.x2) {
+                edge.y2 += width;
+                edge.side = BSTop;
+            } else {
+                std::swap(edge.x1, edge.x2);
+                edge.y1 -= width;
+                edge.side = BSBottom;
+            }
+        }
+    }
+
+    if (!count)
+        return;
+
+    Color outlineColor = color;
+    bool useTransparencyLayer = color.hasAlpha();
+    if (useTransparencyLayer) {
+        graphicsContext.beginLayer(static_cast<float>(color.alpha()) / 255);
+        outlineColor = Color(outlineColor.red(), outlineColor.green(), outlineColor.blue());
+    }
+
+    ASSERT(count >= 4 && edges.size() == count);
+    int firstAdjacentWidth = adjustJoint(width, edges.last(), edges.first());
+
+    // The width of the angled part of starting and ending joint of the current edge.
+    int adjacentWidthStart = firstAdjacentWidth;
+    int adjacentWidthEnd;
+    for (size_t i = 0; i < count; ++i) {
+        OutlineEdgeInfo& edge = edges[i];
+        adjacentWidthEnd = i == count - 1 ? firstAdjacentWidth : adjustJoint(width, edge, edges[i + 1]);
+        int adjacentWidth1 = adjacentWidthStart;
+        int adjacentWidth2 = adjacentWidthEnd;
+        if (edge.side == BSLeft || edge.side == BSBottom)
+            std::swap(adjacentWidth1, adjacentWidth2);
+        ObjectPainter::drawLineForBoxSide(&graphicsContext, edge.x1, edge.y1, edge.x2, edge.y2, edge.side, outlineColor, style.outlineStyle(), adjacentWidth1, adjacentWidth2, false);
+        adjacentWidthStart = adjacentWidthEnd;
+    }
+
+    if (useTransparencyLayer)
+        graphicsContext.endLayer();
+}
+
+} // namespace
+
+void ObjectPainter::paintOutline(const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
+{
+    ASSERT(paintInfo.phase == PaintPhaseOutline || paintInfo.phase == PaintPhaseSelfOutline);
+
+    const ComputedStyle& styleToUse = m_layoutObject.styleRef();
+    if (!styleToUse.hasOutline() || styleToUse.visibility() != VISIBLE)
+        return;
+
+    // Only paint the focus ring by hand if the theme isn't able to draw the focus ring.
+    if (styleToUse.outlineStyleIsAuto() && !LayoutTheme::theme().shouldDrawDefaultFocusRing(m_layoutObject))
+        return;
+
+    Vector<LayoutRect> outlineRects;
+    m_layoutObject.addOutlineRects(outlineRects, paintOffset, m_layoutObject.outlineRectsShouldIncludeBlockVisualOverflow());
+    if (outlineRects.isEmpty())
+        return;
+
+    if (LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(*paintInfo.context, m_layoutObject, paintInfo.phase, paintOffset))
+        return;
+
+    Vector<IntRect> pixelSnappedOutlineRects;
+    for (auto& r : outlineRects)
+        pixelSnappedOutlineRects.append(pixelSnappedIntRect(r));
+
+    IntRect unitedOutlineRect = unionRectEvenIfEmpty(pixelSnappedOutlineRects);
+    IntRect bounds = unitedOutlineRect;
+    bounds.inflate(m_layoutObject.styleRef().outlineOutsetExtent());
+    LayoutObjectDrawingRecorder recorder(*paintInfo.context, m_layoutObject, paintInfo.phase, bounds, paintOffset);
+
+    Color color = m_layoutObject.resolveColor(styleToUse, CSSPropertyOutlineColor);
+    if (styleToUse.outlineStyleIsAuto()) {
+        paintInfo.context->drawFocusRing(pixelSnappedOutlineRects, styleToUse.outlineWidth(), styleToUse.outlineOffset(), color);
         return;
     }
 
-    if (styleToUse.outlineStyle() == BNONE)
+    if (unitedOutlineRect == pixelSnappedOutlineRects[0]) {
+        paintSingleRectangleOutline(paintInfo, unitedOutlineRect, styleToUse, color);
         return;
+    }
+    paintComplexOutline(*paintInfo.context, pixelSnappedOutlineRects, styleToUse, color);
+}
 
-    LayoutRect inner(pixelSnappedIntRect(objectBounds));
-    inner.inflate(styleToUse.outlineOffset());
+void ObjectPainter::paintInlineChildrenOutlines(const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
+{
+    ASSERT(paintInfo.phase == PaintPhaseOutline || paintInfo.phase == PaintPhaseChildOutlines);
 
-    LayoutRect outer(inner);
-    int outlineWidth = styleToUse.outlineWidth();
-    outer.inflate(outlineWidth);
+    PaintInfo childPaintInfo(paintInfo);
+    childPaintInfo.phase = paintInfo.phase == PaintPhaseChildOutlines ? PaintPhaseOutline : paintInfo.phase;
 
-    const BorderEdge commonEdgeInfo(outlineWidth,
-        m_layoutObject.resolveColor(styleToUse, CSSPropertyOutlineColor), styleToUse.outlineStyle());
-    BoxBorderPainter(styleToUse, outer, inner, commonEdgeInfo).paintBorder(paintInfo, outer);
+    for (LayoutObject* child = m_layoutObject.slowFirstChild(); child; child = child->nextSibling()) {
+        if (child->isLayoutInline() && !toLayoutInline(child)->hasSelfPaintingLayer())
+            child->paint(childPaintInfo, paintOffset);
+    }
 }
 
 void ObjectPainter::addPDFURLRectIfNeeded(const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
 {
-    ASSERT(paintInfo.context->printing());
+    ASSERT(paintInfo.isPrinting());
     if (m_layoutObject.isElementContinuation() || !m_layoutObject.node() || !m_layoutObject.node()->isLink() || m_layoutObject.styleRef().visibility() != VISIBLE)
         return;
 
@@ -78,16 +251,16 @@ void ObjectPainter::addPDFURLRectIfNeeded(const PaintInfo& paintInfo, const Layo
     if (!url.isValid())
         return;
 
-    Vector<LayoutRect> focusRingRects;
-    m_layoutObject.addFocusRingRects(focusRingRects, paintOffset);
-    IntRect rect = pixelSnappedIntRect(unionRect(focusRingRects));
+    Vector<LayoutRect> visualOverflowRects;
+    m_layoutObject.addElementVisualOverflowRects(visualOverflowRects, paintOffset);
+    IntRect rect = pixelSnappedIntRect(unionRect(visualOverflowRects));
     if (rect.isEmpty())
         return;
 
-    if (LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(*paintInfo.context, m_layoutObject, DisplayItem::PrintedContentPDFURLRect))
+    if (LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(*paintInfo.context, m_layoutObject, DisplayItem::PrintedContentPDFURLRect, paintOffset))
         return;
 
-    LayoutObjectDrawingRecorder recorder(*paintInfo.context, m_layoutObject, DisplayItem::PrintedContentPDFURLRect, rect);
+    LayoutObjectDrawingRecorder recorder(*paintInfo.context, m_layoutObject, DisplayItem::PrintedContentPDFURLRect, rect, paintOffset);
     if (url.hasFragmentIdentifier() && equalIgnoringFragmentIdentifier(url, m_layoutObject.document().baseURL())) {
         String fragmentName = url.fragmentIdentifier();
         if (m_layoutObject.document().findAnchor(fragmentName))
@@ -168,13 +341,17 @@ void ObjectPainter::drawDashedOrDottedBoxSide(GraphicsContext* graphicsContext, 
 
     switch (side) {
     case BSBottom:
-    case BSTop:
-        graphicsContext->drawLine(IntPoint(x1, (y1 + y2) / 2), IntPoint(x2, (y1 + y2) / 2));
+    case BSTop: {
+        int midY = y1 + thickness / 2;
+        graphicsContext->drawLine(IntPoint(x1, midY), IntPoint(x2, midY));
         break;
+    }
     case BSRight:
-    case BSLeft:
-        graphicsContext->drawLine(IntPoint((x1 + x2) / 2, y1), IntPoint((x1 + x2) / 2, y2));
+    case BSLeft: {
+        int midX = x1 + thickness / 2;
+        graphicsContext->drawLine(IntPoint(midX, y1), IntPoint(midX, y2));
         break;
+    }
     }
     graphicsContext->setShouldAntialias(wasAntialiased);
     graphicsContext->setStrokeStyle(oldStrokeStyle);

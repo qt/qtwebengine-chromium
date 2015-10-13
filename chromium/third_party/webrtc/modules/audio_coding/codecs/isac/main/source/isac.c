@@ -507,7 +507,7 @@ int WebRtcIsac_Encode(ISACStruct* ISAC_main_inst,
   int streamLenLB = 0;
   int streamLenUB = 0;
   int streamLen = 0;
-  int16_t k = 0;
+  size_t k = 0;
   uint8_t garbageLen = 0;
   int32_t bottleneck = 0;
   int16_t bottleneckIdx = 0;
@@ -528,12 +528,12 @@ int WebRtcIsac_Encode(ISACStruct* ISAC_main_inst,
 
   if (instISAC->in_sample_rate_hz == 48000) {
     /* Samples in 10 ms @ 48 kHz. */
-    const int kNumInputSamples = FRAMESAMPLES_10ms * 3;
+    const size_t kNumInputSamples = FRAMESAMPLES_10ms * 3;
     /* Samples 10 ms @ 32 kHz. */
-    const int kNumOutputSamples = FRAMESAMPLES_10ms * 2;
+    const size_t kNumOutputSamples = FRAMESAMPLES_10ms * 2;
     /* Resampler divide the input into blocks of 3 samples, i.e.
      * kNumInputSamples / 3. */
-    const int kNumResamplerBlocks = FRAMESAMPLES_10ms;
+    const size_t kNumResamplerBlocks = FRAMESAMPLES_10ms;
     int32_t buffer32[FRAMESAMPLES_10ms * 3 + SIZE_RESAMPLER_STATE];
 
     /* Restore last samples from the past to the beginning of the buffer
@@ -750,7 +750,8 @@ int WebRtcIsac_Encode(ISACStruct* ISAC_main_inst,
                       streamLenUB + garbageLen, &crc);
 #ifndef WEBRTC_ARCH_BIG_ENDIAN
     for (k = 0; k < LEN_CHECK_SUM_WORD8; k++) {
-      encoded[streamLen - LEN_CHECK_SUM_WORD8 + k] = crc >> (24 - k * 8);
+      encoded[streamLen - LEN_CHECK_SUM_WORD8 + k] =
+          (uint8_t)(crc >> (24 - k * 8));
     }
 #else
     memcpy(&encoded[streamLenLB + streamLenUB + 1], &crc, LEN_CHECK_SUM_WORD8);
@@ -923,12 +924,8 @@ int16_t WebRtcIsac_GetNewBitStream(ISACStruct*  ISAC_main_inst,
  *
  * Input:
  *        - ISAC_main_inst    : ISAC instance.
- *
- * Return value
- *                            :  0 - Ok
- *                              -1 - Error
  */
-static int16_t DecoderInitLb(ISACLBStruct* instISAC) {
+static void DecoderInitLb(ISACLBStruct* instISAC) {
   int i;
   /* Initialize stream vector to zero. */
   for (i = 0; i < STREAM_SIZE_MAX_60; i++) {
@@ -939,10 +936,9 @@ static int16_t DecoderInitLb(ISACLBStruct* instISAC) {
   WebRtcIsac_InitPostFilterbank(
     &instISAC->ISACdecLB_obj.postfiltbankstr_obj);
   WebRtcIsac_InitPitchFilter(&instISAC->ISACdecLB_obj.pitchfiltstr_obj);
-  return 0;
 }
 
-static int16_t DecoderInitUb(ISACUBStruct* instISAC) {
+static void DecoderInitUb(ISACUBStruct* instISAC) {
   int i;
   /* Init stream vector to zero */
   for (i = 0; i < STREAM_SIZE_MAX_60; i++) {
@@ -952,24 +948,18 @@ static int16_t DecoderInitUb(ISACUBStruct* instISAC) {
   WebRtcIsac_InitMasking(&instISAC->ISACdecUB_obj.maskfiltstr_obj);
   WebRtcIsac_InitPostFilterbank(
     &instISAC->ISACdecUB_obj.postfiltbankstr_obj);
-  return (0);
 }
 
-int16_t WebRtcIsac_DecoderInit(ISACStruct* ISAC_main_inst) {
+void WebRtcIsac_DecoderInit(ISACStruct* ISAC_main_inst) {
   ISACMainStruct* instISAC = (ISACMainStruct*)ISAC_main_inst;
 
-  if (DecoderInitLb(&instISAC->instLB) < 0) {
-    return -1;
-  }
+  DecoderInitLb(&instISAC->instLB);
   if (instISAC->decoderSamplingRateKHz == kIsacSuperWideband) {
     memset(instISAC->synthesisFBState1, 0,
            FB_STATE_SIZE_WORD32 * sizeof(int32_t));
     memset(instISAC->synthesisFBState2, 0,
            FB_STATE_SIZE_WORD32 * sizeof(int32_t));
-
-    if (DecoderInitUb(&(instISAC->instUB)) < 0) {
-      return -1;
-    }
+    DecoderInitUb(&(instISAC->instUB));
   }
   if ((instISAC->initFlag & BIT_MASK_ENC_INIT) != BIT_MASK_ENC_INIT) {
     WebRtcIsac_InitBandwidthEstimator(&instISAC->bwestimator_obj,
@@ -978,7 +968,6 @@ int16_t WebRtcIsac_DecoderInit(ISACStruct* ISAC_main_inst) {
   }
   instISAC->initFlag |= BIT_MASK_DEC_INIT;
   instISAC->resetFlag_8kHz = 0;
-  return 0;
 }
 
 
@@ -1005,7 +994,7 @@ int16_t WebRtcIsac_DecoderInit(ISACStruct* ISAC_main_inst) {
  */
 int16_t WebRtcIsac_UpdateBwEstimate(ISACStruct* ISAC_main_inst,
                                     const uint8_t* encoded,
-                                    int32_t packet_size,
+                                    size_t packet_size,
                                     uint16_t rtp_seq_number,
                                     uint32_t send_ts,
                                     uint32_t arr_ts) {
@@ -1055,7 +1044,7 @@ int16_t WebRtcIsac_UpdateBwEstimate(ISACStruct* ISAC_main_inst,
 
 static int Decode(ISACStruct* ISAC_main_inst,
                   const uint8_t* encoded,
-                  int16_t lenEncodedBytes,
+                  size_t lenEncodedBytes,
                   int16_t* decoded,
                   int16_t* speechType,
                   int16_t isRCUPayload) {
@@ -1068,13 +1057,14 @@ static int Decode(ISACStruct* ISAC_main_inst,
   float outFrame[MAX_FRAMESAMPLES];
   int16_t outFrameLB[MAX_FRAMESAMPLES];
   int16_t outFrameUB[MAX_FRAMESAMPLES];
-  int numDecodedBytesLB;
+  int numDecodedBytesLBint;
+  size_t numDecodedBytesLB;
   int numDecodedBytesUB;
-  int16_t lenEncodedLBBytes;
+  size_t lenEncodedLBBytes;
   int16_t validChecksum = 1;
   int16_t k;
   uint16_t numLayer;
-  int16_t totSizeBytes;
+  size_t totSizeBytes;
   int16_t err;
 
   ISACMainStruct* instISAC = (ISACMainStruct*)ISAC_main_inst;
@@ -1088,7 +1078,7 @@ static int Decode(ISACStruct* ISAC_main_inst,
     return -1;
   }
 
-  if (lenEncodedBytes <= 0) {
+  if (lenEncodedBytes == 0) {
     /* return error code if the packet length is null. */
     instISAC->errorCode = ISAC_EMPTY_PACKET;
     return -1;
@@ -1114,11 +1104,12 @@ static int Decode(ISACStruct* ISAC_main_inst,
   /* Regardless of that the current codec is setup to work in
    * wideband or super-wideband, the decoding of the lower-band
    * has to be performed. */
-  numDecodedBytesLB = WebRtcIsac_DecodeLb(&instISAC->transform_tables,
-                                          outFrame, decInstLB,
-                                          &numSamplesLB, isRCUPayload);
-
-  if ((numDecodedBytesLB < 0) || (numDecodedBytesLB > lenEncodedLBBytes) ||
+  numDecodedBytesLBint = WebRtcIsac_DecodeLb(&instISAC->transform_tables,
+                                             outFrame, decInstLB,
+                                             &numSamplesLB, isRCUPayload);
+  numDecodedBytesLB = (size_t)numDecodedBytesLBint;
+  if ((numDecodedBytesLBint < 0) ||
+      (numDecodedBytesLB > lenEncodedLBBytes) ||
       (numSamplesLB > MAX_FRAMESAMPLES)) {
     instISAC->errorCode = ISAC_LENGTH_MISMATCH;
     return -1;
@@ -1361,7 +1352,7 @@ static int Decode(ISACStruct* ISAC_main_inst,
 
 int WebRtcIsac_Decode(ISACStruct* ISAC_main_inst,
                       const uint8_t* encoded,
-                      int16_t lenEncodedBytes,
+                      size_t lenEncodedBytes,
                       int16_t* decoded,
                       int16_t* speechType) {
   int16_t isRCUPayload = 0;
@@ -1393,7 +1384,7 @@ int WebRtcIsac_Decode(ISACStruct* ISAC_main_inst,
 
 int WebRtcIsac_DecodeRcu(ISACStruct* ISAC_main_inst,
                          const uint8_t* encoded,
-                         int16_t lenEncodedBytes,
+                         size_t lenEncodedBytes,
                          int16_t* decoded,
                          int16_t* speechType) {
   int16_t isRCUPayload = 1;
@@ -1416,13 +1407,12 @@ int WebRtcIsac_DecodeRcu(ISACStruct* ISAC_main_inst,
  * Output:
  *        - decoded           : The decoded vector
  *
- * Return value               : >0 - number of samples in decoded PLC vector
- *                              -1 - Error
+ * Return value               : Number of samples in decoded PLC vector
  */
-int16_t WebRtcIsac_DecodePlc(ISACStruct* ISAC_main_inst,
-                             int16_t* decoded,
-                             int16_t noOfLostFrames) {
-  int16_t numSamples = 0;
+size_t WebRtcIsac_DecodePlc(ISACStruct* ISAC_main_inst,
+                            int16_t* decoded,
+                            size_t noOfLostFrames) {
+  size_t numSamples = 0;
   ISACMainStruct* instISAC = (ISACMainStruct*)ISAC_main_inst;
 
   /* Limit number of frames to two = 60 millisecond.
@@ -1578,6 +1568,13 @@ int16_t WebRtcIsac_Control(ISACStruct* ISAC_main_inst,
   return 0;
 }
 
+void WebRtcIsac_SetInitialBweBottleneck(ISACStruct* ISAC_main_inst,
+                                        int bottleneck_bits_per_second) {
+  ISACMainStruct* instISAC = (ISACMainStruct*)ISAC_main_inst;
+  assert(bottleneck_bits_per_second >= 10000 &&
+         bottleneck_bits_per_second <= 32000);
+  instISAC->bwestimator_obj.send_bw_avg = (float)bottleneck_bits_per_second;
+}
 
 /****************************************************************************
  * WebRtcIsac_ControlBwe(...)
@@ -2344,9 +2341,7 @@ int16_t WebRtcIsac_SetDecSampRate(ISACStruct* ISAC_main_inst,
       memset(instISAC->synthesisFBState2, 0,
              FB_STATE_SIZE_WORD32 * sizeof(int32_t));
 
-      if (DecoderInitUb(&(instISAC->instUB)) < 0) {
-        return -1;
-      }
+      DecoderInitUb(&instISAC->instUB);
   }
   instISAC->decoderSamplingRateKHz = decoder_operational_rate;
   return 0;
@@ -2398,4 +2393,13 @@ void WebRtcIsac_SetBandwidthInfo(ISACStruct* inst,
   ISACMainStruct* instISAC = (ISACMainStruct*)inst;
   assert(instISAC->initFlag & BIT_MASK_ENC_INIT);
   WebRtcIsacBw_SetBandwidthInfo(&instISAC->bwestimator_obj, bwinfo);
+}
+
+void WebRtcIsac_SetEncSampRateInDecoder(ISACStruct* inst,
+                                        int sample_rate_hz) {
+  ISACMainStruct* instISAC = (ISACMainStruct*)inst;
+  assert(instISAC->initFlag & BIT_MASK_DEC_INIT);
+  assert(!(instISAC->initFlag & BIT_MASK_ENC_INIT));
+  assert(sample_rate_hz == 16000 || sample_rate_hz == 32000);
+  instISAC->encoderSamplingRateKHz = sample_rate_hz / 1000;
 }

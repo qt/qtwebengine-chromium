@@ -123,13 +123,12 @@ class OZONE_EXPORT HardwareDisplayController {
   //
   // When called with |test_only| true, this performs the page flip without
   // changing any state, reporting if this page flip would be allowed to occur.
-  // This is always a synchronous operation, so |is_sync| is ignored and the
-  // callback is called immediately but should also be ignored; only the return
-  // value matters.
   bool SchedulePageFlip(const OverlayPlaneList& plane_list,
-                        bool is_sync,
                         bool test_only,
                         const PageFlipCallback& callback);
+
+  std::vector<uint32_t> GetCompatibleHardwarePlaneIds(
+      const OverlayPlane& plane) const;
 
   // Set the hardware cursor to show the contents of |surface|.
   bool SetCursor(const scoped_refptr<ScanoutBuffer>& buffer);

@@ -59,6 +59,14 @@ class Router : public MessageReceiverWithResponder {
     return connector_.WaitForIncomingMessage(deadline);
   }
 
+  // See Binding for details of pause/resume.
+  void PauseIncomingMethodCallProcessing() {
+    connector_.PauseIncomingMethodCallProcessing();
+  }
+  void ResumeIncomingMethodCallProcessing() {
+    connector_.ResumeIncomingMethodCallProcessing();
+  }
+
   // Sets this object to testing mode.
   // In testing mode:
   // - the object is more tolerant of unrecognized response messages;
@@ -67,6 +75,9 @@ class Router : public MessageReceiverWithResponder {
   void EnableTestingMode();
 
   MessagePipeHandle handle() const { return connector_.handle(); }
+
+  // Returns true if this Router has any pending callbacks.
+  bool has_pending_responders() const { return !responders_.empty(); }
 
  private:
   typedef std::map<uint64_t, MessageReceiver*> ResponderMap;
@@ -90,6 +101,8 @@ class Router : public MessageReceiverWithResponder {
   Connector connector_;
   SharedData<Router*> weak_self_;
   MessageReceiverWithResponderStatus* incoming_receiver_;
+  // Maps from the id of a response to the MessageReceiver that handles the
+  // response.
   ResponderMap responders_;
   uint64_t next_request_id_;
   bool testing_mode_;

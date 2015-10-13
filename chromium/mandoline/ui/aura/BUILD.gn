@@ -20,7 +20,7 @@ source_set("aura") {
   ]
 
   public_deps = [
-    "//components/view_manager/public/cpp",
+    "//components/mus/public/cpp",
   ]
   deps = [
     "//base",
@@ -28,16 +28,16 @@ source_set("aura") {
     "//base/third_party/dynamic_annotations",
     "//cc",
     "//cc/surfaces",
+    "//components/mus/gles2:lib",
+    "//components/mus/public/cpp",
+    "//components/mus/public/interfaces",
     "//components/resource_provider/public/cpp",
     "//components/resource_provider/public/interfaces",
-    "//components/view_manager/gles2:lib",
-    "//components/view_manager/public/cpp",
-    "//components/view_manager/public/interfaces",
     "//skia",
     "//mojo/application/public/cpp",
     "//mojo/application/public/interfaces",
-    "//mojo/cc",
     "//mojo/converters/geometry",
+    "//mojo/converters/ime",
     "//mojo/converters/input_events",
     "//mojo/converters/surfaces",
     "//third_party/mojo/src/mojo/public/c/gles2",
@@ -47,7 +47,13 @@ source_set("aura") {
     "//ui/events",
     "//ui/events:events_base",
     "//ui/gl",
+    "//ui/mojo/ime:interfaces_cpp_sources",
     "//ui/mojo/init",
     "//ui/views",
+    "//ui/wm",
   ]
+
+  if (is_linux && !is_android) {
+    deps += [ "//components/font_service/public/cpp" ]
+  }
 }

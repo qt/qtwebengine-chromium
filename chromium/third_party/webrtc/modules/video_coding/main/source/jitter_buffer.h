@@ -307,6 +307,10 @@ class VCMJitterBuffer {
   FrameList incomplete_frames_ GUARDED_BY(crit_sect_);
   VCMDecodingState last_decoded_state_ GUARDED_BY(crit_sect_);
   bool first_packet_since_reset_;
+  // Contains last received frame's temporal information for non-flexible mode.
+  GofInfoVP9 last_gof_;
+  uint32_t last_gof_timestamp_;
+  bool last_gof_valid_;
 
   // Statistics.
   VCMReceiveStatisticsCallback* stats_callback_ GUARDED_BY(crit_sect_);
@@ -356,7 +360,7 @@ class VCMJitterBuffer {
   // average_packets_per_frame converges fast if we have fewer than this many
   // frames.
   int frame_counter_;
-  DISALLOW_COPY_AND_ASSIGN(VCMJitterBuffer);
+  RTC_DISALLOW_COPY_AND_ASSIGN(VCMJitterBuffer);
 };
 }  // namespace webrtc
 

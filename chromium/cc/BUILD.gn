@@ -75,12 +75,8 @@ component("cc") {
     "debug/micro_benchmark_controller_impl.h",
     "debug/micro_benchmark_impl.cc",
     "debug/micro_benchmark_impl.h",
-    "debug/paint_time_counter.cc",
-    "debug/paint_time_counter.h",
     "debug/picture_debug_util.cc",
     "debug/picture_debug_util.h",
-    "debug/picture_record_benchmark.cc",
-    "debug/picture_record_benchmark.h",
     "debug/rasterize_and_record_benchmark.cc",
     "debug/rasterize_and_record_benchmark.h",
     "debug/rasterize_and_record_benchmark_impl.cc",
@@ -92,8 +88,6 @@ component("cc") {
     "debug/ring_buffer.h",
     "debug/traced_display_item_list.cc",
     "debug/traced_display_item_list.h",
-    "debug/traced_picture.cc",
-    "debug/traced_picture.h",
     "debug/traced_value.cc",
     "debug/traced_value.h",
     "debug/unittest_only_benchmark.cc",
@@ -108,6 +102,8 @@ component("cc") {
     "input/page_scale_animation.h",
     "input/scroll_elasticity_helper.cc",
     "input/scroll_elasticity_helper.h",
+    "input/scroll_state.cc",
+    "input/scroll_state.h",
     "input/selection.h",
     "input/selection_bound_type.h",
     "input/top_controls_manager.cc",
@@ -123,6 +119,7 @@ component("cc") {
     "layers/delegated_renderer_layer.h",
     "layers/delegated_renderer_layer_impl.cc",
     "layers/delegated_renderer_layer_impl.h",
+    "layers/draw_properties.cc",
     "layers/draw_properties.h",
     "layers/heads_up_display_layer.cc",
     "layers/heads_up_display_layer.h",
@@ -138,7 +135,6 @@ component("cc") {
     "layers/layer_impl.cc",
     "layers/layer_impl.h",
     "layers/layer_iterator.h",
-    "layers/layer_lists.cc",
     "layers/layer_lists.h",
     "layers/layer_position_constraint.cc",
     "layers/layer_position_constraint.h",
@@ -162,8 +158,8 @@ component("cc") {
     "layers/picture_layer_impl.cc",
     "layers/picture_layer_impl.h",
     "layers/render_pass_sink.h",
-    "layers/render_surface.cc",
-    "layers/render_surface.h",
+    "layers/render_surface_draw_properties.cc",
+    "layers/render_surface_draw_properties.h",
     "layers/render_surface_impl.cc",
     "layers/render_surface_impl.h",
     "layers/scrollbar_layer_impl_base.cc",
@@ -251,8 +247,12 @@ component("cc") {
     "output/overlay_candidate_validator.h",
     "output/overlay_processor.cc",
     "output/overlay_processor.h",
+    "output/overlay_strategy_all_or_nothing.cc",
+    "output/overlay_strategy_all_or_nothing.h",
     "output/overlay_strategy_common.cc",
     "output/overlay_strategy_common.h",
+    "output/overlay_strategy_sandwich.cc",
+    "output/overlay_strategy_sandwich.h",
     "output/overlay_strategy_single_on_top.cc",
     "output/overlay_strategy_single_on_top.h",
     "output/overlay_strategy_underlay.cc",
@@ -269,8 +269,6 @@ component("cc") {
     "output/renderer_settings.h",
     "output/shader.cc",
     "output/shader.h",
-    "output/software_frame_data.cc",
-    "output/software_frame_data.h",
     "output/software_output_device.cc",
     "output/software_output_device.h",
     "output/software_renderer.cc",
@@ -288,10 +286,14 @@ component("cc") {
     "playback/clip_path_display_item.h",
     "playback/compositing_display_item.cc",
     "playback/compositing_display_item.h",
+    "playback/discardable_image_map.cc",
+    "playback/discardable_image_map.h",
     "playback/display_item.cc",
     "playback/display_item.h",
     "playback/display_item_list.cc",
     "playback/display_item_list.h",
+    "playback/display_item_list_bounds_calculator.cc",
+    "playback/display_item_list_bounds_calculator.h",
     "playback/display_item_list_settings.cc",
     "playback/display_item_list_settings.h",
     "playback/display_list_raster_source.cc",
@@ -306,21 +308,12 @@ component("cc") {
     "playback/float_clip_display_item.h",
     "playback/largest_display_item.cc",
     "playback/largest_display_item.h",
-    "playback/picture.cc",
-    "playback/picture.h",
-    "playback/picture_pile.cc",
-    "playback/picture_pile.h",
-    "playback/picture_pile_impl.cc",
-    "playback/picture_pile_impl.h",
-    "playback/pixel_ref_map.cc",
-    "playback/pixel_ref_map.h",
+    "playback/position_image.h",
     "playback/raster_source.h",
     "playback/raster_source_helper.cc",
     "playback/raster_source_helper.h",
     "playback/transform_display_item.cc",
     "playback/transform_display_item.h",
-    "quads/checkerboard_draw_quad.cc",
-    "quads/checkerboard_draw_quad.h",
     "quads/content_draw_quad_base.cc",
     "quads/content_draw_quad_base.h",
     "quads/debug_border_draw_quad.cc",
@@ -363,8 +356,6 @@ component("cc") {
     "raster/gpu_tile_task_worker_pool.h",
     "raster/one_copy_tile_task_worker_pool.cc",
     "raster/one_copy_tile_task_worker_pool.h",
-    "raster/pixel_buffer_tile_task_worker_pool.cc",
-    "raster/pixel_buffer_tile_task_worker_pool.h",
     "raster/raster_buffer.cc",
     "raster/raster_buffer.h",
     "raster/scoped_gpu_raster.cc",
@@ -392,6 +383,7 @@ component("cc") {
     "resources/resource_pool.h",
     "resources/resource_provider.cc",
     "resources/resource_provider.h",
+    "resources/resource_util.h",
     "resources/returned_resource.h",
     "resources/scoped_resource.cc",
     "resources/scoped_resource.h",
@@ -434,6 +426,8 @@ component("cc") {
     "scheduler/video_frame_controller.h",
     "tiles/eviction_tile_priority_queue.cc",
     "tiles/eviction_tile_priority_queue.h",
+    "tiles/image_decode_controller.cc",
+    "tiles/image_decode_controller.h",
     "tiles/picture_layer_tiling.cc",
     "tiles/picture_layer_tiling.h",
     "tiles/picture_layer_tiling_set.cc",
@@ -462,6 +456,8 @@ component("cc") {
     "tiles/tiling_set_raster_queue_required.h",
     "trees/blocking_task_runner.cc",
     "trees/blocking_task_runner.h",
+    "trees/channel_impl.h",
+    "trees/channel_main.h",
     "trees/damage_tracker.cc",
     "trees/damage_tracker.h",
     "trees/draw_property_utils.cc",
@@ -491,6 +487,8 @@ component("cc") {
     "trees/property_tree_builder.h",
     "trees/proxy.cc",
     "trees/proxy.h",
+    "trees/proxy_impl.h",
+    "trees/proxy_main.h",
     "trees/scoped_abort_remaining_swap_promises.h",
     "trees/single_thread_proxy.cc",
     "trees/single_thread_proxy.h",
@@ -498,6 +496,8 @@ component("cc") {
     "trees/swap_promise_monitor.h",
     "trees/thread_proxy.cc",
     "trees/thread_proxy.h",
+    "trees/threaded_channel.cc",
+    "trees/threaded_channel.h",
     "trees/tree_synchronizer.cc",
     "trees/tree_synchronizer.h",
   ]
@@ -508,6 +508,8 @@ component("cc") {
       "raster/texture_compressor_etc1_sse.h",
     ]
   }
+
+  configs += [ "//build/config:precompiled_headers" ]
 
   public_deps = [
     "//cc/base",
@@ -523,12 +525,13 @@ component("cc") {
     "//ui/events:events_base",
     "//ui/gfx",
     "//ui/gfx/geometry",
+    "//ui/gl",
   ]
 
   defines = [ "CC_IMPLEMENTATION=1" ]
 
   if (!is_debug && (is_win || is_android)) {
-    configs -= [ "//build/config/compiler:optimize" ]
+    configs -= [ "//build/config/compiler:default_optimization" ]
     configs += [ "//build/config/compiler:optimize_max" ]
   }
 }
@@ -550,6 +553,9 @@ source_set("test_support") {
     "test/fake_delegated_renderer_layer.h",
     "test/fake_delegated_renderer_layer_impl.cc",
     "test/fake_delegated_renderer_layer_impl.h",
+    "test/fake_display_list_raster_source.cc",
+    "test/fake_display_list_raster_source.h",
+    "test/fake_display_list_recording_source.cc",
     "test/fake_display_list_recording_source.h",
     "test/fake_external_begin_frame_source.cc",
     "test/fake_external_begin_frame_source.h",
@@ -574,10 +580,6 @@ source_set("test_support") {
     "test/fake_picture_layer_impl.h",
     "test/fake_picture_layer_tiling_client.cc",
     "test/fake_picture_layer_tiling_client.h",
-    "test/fake_picture_pile.cc",
-    "test/fake_picture_pile.h",
-    "test/fake_picture_pile_impl.cc",
-    "test/fake_picture_pile_impl.h",
     "test/fake_proxy.cc",
     "test/fake_proxy.h",
     "test/fake_renderer_client.cc",
@@ -627,8 +629,6 @@ source_set("test_support") {
     "test/pixel_test_software_output_device.h",
     "test/pixel_test_utils.cc",
     "test/pixel_test_utils.h",
-    "test/render_pass_test_common.cc",
-    "test/render_pass_test_common.h",
     "test/render_pass_test_utils.cc",
     "test/render_pass_test_utils.h",
     "test/scheduler_test_common.cc",
@@ -662,6 +662,7 @@ source_set("test_support") {
     "test/test_web_graphics_context_3d.h",
   ]
 
+  configs += [ "//build/config:precompiled_headers" ]
   include_dirs = [
     ".",
     "test",
@@ -688,11 +689,21 @@ source_set("test_support") {
     "//ui/gfx/geometry",
     "//ui/gfx:test_support",
     "//ui/gl",
+    "//ui/gl:test_support",
   ]
 
   if (!is_android) {  # TODO(GYP) Enable on Android when osmesa links.
     deps += [ "//third_party/mesa:osmesa" ]
   }
+}
+
+# TODO(GYP): Delete this after we've converted everything to GN.
+# The _run targets exist only for compatibility w/ GYP.
+group("cc_unittests_run") {
+  testonly = true
+  deps = [
+    ":cc_unittests",
+  ]
 }
 
 test("cc_unittests") {
@@ -708,18 +719,23 @@ test("cc_unittests") {
     "animation/scrollbar_animation_controller_linear_fade_unittest.cc",
     "animation/scrollbar_animation_controller_thinning_unittest.cc",
     "animation/transform_operations_unittest.cc",
+    "base/delayed_unique_notifier_unittest.cc",
     "base/float_quad_unittest.cc",
     "base/histograms_unittest.cc",
     "base/list_container_unittest.cc",
     "base/math_util_unittest.cc",
+    "base/random_access_list_container_unittest.cc",
     "base/region_unittest.cc",
     "base/rolling_time_delta_history_unittest.cc",
+    "base/rtree_unittest.cc",
     "base/scoped_ptr_vector_unittest.cc",
-    "base/sidecar_list_container_unittest.cc",
     "base/simple_enclosed_region_unittest.cc",
     "base/tiling_data_unittest.cc",
+    "base/unique_notifier_unittest.cc",
     "debug/frame_timing_tracker_unittest.cc",
     "debug/micro_benchmark_controller_unittest.cc",
+    "debug/rendering_stats_unittest.cc",
+    "input/scroll_state_unittest.cc",
     "input/top_controls_manager_unittest.cc",
     "layers/delegated_frame_provider_unittest.cc",
     "layers/delegated_frame_resource_collection_unittest.cc",
@@ -754,6 +770,7 @@ test("cc_unittests") {
     "layers/video_frame_provider_client_impl_unittest.cc",
     "layers/video_layer_impl_unittest.cc",
     "output/begin_frame_args_unittest.cc",
+    "output/bsp_tree_unittest.cc",
     "output/delegating_renderer_unittest.cc",
     "output/filter_operations_unittest.cc",
     "output/gl_renderer_unittest.cc",
@@ -765,14 +782,11 @@ test("cc_unittests") {
     "output/shader_unittest.cc",
     "output/software_renderer_unittest.cc",
     "output/texture_mailbox_deleter_unittest.cc",
+    "playback/discardable_image_map_unittest.cc",
     "playback/display_item_list_unittest.cc",
     "playback/display_list_raster_source_unittest.cc",
     "playback/display_list_recording_source_unittest.cc",
-    "playback/picture_pile_impl_unittest.cc",
-    "playback/picture_pile_unittest.cc",
-    "playback/picture_unittest.cc",
-    "playback/pixel_ref_map_unittest.cc",
-    "playback/recording_source_unittest.cc",
+    "quads/draw_polygon_unittest.cc",
     "quads/draw_quad_unittest.cc",
     "quads/render_pass_unittest.cc",
     "raster/scoped_gpu_raster_unittest.cc",
@@ -782,6 +796,7 @@ test("cc_unittests") {
     "resources/platform_color_unittest.cc",
     "resources/resource_pool_unittest.cc",
     "resources/resource_provider_unittest.cc",
+    "resources/resource_util_unittest.cc",
     "resources/scoped_resource_unittest.cc",
     "resources/video_resource_updater_unittest.cc",
     "scheduler/begin_frame_source_unittest.cc",
@@ -790,6 +805,7 @@ test("cc_unittests") {
     "scheduler/scheduler_state_machine_unittest.cc",
     "scheduler/scheduler_unittest.cc",
     "test/layer_tree_json_parser_unittest.cc",
+    "test/ordered_simple_task_runner_unittest.cc",
     "test/test_web_graphics_context_3d_unittest.cc",
     "tiles/picture_layer_tiling_set_unittest.cc",
     "tiles/picture_layer_tiling_unittest.cc",
@@ -824,15 +840,25 @@ test("cc_unittests") {
     "trees/tree_synchronizer_unittest.cc",
 
     # Surfaces test files.
+    "surfaces/display_scheduler_unittest.cc",
+    "surfaces/display_unittest.cc",
     "surfaces/surface_aggregator_test_helpers.cc",
     "surfaces/surface_aggregator_test_helpers.h",
     "surfaces/surface_aggregator_unittest.cc",
+    "surfaces/surface_display_output_surface_unittest.cc",
+    "surfaces/surface_factory_unittest.cc",
+    "surfaces/surface_hittest_unittest.cc",
     "surfaces/surface_unittest.cc",
     "surfaces/surfaces_pixeltest.cc",
 
     # Setup.
     "test/cc_test_suite.cc",
     "test/run_all_unittests.cc",
+  ]
+
+  configs += [ "//build/config:precompiled_headers" ]
+  data = [
+    "test/data/",
   ]
 
   deps = [
@@ -853,14 +879,16 @@ test("cc_unittests") {
     "//ui/gfx/geometry",
     "//ui/gfx:test_support",
     "//ui/gl",
+    "//ui/gl:test_support",
   ]
+
+  data_deps = [ "//third_party/mesa:osmesa" ]
 }
 
 test("cc_perftests") {
   sources = [
     "layers/layer_perftest.cc",
     "layers/picture_layer_impl_perftest.cc",
-    "playback/picture_pile_impl_perftest.cc",
     "quads/draw_quad_perftest.cc",
     "raster/task_graph_runner_perftest.cc",
     "raster/texture_compressor_perftest.cc",
@@ -893,6 +921,7 @@ test("cc_perftests") {
     "//ui/gfx",
     "//ui/gfx/geometry",
     "//ui/gl",
+    "//ui/gl:test_support",
   ]
 
   if (is_android) {

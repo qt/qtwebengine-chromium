@@ -11,6 +11,8 @@
 #ifndef WEBRTC_MODULES_AUDIO_CODING_CODECS_ISAC_FIX_INTERFACE_ISACFIX_H_
 #define WEBRTC_MODULES_AUDIO_CODING_CODECS_ISAC_FIX_INTERFACE_ISACFIX_H_
 
+#include <stddef.h>
+
 #include "webrtc/modules/audio_coding/codecs/isac/bandwidth_info.h"
 #include "webrtc/typedefs.h"
 
@@ -172,14 +174,9 @@ extern "C" {
    *
    * Input:
    *  - ISAC_main_inst : ISAC instance.
-   *
-   * Return value
-   *       :  0 - Ok
-   *         -1 - Error
    */
 
-  int16_t WebRtcIsacfix_DecoderInit(ISACFIX_MainStruct *ISAC_main_inst);
-
+  void WebRtcIsacfix_DecoderInit(ISACFIX_MainStruct* ISAC_main_inst);
 
   /****************************************************************************
    * WebRtcIsacfix_UpdateBwEstimate1(...)
@@ -189,7 +186,7 @@ extern "C" {
    * Input:
    *      - ISAC_main_inst    : ISAC instance.
    *      - encoded           : encoded ISAC frame(s).
-   *      - packet_size       : size of the packet.
+   *      - packet_size       : size of the packet in bytes.
    *      - rtp_seq_number    : the RTP number of the packet.
    *      - arr_ts            : the arrival time of the packet (from NetEq)
    *                            in samples.
@@ -200,7 +197,7 @@ extern "C" {
 
   int16_t WebRtcIsacfix_UpdateBwEstimate1(ISACFIX_MainStruct *ISAC_main_inst,
                                           const uint8_t* encoded,
-                                          int32_t  packet_size,
+                                          size_t packet_size,
                                           uint16_t rtp_seq_number,
                                           uint32_t arr_ts);
 
@@ -212,7 +209,7 @@ extern "C" {
    * Input:
    *      - ISAC_main_inst    : ISAC instance.
    *      - encoded           : encoded ISAC frame(s).
-   *      - packet_size       : size of the packet.
+   *      - packet_size       : size of the packet in bytes.
    *      - rtp_seq_number    : the RTP number of the packet.
    *      - send_ts           : the send time of the packet from RTP header,
    *                            in samples.
@@ -225,7 +222,7 @@ extern "C" {
 
   int16_t WebRtcIsacfix_UpdateBwEstimate(ISACFIX_MainStruct *ISAC_main_inst,
                                          const uint8_t* encoded,
-                                         int32_t packet_size,
+                                         size_t packet_size,
                                          uint16_t rtp_seq_number,
                                          uint32_t send_ts,
                                          uint32_t arr_ts);
@@ -251,7 +248,7 @@ extern "C" {
 
   int WebRtcIsacfix_Decode(ISACFIX_MainStruct *ISAC_main_inst,
                            const uint8_t* encoded,
-                           int16_t len,
+                           size_t len,
                            int16_t *decoded,
                            int16_t *speechType);
 
@@ -280,7 +277,7 @@ extern "C" {
 #ifdef WEBRTC_ISAC_FIX_NB_CALLS_ENABLED
   int WebRtcIsacfix_DecodeNb(ISACFIX_MainStruct *ISAC_main_inst,
                              const uint16_t *encoded,
-                             int16_t len,
+                             size_t len,
                              int16_t *decoded,
                              int16_t *speechType);
 #endif //  WEBRTC_ISAC_FIX_NB_CALLS_ENABLED
@@ -303,14 +300,13 @@ extern "C" {
    * Output:
    *      - decoded           : The decoded vector
    *
-   * Return value             : >0 - number of samples in decoded PLC vector
-   *                            -1 - Error
+   * Return value             : Number of samples in decoded PLC vector
    */
 
 #ifdef WEBRTC_ISAC_FIX_NB_CALLS_ENABLED
-  int16_t WebRtcIsacfix_DecodePlcNb(ISACFIX_MainStruct *ISAC_main_inst,
-                                    int16_t *decoded,
-                                    int16_t noOfLostFrames);
+  size_t WebRtcIsacfix_DecodePlcNb(ISACFIX_MainStruct *ISAC_main_inst,
+                                   int16_t *decoded,
+                                   size_t noOfLostFrames);
 #endif // WEBRTC_ISAC_FIX_NB_CALLS_ENABLED
 
 
@@ -332,13 +328,12 @@ extern "C" {
    * Output:
    *      - decoded           : The decoded vector
    *
-   * Return value             : >0 - number of samples in decoded PLC vector
-   *                            -1 - Error
+   * Return value             : Number of samples in decoded PLC vector
    */
 
-  int16_t WebRtcIsacfix_DecodePlc(ISACFIX_MainStruct *ISAC_main_inst,
-                                  int16_t *decoded,
-                                  int16_t noOfLostFrames );
+  size_t WebRtcIsacfix_DecodePlc(ISACFIX_MainStruct *ISAC_main_inst,
+                                 int16_t *decoded,
+                                 size_t noOfLostFrames );
 
 
   /****************************************************************************
@@ -356,8 +351,8 @@ extern "C" {
    */
 
   int16_t WebRtcIsacfix_ReadFrameLen(const uint8_t* encoded,
-                                     int encoded_len_bytes,
-                                     int16_t* frameLength);
+                                     size_t encoded_len_bytes,
+                                     size_t* frameLength);
 
   /****************************************************************************
    * WebRtcIsacfix_Control(...)
@@ -379,7 +374,8 @@ extern "C" {
                                 int16_t rate,
                                 int framesize);
 
-
+  void WebRtcIsacfix_SetInitialBweBottleneck(ISACFIX_MainStruct* ISAC_main_inst,
+                                             int bottleneck_bits_per_second);
 
   /****************************************************************************
    * WebRtcIsacfix_ControlBwe(...)
@@ -607,7 +603,7 @@ extern "C" {
    */
 
   int16_t WebRtcIsacfix_ReadBwIndex(const uint8_t* encoded,
-                                    int encoded_len_bytes,
+                                    size_t encoded_len_bytes,
                                     int16_t* rateIndex);
 
 

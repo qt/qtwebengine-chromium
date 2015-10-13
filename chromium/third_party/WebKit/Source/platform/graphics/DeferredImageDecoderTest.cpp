@@ -39,6 +39,8 @@
 #include "public/platform/Platform.h"
 #include "public/platform/WebThread.h"
 #include "public/platform/WebTraceLocation.h"
+#include "third_party/skia/include/core/SkImage.h"
+#include "third_party/skia/include/core/SkPixmap.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
 #include <gtest/gtest.h>
@@ -152,16 +154,14 @@ protected:
 TEST_F(DeferredImageDecoderTest, drawIntoSkPicture)
 {
     m_lazyDecoder->setData(*m_data, true);
-    SkBitmap bitmap;
-    EXPECT_TRUE(m_lazyDecoder->createFrameAtIndex(0, &bitmap));
-    EXPECT_EQ(1, bitmap.width());
-    EXPECT_EQ(1, bitmap.height());
-    EXPECT_FALSE(bitmap.isNull());
-    EXPECT_TRUE(bitmap.isImmutable());
+    RefPtr<SkImage> image = m_lazyDecoder->createFrameAtIndex(0);
+    ASSERT_TRUE(image);
+    EXPECT_EQ(1, image->width());
+    EXPECT_EQ(1, image->height());
 
     SkPictureRecorder recorder;
     SkCanvas* tempCanvas = recorder.beginRecording(100, 100, 0, 0);
-    tempCanvas->drawBitmap(bitmap, 0, 0);
+    tempCanvas->drawImage(image.get(), 0, 0);
     RefPtr<SkPicture> picture = adoptRef(recorder.endRecording());
     EXPECT_EQ(0, m_decodeRequestCount);
 
@@ -181,19 +181,20 @@ TEST_F(DeferredImageDecoderTest, drawIntoSkPictureProgressive)
 
     // Received only half the file.
     m_lazyDecoder->setData(*partialData, false);
-    SkBitmap bitmap;
-    EXPECT_TRUE(m_lazyDecoder->createFrameAtIndex(0, &bitmap));
+    RefPtr<SkImage> image = m_lazyDecoder->createFrameAtIndex(0);
+    ASSERT_TRUE(image);
     SkPictureRecorder recorder;
     SkCanvas* tempCanvas = recorder.beginRecording(100, 100, 0, 0);
-    tempCanvas->drawBitmap(bitmap, 0, 0);
+    tempCanvas->drawImage(image.get(), 0, 0);
     RefPtr<SkPicture> picture = adoptRef(recorder.endRecording());
     m_surface->getCanvas()->drawPicture(picture.get());
 
     // Fully received the file and draw the SkPicture again.
     m_lazyDecoder->setData(*m_data, true);
-    EXPECT_TRUE(m_lazyDecoder->createFrameAtIndex(0, &bitmap));
+    image = m_lazyDecoder->createFrameAtIndex(0);
+    ASSERT_TRUE(image);
     tempCanvas = recorder.beginRecording(100, 100, 0, 0);
-    tempCanvas->drawBitmap(bitmap, 0, 0);
+    tempCanvas->drawImage(image.get(), 0, 0);
     picture = adoptRef(recorder.endRecording());
     m_surface->getCanvas()->drawPicture(picture.get());
 
@@ -212,22 +213,20 @@ static void rasterizeMain(SkCanvas* canvas, SkPicture* picture)
 TEST_F(DeferredImageDecoderTest, decodeOnOtherThread)
 {
     m_lazyDecoder->setData(*m_data, true);
-    SkBitmap bitmap;
-    EXPECT_TRUE(m_lazyDecoder->createFrameAtIndex(0, &bitmap));
-    EXPECT_EQ(1, bitmap.width());
-    EXPECT_EQ(1, bitmap.height());
-    EXPECT_FALSE(bitmap.isNull());
-    EXPECT_TRUE(bitmap.isImmutable());
+    RefPtr<SkImage> image = m_lazyDecoder->createFrameAtIndex(0);
+    ASSERT_TRUE(image);
+    EXPECT_EQ(1, image->width());
+    EXPECT_EQ(1, image->height());
 
     SkPictureRecorder recorder;
     SkCanvas* tempCanvas = recorder.beginRecording(100, 100, 0, 0);
-    tempCanvas->drawBitmap(bitmap, 0, 0);
+    tempCanvas->drawImage(image.get(), 0, 0);
     RefPtr<SkPicture> picture = adoptRef(recorder.endRecording());
     EXPECT_EQ(0, m_decodeRequestCount);
 
     // Create a thread to rasterize SkPicture.
     OwnPtr<WebThread> thread = adoptPtr(Platform::current()->createThread("RasterThread"));
-    thread->postTask(FROM_HERE, new Task(threadSafeBind(&rasterizeMain, AllowCrossThreadAccess(m_surface->getCanvas()), AllowCrossThreadAccess(picture.get()))));
+    thread->taskRunner()->postTask(FROM_HERE, new Task(threadSafeBind(&rasterizeMain, AllowCrossThreadAccess(m_surface->getCanvas()), AllowCrossThreadAccess(picture.get()))));
     thread.clear();
     EXPECT_EQ(0, m_decodeRequestCount);
 
@@ -243,9 +242,9 @@ TEST_F(DeferredImageDecoderTest, singleFrameImageLoading)
     m_status = ImageFrame::FramePartial;
     m_lazyDecoder->setData(*m_data, false);
     EXPECT_FALSE(m_lazyDecoder->frameIsCompleteAtIndex(0));
-    SkBitmap bitmap;
-    EXPECT_TRUE(m_lazyDecoder->createFrameAtIndex(0, &bitmap));
-    unsigned firstId = bitmap.getGenerationID();
+    RefPtr<SkImage> image = m_lazyDecoder->createFrameAtIndex(0);
+    ASSERT_TRUE(image);
+    unsigned firstId = image->uniqueID();
     EXPECT_FALSE(m_lazyDecoder->frameIsCompleteAtIndex(0));
     EXPECT_TRUE(m_actualDecoder);
 
@@ -254,8 +253,10 @@ TEST_F(DeferredImageDecoderTest, singleFrameImageLoading)
     m_lazyDecoder->setData(*m_data, true);
     EXPECT_FALSE(m_actualDecoder);
     EXPECT_TRUE(m_lazyDecoder->frameIsCompleteAtIndex(0));
-    EXPECT_TRUE(m_lazyDecoder->createFrameAtIndex(0, &bitmap));
-    unsigned secondId = bitmap.getGenerationID();
+
+    image = m_lazyDecoder->createFrameAtIndex(0);
+    ASSERT_TRUE(image);
+    unsigned secondId = image->uniqueID();
     EXPECT_FALSE(m_decodeRequestCount);
     EXPECT_NE(firstId, secondId);
 }
@@ -267,9 +268,10 @@ TEST_F(DeferredImageDecoderTest, multiFrameImageLoading)
     m_frameDuration = 10;
     m_status = ImageFrame::FramePartial;
     m_lazyDecoder->setData(*m_data, false);
-    SkBitmap bitmap;
-    EXPECT_TRUE(m_lazyDecoder->createFrameAtIndex(0, &bitmap));
-    unsigned firstId = bitmap.getGenerationID();
+
+    RefPtr<SkImage> image = m_lazyDecoder->createFrameAtIndex(0);
+    ASSERT_TRUE(image);
+    unsigned firstId = image->uniqueID();
     EXPECT_FALSE(m_lazyDecoder->frameIsCompleteAtIndex(0));
     EXPECT_EQ(10.0f, m_lazyDecoder->frameDurationAtIndex(0));
 
@@ -278,8 +280,10 @@ TEST_F(DeferredImageDecoderTest, multiFrameImageLoading)
     m_status = ImageFrame::FrameComplete;
     m_data->append(" ", 1);
     m_lazyDecoder->setData(*m_data, false);
-    EXPECT_TRUE(m_lazyDecoder->createFrameAtIndex(0, &bitmap));
-    unsigned secondId = bitmap.getGenerationID();
+
+    image = m_lazyDecoder->createFrameAtIndex(0);
+    ASSERT_TRUE(image);
+    unsigned secondId = image->uniqueID();
     EXPECT_NE(firstId, secondId);
     EXPECT_TRUE(m_lazyDecoder->frameIsCompleteAtIndex(0));
     EXPECT_TRUE(m_lazyDecoder->frameIsCompleteAtIndex(1));
@@ -304,19 +308,17 @@ TEST_F(DeferredImageDecoderTest, decodedSize)
 {
     m_decodedSize = IntSize(22, 33);
     m_lazyDecoder->setData(*m_data, true);
-    SkBitmap bitmap;
-    EXPECT_TRUE(m_lazyDecoder->createFrameAtIndex(0, &bitmap));
-    EXPECT_EQ(m_decodedSize.width(), bitmap.width());
-    EXPECT_EQ(m_decodedSize.height(), bitmap.height());
-    EXPECT_FALSE(bitmap.isNull());
-    EXPECT_TRUE(bitmap.isImmutable());
+    RefPtr<SkImage> image = m_lazyDecoder->createFrameAtIndex(0);
+    ASSERT_TRUE(image);
+    EXPECT_EQ(m_decodedSize.width(), image->width());
+    EXPECT_EQ(m_decodedSize.height(), image->height());
 
     useMockImageDecoderFactory();
 
     // The following code should not fail any assert.
     SkPictureRecorder recorder;
     SkCanvas* tempCanvas = recorder.beginRecording(100, 100, 0, 0);
-    tempCanvas->drawBitmap(bitmap, 0, 0);
+    tempCanvas->drawImage(image.get(), 0, 0);
     RefPtr<SkPicture> picture = adoptRef(recorder.endRecording());
     EXPECT_EQ(0, m_decodeRequestCount);
     m_surface->getCanvas()->drawPicture(picture.get());
@@ -334,6 +336,34 @@ TEST_F(DeferredImageDecoderTest, smallerFrameCount)
     m_frameCount = 0;
     m_lazyDecoder->setData(*m_data, true);
     EXPECT_EQ(m_frameCount, m_lazyDecoder->frameCount());
+}
+
+TEST_F(DeferredImageDecoderTest, frameOpacity)
+{
+    OwnPtr<ImageDecoder> actualDecoder = ImageDecoder::create(*m_data,
+        ImageDecoder::AlphaPremultiplied, ImageDecoder::GammaAndColorProfileApplied);
+    OwnPtr<DeferredImageDecoder> decoder = DeferredImageDecoder::createForTesting(actualDecoder.release());
+    decoder->setData(*m_data, true);
+
+    SkImageInfo pixInfo = SkImageInfo::MakeN32Premul(1, 1);
+    SkAutoPixmapStorage pixels;
+    pixels.alloc(pixInfo);
+
+    // Before decoding, the frame is not known to be opaque.
+    RefPtr<SkImage> frame = decoder->createFrameAtIndex(0);
+    ASSERT_TRUE(frame);
+    EXPECT_FALSE(frame->isOpaque());
+
+    // Force a lazy decode by reading pixels.
+    EXPECT_TRUE(frame->readPixels(pixels, 0, 0));
+
+    // After decoding, the frame is known to be opaque.
+    frame = decoder->createFrameAtIndex(0);
+    ASSERT_TRUE(frame);
+    EXPECT_TRUE(frame->isOpaque());
+
+    // Re-generating the opaque-marked frame should not fail.
+    EXPECT_TRUE(frame->readPixels(pixels, 0, 0));
 }
 
 } // namespace blink

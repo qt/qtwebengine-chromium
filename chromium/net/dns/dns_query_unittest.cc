@@ -4,8 +4,6 @@
 
 #include "net/dns/dns_query.h"
 
-#include "base/bind.h"
-#include "net/base/dns_util.h"
 #include "net/base/io_buffer.h"
 #include "net/dns/dns_protocol.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -57,7 +55,7 @@ TEST(DnsQueryTest, Clone) {
 
   DnsQuery q1(0, qname, dns_protocol::kTypeA);
   EXPECT_EQ(0, q1.id());
-  scoped_ptr<DnsQuery> q2(q1.CloneWithNewId(42));
+  scoped_ptr<DnsQuery> q2 = q1.CloneWithNewId(42);
   EXPECT_EQ(42, q2->id());
   EXPECT_EQ(q1.io_buffer()->size(), q2->io_buffer()->size());
   EXPECT_EQ(q1.qtype(), q2->qtype());

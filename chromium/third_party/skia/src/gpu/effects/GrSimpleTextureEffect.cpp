@@ -9,7 +9,7 @@
 #include "GrInvariantOutput.h"
 #include "GrTexture.h"
 #include "gl/GrGLCaps.h"
-#include "gl/GrGLProcessor.h"
+#include "gl/GrGLFragmentProcessor.h"
 #include "gl/GrGLTexture.h"
 #include "gl/builders/GrGLProgramBuilder.h"
 
@@ -17,18 +17,13 @@ class GrGLSimpleTextureEffect : public GrGLFragmentProcessor {
 public:
     GrGLSimpleTextureEffect(const GrProcessor&) {}
 
-    virtual void emitCode(GrGLFPBuilder* builder,
-                          const GrFragmentProcessor& fp,
-                          const char* outputColor,
-                          const char* inputColor,
-                          const TransformedCoordsArray& coords,
-                          const TextureSamplerArray& samplers) override {
-        GrGLFragmentBuilder* fsBuilder = builder->getFragmentShaderBuilder();
-        fsBuilder->codeAppendf("\t%s = ", outputColor);
-        fsBuilder->appendTextureLookupAndModulate(inputColor,
-                                                  samplers[0],
-                                                  coords[0].c_str(),
-                                                  coords[0].getType());
+    virtual void emitCode(EmitArgs& args) override {
+        GrGLFragmentBuilder* fsBuilder = args.fBuilder->getFragmentShaderBuilder();
+        fsBuilder->codeAppendf("\t%s = ", args.fOutputColor);
+        fsBuilder->appendTextureLookupAndModulate(args.fInputColor,
+                                                  args.fSamplers[0],
+                                                  args.fCoords[0].c_str(),
+                                                  args.fCoords[0].getType());
         fsBuilder->codeAppend(";\n");
     }
 
@@ -42,20 +37,20 @@ void GrSimpleTextureEffect::onComputeInvariantOutput(GrInvariantOutput* inout) c
     this->updateInvariantOutputForModulation(inout);
 }
 
-void GrSimpleTextureEffect::getGLProcessorKey(const GrGLSLCaps& caps,
+void GrSimpleTextureEffect::onGetGLProcessorKey(const GrGLSLCaps& caps,
                                               GrProcessorKeyBuilder* b) const {
     GrGLSimpleTextureEffect::GenKey(*this, caps, b);
 }
 
-GrGLFragmentProcessor* GrSimpleTextureEffect::createGLInstance() const  {
-    return SkNEW_ARGS(GrGLSimpleTextureEffect, (*this));
+GrGLFragmentProcessor* GrSimpleTextureEffect::onCreateGLInstance() const  {
+    return new GrGLSimpleTextureEffect(*this);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 
 GR_DEFINE_FRAGMENT_PROCESSOR_TEST(GrSimpleTextureEffect);
 
-GrFragmentProcessor* GrSimpleTextureEffect::TestCreate(GrProcessorTestData* d) {
+const GrFragmentProcessor* GrSimpleTextureEffect::TestCreate(GrProcessorTestData* d) {
     int texIdx = d->fRandom->nextBool() ? GrProcessorUnitTest::kSkiaPMTextureIdx :
                                           GrProcessorUnitTest::kAlphaTextureIdx;
     static const SkShader::TileMode kTileModes[] = {

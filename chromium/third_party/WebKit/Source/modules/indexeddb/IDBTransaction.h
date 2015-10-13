@@ -99,12 +99,13 @@ public:
     const AtomicString& interfaceName() const override;
     ExecutionContext* executionContext() const override;
 
-    using EventTarget::dispatchEvent;
-    bool dispatchEvent(PassRefPtrWillBeRawPtr<Event>) override;
-
     // ActiveDOMObject
     bool hasPendingActivity() const override;
     void stop() override;
+
+protected:
+    // EventTarget
+    bool dispatchEventInternal(PassRefPtrWillBeRawPtr<Event>) override;
 
 private:
     IDBTransaction(ScriptState*, int64_t, const HashSet<String>&, WebIDBTransactionMode, IDBDatabase*, IDBOpenDBRequest*, const IDBDatabaseMetadata&);
@@ -118,14 +119,14 @@ private:
         Finished, // No more events will fire and no new requests may be filed.
     };
 
-    int64_t m_id;
+    const int64_t m_id;
     Member<IDBDatabase> m_database;
     const HashSet<String> m_objectStoreNames;
     Member<IDBOpenDBRequest> m_openDBRequest;
     const WebIDBTransactionMode m_mode;
-    State m_state;
-    bool m_hasPendingActivity;
-    bool m_contextStopped;
+    State m_state = Active;
+    bool m_hasPendingActivity = true;
+    bool m_contextStopped = false;
     Member<DOMError> m_error;
 
     HeapListHashSet<Member<IDBRequest>> m_requestList;
@@ -133,11 +134,8 @@ private:
     typedef HeapHashMap<String, Member<IDBObjectStore>> IDBObjectStoreMap;
     IDBObjectStoreMap m_objectStoreMap;
 
-    typedef HeapHashSet<Member<IDBObjectStore>> IDBObjectStoreSet;
-    IDBObjectStoreSet m_deletedObjectStores;
-
-    typedef HeapHashMap<Member<IDBObjectStore>, IDBObjectStoreMetadata> IDBObjectStoreMetadataMap;
-    IDBObjectStoreMetadataMap m_objectStoreCleanupMap;
+    HeapHashSet<Member<IDBObjectStore>> m_deletedObjectStores;
+    HeapHashMap<Member<IDBObjectStore>, IDBObjectStoreMetadata> m_objectStoreCleanupMap;
     IDBDatabaseMetadata m_previousMetadata;
 };
 

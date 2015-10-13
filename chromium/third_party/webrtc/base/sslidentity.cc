@@ -27,16 +27,17 @@
 
 #include "webrtc/base/opensslidentity.h"
 
-#elif SSL_USE_NSS  // !SSL_USE_SCHANNEL && !SSL_USE_OPENSSL
-
-#include "webrtc/base/nssidentity.h"
-
 #endif  // SSL_USE_SCHANNEL
 
 namespace rtc {
 
 const char kPemTypeCertificate[] = "CERTIFICATE";
 const char kPemTypeRsaPrivateKey[] = "RSA PRIVATE KEY";
+const char kPemTypeEcPrivateKey[] = "EC PRIVATE KEY";
+
+KeyType IntKeyTypeFamilyToKeyType(int key_type_family) {
+  return static_cast<KeyType>(key_type_family);
+}
 
 bool SSLIdentity::PemToDer(const std::string& pem_type,
                            const std::string& pem_string,
@@ -108,7 +109,8 @@ SSLCertificate* SSLCertificate::FromPEMString(const std::string& pem_string) {
   return NULL;
 }
 
-SSLIdentity* SSLIdentity::Generate(const std::string& common_name) {
+SSLIdentity* SSLIdentity::Generate(const std::string& common_name,
+                                   KeyType key_type) {
   return NULL;
 }
 
@@ -127,8 +129,9 @@ SSLCertificate* SSLCertificate::FromPEMString(const std::string& pem_string) {
   return OpenSSLCertificate::FromPEMString(pem_string);
 }
 
-SSLIdentity* SSLIdentity::Generate(const std::string& common_name) {
-  return OpenSSLIdentity::Generate(common_name);
+SSLIdentity* SSLIdentity::Generate(const std::string& common_name,
+                                   KeyType key_type) {
+  return OpenSSLIdentity::Generate(common_name, key_type);
 }
 
 SSLIdentity* SSLIdentity::GenerateForTest(const SSLIdentityParams& params) {
@@ -140,26 +143,7 @@ SSLIdentity* SSLIdentity::FromPEMStrings(const std::string& private_key,
   return OpenSSLIdentity::FromPEMStrings(private_key, certificate);
 }
 
-#elif SSL_USE_NSS  // !SSL_USE_OPENSSL && !SSL_USE_SCHANNEL
-
-SSLCertificate* SSLCertificate::FromPEMString(const std::string& pem_string) {
-  return NSSCertificate::FromPEMString(pem_string);
-}
-
-SSLIdentity* SSLIdentity::Generate(const std::string& common_name) {
-  return NSSIdentity::Generate(common_name);
-}
-
-SSLIdentity* SSLIdentity::GenerateForTest(const SSLIdentityParams& params) {
-  return NSSIdentity::GenerateForTest(params);
-}
-
-SSLIdentity* SSLIdentity::FromPEMStrings(const std::string& private_key,
-                                         const std::string& certificate) {
-  return NSSIdentity::FromPEMStrings(private_key, certificate);
-}
-
-#else  // !SSL_USE_OPENSSL && !SSL_USE_SCHANNEL && !SSL_USE_NSS
+#else  // !SSL_USE_OPENSSL && !SSL_USE_SCHANNEL
 
 #error "No SSL implementation"
 

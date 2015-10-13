@@ -44,7 +44,9 @@ WebInspector.FlameChartDelegate.prototype = {
      * @param {number} startTime
      * @param {number} endTime
      */
-    updateRangeSelection: function(startTime, endTime) { }
+    updateRangeSelection: function(startTime, endTime) { },
+
+    endRangeSelection: function() { }
 }
 
 /**
@@ -104,6 +106,8 @@ WebInspector.FlameChart = function(dataProvider, flameChartDelegate, isTopDown)
     this._selectedEntryIndex = -1;
     this._rawTimelineDataLength = 0;
     this._textWidth = {};
+
+    this._lastMouseOffsetX = 0;
 }
 
 WebInspector.FlameChart.DividersBarHeight = 18;
@@ -171,7 +175,7 @@ WebInspector.FlameChartDataProvider.prototype = {
 
     /**
      * @param {number} entryIndex
-     * @return {?Array.<!{title: string, text: string}>}
+     * @return {?Array.<!{title: string, value: (string|!Element)}>}
      */
     prepareHighlightedEntryInfo: function(entryIndex) { },
 
@@ -636,6 +640,7 @@ WebInspector.FlameChart.prototype = {
     _endRangeSelection: function()
     {
         this._isDragging = false;
+        this._flameChartDelegate.endRangeSelection();
     },
 
     _hideRangeSelection: function()
@@ -1120,8 +1125,8 @@ WebInspector.FlameChart.prototype = {
                 var entryIndex = indexes[i];
                 var entryStartTime = entryStartTimes[entryIndex];
                 var barX = this._timeToPositionClipped(entryStartTime);
-                var barRight = this._timeToPositionClipped(entryStartTime + entryTotalTimes[entryIndex]) + 1;
-                var barWidth = barRight - barX;
+                var barRight = this._timeToPositionClipped(entryStartTime + entryTotalTimes[entryIndex]);
+                var barWidth = Math.max(barRight - barX, 1);
                 var barLevel = entryLevels[entryIndex];
                 var barY = this._levelToHeight(barLevel);
                 if (isNaN(entryTotalTimes[entryIndex])) {
@@ -1129,7 +1134,7 @@ WebInspector.FlameChart.prototype = {
                     context.arc(barX, barY + barHeight / 2, this._markerRadius, 0, Math.PI * 2);
                     markerIndices[nextMarkerIndex++] = entryIndex;
                 } else {
-                    context.rect(barX, barY, barWidth, barHeight - 1);
+                    context.rect(barX, barY, barWidth - 0.4, barHeight - 1);
                     if (barWidth > minTextWidth || this._dataProvider.forceDecoration(entryIndex))
                         titleIndices[nextTitleIndex++] = entryIndex;
                 }
@@ -1312,6 +1317,8 @@ WebInspector.FlameChart.prototype = {
      */
     setSelectedEntry: function(entryIndex)
     {
+        if (entryIndex === -1 && !this._isDragging)
+            this._hideRangeSelection();
         if (this._selectedEntryIndex === entryIndex)
             return;
         this._selectedEntryIndex = entryIndex;
@@ -1346,7 +1353,7 @@ WebInspector.FlameChart.prototype = {
         var style = element.style;
         style.left = barX + "px";
         style.top = barY + "px";
-        style.width = barWidth + 1 + "px";
+        style.width = barWidth + "px";
         style.height = this._barHeight - 1 + "px";
         this.contentElement.appendChild(element);
     },
@@ -1357,7 +1364,7 @@ WebInspector.FlameChart.prototype = {
      */
     _timeToPositionClipped: function(time)
     {
-        return Math.max(0, this._timeToPosition(time));
+        return Number.constrain(this._timeToPosition(time), 0, this._canvas.width);
     },
 
     /**
@@ -1379,16 +1386,16 @@ WebInspector.FlameChart.prototype = {
     },
 
     /**
-     * @param {!Array.<!{title: string, text: string}>} entryInfo
+     * @param {!Array<!{title: string, value: (string|!Element)}>} entryInfo
      * @return {!Element}
      */
     _buildEntryInfo: function(entryInfo)
     {
         var infoTable = createElementWithClass("table", "info-table");
-        for (var i = 0; i < entryInfo.length; ++i) {
+        for (var entry of entryInfo) {
             var row = infoTable.createChild("tr");
-            row.createChild("td", "title").textContent = entryInfo[i].title;
-            row.createChild("td").textContent = entryInfo[i].text;
+            row.createChild("td", "title").textContent = entry.title;
+            row.createChild("td").textContent = typeof entry.value === "string" ? entry.value : entry.value.textContent;
         }
         return infoTable;
     },

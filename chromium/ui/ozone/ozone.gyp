@@ -104,10 +104,15 @@
         'common/gpu/ozone_gpu_messages.h',
         'common/native_display_delegate_ozone.cc',
         'common/native_display_delegate_ozone.h',
+        'common/stub_client_native_pixmap_factory.cc',
+        'common/stub_client_native_pixmap_factory.h',
         'common/stub_overlay_manager.cc',
         'common/stub_overlay_manager.h',
         'platform_selection.cc',
         'platform_selection.h',
+        'public/client_native_pixmap.h',
+        'public/client_native_pixmap_factory.cc',
+        'public/client_native_pixmap_factory.h',
         'public/input_controller.cc',
         'public/input_controller.h',
         'public/ozone_gpu_test_helper.cc',
@@ -163,7 +168,9 @@
             '--output_cc=<(constructor_list_cc_file)',
             '--namespace=ui',
             '--typename=OzonePlatform',
-            '--include="ui/ozone/public/ozone_platform.h"'
+            '--typename=ClientNativePixmapFactory',
+            '--include="ui/ozone/public/ozone_platform.h"',
+            '--include="ui/ozone/public/client_native_pixmap_factory.h"'
           ],
         },
       ],
@@ -201,11 +208,6 @@
     ['<(ozone_platform_cast) == 1', {
       'includes': [
         'platform/cast/cast.gypi',
-      ],
-    }],
-    ['<(ozone_platform_dri) == 1 or <(ozone_platform_drm) == 1 or <(ozone_platform_gbm) == 1', {
-      'includes': [
-        'platform/drm/drm.gypi',
       ],
     }],
     ['<(ozone_platform_egltest) == 1', {

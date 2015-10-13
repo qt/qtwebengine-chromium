@@ -110,8 +110,7 @@ MULTIPROCESS_IPC_TEST_CLIENT_MAIN(SyncSocketServerClient) {
   base::MessageLoopForIO main_message_loop;
   SyncSocketServerListener listener;
   scoped_ptr<IPC::Channel> channel(IPC::Channel::CreateClient(
-      IPCTestBase::GetChannelName("SyncSocketServerClient"), &listener,
-      nullptr));
+      IPCTestBase::GetChannelName("SyncSocketServerClient"), &listener));
   EXPECT_TRUE(channel->Connect());
   listener.Init(channel.get());
   base::MessageLoop::current()->Run();
@@ -166,7 +165,12 @@ class SyncSocketClientListener : public IPC::Listener {
 class SyncSocketTest : public IPCTestBase {
 };
 
-TEST_F(SyncSocketTest, SanityTest) {
+#if defined(OS_ANDROID)
+#define MAYBE_SanityTest DISABLED_SanityTest
+#else
+#define MAYBE_SanityTest SanityTest
+#endif
+TEST_F(SyncSocketTest, MAYBE_SanityTest) {
   Init("SyncSocketServerClient");
 
   SyncSocketClientListener listener;
@@ -248,8 +252,13 @@ TEST_F(SyncSocketTest, DisconnectTest) {
   EXPECT_EQ(0U, received);
 }
 
+#if defined(OS_ANDROID)
+#define MAYBE_BlockingReceiveTest DISABLED_BlockingReceiveTest
+#else
+#define MAYBE_BlockingReceiveTest BlockingReceiveTest
+#endif
 // Tests that read is a blocking operation.
-TEST_F(SyncSocketTest, BlockingReceiveTest) {
+TEST_F(SyncSocketTest, MAYBE_BlockingReceiveTest) {
   base::CancelableSyncSocket pair[2];
   ASSERT_TRUE(base::CancelableSyncSocket::CreatePair(&pair[0], &pair[1]));
 

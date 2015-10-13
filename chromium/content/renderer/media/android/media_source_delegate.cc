@@ -15,6 +15,7 @@
 #include "media/base/bind_to_current_loop.h"
 #include "media/base/demuxer_stream.h"
 #include "media/base/media_log.h"
+#include "media/base/timestamp_constants.h"
 #include "media/blink/webmediaplayer_util.h"
 #include "media/blink/webmediasource_impl.h"
 #include "media/filters/chunk_demuxer.h"
@@ -165,8 +166,7 @@ void MediaSourceDelegate::InitializeMediaSource(
           base::Bind(&MediaSourceDelegate::OnDemuxerOpened, main_weak_this_)),
       media::BindToCurrentLoop(base::Bind(
           &MediaSourceDelegate::OnEncryptedMediaInitData, main_weak_this_)),
-      base::Bind(&media::MediaLog::AddLogEvent, media_log_), media_log_,
-      false));
+      media_log_, false));
 
   // |this| will be retained until StopDemuxer() is posted, so Unretained() is
   // safe here.
@@ -656,7 +656,7 @@ base::TimeDelta MediaSourceDelegate::GetDuration() const {
   if (duration == std::numeric_limits<double>::infinity())
     return media::kInfiniteDuration();
 
-  return media::ConvertSecondsToTimestamp(duration);
+  return base::TimeDelta::FromSecondsD(duration);
 }
 
 void MediaSourceDelegate::OnDemuxerOpened() {
@@ -664,9 +664,8 @@ void MediaSourceDelegate::OnDemuxerOpened() {
   if (media_source_opened_cb_.is_null())
     return;
 
-  media_source_opened_cb_.Run(new media::WebMediaSourceImpl(
-      chunk_demuxer_.get(),
-      base::Bind(&media::MediaLog::AddLogEvent, media_log_)));
+  media_source_opened_cb_.Run(
+      new media::WebMediaSourceImpl(chunk_demuxer_.get(), media_log_));
 }
 
 void MediaSourceDelegate::OnEncryptedMediaInitData(

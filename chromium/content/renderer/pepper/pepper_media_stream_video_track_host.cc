@@ -18,11 +18,6 @@
 #include "ppapi/host/host_message_context.h"
 #include "ppapi/proxy/ppapi_messages.h"
 #include "ppapi/shared_impl/media_stream_buffer.h"
-
-// IS_ALIGNED is also defined in
-// third_party/webrtc/overrides/webrtc/base/basictypes.h
-// TODO(ronghuawu): Avoid undef.
-#undef IS_ALIGNED
 #include "third_party/libyuv/include/libyuv.h"
 
 using media::VideoFrame;
@@ -53,11 +48,11 @@ media::VideoPixelFormat ToPixelFormat(PP_VideoFrame_Format format) {
   }
 }
 
-PP_VideoFrame_Format ToPpapiFormat(VideoFrame::Format format) {
+PP_VideoFrame_Format ToPpapiFormat(media::VideoPixelFormat format) {
   switch (format) {
-    case VideoFrame::YV12:
+    case media::PIXEL_FORMAT_YV12:
       return PP_VIDEOFRAME_FORMAT_YV12;
-    case VideoFrame::I420:
+    case media::PIXEL_FORMAT_I420:
       return PP_VIDEOFRAME_FORMAT_I420;
     default:
       DVLOG(1) << "Unsupported pixel format " << format;
@@ -65,15 +60,15 @@ PP_VideoFrame_Format ToPpapiFormat(VideoFrame::Format format) {
   }
 }
 
-VideoFrame::Format FromPpapiFormat(PP_VideoFrame_Format format) {
+media::VideoPixelFormat FromPpapiFormat(PP_VideoFrame_Format format) {
   switch (format) {
     case PP_VIDEOFRAME_FORMAT_YV12:
-      return VideoFrame::YV12;
+      return media::PIXEL_FORMAT_YV12;
     case PP_VIDEOFRAME_FORMAT_I420:
-      return VideoFrame::I420;
+      return media::PIXEL_FORMAT_I420;
     default:
       DVLOG(1) << "Unsupported pixel format " << format;
-      return VideoFrame::UNKNOWN;
+      return media::PIXEL_FORMAT_UNKNOWN;
   }
 }
 
@@ -95,7 +90,8 @@ void ConvertFromMediaVideoFrame(const scoped_refptr<media::VideoFrame>& src,
                                 PP_VideoFrame_Format dst_format,
                                 const gfx::Size& dst_size,
                                 uint8_t* dst) {
-  CHECK(src->format() == VideoFrame::YV12 || src->format() == VideoFrame::I420);
+  CHECK(src->format() == media::PIXEL_FORMAT_YV12 ||
+        src->format() == media::PIXEL_FORMAT_I420);
   if (dst_format == PP_VIDEOFRAME_FORMAT_BGRA) {
     if (src->visible_rect().size() == dst_size) {
       libyuv::I420ToARGB(src->visible_data(VideoFrame::kYPlane),
@@ -370,7 +366,7 @@ int32_t PepperMediaStreamVideoTrackHost::SendFrameToTrack(int32_t index) {
 
 void PepperMediaStreamVideoTrackHost::OnVideoFrame(
     const scoped_refptr<VideoFrame>& frame,
-    const base::TimeTicks& estimated_capture_time) {
+    base::TimeTicks estimated_capture_time) {
   DCHECK(frame.get());
   // TODO(penghuang): Check |frame->end_of_stream()| and close the track.
   PP_VideoFrame_Format ppformat = ToPpapiFormat(frame->format());

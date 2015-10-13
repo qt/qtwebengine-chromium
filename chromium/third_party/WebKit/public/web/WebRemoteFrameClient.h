@@ -34,7 +34,7 @@ public:
     // out of process.
     virtual void initializeChildFrame(
         const WebRect& frameRect,
-        float scaleFactor) { }
+        float deviceScaleFactor) { }
 
     // A remote frame was asked to start a navigation.
     virtual void navigate(const WebURLRequest& request, bool shouldReplaceCurrentEntry) { }
@@ -43,6 +43,11 @@ public:
     // FIXME: Remove this method once we have input routing in the browser
     // process. See http://crbug.com/339659.
     virtual void forwardInputEvent(const WebInputEvent*) { }
+
+    virtual void frameRectsChanged(const WebRect&) { }
+
+    // This frame updated its opener to another frame.
+    virtual void didChangeOpener(WebFrame* opener) { }
 };
 
 } // namespace blink

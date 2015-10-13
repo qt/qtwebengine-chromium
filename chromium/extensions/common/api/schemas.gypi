@@ -16,7 +16,6 @@
       'app_window.idl',
       'audio.idl',
       'bluetooth.idl',
-      'bluetooth_low_energy.idl',
       'bluetooth_private.json',
       'bluetooth_socket.idl',
       'cast_channel.idl',
@@ -45,7 +44,6 @@
       'sockets_tcp_server.idl',
       'sockets_udp.idl',
       'storage.json',
-      'surface_worker_internal.json',
       'system_cpu.idl',
       'system_display.idl',
       'system_memory.idl',
@@ -75,7 +73,8 @@
       }]
     ],
     'cc_dir': 'extensions/common/api',
-    'root_namespace': 'extensions::core_api::%(namespace)s',
+    'root_namespace': 'extensions::api::%(namespace)s',
+    'bundle_name': '',
     'impl_dir_': 'extensions/browser/api',
   },
 }

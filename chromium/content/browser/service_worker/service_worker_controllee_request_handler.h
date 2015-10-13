@@ -11,7 +11,7 @@
 #include "content/public/common/request_context_frame_type.h"
 #include "content/public/common/request_context_type.h"
 #include "content/public/common/resource_type.h"
-#include "third_party/WebKit/public/platform/WebServiceWorkerResponseType.h"
+#include "third_party/WebKit/public/platform/modules/serviceworker/WebServiceWorkerResponseType.h"
 #include "url/gurl.h"
 
 namespace net {
@@ -37,6 +37,7 @@ class CONTENT_EXPORT ServiceWorkerControlleeRequestHandler
       base::WeakPtr<storage::BlobStorageContext> blob_storage_context,
       FetchRequestMode request_mode,
       FetchCredentialsMode credentials_mode,
+      FetchRedirectMode redirect_mode,
       ResourceType resource_type,
       RequestContextType request_context_type,
       RequestContextFrameType frame_type,
@@ -65,6 +66,15 @@ class CONTENT_EXPORT ServiceWorkerControlleeRequestHandler
       ServiceWorkerRegistration* registration,
       ServiceWorkerVersion* version);
 
+  void DidUpdateRegistration(
+      const scoped_refptr<ServiceWorkerRegistration>& original_registration,
+      ServiceWorkerStatusCode status,
+      const std::string& status_message,
+      int64 registration_id);
+  void OnUpdatedVersionStatusChanged(
+      const scoped_refptr<ServiceWorkerRegistration>& registration,
+      const scoped_refptr<ServiceWorkerVersion>& version);
+
   // For sub resource case.
   void PrepareForSubResource();
 
@@ -74,6 +84,7 @@ class CONTENT_EXPORT ServiceWorkerControlleeRequestHandler
   scoped_refptr<ServiceWorkerURLRequestJob> job_;
   FetchRequestMode request_mode_;
   FetchCredentialsMode credentials_mode_;
+  FetchRedirectMode redirect_mode_;
   RequestContextType request_context_type_;
   RequestContextFrameType frame_type_;
   scoped_refptr<ResourceRequestBody> body_;
@@ -82,6 +93,7 @@ class CONTENT_EXPORT ServiceWorkerControlleeRequestHandler
   base::TimeTicks worker_start_time_;
   base::TimeTicks worker_ready_time_;
   bool skip_service_worker_;
+  bool force_update_started_;
   base::WeakPtrFactory<ServiceWorkerControlleeRequestHandler> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(ServiceWorkerControlleeRequestHandler);

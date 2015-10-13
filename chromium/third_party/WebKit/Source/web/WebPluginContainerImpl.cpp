@@ -39,6 +39,7 @@
 #include "core/HTMLNames.h"
 #include "core/clipboard/DataObject.h"
 #include "core/clipboard/DataTransfer.h"
+#include "core/events/DragEvent.h"
 #include "core/events/GestureEvent.h"
 #include "core/events/KeyboardEvent.h"
 #include "core/events/MouseEvent.h"
@@ -47,6 +48,7 @@
 #include "core/frame/EventHandlerRegistry.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
+#include "core/frame/csp/ContentSecurityPolicy.h"
 #include "core/html/HTMLFormElement.h"
 #include "core/html/HTMLPlugInElement.h"
 #include "core/input/EventHandler.h"
@@ -57,8 +59,8 @@
 #include "core/page/FocusController.h"
 #include "core/page/Page.h"
 #include "core/page/scrolling/ScrollingCoordinator.h"
-#include "core/paint/DeprecatedPaintLayer.h"
 #include "core/paint/LayoutObjectDrawingRecorder.h"
+#include "core/paint/PaintLayer.h"
 #include "modules/plugins/PluginOcclusionSupport.h"
 #include "platform/HostWindow.h"
 #include "platform/KeyboardCodes.h"
@@ -108,7 +110,7 @@ void WebPluginContainerImpl::layoutIfNeeded()
     m_webPlugin->layoutIfNeeded();
 }
 
-void WebPluginContainerImpl::paint(GraphicsContext* context, const IntRect& rect)
+void WebPluginContainerImpl::paint(GraphicsContext* context, const IntRect& rect) const
 {
     if (!parent())
         return;
@@ -117,10 +119,10 @@ void WebPluginContainerImpl::paint(GraphicsContext* context, const IntRect& rect
     if (!frameRect().intersects(rect))
         return;
 
-    if (LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(*context, *m_element->layoutObject(), DisplayItem::Type::WebPlugin))
+    if (LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(*context, *m_element->layoutObject(), DisplayItem::Type::WebPlugin, LayoutPoint()))
         return;
 
-    LayoutObjectDrawingRecorder drawingRecorder(*context, *m_element->layoutObject(), DisplayItem::Type::WebPlugin, rect);
+    LayoutObjectDrawingRecorder drawingRecorder(*context, *m_element->layoutObject(), DisplayItem::Type::WebPlugin, rect, LayoutPoint());
     context->save();
 
     ASSERT(parent()->isFrameView());
@@ -200,6 +202,8 @@ void WebPluginContainerImpl::handleEvent(Event* event)
         handleTouchEvent(toTouchEvent(event));
     else if (event->isGestureEvent())
         handleGestureEvent(toGestureEvent(event));
+    else if (event->isDragEvent() && m_webPlugin->canProcessDrag())
+        handleDragEvent(toDragEvent(event));
 
     // FIXME: it would be cleaner if Widget::handleEvent returned true/false and
     // HTMLPluginElement called setDefaultHandled or defaultEventHandler.
@@ -241,7 +245,8 @@ void WebPluginContainerImpl::setParentVisible(bool parentVisible)
     if (!isSelfVisible())
         return;  // This widget has explicitely been marked as not visible.
 
-    m_webPlugin->updateVisibility(isVisible());
+    if (m_webPlugin)
+        m_webPlugin->updateVisibility(isVisible());
 }
 
 void WebPluginContainerImpl::setParent(Widget* widget)
@@ -315,12 +320,6 @@ void WebPluginContainerImpl::setWebLayer(WebLayer* layer)
 #endif
 
     m_element->setNeedsCompositingUpdate();
-    // Being composited or not affects the self painting layer bit
-    // on the DeprecatedPaintLayer.
-    if (LayoutPart* layoutObject = m_element->layoutPart()) {
-        ASSERT(layoutObject->hasLayer());
-        layoutObject->layer()->updateSelfPaintingLayer();
-    }
 }
 
 bool WebPluginContainerImpl::supportsPaginatedPrint() const
@@ -345,10 +344,10 @@ int WebPluginContainerImpl::printBegin(const WebPrintParams& printParams) const
 
 void WebPluginContainerImpl::printPage(int pageNumber, GraphicsContext* gc, const IntRect& printRect)
 {
-    if (LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(*gc, *m_element->layoutObject(), DisplayItem::Type::WebPlugin))
+    if (LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(*gc, *m_element->layoutObject(), DisplayItem::Type::WebPlugin, LayoutPoint()))
         return;
 
-    LayoutObjectDrawingRecorder drawingRecorder(*gc, *m_element->layoutObject(), DisplayItem::Type::WebPlugin, printRect);
+    LayoutObjectDrawingRecorder drawingRecorder(*gc, *m_element->layoutObject(), DisplayItem::Type::WebPlugin, printRect, LayoutPoint());
     gc->save();
     WebCanvas* canvas = gc->canvas();
     m_webPlugin->printPage(pageNumber, canvas);
@@ -468,6 +467,9 @@ WebString WebPluginContainerImpl::executeScriptURL(const WebURL& url, bool popup
     if (!frame)
         return WebString();
 
+    if (!m_element->document().contentSecurityPolicy()->allowJavaScriptURLs(m_element->document().url(), OrdinalNumber()))
+        return WebString();
+
     const KURL& kurl = url;
     ASSERT(kurl.protocolIs("javascript"));
 
@@ -504,12 +506,6 @@ void WebPluginContainerImpl::loadFrameRequest(const WebURLRequest& request, cons
     frame->loader().load(frameRequest);
 }
 
-void WebPluginContainerImpl::zoomLevelChanged(double zoomLevel)
-{
-    WebViewImpl* view = WebViewImpl::fromPage(m_element->document().frame()->page());
-    view->fullFramePluginZoomLevelChanged(zoomLevel);
-}
-
 bool WebPluginContainerImpl::isRectTopmost(const WebRect& rect)
 {
     // Disallow access to the frame during dispose(), because it is not guaranteed to
@@ -523,9 +519,9 @@ bool WebPluginContainerImpl::isRectTopmost(const WebRect& rect)
     if (!frame)
         return false;
 
+    IntRect documentRect(x() + rect.x, y() + rect.y, rect.width, rect.height);
     // hitTestResultAtPoint() takes a padding rectangle.
     // FIXME: We'll be off by 1 when the width or height is even.
-    IntRect documentRect(x() + rect.x, y() + rect.y, rect.width, rect.height);
     LayoutPoint center = documentRect.center();
     // Make the rect we're checking (the point surrounded by padding rects) contained inside the requested rect. (Note that -1/2 is 0.)
     LayoutSize padding((documentRect.width() - 1) / 2, (documentRect.height() - 1) / 2);
@@ -614,6 +610,15 @@ WebLayer* WebPluginContainerImpl::platformLayer() const
 
 v8::Local<v8::Object> WebPluginContainerImpl::scriptableObject(v8::Isolate* isolate)
 {
+#if ENABLE(OILPAN)
+    // With Oilpan, on plugin element detach dispose() will be called to safely
+    // clear out references, including the pre-emptive destruction of the plugin.
+    //
+    // It clearly has no scriptable object if in such a disposed state.
+    if (!m_webPlugin)
+        return v8::Local<v8::Object>();
+#endif
+
     // The plugin may be destroyed due to re-entrancy when calling
     // v8ScriptableObject below. crbug.com/458776. Hold a reference to the
     // plugin container to prevent this from happening. For Oilpan, 'this'
@@ -719,11 +724,14 @@ void WebPluginContainerImpl::dispose()
     for (size_t i = 0; i < m_pluginLoadObservers.size(); ++i)
         m_pluginLoadObservers[i]->clearPluginContainer();
 
-    m_webPlugin->destroy();
+    if (m_webPlugin)
+        m_webPlugin->destroy();
     m_webPlugin = nullptr;
 
-    if (m_webLayer)
+    if (m_webLayer) {
         GraphicsLayer::unregisterContentsLayer(m_webLayer);
+        m_webLayer = nullptr;
+    }
 
     m_pluginLoadObservers.clear();
     m_element = nullptr;
@@ -754,12 +762,6 @@ DEFINE_TRACE(WebPluginContainerImpl)
 void WebPluginContainerImpl::handleMouseEvent(MouseEvent* event)
 {
     ASSERT(parent()->isFrameView());
-
-    if (event->isDragEvent()) {
-        if (m_webPlugin->canProcessDrag())
-            handleDragEvent(event);
-        return;
-    }
 
     // We cache the parent FrameView here as the plugin widget could be deleted
     // in the call to HandleEvent. See http://b/issue?id=1362948
@@ -966,11 +968,6 @@ void WebPluginContainerImpl::calculateGeometry(IntRect& windowRect, IntRect& cli
     // Convert to the plugin position.
     for (size_t i = 0; i < cutOutRects.size(); i++)
         cutOutRects[i].move(-frameRect().x(), -frameRect().y());
-}
-
-bool WebPluginContainerImpl::pluginShouldPersist() const
-{
-    return m_webPlugin->shouldPersist();
 }
 
 } // namespace blink

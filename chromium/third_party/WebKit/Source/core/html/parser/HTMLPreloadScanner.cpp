@@ -108,8 +108,9 @@ static bool mediaAttributeMatches(const MediaValues& mediaValues, const String& 
 }
 
 class TokenPreloadScanner::StartTagScanner {
+    STACK_ALLOCATED();
 public:
-    StartTagScanner(const StringImpl* tagImpl, PassRefPtr<MediaValues> mediaValues)
+    StartTagScanner(const StringImpl* tagImpl, PassRefPtrWillBeRawPtr<MediaValues> mediaValues)
         : m_tagImpl(tagImpl)
         , m_linkIsStyleSheet(false)
         , m_linkIsPreconnect(false)
@@ -122,6 +123,8 @@ public:
         , m_defer(FetchRequest::NoDefer)
         , m_allowCredentials(DoNotAllowStoredCredentials)
         , m_mediaValues(mediaValues)
+        , m_referrerPolicySet(false)
+        , m_referrerPolicy(ReferrerPolicyDefault)
     {
         ASSERT(m_mediaValues->isCached());
         if (match(m_tagImpl, imgTag)
@@ -173,7 +176,7 @@ public:
         }
     }
 
-    PassOwnPtr<PreloadRequest> createPreloadRequest(const KURL& predictedBaseURL, const SegmentedString& source, const ClientHintsPreferences& clientHintsPreferences, const PictureData& pictureData)
+    PassOwnPtr<PreloadRequest> createPreloadRequest(const KURL& predictedBaseURL, const SegmentedString& source, const ClientHintsPreferences& clientHintsPreferences, const PictureData& pictureData, const ReferrerPolicy documentReferrerPolicy)
     {
         PreloadRequest::RequestType requestType = PreloadRequest::RequestTypePreload;
         if (shouldPreconnect())
@@ -194,7 +197,9 @@ public:
             resourceWidth.isSet = true;
         }
 
-        OwnPtr<PreloadRequest> request = PreloadRequest::create(initiatorFor(m_tagImpl), position, m_urlToLoad, predictedBaseURL, resourceType(), resourceWidth, clientHintsPreferences, requestType);
+        // The element's 'referrerpolicy' attribute (if present) takes precedence over the document's referrer policy.
+        ReferrerPolicy referrerPolicy = (m_referrerPolicy != ReferrerPolicyDefault && RuntimeEnabledFeatures::referrerPolicyAttributeEnabled()) ? m_referrerPolicy : documentReferrerPolicy;
+        OwnPtr<PreloadRequest> request = PreloadRequest::create(initiatorFor(m_tagImpl), position, m_urlToLoad, predictedBaseURL, resourceType(), referrerPolicy, resourceWidth, clientHintsPreferences, requestType);
         if (isCORSEnabled())
             request->setCrossOriginEnabled(allowStoredCredentials());
         request->setCharset(charset());
@@ -236,6 +241,9 @@ private:
                 m_srcsetImageCandidate = bestFitSourceForSrcsetAttribute(m_mediaValues->devicePixelRatio(), m_sourceSize, m_srcsetAttributeValue);
                 setUrlToLoad(bestFitSourceForImageAttributes(m_mediaValues->devicePixelRatio(), m_sourceSize, m_imgSrcUrl, m_srcsetImageCandidate), AllowURLReplacement);
             }
+        } else if (!m_referrerPolicySet && RuntimeEnabledFeatures::referrerPolicyAttributeEnabled() && match(attributeName, referrerpolicyAttr) && !attributeValue.isNull()) {
+            m_referrerPolicySet = true;
+            SecurityPolicy::referrerPolicyFromString(attributeValue, &m_referrerPolicy);
         }
     }
 
@@ -409,7 +417,9 @@ private:
     bool m_isCORSEnabled;
     FetchRequest::DeferOption m_defer;
     StoredCredentials m_allowCredentials;
-    RefPtr<MediaValues> m_mediaValues;
+    RefPtrWillBeMember<MediaValues> m_mediaValues;
+    bool m_referrerPolicySet;
+    ReferrerPolicy m_referrerPolicy;
 };
 
 TokenPreloadScanner::TokenPreloadScanner(const KURL& documentURL, PassOwnPtr<CachedDocumentParameters> documentParameters)
@@ -466,14 +476,45 @@ static void handleMetaViewport(const String& attributeValue, CachedDocumentParam
         return;
     ViewportDescription description(ViewportDescription::ViewportMeta);
     HTMLMetaElement::getViewportDescriptionFromContentAttribute(attributeValue, description, nullptr, documentParameters->viewportMetaZeroValuesQuirk);
-    FloatSize initialViewport(documentParameters->mediaValues->viewportHeight(), documentParameters->mediaValues->viewportWidth());
+    FloatSize initialViewport(documentParameters->mediaValues->deviceWidth(), documentParameters->mediaValues->deviceHeight());
     PageScaleConstraints constraints = description.resolve(initialViewport, documentParameters->defaultViewportMinWidth);
     MediaValuesCached* cachedMediaValues = static_cast<MediaValuesCached*>(documentParameters->mediaValues.get());
     cachedMediaValues->setViewportHeight(constraints.layoutSize.height());
     cachedMediaValues->setViewportWidth(constraints.layoutSize.width());
 }
 
-template<typename Token>
+static void handleMetaReferrer(const String& attributeValue, CachedDocumentParameters* documentParameters, CSSPreloadScanner* cssScanner)
+{
+    if (attributeValue.isEmpty() || attributeValue.isNull() || !SecurityPolicy::referrerPolicyFromString(attributeValue, &documentParameters->referrerPolicy)) {
+        documentParameters->referrerPolicy = ReferrerPolicyDefault;
+    }
+    cssScanner->setReferrerPolicy(documentParameters->referrerPolicy);
+}
+
+template <typename Token>
+static void handleMetaNameAttribute(const Token& token, CachedDocumentParameters* documentParameters, CSSPreloadScanner* cssScanner)
+{
+    const typename Token::Attribute* nameAttribute = token.getAttributeItem(nameAttr);
+    if (!nameAttribute)
+        return;
+
+    String nameAttributeValue(nameAttribute->value);
+    const typename Token::Attribute* contentAttribute = token.getAttributeItem(contentAttr);
+    if (!contentAttribute)
+        return;
+
+    String contentAttributeValue(contentAttribute->value);
+    if (equalIgnoringCase(nameAttributeValue, "viewport")) {
+        handleMetaViewport(contentAttributeValue, documentParameters);
+        return;
+    }
+
+    if (equalIgnoringCase(nameAttributeValue, "referrer")) {
+        handleMetaReferrer(contentAttributeValue, documentParameters, cssScanner);
+    }
+}
+
+template <typename Token>
 void TokenPreloadScanner::scanCommon(const Token& token, const SegmentedString& source, PreloadRequestStream& requests)
 {
     if (!m_documentParameters->doHtmlPreloadScanning)
@@ -543,17 +584,12 @@ void TokenPreloadScanner::scanCommon(const Token& token, const SegmentedString& 
                 } else if (equalIgnoringCase(equivAttributeValue, "accept-ch")) {
                     const typename Token::Attribute* contentAttribute = token.getAttributeItem(contentAttr);
                     if (contentAttribute)
-                        handleAcceptClientHintsHeader(String(contentAttribute->value), m_clientHintsPreferences, nullptr);
+                        m_clientHintsPreferences.updateFromAcceptClientHintsHeader(String(contentAttribute->value), nullptr);
                 }
                 return;
             }
-            const typename Token::Attribute* nameAttribute = token.getAttributeItem(nameAttr);
-            if (nameAttribute && equalIgnoringCase(String(nameAttribute->value), "viewport")) {
-                const typename Token::Attribute* contentAttribute = token.getAttributeItem(contentAttr);
-                if (contentAttribute)
-                    handleMetaViewport(String(contentAttribute->value), m_documentParameters.get());
-                return;
-            }
+
+            handleMetaNameAttribute(token, m_documentParameters.get(), &m_cssScanner);
         }
 
         if (match(tagImpl, pictureTag)) {
@@ -566,7 +602,7 @@ void TokenPreloadScanner::scanCommon(const Token& token, const SegmentedString& 
         scanner.processAttributes(token.attributes());
         if (m_inPicture)
             scanner.handlePictureSourceURL(m_pictureData);
-        OwnPtr<PreloadRequest> request = scanner.createPreloadRequest(m_predictedBaseElementURL, source, m_clientHintsPreferences, m_pictureData);
+        OwnPtr<PreloadRequest> request = scanner.createPreloadRequest(m_predictedBaseElementURL, source, m_clientHintsPreferences, m_pictureData, m_documentParameters->referrerPolicy);
         if (request)
             requests.append(request.release());
         return;
@@ -624,7 +660,7 @@ void HTMLPreloadScanner::scan(ResourcePreloader* preloader, const KURL& starting
     preloader->takeAndPreload(requests);
 }
 
-CachedDocumentParameters::CachedDocumentParameters(Document* document, PassRefPtr<MediaValues> givenMediaValues)
+CachedDocumentParameters::CachedDocumentParameters(Document* document, PassRefPtrWillBeRawPtr<MediaValues> givenMediaValues)
 {
     ASSERT(isMainThread());
     ASSERT(document);
@@ -637,6 +673,7 @@ CachedDocumentParameters::CachedDocumentParameters(Document* document, PassRefPt
     defaultViewportMinWidth = document->viewportDefaultMinWidth();
     viewportMetaZeroValuesQuirk = document->settings() && document->settings()->viewportMetaZeroValuesQuirk();
     viewportMetaEnabled = document->settings() && document->settings()->viewportMetaEnabled();
+    referrerPolicy = ReferrerPolicyDefault;
 }
 
 }

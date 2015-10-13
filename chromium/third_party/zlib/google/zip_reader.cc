@@ -131,7 +131,8 @@ ZipReader::EntryInfo::EntryInfo(const std::string& file_name_in_zip,
   original_size_ = raw_file_info.uncompressed_size;
 
   // Directory entries in zip files end with "/".
-  is_directory_ = base::EndsWith(file_name_in_zip, "/", false);
+  is_directory_ = base::EndsWith(file_name_in_zip, "/",
+                                 base::CompareCase::INSENSITIVE_ASCII);
 
   // Check the file name here for directory traversal issues.
   is_unsafe_ = file_path_.ReferencesParent();
@@ -146,7 +147,8 @@ ZipReader::EntryInfo::EntryInfo(const std::string& file_name_in_zip,
   // We also consider that the file name is unsafe, if it's absolute.
   // On Windows, IsAbsolute() returns false for paths starting with "/".
   if (file_path_.IsAbsolute() ||
-      base::StartsWithASCII(file_name_in_zip, "/", false))
+      base::StartsWith(file_name_in_zip, "/",
+                       base::CompareCase::INSENSITIVE_ASCII))
     is_unsafe_ = true;
 
   // Construct the last modified time. The timezone info is not present in

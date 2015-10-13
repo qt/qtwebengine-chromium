@@ -66,11 +66,11 @@ class CORE_EXPORT WorkerGlobalScope : public EventTargetWithInlineData, public R
     REFCOUNTED_EVENT_TARGET(WorkerGlobalScope);
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(WorkerGlobalScope);
 public:
-    virtual ~WorkerGlobalScope();
+    ~WorkerGlobalScope() override;
 
-    bool isWorkerGlobalScope() const override final { return true; }
+    bool isWorkerGlobalScope() const final { return true; }
 
-    ExecutionContext* executionContext() const override final;
+    ExecutionContext* executionContext() const final;
 
     virtual void countFeature(UseCounter::Feature) const;
     virtual void countDeprecation(UseCounter::Feature) const;
@@ -78,8 +78,8 @@ public:
     const KURL& url() const { return m_url; }
     KURL completeURL(const String&) const;
 
-    String userAgent(const KURL&) const override final;
-    void disableEval(const String& errorMessage) override final;
+    String userAgent(const KURL&) const final;
+    void disableEval(const String& errorMessage) final;
 
     WorkerScriptController* script() { return m_script.get(); }
 
@@ -88,7 +88,7 @@ public:
 
     WorkerThread* thread() const { return m_thread; }
 
-    void postTask(const WebTraceLocation&, PassOwnPtr<ExecutionContextTask>) override final; // Executes the task on context's thread asynchronously.
+    void postTask(const WebTraceLocation&, PassOwnPtr<ExecutionContextTask>) final; // Executes the task on context's thread asynchronously.
 
     // WorkerGlobalScope
     WorkerGlobalScope* self() { return this; }
@@ -103,23 +103,23 @@ public:
     // WorkerUtils
     virtual void importScripts(const Vector<String>& urls, ExceptionState&);
     // Returns null if caching is not supported.
-    virtual PassOwnPtr<CachedMetadataHandler> createWorkerScriptCachedMetadataHandler(const KURL& scriptURL, const Vector<char>* metaData) { return nullptr; }
+    virtual PassOwnPtrWillBeRawPtr<CachedMetadataHandler> createWorkerScriptCachedMetadataHandler(const KURL& scriptURL, const Vector<char>* metaData) { return nullptr; }
 
     WorkerNavigator* navigator() const;
 
     // ScriptWrappable
-    v8::Local<v8::Object> wrap(v8::Isolate*, v8::Local<v8::Object> creationContext) override final;
-    v8::Local<v8::Object> associateWithWrapper(v8::Isolate*, const WrapperTypeInfo*, v8::Local<v8::Object> wrapper) override final;
+    v8::Local<v8::Object> wrap(v8::Isolate*, v8::Local<v8::Object> creationContext) final;
+    v8::Local<v8::Object> associateWithWrapper(v8::Isolate*, const WrapperTypeInfo*, v8::Local<v8::Object> wrapper) final;
 
     // ExecutionContextClient
-    WorkerEventQueue* eventQueue() const override final;
-    SecurityContext& securityContext() override final { return *this; }
+    WorkerEventQueue* eventQueue() const final;
+    SecurityContext& securityContext() final { return *this; }
 
-    bool isContextThread() const override final;
-    bool isJSExecutionForbidden() const override final;
+    bool isContextThread() const final;
+    bool isJSExecutionForbidden() const final;
 
-    double timerAlignmentInterval() const override final;
-    DOMTimerCoordinator* timers() override final;
+    double timerAlignmentInterval() const final;
+    DOMTimerCoordinator* timers() final;
 
     WorkerInspectorController* workerInspectorController() { return m_workerInspectorController.get(); }
 
@@ -132,19 +132,19 @@ public:
     using SecurityContext::securityOrigin;
     using SecurityContext::contentSecurityPolicy;
 
-    void addConsoleMessage(PassRefPtrWillBeRawPtr<ConsoleMessage>) override final;
+    void addConsoleMessage(PassRefPtrWillBeRawPtr<ConsoleMessage>) final;
     ConsoleMessageStorage* messageStorage();
 
     void exceptionHandled(int exceptionId, bool isHandled);
 
     virtual void scriptLoaded(size_t scriptSize, size_t cachedMetadataSize) { }
 
-    bool isPrivilegedContext(String& errorMessage, const PrivilegeContextCheck = StandardPrivilegeCheck) const override;
+    bool isSecureContext(String& errorMessage, const SecureContextCheck = StandardSecureContextCheck) const override;
 
     DECLARE_VIRTUAL_TRACE();
 
 protected:
-    WorkerGlobalScope(const KURL&, const String& userAgent, WorkerThread*, double timeOrigin, const SecurityOrigin*, PassOwnPtrWillBeRawPtr<WorkerClients>);
+    WorkerGlobalScope(const KURL&, const String& userAgent, WorkerThread*, double timeOrigin, PassOwnPtr<SecurityOrigin::PrivilegeData>, PassOwnPtrWillBeRawPtr<WorkerClients>);
     void applyContentSecurityPolicyFromVector(const Vector<CSPHeaderAndType>& headers);
 
     void logExceptionToConsole(const String& errorMessage, int scriptId, const String& sourceURL, int lineNumber, int columnNumber, PassRefPtrWillBeRawPtr<ScriptCallStack>) override;
@@ -155,19 +155,19 @@ protected:
 
 private:
 #if !ENABLE(OILPAN)
-    void refExecutionContext() override final { ref(); }
-    void derefExecutionContext() override final { deref(); }
+    void refExecutionContext() final { ref(); }
+    void derefExecutionContext() final { deref(); }
 #endif
 
-    const KURL& virtualURL() const override final;
-    KURL virtualCompleteURL(const String&) const override final;
+    const KURL& virtualURL() const final;
+    KURL virtualCompleteURL(const String&) const final;
 
-    void reportBlockedScriptExecutionToInspector(const String& directiveText) override final;
+    void reportBlockedScriptExecutionToInspector(const String& directiveText) final;
 
-    EventTarget* errorEventTarget() override final;
-    void didUpdateSecurityOrigin() override final { }
+    EventTarget* errorEventTarget() final;
+    void didUpdateSecurityOrigin() final { }
 
-    void clearScript() { m_script.clear(); }
+    void clearScript();
     void clearInspector();
 
     static void removeURLFromMemoryCacheInternal(const KURL&);
@@ -182,7 +182,7 @@ private:
 
     mutable UseCounter::CountBits m_deprecationWarningBits;
 
-    OwnPtr<WorkerScriptController> m_script;
+    OwnPtrWillBeMember<WorkerScriptController> m_script;
     WorkerThread* m_thread;
 
     RefPtrWillBeMember<WorkerInspectorController> m_workerInspectorController;

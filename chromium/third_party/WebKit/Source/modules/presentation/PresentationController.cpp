@@ -6,7 +6,7 @@
 #include "modules/presentation/PresentationController.h"
 
 #include "core/frame/LocalFrame.h"
-#include "modules/presentation/PresentationSession.h"
+#include "modules/presentation/PresentationConnection.h"
 #include "public/platform/modules/presentation/WebPresentationClient.h"
 
 namespace blink {
@@ -57,54 +57,67 @@ WebPresentationClient* PresentationController::client()
 DEFINE_TRACE(PresentationController)
 {
     visitor->trace(m_presentation);
+    visitor->trace(m_connections);
     WillBeHeapSupplement<LocalFrame>::trace(visitor);
     LocalFrameLifecycleObserver::trace(visitor);
 }
 
-void PresentationController::didStartDefaultSession(WebPresentationSessionClient* sessionClient)
+void PresentationController::didStartDefaultSession(WebPresentationConnectionClient* connectionClient)
 {
-    if (!m_presentation) {
-        delete sessionClient;
+    if (!m_presentation || !m_presentation->defaultRequest())
         return;
-    }
-
-    PresentationSession* session = PresentationSession::take(sessionClient, m_presentation);
-    m_presentation->didStartDefaultSession(session);
+    PresentationConnection::take(this, adoptPtr(connectionClient), m_presentation->defaultRequest());
 }
 
-void PresentationController::didChangeSessionState(WebPresentationSessionClient* sessionClient, WebPresentationSessionState state)
+void PresentationController::didChangeSessionState(WebPresentationConnectionClient* connectionClient, WebPresentationConnectionState state)
 {
-    if (!m_presentation) {
-        delete sessionClient;
-        return;
-    }
+    OwnPtr<WebPresentationConnectionClient> client = adoptPtr(connectionClient);
 
-    m_presentation->didChangeSessionState(sessionClient, state);
+    PresentationConnection* connection = findConnection(client.get());
+    if (!connection)
+        return;
+    connection->didChangeState(state);
 }
 
-void PresentationController::didReceiveSessionTextMessage(WebPresentationSessionClient* sessionClient, const WebString& message)
+void PresentationController::didReceiveSessionTextMessage(WebPresentationConnectionClient* connectionClient, const WebString& message)
 {
-    if (!m_presentation) {
-        delete sessionClient;
-        return;
-    }
+    OwnPtr<WebPresentationConnectionClient> client = adoptPtr(connectionClient);
 
-    m_presentation->didReceiveSessionTextMessage(sessionClient, message);
+    PresentationConnection* connection = findConnection(client.get());
+    if (!connection)
+        return;
+    connection->didReceiveTextMessage(message);
 }
 
-void PresentationController::didReceiveSessionBinaryMessage(WebPresentationSessionClient* sessionClient, const uint8_t* data, size_t length)
+void PresentationController::didReceiveSessionBinaryMessage(WebPresentationConnectionClient* connectionClient, const uint8_t* data, size_t length)
 {
-    if (!m_presentation) {
-        delete sessionClient;
-        return;
-    }
+    OwnPtr<WebPresentationConnectionClient> client = adoptPtr(connectionClient);
 
-    m_presentation->didReceiveSessionBinaryMessage(sessionClient, data, length);
+    PresentationConnection* connection = findConnection(client.get());
+    if (!connection)
+        return;
+    connection->didReceiveBinaryMessage(data, length);
 }
 
 void PresentationController::setPresentation(Presentation* presentation)
 {
     m_presentation = presentation;
+}
+
+void PresentationController::setDefaultRequestUrl(const KURL& url)
+{
+    if (!m_client)
+        return;
+
+    if (url.isValid())
+        m_client->setDefaultPresentationUrl(url.string());
+    else
+        m_client->setDefaultPresentationUrl(blink::WebString());
+}
+
+void PresentationController::registerConnection(PresentationConnection* connection)
+{
+    m_connections.add(connection);
 }
 
 void PresentationController::willDetachFrameHost()
@@ -113,6 +126,16 @@ void PresentationController::willDetachFrameHost()
         m_client->setController(nullptr);
         m_client = nullptr;
     }
+}
+
+PresentationConnection* PresentationController::findConnection(WebPresentationConnectionClient* connectionClient)
+{
+    for (const auto& connection : m_connections) {
+        if (connection->matches(connectionClient))
+            return connection.get();
+    }
+
+    return nullptr;
 }
 
 } // namespace blink

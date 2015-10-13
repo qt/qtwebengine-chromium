@@ -11,9 +11,9 @@
 #include "core/layout/LayoutView.h"
 #include "core/paint/BlockPainter.h"
 #include "core/paint/BoxPainter.h"
-#include "core/paint/DeprecatedPaintLayer.h"
 #include "core/paint/LayoutObjectDrawingRecorder.h"
 #include "core/paint/PaintInfo.h"
+#include "core/paint/PaintLayer.h"
 #include "platform/RuntimeEnabledFeatures.h"
 
 namespace blink {
@@ -49,7 +49,7 @@ void ViewPainter::paintBoxDecorationBackground(const PaintInfo& paintInfo)
     //    culling and pre-blending optimization when possible.
 
     GraphicsContext& context = *paintInfo.context;
-    if (LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(context, m_layoutView, DisplayItem::BoxDecorationBackground))
+    if (LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(context, m_layoutView, DisplayItem::BoxDecorationBackground, LayoutPoint()))
         return;
 
     IntRect documentRect = m_layoutView.unscaledDocumentRect();
@@ -62,7 +62,7 @@ void ViewPainter::paintBoxDecorationBackground(const PaintInfo& paintInfo)
     Color rootBackgroundColor = m_layoutView.style()->visitedDependentColor(CSSPropertyBackgroundColor);
     const LayoutObject* rootObject = document.documentElement() ? document.documentElement()->layoutObject() : nullptr;
 
-    LayoutObjectDrawingRecorder recorder(context, m_layoutView, DisplayItem::BoxDecorationBackground, documentRect);
+    LayoutObjectDrawingRecorder recorder(context, m_layoutView, DisplayItem::BoxDecorationBackground, documentRect, LayoutPoint());
 
     // Special handling for print economy mode.
     bool forceBackgroundToWhite = BoxPainter::shouldForceWhiteBackgroundForPrintEconomy(m_layoutView.styleRef(), document);
@@ -85,11 +85,11 @@ void ViewPainter::paintBoxDecorationBackground(const PaintInfo& paintInfo)
     if (!rootObject || !rootObject->isBox()) {
         backgroundRenderable = false;
     } else if (rootObject->hasLayer()) {
-        const DeprecatedPaintLayer& rootLayer = *toLayoutBoxModelObject(rootObject)->layer();
+        const PaintLayer& rootLayer = *toLayoutBoxModelObject(rootObject)->layer();
         LayoutPoint offset;
         rootLayer.convertToLayerCoords(nullptr, offset);
         transform.translate(offset.x(), offset.y());
-        transform.multiply(rootLayer.renderableTransform(paintInfo.paintBehavior));
+        transform.multiply(rootLayer.renderableTransform(paintInfo.globalPaintFlags()));
 
         if (!transform.isInvertible()) {
             backgroundRenderable = false;
@@ -133,15 +133,21 @@ void ViewPainter::paintBoxDecorationBackground(const PaintInfo& paintInfo)
     else if (shouldClearCanvas && !shouldDrawBackgroundInSeparateBuffer)
         context.fillRect(documentRect, Color(), SkXfermode::kClear_Mode);
 
-    context.save();
-    // TODO(trchen): We should be able to handle 3D-transformed root
-    // background with slimming paint by using transform display items.
-    context.concatCTM(transform.toAffineTransform());
     for (auto it = reversedPaintList.rbegin(); it != reversedPaintList.rend(); ++it) {
         ASSERT((*it)->clip() == BorderFillBox);
-        BoxPainter::paintFillLayerExtended(m_layoutView, paintInfo, Color(), **it, LayoutRect(paintRect), BackgroundBleedNone);
+
+        bool shouldPaintInViewportSpace = (*it)->attachment() == FixedBackgroundAttachment;
+        if (shouldPaintInViewportSpace) {
+            BoxPainter::paintFillLayerExtended(m_layoutView, paintInfo, Color(), **it, LayoutRect::infiniteRect(), BackgroundBleedNone);
+        } else {
+            context.save();
+            // TODO(trchen): We should be able to handle 3D-transformed root
+            // background with slimming paint by using transform display items.
+            context.concatCTM(transform.toAffineTransform());
+            BoxPainter::paintFillLayerExtended(m_layoutView, paintInfo, Color(), **it, LayoutRect(paintRect), BackgroundBleedNone);
+            context.restore();
+        }
     }
-    context.restore();
 
     if (shouldDrawBackgroundInSeparateBuffer)
         context.endLayer();

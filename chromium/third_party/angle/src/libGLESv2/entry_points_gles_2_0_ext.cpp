@@ -100,7 +100,7 @@ void GL_APIENTRY DrawArraysInstancedANGLE(GLenum mode, GLint first, GLsizei coun
             return;
         }
 
-        Error error = context->drawArrays(mode, first, count, primcount);
+        Error error = context->drawArraysInstanced(mode, first, count, primcount);
         if (error.isError())
         {
             context->recordError(error);
@@ -117,13 +117,14 @@ void GL_APIENTRY DrawElementsInstancedANGLE(GLenum mode, GLsizei count, GLenum t
     Context *context = GetValidGlobalContext();
     if (context)
     {
-        RangeUI indexRange;
+        IndexRange indexRange;
         if (!ValidateDrawElementsInstancedANGLE(context, mode, count, type, indices, primcount, &indexRange))
         {
             return;
         }
 
-        Error error = context->drawElements(mode, count, type, indices, primcount, indexRange);
+        Error error =
+            context->drawElementsInstanced(mode, count, type, indices, primcount, indexRange);
         if (error.isError())
         {
             context->recordError(error);
@@ -496,7 +497,7 @@ void GL_APIENTRY ReadnPixelsEXT(GLint x, GLint y, GLsizei width, GLsizei height,
         ASSERT(framebufferObject);
 
         Rectangle area(x, y, width, height);
-        Error error = framebufferObject->readPixels(context->getState(), area, format, type, data);
+        Error error = framebufferObject->readPixels(context, area, format, type, data);
         if (error.isError())
         {
             context->recordError(error);
@@ -644,6 +645,21 @@ void GL_APIENTRY VertexAttribDivisorANGLE(GLuint index, GLuint divisor)
             return;
         }
 
+        if (context->getLimitations().attributeZeroRequiresZeroDivisorInEXT)
+        {
+            if (index == 0 && divisor != 0)
+            {
+                const char *errorMessage = "The current context doesn't support setting a non-zero divisor on the attribute with index zero. "
+                                           "Please reorder the attributes in your vertex shader so that attribute zero can have a zero divisor.";
+                context->recordError(Error(GL_INVALID_OPERATION, errorMessage));
+
+                // We also output an error message to the debugger window if tracing is active, so that developers can see the error message.
+                ERR("%s", errorMessage);
+
+                return;
+            }
+        }
+
         context->setVertexAttribDivisor(index, divisor);
     }
 }
@@ -675,7 +691,8 @@ void GL_APIENTRY BlitFramebufferANGLE(GLint srcX0, GLint srcY0, GLint srcX1, GLi
         Rectangle srcArea(srcX0, srcY0, srcX1 - srcX0, srcY1 - srcY0);
         Rectangle dstArea(dstX0, dstY0, dstX1 - dstX0, dstY1 - dstY0);
 
-        Error error = drawFramebuffer->blit(context->getState(), srcArea, dstArea, mask, filter, readFramebuffer);
+        Error error =
+            drawFramebuffer->blit(context, srcArea, dstArea, mask, filter, readFramebuffer);
         if (error.isError())
         {
             context->recordError(error);
@@ -790,39 +807,9 @@ void GL_APIENTRY DrawBuffersEXT(GLsizei n, const GLenum *bufs)
     Context *context = GetValidGlobalContext();
     if (context)
     {
-        if (n < 0 || static_cast<GLuint>(n) > context->getCaps().maxDrawBuffers)
+        if (!ValidateDrawBuffers(context, n, bufs))
         {
-            context->recordError(Error(GL_INVALID_VALUE));
             return;
-        }
-
-        ASSERT(context->getState().getDrawFramebuffer());
-
-        if (context->getState().getDrawFramebuffer()->id() == 0)
-        {
-            if (n != 1)
-            {
-                context->recordError(Error(GL_INVALID_OPERATION));
-                return;
-            }
-
-            if (bufs[0] != GL_NONE && bufs[0] != GL_BACK)
-            {
-                context->recordError(Error(GL_INVALID_OPERATION));
-                return;
-            }
-        }
-        else
-        {
-            for (int colorAttachment = 0; colorAttachment < n; colorAttachment++)
-            {
-                const GLenum attachment = GL_COLOR_ATTACHMENT0_EXT + colorAttachment;
-                if (bufs[colorAttachment] != GL_NONE && bufs[colorAttachment] != attachment)
-                {
-                    context->recordError(Error(GL_INVALID_OPERATION));
-                    return;
-                }
-            }
         }
 
         Framebuffer *framebuffer = context->getState().getDrawFramebuffer();
@@ -1167,4 +1154,52 @@ void GL_APIENTRY PopGroupMarkerEXT()
     }
 }
 
+ANGLE_EXPORT void GL_APIENTRY EGLImageTargetTexture2DOES(GLenum target, GLeglImageOES image)
+{
+    EVENT("(GLenum target = 0x%X, GLeglImageOES image = 0x%0.8p)", target, image);
+
+    Context *context = GetValidGlobalContext();
+    if (context)
+    {
+        egl::Display *display   = egl::GetGlobalDisplay();
+        egl::Image *imageObject = reinterpret_cast<egl::Image *>(image);
+        if (!ValidateEGLImageTargetTexture2DOES(context, display, target, imageObject))
+        {
+            return;
+        }
+
+        Texture *texture = context->getTargetTexture(target);
+        Error error = texture->setEGLImageTarget(target, imageObject);
+        if (error.isError())
+        {
+            context->recordError(error);
+            return;
+        }
+    }
+}
+
+ANGLE_EXPORT void GL_APIENTRY EGLImageTargetRenderbufferStorageOES(GLenum target,
+                                                                   GLeglImageOES image)
+{
+    EVENT("(GLenum target = 0x%X, GLeglImageOES image = 0x%0.8p)", target, image);
+
+    Context *context = GetValidGlobalContext();
+    if (context)
+    {
+        egl::Display *display   = egl::GetGlobalDisplay();
+        egl::Image *imageObject = reinterpret_cast<egl::Image *>(image);
+        if (!ValidateEGLImageTargetRenderbufferStorageOES(context, display, target, imageObject))
+        {
+            return;
+        }
+
+        Renderbuffer *renderbuffer = context->getState().getCurrentRenderbuffer();
+        Error error = renderbuffer->setStorageEGLImageTarget(imageObject);
+        if (error.isError())
+        {
+            context->recordError(error);
+            return;
+        }
+    }
+}
 }

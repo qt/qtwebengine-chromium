@@ -66,6 +66,18 @@ void VideoCaptureHost::OnBufferCreated(VideoCaptureControllerID controller_id,
   Send(new VideoCaptureMsg_NewBuffer(controller_id, handle, length, buffer_id));
 }
 
+void VideoCaptureHost::OnBufferCreated2(
+    VideoCaptureControllerID controller_id,
+    const std::vector<gfx::GpuMemoryBufferHandle>& handles,
+    const gfx::Size& size,
+    int buffer_id) {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  if (entries_.find(controller_id) == entries_.end())
+    return;
+
+  Send(new VideoCaptureMsg_NewBuffer2(controller_id, handles, size, buffer_id));
+}
+
 void VideoCaptureHost::OnBufferDestroyed(VideoCaptureControllerID controller_id,
                                          int buffer_id) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
@@ -94,9 +106,10 @@ void VideoCaptureHost::OnBufferReady(
   params.coded_size = video_frame->coded_size();
   params.visible_rect = video_frame->visible_rect();
   if (video_frame->HasTextures()) {
-    DCHECK_EQ(media::VideoFrame::NumPlanes(video_frame->format()), 1u)
-        << "Multiplanar textures not supported";
-    params.mailbox_holder = video_frame->mailbox_holder(0);
+    for (size_t i = 0; i < media::VideoFrame::NumPlanes(video_frame->format());
+         ++i) {
+      params.mailbox_holders.push_back(video_frame->mailbox_holder(i));
+    }
   }
 
   Send(new VideoCaptureMsg_BufferReady(params));

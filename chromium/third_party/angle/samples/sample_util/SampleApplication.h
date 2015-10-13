@@ -7,24 +7,28 @@
 #ifndef SAMPLE_UTIL_SAMPLE_APPLICATION_H
 #define SAMPLE_UTIL_SAMPLE_APPLICATION_H
 
+#include <list>
+#include <memory>
+#include <stdint.h>
+#include <string>
+
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
 
 #include "OSWindow.h"
 #include "Timer.h"
 
-#include <string>
-#include <list>
-#include <cstdint>
-#include <memory>
-
 class EGLWindow;
 
 class SampleApplication
 {
   public:
-    SampleApplication(const std::string& name, size_t width, size_t height,
-                      EGLint glesMajorVersion = 2, EGLint requestedRenderer = EGL_PLATFORM_ANGLE_TYPE_DEFAULT_ANGLE);
+    SampleApplication(const std::string &name,
+                      size_t width,
+                      size_t height,
+                      EGLint glesMajorVersion  = 2,
+                      EGLint glesMinorVersion  = 0,
+                      EGLint requestedRenderer = EGL_PLATFORM_ANGLE_TYPE_DEFAULT_ANGLE);
     virtual ~SampleApplication();
 
     virtual bool initialize();
@@ -48,6 +52,8 @@ class SampleApplication
 
   private:
     std::string mName;
+    size_t mWidth;
+    size_t mHeight;
     bool mRunning;
 
     std::unique_ptr<Timer> mTimer;

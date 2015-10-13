@@ -6,11 +6,11 @@
  */
 
 #include "SkOSFile.h"
+#include "SkTypes.h"
 
 #include <errno.h>
 #include <stdio.h>
 #include <sys/stat.h>
-#include <sys/types.h>
 
 #ifdef _WIN32
 #include <direct.h>
@@ -32,7 +32,12 @@ SkFILE* sk_fopen(const char path[], SkFILE_Flags flags) {
 
     //TODO: on Windows fopen is just ASCII or the current code page,
     //convert to utf16 and use _wfopen
-    return (SkFILE*)::fopen(path, perm);
+    SkFILE* file = (SkFILE*)::fopen(path, perm);
+    if (nullptr == file && (flags & kWrite_SkFILE_Flag)) {
+        SkDEBUGF(("sk_fopen: fopen(\"%s\", \"%s\") returned NULL (errno:%d): %s\n",
+                  path, perm, errno, strerror(errno)));
+    }
+    return file;
 }
 
 char* sk_fgets(char* str, int size, SkFILE* f) {
@@ -70,7 +75,7 @@ bool sk_frewind(SkFILE* f) {
 
 size_t sk_fread(void* buffer, size_t byteCount, SkFILE* f) {
     SkASSERT(f);
-    if (buffer == NULL) {
+    if (buffer == nullptr) {
         size_t curr = ::ftell((FILE*)f);
         if ((long)curr == -1) {
             SkDEBUGF(("sk_fread: ftell(%p) returned -1 feof:%d ferror:%d\n", f, feof((FILE*)f), ferror((FILE*)f)));

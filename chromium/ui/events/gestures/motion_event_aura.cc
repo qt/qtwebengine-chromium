@@ -17,10 +17,11 @@ PointerProperties GetPointerPropertiesFromTouchEvent(const TouchEvent& touch) {
   pointer_properties.raw_x = touch.root_location_f().x();
   pointer_properties.raw_y = touch.root_location_f().y();
   pointer_properties.id = touch.touch_id();
-  pointer_properties.pressure = touch.force();
+  pointer_properties.pressure = touch.pointer_details().force();
   pointer_properties.source_device_id = touch.source_device_id();
 
-  pointer_properties.SetAxesAndOrientation(touch.radius_x(), touch.radius_y(),
+  pointer_properties.SetAxesAndOrientation(touch.pointer_details().radius_x(),
+                                           touch.pointer_details().radius_y(),
                                            touch.rotation_angle());
   if (!pointer_properties.touch_major) {
     pointer_properties.touch_major =
@@ -38,12 +39,9 @@ PointerProperties GetPointerPropertiesFromTouchEvent(const TouchEvent& touch) {
 
 }  // namespace
 
-MotionEventAura::MotionEventAura() {
-  set_action_index(-1);
-}
+MotionEventAura::MotionEventAura() {}
 
-MotionEventAura::~MotionEventAura() {
-}
+MotionEventAura::~MotionEventAura() {}
 
 bool MotionEventAura::OnTouch(const TouchEvent& touch) {
   int index = FindPointerIndexOfId(touch.touch_id());
@@ -75,8 +73,8 @@ bool MotionEventAura::OnTouch(const TouchEvent& touch) {
 
   switch (touch.type()) {
     case ET_TOUCH_PRESSED:
-      AddTouch(touch);
-      break;
+      if (!AddTouch(touch))
+        return false;
     case ET_TOUCH_RELEASED:
     case ET_TOUCH_CANCELLED:
       // Removing these touch points needs to be postponed until after the
@@ -107,7 +105,8 @@ void MotionEventAura::CleanupRemovedTouchPoints(const TouchEvent& event) {
 
   DCHECK(GetPointerCount());
   int index_to_delete = GetIndexFromId(event.touch_id());
-  set_action_index(0);
+  set_action_index(-1);
+  set_action(MotionEvent::ACTION_NONE);
   pointer(index_to_delete) = pointer(GetPointerCount() - 1);
   PopPointer();
 }
@@ -117,11 +116,12 @@ int MotionEventAura::GetSourceDeviceId(size_t pointer_index) const {
   return pointer(pointer_index).source_device_id;
 }
 
-void MotionEventAura::AddTouch(const TouchEvent& touch) {
+bool MotionEventAura::AddTouch(const TouchEvent& touch) {
   if (GetPointerCount() == MotionEvent::MAX_TOUCH_POINT_COUNT)
-    return;
+    return false;
 
   PushPointer(GetPointerPropertiesFromTouchEvent(touch));
+  return true;
 }
 
 void MotionEventAura::UpdateTouch(const TouchEvent& touch) {
@@ -162,8 +162,9 @@ void MotionEventAura::UpdateCachedAction(const TouchEvent& touch) {
 
 int MotionEventAura::GetIndexFromId(int id) const {
   int index = FindPointerIndexOfId(id);
-  DCHECK_GE(index, 0);
-  DCHECK_LT(index, static_cast<int>(GetPointerCount()));
+  // TODO(tdresser): remove these checks once crbug.com/525189 is fixed.
+  CHECK_GE(index, 0);
+  CHECK_LT(index, static_cast<int>(GetPointerCount()));
   return index;
 }
 

@@ -197,7 +197,14 @@ WebInspector.ConsoleModel.evaluateCommandInConsole = function(executionContext, 
 
     executionContext.evaluate(text, "console", useCommandLineAPI, false, false, true, printResult);
 
-    WebInspector.userMetrics.ConsoleEvaluated.record();
+    WebInspector.userMetrics.actionTaken(WebInspector.UserMetrics.Action.ConsoleEvaluated);
+}
+
+WebInspector.ConsoleModel.clearConsole = function()
+{
+    var targets = WebInspector.targetManager.targets();
+    for (var i = 0; i < targets.length; ++i)
+        targets[i].consoleModel.requestClearMessages();
 }
 
 

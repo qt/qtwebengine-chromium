@@ -19,6 +19,9 @@
 
 #include "gtest/gtest.h"
 #include "test/win/win_multiprocess.h"
+#include "util/synchronization/semaphore.h"
+#include "util/thread/thread.h"
+#include "util/win/scoped_process_suspend.h"
 
 namespace crashpad {
 namespace test {
@@ -26,7 +29,8 @@ namespace {
 
 TEST(ProcessReaderWin, SelfBasic) {
   ProcessReaderWin process_reader;
-  ASSERT_TRUE(process_reader.Initialize(GetCurrentProcess()));
+  ASSERT_TRUE(process_reader.Initialize(GetCurrentProcess(),
+                                        ProcessSuspensionState::kRunning));
 
 #if !defined(ARCH_CPU_64_BITS)
   EXPECT_FALSE(process_reader.Is64Bit());
@@ -34,7 +38,7 @@ TEST(ProcessReaderWin, SelfBasic) {
   EXPECT_TRUE(process_reader.Is64Bit());
 #endif
 
-  EXPECT_EQ(GetCurrentProcessId(), process_reader.ProcessID());
+  EXPECT_EQ(GetCurrentProcessId(), process_reader.GetProcessInfo().ProcessID());
 
   const char kTestMemory[] = "Some test memory";
   char buffer[arraysize(kTestMemory)];
@@ -55,7 +59,8 @@ class ProcessReaderChild final : public WinMultiprocess {
  private:
   void WinMultiprocessParent() override {
     ProcessReaderWin process_reader;
-    ASSERT_TRUE(process_reader.Initialize(ChildProcess()));
+    ASSERT_TRUE(process_reader.Initialize(ChildProcess(),
+                                          ProcessSuspensionState::kRunning));
 
 #if !defined(ARCH_CPU_64_BITS)
     EXPECT_FALSE(process_reader.Is64Bit());
@@ -85,13 +90,13 @@ class ProcessReaderChild final : public WinMultiprocess {
 };
 
 TEST(ProcessReaderWin, ChildBasic) {
-  ProcessReaderChild process_reader_child;
-  process_reader_child.Run();
+  WinMultiprocess::Run<ProcessReaderChild>();
 }
 
 TEST(ProcessReaderWin, SelfOneThread) {
   ProcessReaderWin process_reader;
-  ASSERT_TRUE(process_reader.Initialize(GetCurrentProcess()));
+  ASSERT_TRUE(process_reader.Initialize(GetCurrentProcess(),
+                                        ProcessSuspensionState::kRunning));
 
   const std::vector<ProcessReaderWin::Thread>& threads =
       process_reader.Threads();
@@ -101,14 +106,100 @@ TEST(ProcessReaderWin, SelfOneThread) {
   // thread, not exactly one thread.
   ASSERT_GE(threads.size(), 1u);
 
-  EXPECT_EQ(GetThreadId(GetCurrentThread()), threads[0].id);
+  EXPECT_EQ(GetCurrentThreadId(), threads[0].id);
 #if defined(ARCH_CPU_64_BITS)
-  EXPECT_NE(0, threads[0].context.Rip);
+  EXPECT_NE(0, threads[0].context.native.Rip);
 #else
-  EXPECT_NE(0, threads[0].context.Eip);
+  EXPECT_NE(0u, threads[0].context.native.Eip);
 #endif
 
   EXPECT_EQ(0, threads[0].suspend_count);
+}
+
+class ProcessReaderChildThreadSuspendCount final : public WinMultiprocess {
+ public:
+  ProcessReaderChildThreadSuspendCount() : WinMultiprocess() {}
+  ~ProcessReaderChildThreadSuspendCount() {}
+
+ private:
+  enum : unsigned int { kCreatedThreads = 3 };
+
+  class SleepingThread : public Thread {
+   public:
+    SleepingThread() : done_(nullptr) {}
+
+    void SetHandle(Semaphore* done) {
+      done_= done;
+    }
+
+    void ThreadMain() override {
+      done_->Wait();
+    };
+
+   private:
+    Semaphore* done_;
+  };
+
+  void WinMultiprocessParent() override {
+    char c;
+    CheckedReadFile(ReadPipeHandle(), &c, sizeof(c));
+    ASSERT_EQ(' ', c);
+
+    {
+      ProcessReaderWin process_reader;
+      ASSERT_TRUE(process_reader.Initialize(ChildProcess(),
+                                            ProcessSuspensionState::kRunning));
+
+      const auto& threads = process_reader.Threads();
+      ASSERT_GE(threads.size(), kCreatedThreads + 1);
+      for (const auto& thread : threads)
+        EXPECT_EQ(0u, thread.suspend_count);
+    }
+
+    {
+      ScopedProcessSuspend suspend(ChildProcess());
+
+      ProcessReaderWin process_reader;
+      ASSERT_TRUE(process_reader.Initialize(
+          ChildProcess(), ProcessSuspensionState::kSuspended));
+
+      // Confirm that thread counts are adjusted correctly for the process being
+      // suspended.
+      const auto& threads = process_reader.Threads();
+      ASSERT_GE(threads.size(), kCreatedThreads + 1);
+      for (const auto& thread : threads)
+        EXPECT_EQ(0u, thread.suspend_count);
+    }
+  }
+
+  void WinMultiprocessChild() override {
+    // Create three dummy threads so we can confirm we read successfully read
+    // more than just the main thread.
+    SleepingThread threads[kCreatedThreads];
+    Semaphore done(0);
+    for (auto& thread : threads)
+      thread.SetHandle(&done);
+    for (auto& thread : threads)
+      thread.Start();
+
+    char c = ' ';
+    CheckedWriteFile(WritePipeHandle(), &c, sizeof(c));
+
+    // Wait for the parent to signal that it's OK to exit by closing its end of
+    // the pipe.
+    CheckedReadFileAtEOF(ReadPipeHandle());
+
+    for (int i = 0; i < arraysize(threads); ++i)
+      done.Signal();
+    for (auto& thread : threads)
+      thread.Join();
+  }
+
+  DISALLOW_COPY_AND_ASSIGN(ProcessReaderChildThreadSuspendCount);
+};
+
+TEST(ProcessReaderWin, ChildThreadSuspendCounts) {
+  WinMultiprocess::Run<ProcessReaderChildThreadSuspendCount>();
 }
 
 }  // namespace

@@ -12,10 +12,10 @@
 #include "base/synchronization/lock.h"
 #include "base/time/time.h"
 #include "gpu/command_buffer/common/gles2_cmd_format.h"
-#include "gpu/command_buffer/service/async_pixel_transfer_manager.h"
 #include "gpu/command_buffer/service/error_state.h"
 #include "gpu/command_buffer/service/feature_info.h"
 #include "gpu/command_buffer/service/gles2_cmd_decoder.h"
+#include "ui/gl/gl_bindings.h"
 #include "ui/gl/gl_context.h"
 #include "ui/gl/gl_fence.h"
 #include "ui/gl/gpu_timing.h"
@@ -23,176 +23,152 @@
 namespace gpu {
 namespace gles2 {
 
-namespace {
-
-class AsyncPixelTransferCompletionObserverImpl
-    : public AsyncPixelTransferCompletionObserver {
+class AbstractIntegerQuery : public QueryManager::Query {
  public:
-  AsyncPixelTransferCompletionObserverImpl(base::subtle::Atomic32 submit_count)
-      : submit_count_(submit_count), cancelled_(false) {}
-
-  void Cancel() {
-    base::AutoLock locked(lock_);
-    cancelled_ = true;
-  }
-
-  void DidComplete(const AsyncMemoryParams& mem_params) override {
-    base::AutoLock locked(lock_);
-    if (!cancelled_) {
-      DCHECK(mem_params.buffer().get());
-      void* data = mem_params.GetDataAddress();
-      QuerySync* sync = static_cast<QuerySync*>(data);
-      base::subtle::Release_Store(&sync->process_count, submit_count_);
-    }
-  }
-
- private:
-  ~AsyncPixelTransferCompletionObserverImpl() override {}
-
-  base::subtle::Atomic32 submit_count_;
-
-  base::Lock lock_;
-  bool cancelled_;
-
-  DISALLOW_COPY_AND_ASSIGN(AsyncPixelTransferCompletionObserverImpl);
-};
-
-class AsyncPixelTransfersCompletedQuery
-    : public QueryManager::Query,
-      public base::SupportsWeakPtr<AsyncPixelTransfersCompletedQuery> {
- public:
-  AsyncPixelTransfersCompletedQuery(
+  AbstractIntegerQuery(
       QueryManager* manager, GLenum target, int32 shm_id, uint32 shm_offset);
-
   bool Begin() override;
   bool End(base::subtle::Atomic32 submit_count) override;
-  bool Process(bool did_finish) override;
+  bool QueryCounter(base::subtle::Atomic32 submit_count) override;
+  void Pause() override;
+  void Resume() override;
   void Destroy(bool have_context) override;
 
  protected:
-  ~AsyncPixelTransfersCompletedQuery() override;
+  ~AbstractIntegerQuery() override;
+  bool AreAllResultsAvailable();
 
-  scoped_refptr<AsyncPixelTransferCompletionObserverImpl> observer_;
+  // Service side query ids.
+  std::vector<GLuint> service_ids_;
 };
 
-AsyncPixelTransfersCompletedQuery::AsyncPixelTransfersCompletedQuery(
+AbstractIntegerQuery::AbstractIntegerQuery(
     QueryManager* manager, GLenum target, int32 shm_id, uint32 shm_offset)
     : Query(manager, target, shm_id, shm_offset) {
+  GLuint service_id = 0;
+  glGenQueries(1, &service_id);
+  DCHECK_NE(0u, service_id);
+  service_ids_.push_back(service_id);
 }
 
-bool AsyncPixelTransfersCompletedQuery::Begin() {
-  return true;
-}
-
-bool AsyncPixelTransfersCompletedQuery::End(
-    base::subtle::Atomic32 submit_count) {
-  // Get the real shared memory since it might need to be duped to prevent
-  // use-after-free of the memory.
-  scoped_refptr<Buffer> buffer =
-      manager()->decoder()->GetSharedMemoryBuffer(shm_id());
-  if (!buffer.get())
-    return false;
-  AsyncMemoryParams mem_params(buffer, shm_offset(), sizeof(QuerySync));
-  if (!mem_params.GetDataAddress())
-    return false;
-
-  observer_ = new AsyncPixelTransferCompletionObserverImpl(submit_count);
-
-  // Ask AsyncPixelTransferDelegate to run completion callback after all
-  // previous async transfers are done. No guarantee that callback is run
-  // on the current thread.
-  manager()->decoder()->GetAsyncPixelTransferManager()->AsyncNotifyCompletion(
-      mem_params, observer_.get());
-
-  return AddToPendingTransferQueue(submit_count);
-}
-
-bool AsyncPixelTransfersCompletedQuery::Process(bool did_finish) {
-  QuerySync* sync = manager()->decoder()->GetSharedMemoryAs<QuerySync*>(
-      shm_id(), shm_offset(), sizeof(*sync));
-  if (!sync)
-    return false;
-
-  // Check if completion callback has been run. sync->process_count atomicity
-  // is guaranteed as this is already used to notify client of a completed
-  // query.
-  if (base::subtle::Acquire_Load(&sync->process_count) != submit_count())
-    return true;
-
-  UnmarkAsPending();
-  return true;
-}
-
-void AsyncPixelTransfersCompletedQuery::Destroy(bool /* have_context */) {
-  if (!IsDeleted()) {
-    MarkAsDeleted();
+bool AbstractIntegerQuery::Begin() {
+  MarkAsActive();
+  // Delete all but the first one when beginning a new query.
+  if (service_ids_.size() > 1) {
+    glDeleteQueries(service_ids_.size() - 1, &service_ids_[1]);
+    service_ids_.resize(1);
   }
-}
-
-AsyncPixelTransfersCompletedQuery::~AsyncPixelTransfersCompletedQuery() {
-  if (observer_.get())
-    observer_->Cancel();
-}
-
-}  // namespace
-
-class AllSamplesPassedQuery : public QueryManager::Query {
- public:
-  AllSamplesPassedQuery(
-      QueryManager* manager, GLenum target, int32 shm_id, uint32 shm_offset,
-      GLuint service_id);
-  bool Begin() override;
-  bool End(base::subtle::Atomic32 submit_count) override;
-  bool Process(bool did_finish) override;
-  void Destroy(bool have_context) override;
-
- protected:
-  ~AllSamplesPassedQuery() override;
-
- private:
-  // Service side query id.
-  GLuint service_id_;
-};
-
-AllSamplesPassedQuery::AllSamplesPassedQuery(
-    QueryManager* manager, GLenum target, int32 shm_id, uint32 shm_offset,
-    GLuint service_id)
-    : Query(manager, target, shm_id, shm_offset),
-      service_id_(service_id) {
-}
-
-bool AllSamplesPassedQuery::Begin() {
-  BeginQueryHelper(target(), service_id_);
+  BeginQueryHelper(target(), service_ids_.back());
   return true;
 }
 
-bool AllSamplesPassedQuery::End(base::subtle::Atomic32 submit_count) {
+bool AbstractIntegerQuery::End(base::subtle::Atomic32 submit_count) {
   EndQueryHelper(target());
   return AddToPendingQueue(submit_count);
 }
 
-bool AllSamplesPassedQuery::Process(bool did_finish) {
-  GLuint available = 0;
-  glGetQueryObjectuiv(
-      service_id_, GL_QUERY_RESULT_AVAILABLE_EXT, &available);
-  if (!available) {
-    return true;
-  }
-  GLuint result = 0;
-  glGetQueryObjectuiv(
-      service_id_, GL_QUERY_RESULT_EXT, &result);
-
-  return MarkAsCompleted(result != 0);
+bool AbstractIntegerQuery::QueryCounter(base::subtle::Atomic32 submit_count) {
+  NOTREACHED();
+  return false;
 }
 
-void AllSamplesPassedQuery::Destroy(bool have_context) {
+void AbstractIntegerQuery::Pause() {
+  MarkAsPaused();
+  EndQueryHelper(target());
+}
+
+void AbstractIntegerQuery::Resume() {
+  MarkAsActive();
+
+  GLuint service_id = 0;
+  glGenQueries(1, &service_id);
+  DCHECK_NE(0u, service_id);
+  service_ids_.push_back(service_id);
+  BeginQueryHelper(target(), service_ids_.back());
+}
+
+void AbstractIntegerQuery::Destroy(bool have_context) {
   if (have_context && !IsDeleted()) {
-    glDeleteQueries(1, &service_id_);
+    glDeleteQueries(service_ids_.size(), &service_ids_[0]);
+    service_ids_.clear();
     MarkAsDeleted();
   }
 }
 
-AllSamplesPassedQuery::~AllSamplesPassedQuery() {
+AbstractIntegerQuery::~AbstractIntegerQuery() {
+}
+
+bool AbstractIntegerQuery::AreAllResultsAvailable() {
+  GLuint available = 0;
+  glGetQueryObjectuiv(
+      service_ids_.back(), GL_QUERY_RESULT_AVAILABLE_EXT, &available);
+  return !!available;
+}
+
+class BooleanQuery : public AbstractIntegerQuery {
+ public:
+  BooleanQuery(
+      QueryManager* manager, GLenum target, int32 shm_id, uint32 shm_offset);
+  bool Process(bool did_finish) override;
+
+ protected:
+  ~BooleanQuery() override;
+};
+
+BooleanQuery::BooleanQuery(
+    QueryManager* manager, GLenum target, int32 shm_id, uint32 shm_offset)
+    : AbstractIntegerQuery(manager, target, shm_id, shm_offset) {
+}
+
+BooleanQuery::~BooleanQuery() {
+}
+
+bool BooleanQuery::Process(bool did_finish) {
+  if (!AreAllResultsAvailable()) {
+    // Must return true to avoid generating an error at the command
+    // buffer level.
+    return true;
+  }
+  for (const GLuint& service_id : service_ids_) {
+    GLuint result = 0;
+    glGetQueryObjectuiv(service_id, GL_QUERY_RESULT_EXT, &result);
+    if (result != 0)
+      return MarkAsCompleted(1);
+  }
+  return MarkAsCompleted(0);
+}
+
+class SummedIntegerQuery : public AbstractIntegerQuery {
+ public:
+  SummedIntegerQuery(
+      QueryManager* manager, GLenum target, int32 shm_id, uint32 shm_offset);
+  bool Process(bool did_finish) override;
+
+ protected:
+  ~SummedIntegerQuery() override;
+};
+
+SummedIntegerQuery::SummedIntegerQuery(
+    QueryManager* manager, GLenum target, int32 shm_id, uint32 shm_offset)
+    : AbstractIntegerQuery(manager, target, shm_id, shm_offset) {
+}
+
+SummedIntegerQuery::~SummedIntegerQuery() {
+}
+
+bool SummedIntegerQuery::Process(bool did_finish) {
+  if (!AreAllResultsAvailable()) {
+    // Must return true to avoid generating an error at the command
+    // buffer level.
+    return true;
+  }
+  GLuint summed_result = 0;
+  for (const GLuint& service_id : service_ids_) {
+    GLuint result = 0;
+    glGetQueryObjectuiv(service_id, GL_QUERY_RESULT_EXT, &result);
+    summed_result += result;
+  }
+  return MarkAsCompleted(summed_result);
 }
 
 class CommandsIssuedQuery : public QueryManager::Query {
@@ -202,6 +178,9 @@ class CommandsIssuedQuery : public QueryManager::Query {
 
   bool Begin() override;
   bool End(base::subtle::Atomic32 submit_count) override;
+  bool QueryCounter(base::subtle::Atomic32 submit_count) override;
+  void Pause() override;
+  void Resume() override;
   bool Process(bool did_finish) override;
   void Destroy(bool have_context) override;
 
@@ -218,14 +197,28 @@ CommandsIssuedQuery::CommandsIssuedQuery(
 }
 
 bool CommandsIssuedQuery::Begin() {
+  MarkAsActive();
   begin_time_ = base::TimeTicks::Now();
   return true;
 }
 
+void CommandsIssuedQuery::Pause() {
+  MarkAsPaused();
+}
+
+void CommandsIssuedQuery::Resume() {
+  MarkAsActive();
+}
+
 bool CommandsIssuedQuery::End(base::subtle::Atomic32 submit_count) {
-  base::TimeDelta elapsed = base::TimeTicks::Now() - begin_time_;
+  const base::TimeDelta elapsed = base::TimeTicks::Now() - begin_time_;
   MarkAsPending(submit_count);
   return MarkAsCompleted(elapsed.InMicroseconds());
+}
+
+bool CommandsIssuedQuery::QueryCounter(base::subtle::Atomic32 submit_count) {
+  NOTREACHED();
+  return false;
 }
 
 bool CommandsIssuedQuery::Process(bool did_finish) {
@@ -249,6 +242,9 @@ class CommandLatencyQuery : public QueryManager::Query {
 
   bool Begin() override;
   bool End(base::subtle::Atomic32 submit_count) override;
+  bool QueryCounter(base::subtle::Atomic32 submit_count) override;
+  void Pause() override;
+  void Resume() override;
   bool Process(bool did_finish) override;
   void Destroy(bool have_context) override;
 
@@ -262,13 +258,27 @@ CommandLatencyQuery::CommandLatencyQuery(
 }
 
 bool CommandLatencyQuery::Begin() {
-    return true;
+  MarkAsActive();
+  return true;
+}
+
+void CommandLatencyQuery::Pause() {
+  MarkAsPaused();
+}
+
+void CommandLatencyQuery::Resume() {
+  MarkAsActive();
 }
 
 bool CommandLatencyQuery::End(base::subtle::Atomic32 submit_count) {
     base::TimeDelta now = base::TimeTicks::Now() - base::TimeTicks();
     MarkAsPending(submit_count);
     return MarkAsCompleted(now.InMicroseconds());
+}
+
+bool CommandLatencyQuery::QueryCounter(base::subtle::Atomic32 submit_count) {
+  NOTREACHED();
+  return false;
 }
 
 bool CommandLatencyQuery::Process(bool did_finish) {
@@ -295,6 +305,9 @@ class AsyncReadPixelsCompletedQuery
 
   bool Begin() override;
   bool End(base::subtle::Atomic32 submit_count) override;
+  bool QueryCounter(base::subtle::Atomic32 submit_count) override;
+  void Pause() override;
+  void Resume() override;
   bool Process(bool did_finish) override;
   void Destroy(bool have_context) override;
 
@@ -303,19 +316,26 @@ class AsyncReadPixelsCompletedQuery
   ~AsyncReadPixelsCompletedQuery() override;
 
  private:
-  bool completed_;
   bool complete_result_;
 };
 
 AsyncReadPixelsCompletedQuery::AsyncReadPixelsCompletedQuery(
     QueryManager* manager, GLenum target, int32 shm_id, uint32 shm_offset)
     : Query(manager, target, shm_id, shm_offset),
-      completed_(false),
       complete_result_(false) {
 }
 
 bool AsyncReadPixelsCompletedQuery::Begin() {
+  MarkAsActive();
   return true;
+}
+
+void AsyncReadPixelsCompletedQuery::Pause() {
+  MarkAsPaused();
+}
+
+void AsyncReadPixelsCompletedQuery::Resume() {
+  MarkAsActive();
 }
 
 bool AsyncReadPixelsCompletedQuery::End(base::subtle::Atomic32 submit_count) {
@@ -329,13 +349,18 @@ bool AsyncReadPixelsCompletedQuery::End(base::subtle::Atomic32 submit_count) {
   return Process(false);
 }
 
+bool AsyncReadPixelsCompletedQuery::QueryCounter(
+    base::subtle::Atomic32 submit_count) {
+  NOTREACHED();
+  return false;
+}
+
 void AsyncReadPixelsCompletedQuery::Complete() {
-  completed_ = true;
   complete_result_ = MarkAsCompleted(1);
 }
 
 bool AsyncReadPixelsCompletedQuery::Process(bool did_finish) {
-  return !completed_ || complete_result_;
+  return !IsFinished() || complete_result_;
 }
 
 void AsyncReadPixelsCompletedQuery::Destroy(bool /* have_context */) {
@@ -355,6 +380,9 @@ class GetErrorQuery : public QueryManager::Query {
 
   bool Begin() override;
   bool End(base::subtle::Atomic32 submit_count) override;
+  bool QueryCounter(base::subtle::Atomic32 submit_count) override;
+  void Pause() override;
+  void Resume() override;
   bool Process(bool did_finish) override;
   void Destroy(bool have_context) override;
 
@@ -370,12 +398,26 @@ GetErrorQuery::GetErrorQuery(
 }
 
 bool GetErrorQuery::Begin() {
+  MarkAsActive();
   return true;
+}
+
+void GetErrorQuery::Pause() {
+  MarkAsPaused();
+}
+
+void GetErrorQuery::Resume() {
+  MarkAsActive();
 }
 
 bool GetErrorQuery::End(base::subtle::Atomic32 submit_count) {
   MarkAsPending(submit_count);
   return MarkAsCompleted(manager()->decoder()->GetErrorState()->GetGLError());
+}
+
+bool GetErrorQuery::QueryCounter(base::subtle::Atomic32 submit_count) {
+  NOTREACHED();
+  return false;
 }
 
 bool GetErrorQuery::Process(bool did_finish) {
@@ -402,6 +444,9 @@ class CommandsCompletedQuery : public QueryManager::Query {
   // Overridden from QueryManager::Query:
   bool Begin() override;
   bool End(base::subtle::Atomic32 submit_count) override;
+  bool QueryCounter(base::subtle::Atomic32 submit_count) override;
+  void Pause() override;
+  void Resume() override;
   bool Process(bool did_finish) override;
   void Destroy(bool have_context) override;
 
@@ -420,14 +465,28 @@ CommandsCompletedQuery::CommandsCompletedQuery(QueryManager* manager,
     : Query(manager, target, shm_id, shm_offset) {}
 
 bool CommandsCompletedQuery::Begin() {
+  MarkAsActive();
   begin_time_ = base::TimeTicks::Now();
   return true;
+}
+
+void CommandsCompletedQuery::Pause() {
+  MarkAsPaused();
+}
+
+void CommandsCompletedQuery::Resume() {
+  MarkAsActive();
 }
 
 bool CommandsCompletedQuery::End(base::subtle::Atomic32 submit_count) {
   fence_.reset(gfx::GLFence::Create());
   DCHECK(fence_);
   return AddToPendingQueue(submit_count);
+}
+
+bool CommandsCompletedQuery::QueryCounter(base::subtle::Atomic32 submit_count) {
+  NOTREACHED();
+  return false;
 }
 
 bool CommandsCompletedQuery::Process(bool did_finish) {
@@ -437,7 +496,7 @@ bool CommandsCompletedQuery::Process(bool did_finish) {
   if (!did_finish && fence_ && !fence_->HasCompleted())
     return true;
 
-  base::TimeDelta elapsed = base::TimeTicks::Now() - begin_time_;
+  const base::TimeDelta elapsed = base::TimeTicks::Now() - begin_time_;
   return MarkAsCompleted(elapsed.InMicroseconds());
 }
 
@@ -460,6 +519,9 @@ class TimeElapsedQuery : public QueryManager::Query {
   // Overridden from QueryManager::Query:
   bool Begin() override;
   bool End(base::subtle::Atomic32 submit_count) override;
+  bool QueryCounter(base::subtle::Atomic32 submit_count) override;
+  void Pause() override;
+  void Resume() override;
   bool Process(bool did_finish) override;
   void Destroy(bool have_context) override;
 
@@ -475,9 +537,13 @@ TimeElapsedQuery::TimeElapsedQuery(QueryManager* manager,
                                    int32 shm_id,
                                    uint32 shm_offset)
     : Query(manager, target, shm_id, shm_offset),
-      gpu_timer_(manager->CreateGPUTimer(true)) {}
+      gpu_timer_(manager->CreateGPUTimer(true)) {
+}
 
 bool TimeElapsedQuery::Begin() {
+  // Reset the disjoint value before the query begins if it is safe.
+  SafelyResetDisjointValue();
+  MarkAsActive();
   gpu_timer_->Start();
   return true;
 }
@@ -487,23 +553,127 @@ bool TimeElapsedQuery::End(base::subtle::Atomic32 submit_count) {
   return AddToPendingQueue(submit_count);
 }
 
+bool TimeElapsedQuery::QueryCounter(base::subtle::Atomic32 submit_count) {
+  NOTREACHED();
+  return false;
+}
+
+void TimeElapsedQuery::Pause() {
+  MarkAsPaused();
+}
+
+void TimeElapsedQuery::Resume() {
+  MarkAsActive();
+}
+
 bool TimeElapsedQuery::Process(bool did_finish) {
   if (!gpu_timer_->IsAvailable())
     return true;
 
-  const uint64_t nano_seconds =
-      gpu_timer_->GetDeltaElapsed() * base::Time::kNanosecondsPerMicrosecond;
+  // Make sure disjoint value is up to date. This disjoint check is the only one
+  // that needs to be done to validate that this query is valid. If a disjoint
+  // occurs before the client checks the query value we will just hide the
+  // disjoint state since it did not affect this query.
+  UpdateDisjointValue();
+
+  const uint64_t nano_seconds = gpu_timer_->GetDeltaElapsed() *
+                                base::Time::kNanosecondsPerMicrosecond;
   return MarkAsCompleted(nano_seconds);
 }
 
 void TimeElapsedQuery::Destroy(bool have_context) {
+  gpu_timer_->Destroy(have_context);
+}
+
+TimeElapsedQuery::~TimeElapsedQuery() {}
+
+class TimeStampQuery : public QueryManager::Query {
+ public:
+  TimeStampQuery(QueryManager* manager,
+                 GLenum target,
+                 int32 shm_id,
+                 uint32 shm_offset);
+
+  // Overridden from QueryManager::Query:
+  bool Begin() override;
+  bool End(base::subtle::Atomic32 submit_count) override;
+  bool QueryCounter(base::subtle::Atomic32 submit_count) override;
+  void Pause() override;
+  void Resume() override;
+  bool Process(bool did_finish) override;
+  void Destroy(bool have_context) override;
+
+ protected:
+  ~TimeStampQuery() override;
+
+ private:
+  scoped_ptr<gfx::GPUTimer> gpu_timer_;
+};
+
+TimeStampQuery::TimeStampQuery(QueryManager* manager,
+                               GLenum target,
+                               int32 shm_id,
+                               uint32 shm_offset)
+    : Query(manager, target, shm_id, shm_offset),
+      gpu_timer_(manager->CreateGPUTimer(false)) {}
+
+bool TimeStampQuery::Begin() {
+  NOTREACHED();
+  return false;
+}
+
+bool TimeStampQuery::End(base::subtle::Atomic32 submit_count) {
+  NOTREACHED();
+  return false;
+}
+
+void TimeStampQuery::Pause() {
+  MarkAsPaused();
+}
+
+void TimeStampQuery::Resume() {
+  MarkAsActive();
+}
+
+bool TimeStampQuery::QueryCounter(base::subtle::Atomic32 submit_count) {
+  // Reset the disjoint value before the query begins if it is safe.
+  SafelyResetDisjointValue();
+  MarkAsActive();
+  // After a timestamp has begun, we will want to continually detect
+  // the disjoint value every frame until the context is destroyed.
+  BeginContinualDisjointUpdate();
+
+  gpu_timer_->QueryTimeStamp();
+  return AddToPendingQueue(submit_count);
+}
+
+bool TimeStampQuery::Process(bool did_finish) {
+  if (!gpu_timer_->IsAvailable())
+    return true;
+
+  // Make sure disjoint value is up to date. This disjoint check is the only one
+  // that needs to be done to validate that this query is valid. If a disjoint
+  // occurs before the client checks the query value we will just hide the
+  // disjoint state since it did not affect this query.
+  UpdateDisjointValue();
+
+  int64_t start = 0;
+  int64_t end = 0;
+  gpu_timer_->GetStartEndTimestamps(&start, &end);
+  DCHECK(start == end);
+
+  const uint64_t nano_seconds = start * base::Time::kNanosecondsPerMicrosecond;
+  return MarkAsCompleted(nano_seconds);
+}
+
+void TimeStampQuery::Destroy(bool have_context) {
   if (gpu_timer_.get()) {
     gpu_timer_->Destroy(have_context);
     gpu_timer_.reset();
   }
 }
 
-TimeElapsedQuery::~TimeElapsedQuery() {}
+TimeStampQuery::~TimeStampQuery() {}
 
 QueryManager::QueryManager(
     GLES2Decoder* decoder,
@@ -515,6 +685,10 @@ QueryManager::QueryManager(
       use_arb_occlusion_query_for_occlusion_query_boolean_(
           feature_info->feature_flags(
             ).use_arb_occlusion_query_for_occlusion_query_boolean),
+      update_disjoints_continually_(false),
+      disjoint_notify_shm_id_(-1),
+      disjoint_notify_shm_offset_(0),
+      disjoints_notified_(0),
       query_count_(0) {
   DCHECK(!(use_arb_occlusion_query_for_occlusion_query_boolean_ &&
            use_arb_occlusion_query2_for_occlusion_query_boolean_));
@@ -536,13 +710,29 @@ QueryManager::~QueryManager() {
 }
 
 void QueryManager::Destroy(bool have_context) {
+  active_queries_.clear();
   pending_queries_.clear();
   pending_transfer_queries_.clear();
+  active_queries_.clear();
   while (!queries_.empty()) {
     Query* query = queries_.begin()->second.get();
     query->Destroy(have_context);
     queries_.erase(queries_.begin());
   }
+}
+
+void QueryManager::SetDisjointSync(int32 shm_id, uint32 shm_offset) {
+  DCHECK(disjoint_notify_shm_id_ == -1);
+  DCHECK(shm_id != -1);
+
+  DisjointValueSync* sync = decoder_->GetSharedMemoryAs<DisjointValueSync*>(
+      shm_id, shm_offset, sizeof(*sync));
+  DCHECK(sync);
+  sync->Reset();
+  disjoints_notified_ = 0;
+
+  disjoint_notify_shm_id_ = shm_id;
+  disjoint_notify_shm_offset_ = shm_offset;
 }
 
 QueryManager::Query* QueryManager::CreateQuery(
@@ -554,11 +744,6 @@ QueryManager::Query* QueryManager::CreateQuery(
       break;
     case GL_LATENCY_QUERY_CHROMIUM:
       query = new CommandLatencyQuery(this, target, shm_id, shm_offset);
-      break;
-    case GL_ASYNC_PIXEL_UNPACK_COMPLETED_CHROMIUM:
-      // Currently async pixel transfer delegates only support uploads.
-      query = new AsyncPixelTransfersCompletedQuery(
-          this, target, shm_id, shm_offset);
       break;
     case GL_ASYNC_PIXEL_PACK_COMPLETED_CHROMIUM:
       query = new AsyncReadPixelsCompletedQuery(
@@ -573,13 +758,18 @@ QueryManager::Query* QueryManager::CreateQuery(
     case GL_TIME_ELAPSED:
       query = new TimeElapsedQuery(this, target, shm_id, shm_offset);
       break;
-    default: {
-      GLuint service_id = 0;
-      glGenQueries(1, &service_id);
-      DCHECK_NE(0u, service_id);
-      query = new AllSamplesPassedQuery(
-          this, target, shm_id, shm_offset, service_id);
+    case GL_TIMESTAMP:
+      query = new TimeStampQuery(this, target, shm_id, shm_offset);
       break;
+    case GL_ANY_SAMPLES_PASSED:
+    case GL_ANY_SAMPLES_PASSED_CONSERVATIVE:
+      query = new BooleanQuery(this, target, shm_id, shm_offset);
+      break;
+    case GL_TRANSFORM_FEEDBACK_PRIMITIVES_WRITTEN:
+      query = new SummedIntegerQuery(this, target, shm_id, shm_offset);
+      break;
+    default: {
+      NOTREACHED();
     }
   }
   std::pair<QueryMap::iterator, bool> result =
@@ -608,16 +798,30 @@ bool QueryManager::IsValidQuery(GLuint id) {
   return it != generated_query_ids_.end();
 }
 
-QueryManager::Query* QueryManager::GetQuery(
-    GLuint client_id) {
+QueryManager::Query* QueryManager::GetQuery(GLuint client_id) {
   QueryMap::iterator it = queries_.find(client_id);
-  return it != queries_.end() ? it->second.get() : NULL;
+  return it != queries_.end() ? it->second.get() : nullptr;
+}
+
+QueryManager::Query* QueryManager::GetActiveQuery(GLenum target) {
+  ActiveQueryMap::iterator it = active_queries_.find(target);
+  return it != active_queries_.end() ? it->second.get() : nullptr;
 }
 
 void QueryManager::RemoveQuery(GLuint client_id) {
   QueryMap::iterator it = queries_.find(client_id);
   if (it != queries_.end()) {
     Query* query = it->second.get();
+
+    // Remove from active query map if it is active.
+    ActiveQueryMap::iterator active_it = active_queries_.find(query->target());
+    bool is_active = (active_it != active_queries_.end() &&
+                      query == active_it->second.get());
+    DCHECK(is_active == query->IsActive());
+    if (is_active)
+      active_queries_.erase(active_it);
+
+    query->Destroy(true);
     RemovePendingQuery(query);
     query->MarkAsDeleted();
     queries_.erase(it);
@@ -665,6 +869,33 @@ void QueryManager::EndQueryHelper(GLenum target) {
   glEndQuery(target);
 }
 
+void QueryManager::UpdateDisjointValue() {
+  if (disjoint_notify_shm_id_ != -1) {
+    if (gpu_timing_client_->CheckAndResetTimerErrors()) {
+      disjoints_notified_++;
+
+      DisjointValueSync* sync = decoder_->GetSharedMemoryAs<DisjointValueSync*>(
+          disjoint_notify_shm_id_, disjoint_notify_shm_offset_, sizeof(*sync));
+      if (!sync) {
+        // Shared memory does not seem to be valid, ignore the shm id/offset.
+        disjoint_notify_shm_id_ = -1;
+        disjoint_notify_shm_offset_ = 0;
+      } else {
+        sync->SetDisjointCount(disjoints_notified_);
+      }
+    }
+  }
+}
+
+void QueryManager::SafelyResetDisjointValue() {
+  // It is only safe to reset the disjoint value is there is no active
+  // elapsed timer and we are not continually updating the disjoint value.
+  if (!update_disjoints_continually_ && !GetActiveQuery(GL_TIME_ELAPSED)) {
+    // Reset the error state without storing the result.
+    gpu_timing_client_->CheckAndResetTimerErrors();
+  }
+}
+
 QueryManager::Query::Query(
      QueryManager* manager, GLenum target, int32 shm_id, uint32 shm_offset)
     : manager_(manager),
@@ -672,7 +903,7 @@ QueryManager::Query::Query(
       shm_id_(shm_id),
       shm_offset_(shm_offset),
       submit_count_(0),
-      pending_(false),
+      query_state_(kQueryState_Initialize),
       deleted_(false) {
   DCHECK(manager);
   manager_->StartTracking(this);
@@ -686,7 +917,7 @@ void QueryManager::Query::RunCallbacks() {
 }
 
 void QueryManager::Query::AddCallback(base::Closure callback) {
-  if (pending_) {
+  if (query_state_ == kQueryState_Pending) {
     callbacks_.push_back(callback);
   } else {
     callback.Run();
@@ -705,14 +936,13 @@ QueryManager::Query::~Query() {
 }
 
 bool QueryManager::Query::MarkAsCompleted(uint64 result) {
-  DCHECK(pending_);
+  UnmarkAsPending();
   QuerySync* sync = manager_->decoder_->GetSharedMemoryAs<QuerySync*>(
       shm_id_, shm_offset_, sizeof(*sync));
   if (!sync) {
     return false;
   }
 
-  pending_ = false;
   sync->result = result;
   base::subtle::Release_Store(&sync->process_count, submit_count_);
 
@@ -725,12 +955,14 @@ bool QueryManager::ProcessPendingQueries(bool did_finish) {
     if (!query->Process(did_finish)) {
       return false;
     }
-    if (query->pending()) {
+    if (query->IsPending()) {
       break;
     }
     query->RunCallbacks();
     pending_queries_.pop_front();
   }
+  // If glFinish() has been called, all of our queries should be completed.
+  DCHECK(!did_finish || pending_queries_.empty());
 
   return true;
 }
@@ -745,7 +977,7 @@ bool QueryManager::ProcessPendingTransferQueries() {
     if (!query->Process(false)) {
       return false;
     }
-    if (query->pending()) {
+    if (query->IsPending()) {
       break;
     }
     query->RunCallbacks();
@@ -757,6 +989,11 @@ bool QueryManager::ProcessPendingTransferQueries() {
 
 bool QueryManager::HavePendingTransferQueries() {
   return !pending_transfer_queries_.empty();
+}
+
+void QueryManager::ProcessFrameBeginUpdates() {
+  if (update_disjoints_continually_)
+    UpdateDisjointValue();
 }
 
 bool QueryManager::AddPendingQuery(Query* query,
@@ -786,7 +1023,7 @@ bool QueryManager::AddPendingTransferQuery(
 
 bool QueryManager::RemovePendingQuery(Query* query) {
   DCHECK(query);
-  if (query->pending()) {
+  if (query->IsPending()) {
     // TODO(gman): Speed this up if this is a common operation. This would only
     // happen if you do being/end begin/end on the same query without waiting
     // for the first one to finish.
@@ -816,7 +1053,12 @@ bool QueryManager::BeginQuery(Query* query) {
   if (!RemovePendingQuery(query)) {
     return false;
   }
-  return query->Begin();
+  if (query->Begin()) {
+    active_queries_[query->target()] = query;
+    return true;
+  }
+
+  return false;
 }
 
 bool QueryManager::EndQuery(Query* query, base::subtle::Atomic32 submit_count) {
@@ -824,7 +1066,38 @@ bool QueryManager::EndQuery(Query* query, base::subtle::Atomic32 submit_count) {
   if (!RemovePendingQuery(query)) {
     return false;
   }
+
+  // Remove from active query map if it is active.
+  ActiveQueryMap::iterator active_it = active_queries_.find(query->target());
+  DCHECK(active_it != active_queries_.end());
+  DCHECK(query == active_it->second.get());
+  active_queries_.erase(active_it);
+
   return query->End(submit_count);
+}
+
+bool QueryManager::QueryCounter(
+    Query* query, base::subtle::Atomic32 submit_count) {
+  DCHECK(query);
+  return query->QueryCounter(submit_count);
+}
+
+void QueryManager::PauseQueries() {
+  for (std::pair<const GLenum, scoped_refptr<Query> >& it : active_queries_) {
+    if (it.second->IsActive()) {
+      it.second->Pause();
+      DCHECK(it.second->IsPaused());
+    }
+  }
+}
+
+void QueryManager::ResumeQueries() {
+  for (std::pair<const GLenum, scoped_refptr<Query> >& it : active_queries_) {
+    if (it.second->IsPaused()) {
+      it.second->Resume();
+      DCHECK(it.second->IsActive());
+    }
+  }
 }
 
 }  // namespace gles2

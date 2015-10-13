@@ -8,8 +8,11 @@
 #include "bindings/core/v8/ScriptPromise.h"
 #include "bindings/core/v8/ScriptValue.h"
 #include "bindings/core/v8/ScriptWrappable.h"
+#include "core/dom/DOMArrayBuffer.h"
 #include "platform/heap/Handle.h"
 #include "platform/weborigin/KURL.h"
+#include "wtf/PassRefPtr.h"
+#include "wtf/RefPtr.h"
 
 namespace blink {
 
@@ -21,12 +24,14 @@ struct WebPushSubscription;
 class PushSubscription final : public GarbageCollectedFinalized<PushSubscription>, public ScriptWrappable {
     DEFINE_WRAPPERTYPEINFO();
 public:
-    static PushSubscription* take(ScriptPromiseResolver*, WebPushSubscription*, ServiceWorkerRegistration*);
+    static PushSubscription* take(ScriptPromiseResolver*, PassOwnPtr<WebPushSubscription>, ServiceWorkerRegistration*);
     static void dispose(WebPushSubscription* subscriptionRaw);
 
     virtual ~PushSubscription();
 
     KURL endpoint() const;
+
+    PassRefPtr<DOMArrayBuffer> getKey(const AtomicString& name) const;
     ScriptPromise unsubscribe(ScriptState*);
 
     ScriptValue toJSONForBinding(ScriptState*);
@@ -34,9 +39,11 @@ public:
     DECLARE_TRACE();
 
 private:
-    PushSubscription(const KURL& endpoint, ServiceWorkerRegistration*);
+    PushSubscription(const WebPushSubscription&, ServiceWorkerRegistration*);
 
     KURL m_endpoint;
+    RefPtr<DOMArrayBuffer> m_curve25519dh;
+
     Member<ServiceWorkerRegistration> m_serviceWorkerRegistration;
 };
 

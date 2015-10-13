@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "base/numerics/safe_math.h"
 #include "cc/base/histograms.h"
 #include "cc/base/region.h"
 #include "cc/layers/content_layer_client.h"
@@ -18,10 +19,7 @@ namespace {
 // Layout pixel buffer around the visible layer rect to record.  Any base
 // picture that intersects the visible layer rect expanded by this distance
 // will be recorded.
-const int kPixelDistanceToRecord = 8000;
-// We don't perform solid color analysis on images that have more than 10 skia
-// operations.
-const int kOpCountThatIsOkToAnalyze = 10;
+const int kPixelDistanceToRecord = 4000;
 
 // This is the distance, in layer space, by which the recorded viewport has to
 // change before causing a paint of the new content. For example, it means
@@ -37,26 +35,23 @@ const bool kDefaultClearCanvasSetting = true;
 
 DEFINE_SCOPED_UMA_HISTOGRAM_AREA_TIMER(
     ScopedDisplayListRecordingSourceUpdateTimer,
-    "Compositing.DisplayListRecordingSource.UpdateUs",
-    "Compositing.DisplayListRecordingSource.UpdateInvalidatedAreaPerMs");
+    "Compositing.%s.DisplayListRecordingSource.UpdateUs",
+    "Compositing.%s.DisplayListRecordingSource.UpdateInvalidatedAreaPerMs");
 
 }  // namespace
 
 namespace cc {
 
-DisplayListRecordingSource::DisplayListRecordingSource(
-    const gfx::Size& grid_cell_size)
+DisplayListRecordingSource::DisplayListRecordingSource()
     : slow_down_raster_scale_factor_for_debug_(0),
-      gather_pixel_refs_(false),
+      generate_discardable_images_metadata_(false),
       requires_clear_(false),
       is_solid_color_(false),
       clear_canvas_with_debug_color_(kDefaultClearCanvasSetting),
       solid_color_(SK_ColorTRANSPARENT),
       background_color_(SK_ColorTRANSPARENT),
       pixel_record_distance_(kPixelDistanceToRecord),
-      grid_cell_size_(grid_cell_size),
-      is_suitable_for_gpu_rasterization_(true) {
-}
+      painter_reported_memory_usage_(0) {}
 
 DisplayListRecordingSource::~DisplayListRecordingSource() {
 }
@@ -153,8 +148,13 @@ bool DisplayListRecordingSource::UpdateAndExpandInvalidation(
   // Count the area that is being invalidated.
   Region recorded_invalidation(*invalidation);
   recorded_invalidation.Intersect(recorded_viewport_);
-  for (Region::Iterator it(recorded_invalidation); it.has_rect(); it.next())
-    timer.AddArea(it.rect().size().GetArea());
+  for (Region::Iterator it(recorded_invalidation); it.has_rect(); it.next()) {
+    // gfx::Size::GetArea might overflow in this case, so use an explicit
+    // CheckedNumeric instead.
+    base::CheckedNumeric<int> checked_area = it.rect().size().width();
+    checked_area *= it.rect().size().height();
+    timer.AddArea(checked_area);
+  }
 
   if (!updated && !invalidation->Intersects(recorded_viewport_))
     return false;
@@ -180,23 +180,16 @@ bool DisplayListRecordingSource::UpdateAndExpandInvalidation(
       NOTREACHED();
   }
 
-  int repeat_count = 1;
-  if (slow_down_raster_scale_factor_for_debug_ > 1) {
-    repeat_count = slow_down_raster_scale_factor_for_debug_;
-    painting_control = ContentLayerClient::DISPLAY_LIST_CACHING_DISABLED;
-  }
+  // TODO(vmpstr): Add a slow_down_recording_scale_factor_for_debug_ to be able
+  // to slow down recording.
+  display_list_ =
+      painter->PaintContentsToDisplayList(recorded_viewport_, painting_control);
+  painter_reported_memory_usage_ = painter->GetApproximateUnsharedMemoryUsage();
 
-  for (int i = 0; i < repeat_count; ++i) {
-    display_list_ = painter->PaintContentsToDisplayList(recorded_viewport_,
-                                                        painting_control);
-  }
-
-  is_suitable_for_gpu_rasterization_ =
-      display_list_->IsSuitableForGpuRasterization();
   DetermineIfSolidColor();
   display_list_->EmitTraceSnapshot();
-  if (gather_pixel_refs_)
-    display_list_->GatherPixelRefs(grid_cell_size_);
+  if (generate_discardable_images_metadata_)
+    display_list_->GenerateDiscardableImagesMetadata();
 
   return true;
 }
@@ -214,8 +207,9 @@ void DisplayListRecordingSource::SetSlowdownRasterScaleFactor(int factor) {
   slow_down_raster_scale_factor_for_debug_ = factor;
 }
 
-void DisplayListRecordingSource::SetGatherPixelRefs(bool gather_pixel_refs) {
-  gather_pixel_refs_ = gather_pixel_refs;
+void DisplayListRecordingSource::SetGenerateDiscardableImagesMetadata(
+    bool generate_metadata) {
+  generate_discardable_images_metadata_ = generate_metadata;
 }
 
 void DisplayListRecordingSource::SetBackgroundColor(SkColor background_color) {
@@ -226,12 +220,12 @@ void DisplayListRecordingSource::SetRequiresClear(bool requires_clear) {
   requires_clear_ = requires_clear;
 }
 
-void DisplayListRecordingSource::SetUnsuitableForGpuRasterizationForTesting() {
-  is_suitable_for_gpu_rasterization_ = false;
-}
-
 bool DisplayListRecordingSource::IsSuitableForGpuRasterization() const {
-  return is_suitable_for_gpu_rasterization_;
+  // The display list needs to be created (see: UpdateAndExpandInvalidation)
+  // before checking for suitability. There are cases where an update will not
+  // create a display list (e.g., if the size is empty). We return true in these
+  // cases because the gpu suitability bit sticks false.
+  return !display_list_ || display_list_->IsSuitableForGpuRasterization();
 }
 
 scoped_refptr<RasterSource> DisplayListRecordingSource::CreateRasterSource(
@@ -241,16 +235,12 @@ scoped_refptr<RasterSource> DisplayListRecordingSource::CreateRasterSource(
           this, can_use_lcd_text));
 }
 
-gfx::Size DisplayListRecordingSource::GetTileGridSizeForTesting() const {
-  return gfx::Size();
-}
-
 void DisplayListRecordingSource::DetermineIfSolidColor() {
-  DCHECK(display_list_.get());
+  DCHECK(display_list_);
   is_solid_color_ = false;
   solid_color_ = SK_ColorTRANSPARENT;
 
-  if (display_list_->ApproximateOpCount() > kOpCountThatIsOkToAnalyze)
+  if (!display_list_->ShouldBeAnalyzedForSolidColor())
     return;
 
   gfx::Size layer_size = GetSize();
@@ -261,7 +251,8 @@ void DisplayListRecordingSource::DetermineIfSolidColor() {
 
 void DisplayListRecordingSource::Clear() {
   recorded_viewport_ = gfx::Rect();
-  display_list_ = NULL;
+  display_list_ = nullptr;
+  painter_reported_memory_usage_ = 0;
   is_solid_color_ = false;
 }
 

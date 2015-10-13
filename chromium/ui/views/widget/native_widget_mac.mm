@@ -38,6 +38,13 @@ namespace views {
 namespace {
 
 NSInteger StyleMaskForParams(const Widget::InitParams& params) {
+  // If the Widget is modal, it will be displayed as a sheet. This works best if
+  // it has NSTitledWindowMask. For example, with NSBorderlessWindowMask, the
+  // parent window still accepts input.
+  if (params.delegate &&
+      params.delegate->GetModalType() == ui::MODAL_TYPE_WINDOW)
+    return NSTitledWindowMask;
+
   // TODO(tapted): Determine better masks when there are use cases for it.
   if (params.remove_standard_frame)
     return NSBorderlessWindowMask;
@@ -86,13 +93,22 @@ bool NativeWidgetMac::IsWindowModalSheet() const {
 }
 
 void NativeWidgetMac::OnWindowWillClose() {
-  delegate_->OnNativeWidgetDestroying();
   // Note: If closed via CloseNow(), |bridge_| will already be reset. If closed
-  // by the user, or via Close() and a RunLoop, this will reset it.
-  bridge_.reset();
+  // by the user, or via Close() and a RunLoop, notify observers while |bridge_|
+  // is still a valid pointer, then reset it.
+  if (bridge_) {
+    delegate_->OnNativeWidgetDestroying();
+    bridge_.reset();
+  }
   delegate_->OnNativeWidgetDestroyed();
   if (ownership_ == Widget::InitParams::NATIVE_WIDGET_OWNS_WIDGET)
     delete this;
+}
+
+int NativeWidgetMac::SheetPositionY() {
+  NSView* view = GetNativeView();
+  return
+      [view convertPoint:NSMakePoint(0, NSHeight([view frame])) toView:nil].y;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -337,6 +353,11 @@ void NativeWidgetMac::Close() {
 }
 
 void NativeWidgetMac::CloseNow() {
+  if (!bridge_)
+    return;
+
+  // Notify observers while |bridged_| is still valid.
+  delegate_->OnNativeWidgetDestroying();
   // Reset |bridge_| to NULL before destroying it.
   scoped_ptr<BridgedNativeWidget> bridge(bridge_.Pass());
 }
@@ -500,8 +521,7 @@ void NativeWidgetMac::ClearNativeFocus() {
 }
 
 gfx::Rect NativeWidgetMac::GetWorkAreaBoundsInScreen() const {
-  NOTIMPLEMENTED();
-  return gfx::Rect();
+  return gfx::ScreenRectFromNSRect([[GetNativeWindow() screen] visibleFrame]);
 }
 
 Widget::MoveLoopResult NativeWidgetMac::RunMoveLoop(
@@ -555,7 +575,8 @@ void NativeWidgetMac::RepostNativeEvent(gfx::NativeEvent native_event) {
 ////////////////////////////////////////////////////////////////////////////////
 // NativeWidgetMac, protected:
 
-NSWindow* NativeWidgetMac::CreateNSWindow(const Widget::InitParams& params) {
+NativeWidgetMacNSWindow* NativeWidgetMac::CreateNSWindow(
+    const Widget::InitParams& params) {
   return [[[NativeWidgetMacNSWindow alloc]
       initWithContentRect:ui::kWindowSizeDeterminedLater
                 styleMask:StyleMaskForParams(params)
@@ -650,7 +671,14 @@ void NativeWidgetPrivate::GetAllOwnedWidgets(gfx::NativeView native_view,
 // static
 void NativeWidgetPrivate::ReparentNativeView(gfx::NativeView native_view,
                                              gfx::NativeView new_parent) {
-  NOTIMPLEMENTED();
+  BridgedNativeWidget* bridge =
+      NativeWidgetMac::GetBridgeForNativeWindow([native_view window]);
+  if (bridge && bridge->parent() &&
+      bridge->parent()->GetNSWindow() == [new_parent window])
+    return;  // Nothing to do.
+
+  // Not supported. See http://crbug.com/514920.
+  NOTREACHED();
 }
 
 // static

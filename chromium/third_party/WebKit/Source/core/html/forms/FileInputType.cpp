@@ -30,7 +30,7 @@
 #include "core/fileapi/File.h"
 #include "core/fileapi/FileList.h"
 #include "core/frame/UseCounter.h"
-#include "core/html/FormDataList.h"
+#include "core/html/FormData.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/forms/FormController.h"
 #include "core/layout/LayoutFileUploadControl.h"
@@ -106,33 +106,17 @@ void FileInputType::restoreFormControlState(const FormControlState& state)
     filesChosen(filesFromFormControlState(state));
 }
 
-bool FileInputType::appendFormData(FormDataList& encoding, bool multipart) const
+void FileInputType::appendToFormData(FormData& formData) const
 {
     FileList* fileList = element().files();
     unsigned numFiles = fileList->length();
-    if (!multipart) {
-        // Send only the basenames.
-        // 4.10.16.4 and 4.10.16.6 sections in HTML5.
-
-        // Unlike the multipart case, we have no special handling for the empty
-        // fileList because Netscape doesn't support for non-multipart
-        // submission of file inputs, and Firefox doesn't add "name=" query
-        // parameter.
-        for (unsigned i = 0; i < numFiles; ++i)
-            encoding.appendData(element().name(), fileList->item(i)->name());
-        return true;
-    }
-
-    // If no filename at all is entered, return successful but empty.
-    // Null would be more logical, but Netscape posts an empty file. Argh.
-    if (!numFiles) {
-        encoding.appendBlob(element().name(), File::create(""));
-        return true;
+    if (numFiles == 0) {
+        formData.append(element().name(), File::create(""));
+        return;
     }
 
     for (unsigned i = 0; i < numFiles; ++i)
-        encoding.appendBlob(element().name(), fileList->item(i));
-    return true;
+        formData.append(element().name(), fileList->item(i));
 }
 
 bool FileInputType::valueMissing(const String& value) const
@@ -258,12 +242,12 @@ FileList* FileInputType::createFileList(const Vector<FileChooserFileInfo>& files
 
 void FileInputType::countUsage()
 {
-    // It is required by isPrivilegedContext() but isn't
+    // It is required by isSecureContext() but isn't
     // actually used. This could be used later if a warning is shown in the
     // developer console.
     String insecureOriginMsg;
     Document* document = &element().document();
-    if (document->isPrivilegedContext(insecureOriginMsg))
+    if (document->isSecureContext(insecureOriginMsg))
         UseCounter::count(*document, UseCounter::InputTypeFileInsecureOrigin);
     else
         UseCounter::count(*document, UseCounter::InputTypeFileSecureOrigin);

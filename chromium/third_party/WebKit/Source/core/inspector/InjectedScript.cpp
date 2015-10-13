@@ -36,9 +36,9 @@
 #include "bindings/core/v8/ScriptFunctionCall.h"
 #include "bindings/core/v8/V8Binding.h"
 #include "core/inspector/InjectedScriptHost.h"
-#include "core/inspector/InspectorInstrumentation.h"
 #include "core/inspector/InspectorTraceEvents.h"
 #include "core/inspector/JSONParser.h"
+#include "core/inspector/RemoteObjectId.h"
 #include "platform/JSONValues.h"
 #include "wtf/text/WTFString.h"
 
@@ -154,12 +154,11 @@ void InjectedScript::callFunctionOn(ErrorString* errorString, const String& obje
     makeEvalCall(errorString, function, result, wasThrown);
 }
 
-void InjectedScript::evaluateOnCallFrame(ErrorString* errorString, const ScriptValue& callFrames, const Vector<ScriptValue>& asyncCallStacks, const String& callFrameId, const String& expression, const String& objectGroup, bool includeCommandLineAPI, bool returnByValue, bool generatePreview, RefPtr<RemoteObject>* result, TypeBuilder::OptOutput<bool>* wasThrown, RefPtr<TypeBuilder::Debugger::ExceptionDetails>* exceptionDetails)
+void InjectedScript::evaluateOnCallFrame(ErrorString* errorString, v8::Local<v8::Object> callFrames, bool isAsyncCallStack, const String& callFrameId, const String& expression, const String& objectGroup, bool includeCommandLineAPI, bool returnByValue, bool generatePreview, RefPtr<RemoteObject>* result, TypeBuilder::OptOutput<bool>* wasThrown, RefPtr<TypeBuilder::Debugger::ExceptionDetails>* exceptionDetails)
 {
     ScriptFunctionCall function(injectedScriptObject(), "evaluateOnCallFrame");
     function.appendArgument(callFrames);
-    if (!function.appendArgument(asyncCallStacks))
-        return;
+    function.appendArgument(isAsyncCallStack);
     function.appendArgument(callFrameId);
     function.appendArgument(expression);
     function.appendArgument(objectGroup);
@@ -169,7 +168,7 @@ void InjectedScript::evaluateOnCallFrame(ErrorString* errorString, const ScriptV
     makeEvalCall(errorString, function, result, wasThrown, exceptionDetails);
 }
 
-void InjectedScript::restartFrame(ErrorString* errorString, const ScriptValue& callFrames, const String& callFrameId, RefPtr<JSONObject>* result)
+void InjectedScript::restartFrame(ErrorString* errorString, v8::Local<v8::Object> callFrames, const String& callFrameId)
 {
     ScriptFunctionCall function(injectedScriptObject(), "restartFrame");
     function.appendArgument(callFrames);
@@ -179,17 +178,16 @@ void InjectedScript::restartFrame(ErrorString* errorString, const ScriptValue& c
     if (resultValue) {
         if (resultValue->type() == JSONValue::TypeString) {
             resultValue->asString(errorString);
-            return;
+        } else {
+            bool value;
+            ASSERT_UNUSED(value, resultValue->asBoolean(&value) && value);
         }
-        if (resultValue->type() == JSONValue::TypeObject) {
-            *result = resultValue->asObject();
-            return;
-        }
+        return;
     }
     *errorString = "Internal error";
 }
 
-void InjectedScript::getStepInPositions(ErrorString* errorString, const ScriptValue& callFrames, const String& callFrameId, RefPtr<Array<TypeBuilder::Debugger::Location> >& positions)
+void InjectedScript::getStepInPositions(ErrorString* errorString, v8::Local<v8::Object> callFrames, const String& callFrameId, RefPtr<Array<TypeBuilder::Debugger::Location>>& positions)
 {
     ScriptFunctionCall function(injectedScriptObject(), "getStepInPositions");
     function.appendArgument(callFrames);
@@ -209,7 +207,7 @@ void InjectedScript::getStepInPositions(ErrorString* errorString, const ScriptVa
     *errorString = "Internal error";
 }
 
-void InjectedScript::setVariableValue(ErrorString* errorString, const ScriptValue& callFrames, const String* callFrameIdOpt, const String* functionObjectIdOpt, int scopeNumber, const String& variableName, const String& newValueStr)
+void InjectedScript::setVariableValue(ErrorString* errorString, v8::Local<v8::Object> callFrames, const String* callFrameIdOpt, const String* functionObjectIdOpt, int scopeNumber, const String& variableName, const String& newValueStr)
 {
     ScriptFunctionCall function(injectedScriptObject(), "setVariableValue");
     if (callFrameIdOpt) {
@@ -321,28 +319,6 @@ void InjectedScript::getInternalProperties(ErrorString* errorString, const Strin
         *properties = array;
 }
 
-Node* InjectedScript::nodeForObjectId(const String& objectId)
-{
-    if (isEmpty() || !canAccessInspectedWindow())
-        return nullptr;
-
-    ScriptFunctionCall function(injectedScriptObject(), "nodeForObjectId");
-    function.appendArgument(objectId);
-
-    bool hadException = false;
-    ScriptValue resultValue = callFunctionWithEvalEnabled(function, hadException);
-    ASSERT(!hadException);
-
-    return InjectedScriptHost::scriptValueAsNode(scriptState(), resultValue);
-}
-
-EventTarget* InjectedScript::eventTargetForObjectId(const String& objectId)
-{
-    if (isEmpty() || !canAccessInspectedWindow())
-        return nullptr;
-    return InjectedScriptHost::scriptValueAsEventTarget(scriptState(), findObjectById(objectId));
-}
-
 void InjectedScript::releaseObject(const String& objectId)
 {
     RefPtr<JSONValue> parsedObjectId = parseJSON(objectId);
@@ -357,7 +333,7 @@ void InjectedScript::releaseObject(const String& objectId)
     m_native->unbind(boundId);
 }
 
-PassRefPtr<Array<CallFrame> > InjectedScript::wrapCallFrames(const ScriptValue& callFrames, int asyncOrdinal)
+PassRefPtr<Array<CallFrame>> InjectedScript::wrapCallFrames(v8::Local<v8::Object> callFrames, int asyncOrdinal)
 {
     ASSERT(!isEmpty());
     ScriptFunctionCall function(injectedScriptObject(), "wrapCallFrames");
@@ -406,21 +382,10 @@ PassRefPtr<TypeBuilder::Runtime::RemoteObject> InjectedScript::wrapTable(const S
     return TypeBuilder::Runtime::RemoteObject::runtimeCast(rawResult);
 }
 
-PassRefPtr<TypeBuilder::Runtime::RemoteObject> InjectedScript::wrapNode(Node* node, const String& groupName)
-{
-    return wrapObject(nodeAsScriptValue(node), groupName);
-}
-
-ScriptValue InjectedScript::findObjectById(const String& objectId) const
+v8::Local<v8::Value> InjectedScript::findObject(const RemoteObjectId& objectId) const
 {
     ASSERT(!isEmpty());
-    ScriptFunctionCall function(injectedScriptObject(), "findObjectById");
-    function.appendArgument(objectId);
-
-    bool hadException = false;
-    ScriptValue resultValue = callFunctionWithEvalEnabled(function, hadException);
-    ASSERT(!hadException);
-    return resultValue;
+    return m_native->objectForId(objectId.id());
 }
 
 String InjectedScript::objectIdToObjectGroupName(const String& objectId) const
@@ -447,11 +412,6 @@ void InjectedScript::releaseObjectGroup(const String& objectGroup)
         callFunctionWithEvalEnabled(releaseFunction, hadException);
         ASSERT(!hadException);
     }
-}
-
-ScriptValue InjectedScript::nodeAsScriptValue(Node* node)
-{
-    return InjectedScriptHost::nodeAsScriptValue(scriptState(), node);
 }
 
 void InjectedScript::setCustomObjectFormatterEnabled(bool enabled)
@@ -483,27 +443,19 @@ const ScriptValue& InjectedScript::injectedScriptObject() const
 ScriptValue InjectedScript::callFunctionWithEvalEnabled(ScriptFunctionCall& function, bool& hadException) const
 {
     ASSERT(!isEmpty());
-    ExecutionContext* executionContext = m_injectedScriptObject.scriptState()->executionContext();
-    ScriptState::Scope scope(m_injectedScriptObject.scriptState());
-    v8::Local<v8::Function> functionObj = function.function();
-    DevToolsFunctionInfo info(functionObj);
-    InspectorInstrumentationCookie cookie = InspectorInstrumentation::willCallFunction(executionContext, info);
 
     ScriptState* scriptState = m_injectedScriptObject.scriptState();
-    bool evalIsDisabled = false;
-    if (scriptState) {
-        evalIsDisabled = !scriptState->evalEnabled();
-        // Temporarily enable allow evals for inspector.
-        if (evalIsDisabled)
-            scriptState->setEvalEnabled(true);
-    }
+    ScriptState::Scope scope(scriptState);
+    bool evalIsDisabled = !scriptState->evalEnabled();
+    // Temporarily enable allow evals for inspector.
+    if (evalIsDisabled)
+        scriptState->setEvalEnabled(true);
 
     ScriptValue resultValue = function.call(hadException);
 
     if (evalIsDisabled)
         scriptState->setEvalEnabled(false);
 
-    InspectorInstrumentation::didCallFunction(cookie);
     TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "UpdateCounters", TRACE_EVENT_SCOPE_THREAD, "data", InspectorUpdateCountersEvent::data());
     return resultValue;
 }
@@ -578,4 +530,3 @@ void InjectedScript::makeCallWithExceptionDetails(ScriptFunctionCall& function, 
 }
 
 } // namespace blink
-

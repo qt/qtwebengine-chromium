@@ -137,6 +137,8 @@ source_set("sender") {
     "sender/video_sender.h",
     "sender/vp8_encoder.cc",
     "sender/vp8_encoder.h",
+    "sender/vp8_quantizer_parser.cc",
+    "sender/vp8_quantizer_parser.h",
   ]
 
   deps = [
@@ -144,7 +146,7 @@ source_set("sender") {
     ":net",
     "//media",
     "//media:shared_memory_support",
-    "//third_party/libvpx",
+    "//third_party/libvpx_new",
     "//third_party/opus",
     "//ui/gfx/geometry",
   ]
@@ -154,7 +156,7 @@ source_set("sender") {
     deps += [ "//media:media_for_cast_ios" ]
     deps -= [
       "//media",
-      "//third_party/libvpx",
+      "//third_party/libvpx_new",
       "//third_party/opus",
     ]
     sources -= [
@@ -164,6 +166,8 @@ source_set("sender") {
       "sender/video_encoder_impl.h",
       "sender/vp8_encoder.cc",
       "sender/vp8_encoder.h",
+      "sender/vp8_quantizer_parser.cc",
+      "sender/vp8_quantizer_parser.h",
     ]
   }
 
@@ -201,7 +205,7 @@ source_set("receiver") {
     ":net",
     "//media",
     "//media:shared_memory_support",
-    "//third_party/libvpx",
+    "//third_party/libvpx_new",
     "//third_party/opus",
     "//ui/gfx",
   ]
@@ -211,7 +215,7 @@ source_set("receiver") {
     deps += [ "//media:media_for_cast_ios" ]
     deps -= [
       "//media",
-      "//third_party/libvpx",
+      "//third_party/libvpx_new",
       "//third_party/opus",
     ]
   }
@@ -266,6 +270,15 @@ static_library("test_support") {
   ]
 }
 
+# TODO(GYP): Delete this after we've converted everything to GN.
+# The _run targets exist only for compatibility w/ GYP.
+group("cast_unittests_run") {
+  testonly = true
+  deps = [
+    ":cast_unittests",
+  ]
+}
+
 test("cast_unittests") {
   sources = [
     "logging/encoding_event_subscriber_unittest.cc",
@@ -276,6 +289,7 @@ test("cast_unittests") {
     "logging/simple_event_subscriber_unittest.cc",
     "logging/stats_event_subscriber_unittest.cc",
     "net/cast_transport_sender_impl_unittest.cc",
+    "net/frame_id_wrap_helper_test.cc",
     "net/mock_cast_transport_sender.cc",
     "net/mock_cast_transport_sender.h",
     "net/pacing/mock_paced_packet_sender.cc",
@@ -309,10 +323,12 @@ test("cast_unittests") {
     "sender/audio_encoder_unittest.cc",
     "sender/audio_sender_unittest.cc",
     "sender/congestion_control_unittest.cc",
+    "sender/external_video_encoder_unittest.cc",
     "sender/fake_video_encode_accelerator_factory.cc",
     "sender/fake_video_encode_accelerator_factory.h",
     "sender/video_encoder_unittest.cc",
     "sender/video_sender_unittest.cc",
+    "sender/vp8_quantizer_parser_unittest.cc",
     "test/end2end_unittest.cc",
     "test/fake_receiver_time_offset_estimator.cc",
     "test/fake_receiver_time_offset_estimator.h",
@@ -358,6 +374,7 @@ executable("generate_barcode_video") {
   deps = [
     ":test_support",
     "//base",
+    "//build/config/sanitizers:deps",
     "//media",
   ]
 }
@@ -371,6 +388,7 @@ executable("generate_timecode_audio") {
   deps = [
     ":test_support",
     "//base",
+    "//build/config/sanitizers:deps",
     "//media",
   ]
 }
@@ -384,6 +402,7 @@ executable("udp_proxy") {
   deps = [
     ":test_support",
     "//base",
+    "//build/config/sanitizers:deps",
     "//net",
   ]
 }

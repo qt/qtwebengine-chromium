@@ -30,7 +30,6 @@
 
 namespace blink {
 
-class FormDataList;
 class HTMLFormElement;
 class ValidationMessageClient;
 
@@ -46,6 +45,8 @@ public:
     ~HTMLFormControlElement() override;
     DECLARE_VIRTUAL_TRACE();
 
+    String formAction() const;
+    void setFormAction(const AtomicString&);
     String formEnctype() const;
     void setFormEnctype(const AtomicString&);
     String formMethod() const;
@@ -79,9 +80,6 @@ public:
 
     virtual bool isSubmittableElement() { return true; }
 
-    // Override in derived classes to get the encoded name=value pair for submitting.
-    // Return true for a successful control (see HTML4-17.13.2).
-    bool appendFormData(FormDataList&, bool) override { return false; }
     virtual String resultForDialogSubmit();
 
     virtual bool canBeSuccessfulSubmitButton() const { return false; }
@@ -139,11 +137,11 @@ protected:
     bool isKeyboardFocusable() const override;
     virtual bool shouldShowFocusRingOnMouseFocus() const;
     bool shouldHaveFocusAppearance() const final;
-    void dispatchBlurEvent(Element* newFocusedElement, WebFocusType) override;
-    void dispatchFocusEvent(Element* oldFocusedElement, WebFocusType) override;
+    void dispatchBlurEvent(Element* newFocusedElement, WebFocusType, InputDeviceCapabilities* sourceCapabilities) override;
+    void dispatchFocusEvent(Element* oldFocusedElement, WebFocusType, InputDeviceCapabilities* sourceCapabilities) override;
     void willCallDefaultEventHandler(const Event&) final;
 
-    void didRecalcStyle(StyleRecalcChange) final;
+    void didRecalcStyle(StyleRecalcChange) override;
 
     // This must be called any time the result of willValidate() has changed.
     void setNeedsWillValidateCheck();

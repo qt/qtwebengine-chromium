@@ -48,11 +48,12 @@ class SharedWorker;
 
 class SharedWorkerRepositoryClient {
     WTF_MAKE_NONCOPYABLE(SharedWorkerRepositoryClient);
+    DISALLOW_ALLOCATION();
 public:
     SharedWorkerRepositoryClient() { }
     virtual ~SharedWorkerRepositoryClient() { }
 
-    virtual void connect(PassRefPtrWillBeRawPtr<SharedWorker>, PassOwnPtr<WebMessagePortChannel>, const KURL&, const String& name, ExceptionState&)  = 0;
+    virtual void connect(SharedWorker*, PassOwnPtr<WebMessagePortChannel>, const KURL&, const String& name, ExceptionState&)  = 0;
 
     virtual void documentDetached(Document*) = 0;
 };

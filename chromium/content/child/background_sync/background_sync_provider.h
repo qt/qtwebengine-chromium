@@ -31,26 +31,35 @@ class BackgroundSyncProvider : public blink::WebSyncProvider {
   void registerBackgroundSync(
       const blink::WebSyncRegistration* options,
       blink::WebServiceWorkerRegistration* service_worker_registration,
-      blink::WebSyncRegistrationCallbacks* callbacks);
+      bool requested_from_service_worker,
+      blink::WebSyncRegistrationCallbacks* callbacks) override;
   void unregisterBackgroundSync(
-      blink::WebSyncRegistration::Periodicity periodicity,
-      int64_t id,
-      const blink::WebString& tag,
+      int64_t handle_id,
       blink::WebServiceWorkerRegistration* service_worker_registration,
-      blink::WebSyncUnregistrationCallbacks* callbacks);
+      blink::WebSyncUnregistrationCallbacks* callbacks) override;
   void getRegistration(
       blink::WebSyncRegistration::Periodicity,
       const blink::WebString& tag,
       blink::WebServiceWorkerRegistration* service_worker_registration,
-      blink::WebSyncRegistrationCallbacks* callbacks);
+      blink::WebSyncRegistrationCallbacks* callbacks) override;
   void getRegistrations(
       blink::WebSyncRegistration::Periodicity periodicity,
       blink::WebServiceWorkerRegistration* service_worker_registration,
-      blink::WebSyncGetRegistrationsCallbacks* callbacks);
+      blink::WebSyncGetRegistrationsCallbacks* callbacks) override;
   void getPermissionStatus(
       blink::WebSyncRegistration::Periodicity periodicity,
       blink::WebServiceWorkerRegistration* service_worker_registration,
-      blink::WebSyncGetPermissionStatusCallbacks* callbacks);
+      blink::WebSyncGetPermissionStatusCallbacks* callbacks) override;
+  // TODO(jkarlin): Rename to releaseRegistrationHandle.
+  void releaseRegistration(int64_t handle_id) override;
+  void notifyWhenDone(
+      int64_t handle_id,
+      blink::WebSyncNotifyWhenDoneCallbacks* callbacks) override;
+
+  void DuplicateRegistrationHandle(
+      int64_t handle_id,
+      const BackgroundSyncService::DuplicateRegistrationHandleCallback&
+          callback);
 
  private:
   // Callback handlers
@@ -73,6 +82,10 @@ class BackgroundSyncProvider : public blink::WebSyncProvider {
       scoped_ptr<blink::WebSyncGetPermissionStatusCallbacks> callbacks,
       BackgroundSyncError error,
       PermissionStatus status);
+  void NotifyWhenDoneCallback(
+      scoped_ptr<blink::WebSyncNotifyWhenDoneCallbacks> callbacks,
+      BackgroundSyncError error,
+      BackgroundSyncState state);
 
   // Helper method that returns an initialized BackgroundSyncServicePtr.
   BackgroundSyncServicePtr& GetBackgroundSyncServicePtr();

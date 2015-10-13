@@ -19,7 +19,7 @@
 #include "SkTLList.h"
 #include "SkTypes.h"
 
-class GrClipTarget;
+class GrDrawTarget;
 class GrPathRenderer;
 class GrPathRendererChain;
 class GrTexture;
@@ -34,7 +34,7 @@ class SkPath;
  */
 class GrClipMaskManager : SkNoncopyable {
 public:
-    GrClipMaskManager(GrClipTarget* owner);
+    GrClipMaskManager(GrDrawTarget* owner);
 
     /**
      * Creates a clip mask if necessary as a stencil buffer or alpha texture
@@ -43,15 +43,15 @@ public:
      * the manager when it must install additional effects to implement the
      * clip. devBounds is optional but can help optimize clipping.
      */
-    bool setupClipping(GrPipelineBuilder*,
-                       GrPipelineBuilder::AutoRestoreFragmentProcessors*,
+    bool setupClipping(const GrPipelineBuilder&,
+                       GrPipelineBuilder::AutoRestoreFragmentProcessorState*,
                        GrPipelineBuilder::AutoRestoreStencil*,
                        GrScissorState*,
                        const SkRect* devBounds);
 
     /**
      * Purge resources to free up memory. TODO: This class shouldn't hold any long lived refs
-     * which will allow Resourcecache to automatically purge anything this class has created.
+     * which will allow GrResourceCache to automatically purge anything this class has created.
      */
     void purgeResources();
 
@@ -62,8 +62,6 @@ public:
     bool isClipInAlpha() const {
         return kAlpha_ClipMaskType == fCurrClipMaskType;
     }
-
-    void setClipTarget(GrClipTarget*);
 
     void adjustPathStencilParams(const GrStencilAttachment*, GrStencilSettings*);
 
@@ -86,8 +84,8 @@ private:
 
     // Attempts to install a series of coverage effects to implement the clip. Return indicates
     // whether the element list was successfully converted to effects.
-    bool installClipEffects(GrPipelineBuilder*,
-                            GrPipelineBuilder::AutoRestoreFragmentProcessors*,
+    bool installClipEffects(const GrPipelineBuilder&,
+                            GrPipelineBuilder::AutoRestoreFragmentProcessorState*,
                             const GrReducedClip::ElementList&,
                             const SkVector& clipOffset,
                             const SkRect* devBounds);
@@ -116,7 +114,7 @@ private:
                                       const SkIRect& clipSpaceIBounds);
 
     // Returns the cached mask texture if it matches the elementsGenID and the clipSpaceIBounds.
-    // Returns NULL if not found.
+    // Returns nullptr if not found.
     GrTexture* getCachedMaskTexture(int32_t elementsGenID, const SkIRect& clipSpaceIBounds);
 
     // Handles allocation (if needed) of a clip alpha-mask texture for both the sw-upload
@@ -125,7 +123,7 @@ private:
                                 const SkIRect& clipSpaceIBounds,
                                 bool willUpload);
 
-    bool useSWOnlyPath(const GrPipelineBuilder*,
+    bool useSWOnlyPath(const GrPipelineBuilder&,
                        const SkVector& clipToMaskOffset,
                        const GrReducedClip::ElementList& elements);
 
@@ -136,7 +134,7 @@ private:
                      const SkMatrix& viewMatrix,
                      GrTexture* target,
                      const SkClipStack::Element*,
-                     GrPathRenderer* pr = NULL);
+                     GrPathRenderer* pr = nullptr);
 
     // Determines whether it is possible to draw the element to both the stencil buffer and the
     // alpha mask simultaneously. If so and the element is a path a compatible path renderer is
@@ -161,7 +159,8 @@ private:
      * Called prior to return control back the GrGpu in setupClipping. It updates the
      * GrPipelineBuilder with stencil settings that account for stencil-based clipping.
      */
-    void setPipelineBuilderStencil(GrPipelineBuilder*, GrPipelineBuilder::AutoRestoreStencil*);
+    void setPipelineBuilderStencil(const GrPipelineBuilder&,
+                                   GrPipelineBuilder::AutoRestoreStencil*);
 
     /**
      * Adjusts the stencil settings to account for interaction with stencil
@@ -183,7 +182,7 @@ private:
     } fCurrClipMaskType;
 
     GrClipMaskCache fAACache;       // cache for the AA path
-    GrClipTarget*   fClipTarget;    // This is our owning clip target.
+    GrDrawTarget*   fDrawTarget;    // This is our owning draw target.
     StencilClipMode fClipMode;
 
     typedef SkNoncopyable INHERITED;

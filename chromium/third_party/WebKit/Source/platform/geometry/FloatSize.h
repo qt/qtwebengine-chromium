@@ -29,7 +29,9 @@
 #define FloatSize_h
 
 #include "platform/geometry/IntPoint.h"
+#include "third_party/skia/include/core/SkSize.h"
 #include "wtf/MathExtras.h"
+#include <iosfwd>
 
 #if OS(MACOSX)
 typedef struct CGSize CGSize;
@@ -49,6 +51,7 @@ public:
     FloatSize() : m_width(0), m_height(0) { }
     FloatSize(float width, float height) : m_width(width), m_height(height) { }
     FloatSize(const IntSize& size) : m_width(size.width()), m_height(size.height()) { }
+    FloatSize(const SkSize& size) : m_width(size.width()), m_height(size.height()) { }
     explicit FloatSize(const LayoutSize&);
 
     static FloatSize narrowPrecision(double width, double height);
@@ -127,6 +130,8 @@ public:
 #endif
 #endif
 
+    operator SkSize() const { return SkSize::Make(m_width, m_height); }
+
 private:
     float m_width, m_height;
 };
@@ -199,6 +204,10 @@ inline IntPoint flooredIntPoint(const FloatSize& p)
 {
     return IntPoint(clampTo<int>(floorf(p.width())), clampTo<int>(floorf(p.height())));
 }
+
+// Redeclared here to avoid ODR issues.
+// See platform/testing/GeometryPrinters.h.
+void PrintTo(const FloatSize&, std::ostream*);
 
 } // namespace blink
 

@@ -10,6 +10,8 @@
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "content/common/media/media_stream_options.h"
 #include "content/renderer/media/media_stream_constraints_util.h"
@@ -63,19 +65,11 @@ struct {
   { MediaAudioConstraints::kGoogHighpassFilter, true },
   { MediaAudioConstraints::kGoogTypingNoiseDetection, true },
   { MediaAudioConstraints::kGoogExperimentalNoiseSuppression, false },
-  { MediaAudioConstraints::kGoogBeamforming, false },
-#if defined(OS_WIN)
-  { kMediaStreamAudioDucking, true },
-#else
-  { kMediaStreamAudioDucking, false },
-#endif
+  // Beamforming will only be enabled if we are also provided with a
+  // multi-microphone geometry.
+  { MediaAudioConstraints::kGoogBeamforming, true },
   { kMediaStreamAudioHotword, false },
 };
-
-bool IsAudioProcessingConstraint(const std::string& key) {
-  // |kMediaStreamAudioDucking| does not require audio processing.
-  return key != kMediaStreamAudioDucking;
-}
 
 // Used to log echo quality based on delay estimates.
 enum DelayBasedEchoQuality {
@@ -105,6 +99,19 @@ DelayBasedEchoQuality EchoDelayFrequencyToQuality(float delay_frequency) {
     return DELAY_BASED_ECHO_QUALITY_SPURIOUS;
   else
     return DELAY_BASED_ECHO_QUALITY_BAD;
+}
+
+webrtc::Point WebrtcPointFromMediaPoint(const media::Point& point) {
+  return webrtc::Point(point.x(), point.y(), point.z());
+}
+
+std::vector<webrtc::Point> WebrtcPointsFromMediaPoints(
+    const std::vector<media::Point>& points) {
+  std::vector<webrtc::Point> webrtc_points;
+  webrtc_points.reserve(webrtc_points.size());
+  for (const auto& point : points)
+    webrtc_points.push_back(WebrtcPointFromMediaPoint(point));
+  return webrtc_points;
 }
 
 }  // namespace
@@ -211,11 +218,7 @@ bool MediaAudioConstraints::IsValid() const {
 bool MediaAudioConstraints::GetDefaultValueForConstraint(
     const blink::WebMediaConstraints& constraints,
     const std::string& key) const {
-  // |kMediaStreamAudioDucking| is not restricted by
-  // |default_audio_processing_constraint_value_| since it does not require
-  // audio processing.
-  if (!default_audio_processing_constraint_value_ &&
-      IsAudioProcessingConstraint(key))
+  if (!default_audio_processing_constraint_value_)
     return false;
 
   for (size_t i = 0; i < arraysize(kDefaultAudioConstraints); ++i) {
@@ -387,6 +390,21 @@ void GetAecStats(webrtc::EchoCancellation* echo_cancellation,
     stats->echo_delay_median_ms = median;
     stats->echo_delay_std_ms = std;
   }
+}
+
+std::vector<webrtc::Point> GetArrayGeometryPreferringConstraints(
+    const MediaAudioConstraints& audio_constraints,
+    const MediaStreamDevice::AudioDeviceParameters& input_params) {
+  const std::string constraints_geometry =
+      audio_constraints.GetPropertyAsString(
+          MediaAudioConstraints::kGoogArrayGeometry);
+
+  // Give preference to the audio constraint over the device-supplied mic
+  // positions. This is mainly for testing purposes.
+  return WebrtcPointsFromMediaPoints(
+      constraints_geometry.empty()
+          ? input_params.mic_positions
+          : media::ParsePointsFromString(constraints_geometry));
 }
 
 }  // namespace content

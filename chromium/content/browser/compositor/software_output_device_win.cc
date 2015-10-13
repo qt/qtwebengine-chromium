@@ -114,7 +114,7 @@ SkCanvas* SoftwareOutputDeviceWin::BeginPaint(const gfx::Rect& damage_rect) {
   if (!contents_) {
     HANDLE shared_section = NULL;
     if (backing_)
-      shared_section = backing_->GetSharedMemory()->handle();
+      shared_section = backing_->GetSharedMemory()->handle().GetHandle();
     contents_ = skia::AdoptRef(skia::CreatePlatformCanvas(
         viewport_pixel_size_.width(), viewport_pixel_size_.height(), true,
         shared_section, skia::CRASH_ON_FAILURE));
@@ -125,14 +125,13 @@ SkCanvas* SoftwareOutputDeviceWin::BeginPaint(const gfx::Rect& damage_rect) {
   return contents_.get();
 }
 
-void SoftwareOutputDeviceWin::EndPaint(cc::SoftwareFrameData* frame_data) {
+void SoftwareOutputDeviceWin::EndPaint() {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK(contents_);
-  DCHECK(frame_data);
   DCHECK(in_paint_);
 
   in_paint_ = false;
-  SoftwareOutputDevice::EndPaint(frame_data);
+  SoftwareOutputDevice::EndPaint();
 
   gfx::Rect rect = damage_rect_;
   rect.Intersect(gfx::Rect(viewport_pixel_size_));

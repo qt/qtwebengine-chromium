@@ -41,15 +41,15 @@ protected:
     AXTableCell(LayoutObject*, AXObjectCacheImpl&);
 
 public:
-    static PassRefPtrWillBeRawPtr<AXTableCell> create(LayoutObject*, AXObjectCacheImpl&);
+    static AXTableCell* create(LayoutObject*, AXObjectCacheImpl&);
     ~AXTableCell() override;
 
     bool isTableCell() const final;
 
     // fills in the start location and row span of cell
-    virtual void rowIndexRange(pair<unsigned, unsigned>& rowRange);
+    virtual void rowIndexRange(std::pair<unsigned, unsigned>& rowRange);
     // fills in the start location and column span of cell
-    virtual void columnIndexRange(pair<unsigned, unsigned>& columnRange);
+    virtual void columnIndexRange(std::pair<unsigned, unsigned>& columnRange);
     // In the case of cells that act as row or column headers.
     SortDirection sortDirection() const final;
     virtual AccessibilityRole scanToDecideHeaderRole();

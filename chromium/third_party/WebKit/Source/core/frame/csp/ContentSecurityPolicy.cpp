@@ -50,7 +50,7 @@
 #include "platform/RuntimeEnabledFeatures.h"
 #include "platform/network/ContentSecurityPolicyParsers.h"
 #include "platform/network/ContentSecurityPolicyResponseHeaders.h"
-#include "platform/network/FormData.h"
+#include "platform/network/EncodedFormData.h"
 #include "platform/network/ResourceRequest.h"
 #include "platform/network/ResourceResponse.h"
 #include "platform/weborigin/KURL.h"
@@ -215,9 +215,15 @@ ContentSecurityPolicy::~ContentSecurityPolicy()
 {
 }
 
+DEFINE_TRACE(ContentSecurityPolicy)
+{
+    visitor->trace(m_executionContext);
+    visitor->trace(m_consoleMessages);
+}
+
 Document* ContentSecurityPolicy::document() const
 {
-    return m_executionContext->isDocument() ? toDocument(m_executionContext) : nullptr;
+    return (m_executionContext && m_executionContext->isDocument()) ? toDocument(m_executionContext) : nullptr;
 }
 
 void ContentSecurityPolicy::copyStateFrom(const ContentSecurityPolicy* other)
@@ -609,6 +615,15 @@ bool ContentSecurityPolicy::allowAncestors(LocalFrame* frame, const KURL& url, C
     return isAllowedByAllWithFrame<&CSPDirectiveList::allowAncestors>(m_policies, frame, url, reportingStatus);
 }
 
+bool ContentSecurityPolicy::isFrameAncestorsEnforced() const
+{
+    for (const auto& policy : m_policies) {
+        if (policy->isFrameAncestorsEnforced())
+            return true;
+    }
+    return false;
+}
+
 bool ContentSecurityPolicy::isActive() const
 {
     return !m_policies.isEmpty();
@@ -702,8 +717,8 @@ static void gatherSecurityPolicyViolationEventData(SecurityPolicyViolationEventI
     if (!SecurityOrigin::isSecure(document->url()) && document->loader())
         init.setStatusCode(document->loader()->response().httpStatusCode());
 
-    RefPtrWillBeRawPtr<ScriptCallStack> stack = createScriptCallStack(1, false);
-    if (!stack)
+    RefPtrWillBeRawPtr<ScriptCallStack> stack = currentScriptCallStack(1);
+    if (!stack || !stack->size())
         return;
 
     const ScriptCallFrame& callFrame = stack->at(0);
@@ -737,6 +752,13 @@ void ContentSecurityPolicy::reportViolation(const String& directiveText, const S
     if (reportEndpoints.isEmpty())
         return;
 
+    // TODO(mkwst): Obviously, we shouldn't hit this check, as extension-loaded
+    // resources should be allowed regardless. We apparently do, however, so
+    // we should at least stop spamming reporting endpoints. See
+    // https://crbug.com/524356 for detail.
+    if (!violationData.sourceFile().isEmpty() && SchemeRegistry::schemeShouldBypassContentSecurityPolicy(KURL(ParsedURLString, violationData.sourceFile()).protocol()))
+        return;
+
     // We need to be careful here when deciding what information to send to the
     // report-uri. Currently, we send only the current document's URL and the
     // directive that was violated. The document's URL is safe to send because
@@ -768,7 +790,7 @@ void ContentSecurityPolicy::reportViolation(const String& directiveText, const S
     if (!shouldSendViolationReport(stringifiedReport))
         return;
 
-    RefPtr<FormData> report = FormData::create(stringifiedReport.utf8());
+    RefPtr<EncodedFormData> report = EncodedFormData::create(stringifiedReport.utf8());
 
     for (const String& endpoint : reportEndpoints) {
         // If we have a context frame we're dealing with 'frame-ancestors' and we don't have our

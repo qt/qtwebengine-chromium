@@ -4,18 +4,12 @@
 
 #include "ui/ozone/platform/drm/gpu/hardware_display_plane_manager.h"
 
-#include <drm.h>
-#include <xf86drm.h>
-
 #include <set>
 
 #include "base/logging.h"
 #include "ui/gfx/geometry/rect.h"
-#include "ui/ozone/platform/drm/gpu/crtc_controller.h"
 #include "ui/ozone/platform/drm/gpu/drm_device.h"
-#include "ui/ozone/platform/drm/gpu/hardware_display_controller.h"
 #include "ui/ozone/platform/drm/gpu/scanout_buffer.h"
-#include "ui/ozone/public/ozone_switches.h"
 
 namespace ui {
 namespace {
@@ -26,19 +20,11 @@ const float kFixedPointScaleValue = 65536.0f;
 
 HardwareDisplayPlaneList::HardwareDisplayPlaneList() {
 #if defined(USE_DRM_ATOMIC)
-  atomic_property_set.reset(drmModePropertySetAlloc());
+  atomic_property_set.reset(drmModeAtomicAlloc());
 #endif  // defined(USE_DRM_ATOMIC)
 }
 
 HardwareDisplayPlaneList::~HardwareDisplayPlaneList() {
-  for (auto* plane : plane_list) {
-    plane->set_in_use(false);
-    plane->set_owning_crtc(0);
-  }
-  for (auto* plane : old_plane_list) {
-    plane->set_in_use(false);
-    plane->set_owning_crtc(0);
-  }
 }
 
 HardwareDisplayPlaneList::PageFlipInfo::PageFlipInfo(uint32_t crtc_id,
@@ -105,11 +91,23 @@ bool HardwareDisplayPlaneManager::Initialize(DrmDevice* drm) {
       PLOG(ERROR) << "Failed to get plane " << i;
       return false;
     }
+
+    uint32_t formats_size = drm_plane->count_formats;
     plane_ids.insert(drm_plane->plane_id);
     scoped_ptr<HardwareDisplayPlane> plane(
         CreatePlane(drm_plane->plane_id, drm_plane->possible_crtcs));
-    if (plane->Initialize(drm))
-      planes_.push_back(plane.Pass());
+
+    std::vector<uint32_t> supported_formats(formats_size);
+    for (uint32_t j = 0; j < formats_size; j++)
+      supported_formats[j] = drm_plane->formats[j];
+
+    if (plane->Initialize(drm, supported_formats, false, false)) {
+      // CRTC controllers always assume they have a cursor plane and the cursor
+      // plane is updated via cursor specific DRM API. Hence, we dont keep
+      // track of Cursor plane here to avoid re-using it for any other purpose.
+      if (plane->type() != HardwareDisplayPlane::kCursor)
+        planes_.push_back(plane.Pass());
+    }
   }
 
   // crbug.com/464085: if driver reports no primary planes for a crtc, create a
@@ -121,9 +119,10 @@ bool HardwareDisplayPlaneManager::Initialize(DrmDevice* drm) {
       if (plane_ids.find(resources->crtcs[i] - 1) == plane_ids.end()) {
         scoped_ptr<HardwareDisplayPlane> dummy_plane(
             CreatePlane(resources->crtcs[i] - 1, (1 << i)));
-        dummy_plane->set_is_dummy(true);
-        if (dummy_plane->Initialize(drm))
+        if (dummy_plane->Initialize(drm, std::vector<uint32_t>(), true,
+                                    false)) {
           planes_.push_back(dummy_plane.Pass());
+        }
       }
     }
   }
@@ -144,10 +143,11 @@ scoped_ptr<HardwareDisplayPlane> HardwareDisplayPlaneManager::CreatePlane(
 
 HardwareDisplayPlane* HardwareDisplayPlaneManager::FindNextUnusedPlane(
     size_t* index,
-    uint32_t crtc_index) {
+    uint32_t crtc_index,
+    const OverlayPlane& overlay) const {
   for (size_t i = *index; i < planes_.size(); ++i) {
     auto plane = planes_[i];
-    if (!plane->in_use() && plane->CanUseForCrtc(crtc_index)) {
+    if (!plane->in_use() && IsCompatible(plane, overlay, crtc_index)) {
       *index = i + 1;
       return plane;
     }
@@ -155,11 +155,27 @@ HardwareDisplayPlane* HardwareDisplayPlaneManager::FindNextUnusedPlane(
   return nullptr;
 }
 
-int HardwareDisplayPlaneManager::LookupCrtcIndex(uint32_t crtc_id) {
+int HardwareDisplayPlaneManager::LookupCrtcIndex(uint32_t crtc_id) const {
   for (size_t i = 0; i < crtcs_.size(); ++i)
     if (crtcs_[i] == crtc_id)
       return i;
   return -1;
+}
+
+bool HardwareDisplayPlaneManager::IsCompatible(HardwareDisplayPlane* plane,
+                                               const OverlayPlane& overlay,
+                                               uint32_t crtc_index) const {
+  if (!plane->CanUseForCrtc(crtc_index))
+    return false;
+
+  if (!plane->IsSupportedFormat(overlay.buffer->GetFramebufferPixelFormat()))
+    return false;
+
+  // TODO(kalyank): We should check for z-order and any needed transformation
+  // support. Driver doesn't expose any property to check for z-order, can we
+  // rely on the sorting we do based on plane ids ?
+
+  return true;
 }
 
 void HardwareDisplayPlaneManager::BeginFrame(
@@ -183,16 +199,16 @@ bool HardwareDisplayPlaneManager::AssignOverlayPlanes(
   size_t plane_idx = 0;
   for (const auto& plane : overlay_list) {
     HardwareDisplayPlane* hw_plane =
-        FindNextUnusedPlane(&plane_idx, crtc_index);
+        FindNextUnusedPlane(&plane_idx, crtc_index, plane);
     if (!hw_plane) {
       LOG(ERROR) << "Failed to find a free plane for crtc " << crtc_id;
       return false;
     }
 
     gfx::Rect fixed_point_rect;
-    if (!hw_plane->is_dummy()) {
+    if (hw_plane->type() != HardwareDisplayPlane::kDummy) {
       const gfx::Size& size = plane.buffer->GetSize();
-      gfx::RectF crop_rect = plane.crop_rect;
+      gfx::RectF crop_rect = gfx::RectF(plane.crop_rect);
       crop_rect.Scale(size.width(), size.height());
 
       // This returns a number in 16.16 fixed point, required by the DRM overlay
@@ -217,19 +233,23 @@ bool HardwareDisplayPlaneManager::AssignOverlayPlanes(
   return true;
 }
 
-void HardwareDisplayPlaneManager::ResetPlanes(
-    HardwareDisplayPlaneList* plane_list,
-    uint32_t crtc_id) {
-  std::vector<HardwareDisplayPlane*> planes;
-  planes.swap(plane_list->old_plane_list);
-  for (auto* plane : planes) {
-    if (plane->owning_crtc() == crtc_id) {
-      plane->set_owning_crtc(0);
-      plane->set_in_use(false);
-    } else {
-      plane_list->old_plane_list.push_back(plane);
-    }
+std::vector<uint32_t>
+HardwareDisplayPlaneManager::GetCompatibleHardwarePlaneIds(
+    const OverlayPlane& plane,
+    uint32_t crtc_id) const {
+  int crtc_index = LookupCrtcIndex(crtc_id);
+  if (crtc_index < 0) {
+    LOG(ERROR) << "Cannot find crtc " << crtc_id;
+    return std::vector<uint32_t>();
   }
+
+  std::vector<uint32_t> plane_ids;
+  for (auto* hardware_plane : planes_) {
+    if (IsCompatible(hardware_plane, plane, crtc_index))
+      plane_ids.push_back(hardware_plane->plane_id());
+  }
+
+  return plane_ids;
 }
 
 }  // namespace ui

@@ -21,6 +21,7 @@ extern "C" {
 
 MOJO_GLES2_EXPORT MojoGLES2Context
     MojoGLES2CreateContext(MojoHandle handle,
+                           const int32_t* attrib_list,
                            MojoGLES2ContextLost lost_callback,
                            void* closure,
                            const MojoAsyncWaiter* async_waiter);
@@ -33,10 +34,9 @@ MOJO_GLES2_EXPORT void MojoGLES2SignalSyncPoint(
     MojoGLES2SignalSyncPointCallback callback,
     void* closure);
 
-// TODO(piman): We shouldn't have to leak those 2 interfaces, especially in a
+// TODO(piman): We shouldn't have to leak this interface, especially in a
 // type-unsafe way.
 MOJO_GLES2_EXPORT void* MojoGLES2GetGLES2Interface(MojoGLES2Context context);
-MOJO_GLES2_EXPORT void* MojoGLES2GetContextSupport(MojoGLES2Context context);
 
 #define VISIT_GL_CALL(Function, ReturnType, PARAMETERS, ARGUMENTS) \
   MOJO_GLES2_EXPORT ReturnType GL_APIENTRY gl##Function PARAMETERS;

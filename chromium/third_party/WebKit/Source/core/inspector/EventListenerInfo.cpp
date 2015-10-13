@@ -15,7 +15,7 @@
 
 namespace blink {
 
-void EventListenerInfo::getEventListeners(EventTarget* target, Vector<EventListenerInfo>& eventInformation, bool includeAncestors)
+void EventListenerInfo::getEventListeners(EventTarget* target, WillBeHeapVector<EventListenerInfo>& eventInformation, bool includeAncestors)
 {
     // The Node's Ancestors including self.
     Vector<EventTarget*> ancestors;
@@ -32,12 +32,14 @@ void EventListenerInfo::getEventListeners(EventTarget* target, Vector<EventListe
         Vector<AtomicString> eventTypes = ancestor->eventTypes();
         for (size_t j = 0; j < eventTypes.size(); ++j) {
             AtomicString& type = eventTypes[j];
-            const EventListenerVector& listeners = ancestor->getEventListeners(type);
+            EventListenerVector* listeners = ancestor->getEventListeners(type);
+            if (!listeners)
+                continue;
             EventListenerVector filteredListeners;
-            filteredListeners.reserveCapacity(listeners.size());
-            for (size_t k = 0; k < listeners.size(); ++k) {
-                if (listeners[k].listener->type() == EventListener::JSEventListenerType)
-                    filteredListeners.append(listeners[k]);
+            filteredListeners.reserveCapacity(listeners->size());
+            for (size_t k = 0; k < listeners->size(); ++k) {
+                if (listeners->at(k).listener->type() == EventListener::JSEventListenerType)
+                    filteredListeners.append(listeners->at(k));
             }
             if (!filteredListeners.isEmpty())
                 eventInformation.append(EventListenerInfo(ancestor, type, filteredListeners));
@@ -73,25 +75,6 @@ const RegisteredEventListener* RegisteredEventListenerIterator::nextRegisteredEv
 const EventListenerInfo& RegisteredEventListenerIterator::currentEventListenerInfo()
 {
     return m_listenersArray[m_infoIndex];
-}
-
-PassRefPtr<TypeBuilder::Runtime::RemoteObject> eventHandlerObject(ExecutionContext* context, EventListener* eventListener, InjectedScriptManager* manager, const String* objectGroupId)
-{
-    ScriptValue functionValue = eventListenerHandler(context, eventListener);
-    if (functionValue.isEmpty() || !context->isDocument())
-        return nullptr;
-
-    LocalFrame* frame = toDocument(context)->frame();
-    if (!frame)
-        return nullptr;
-
-    ScriptState* scriptState = eventListenerHandlerScriptState(frame, eventListener);
-    if (scriptState) {
-        InjectedScript injectedScript = manager->injectedScriptFor(scriptState);
-        if (!injectedScript.isEmpty())
-            return injectedScript.wrapObject(functionValue, *objectGroupId);
-    }
-    return nullptr;
 }
 
 } // namespace blink

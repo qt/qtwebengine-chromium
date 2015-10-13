@@ -17,22 +17,32 @@ RenderViewHost* RenderViewHostFactory::Create(
     SiteInstance* instance,
     RenderViewHostDelegate* delegate,
     RenderWidgetHostDelegate* widget_delegate,
-    int routing_id,
-    int main_frame_routing_id,
+    int32 routing_id,
+    int32 main_frame_routing_id,
     bool swapped_out,
     bool hidden) {
+  // RenderViewHost creation can be either browser-driven (by the user opening a
+  // new tab) or renderer-driven (by script calling window.open, etc).
+  //
+  // In the browser-driven case, the routing ID of the view is lazily assigned:
+  // this is signified by passing MSG_ROUTING_NONE for |routing_id|.
+  if (routing_id == MSG_ROUTING_NONE) {
+    routing_id = instance->GetProcess()->GetNextRoutingID();
+  } else {
+    // Otherwise, in the renderer-driven case, the routing ID of the view is
+    // already set. This is due to the fact that a sync render->browser IPC is
+    // involved. In order to quickly reply to the sync IPC, the routing IDs are
+    // assigned as early as possible. The IO thread immediately sends a reply to
+    // the sync IPC, while deferring the creation of the actual Host objects to
+    // the UI thread.
+  }
   if (factory_) {
     return factory_->CreateRenderViewHost(instance, delegate, widget_delegate,
                                           routing_id, main_frame_routing_id,
                                           swapped_out);
   }
-  return new RenderViewHostImpl(instance,
-                                delegate,
-                                widget_delegate,
-                                routing_id,
-                                main_frame_routing_id,
-                                swapped_out,
-                                hidden,
+  return new RenderViewHostImpl(instance, delegate, widget_delegate, routing_id,
+                                main_frame_routing_id, swapped_out, hidden,
                                 true /* has_initialized_audio_host */);
 }
 

@@ -7,8 +7,9 @@
 
 #include "core/CSSPropertyNames.h"
 #include "core/CoreExport.h"
-#include "core/dom/Node.h"
-#include "core/inspector/InspectorOverlayHost.h"
+#include "core/css/CSSPrimitiveValue.h"
+#include "core/css/CSSRuleList.h"
+#include "core/dom/Element.h"
 #include "platform/heap/Handle.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/RefPtr.h"
@@ -16,37 +17,58 @@
 
 namespace blink {
 
-class JSONObject;
-class InspectorCSSAgent;
 class CSSPrimitiveValue;
+class InspectorCSSAgent;
+class InspectorDOMAgent;
+class JSONArray;
+class JSONObject;
+class ScriptController;
 
-class CORE_EXPORT LayoutEditor final: public NoBaseWillBeGarbageCollectedFinalized<LayoutEditor>, public InspectorOverlayHost::LayoutEditorListener {
-    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(LayoutEditor);
+class CORE_EXPORT LayoutEditor final : public NoBaseWillBeGarbageCollectedFinalized<LayoutEditor> {
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(LayoutEditor);
 public:
-    static PassOwnPtrWillBeRawPtr<LayoutEditor> create(InspectorCSSAgent* cssAgent)
+    static PassOwnPtrWillBeRawPtr<LayoutEditor> create(Element* element, InspectorCSSAgent* cssAgent, InspectorDOMAgent* domAgent, ScriptController* scriptController)
     {
-        return adoptPtrWillBeNoop(new LayoutEditor(cssAgent));
+        return adoptPtrWillBeNoop(new LayoutEditor(element, cssAgent, domAgent, scriptController));
     }
 
-    void setNode(Node*);
-    PassRefPtr<JSONObject> buildJSONInfo() const;
+    ~LayoutEditor();
+    void dispose();
 
-    DECLARE_VIRTUAL_TRACE();
+    Element* element() { return m_element.get(); }
+    void overlayStartedPropertyChange(const String&);
+    void overlayPropertyChanged(float);
+    void overlayEndedPropertyChange();
+    void commitChanges();
+    void nextSelector();
+    void previousSelector();
+    void rebuild() const;
+    DECLARE_TRACE();
 
 private:
-    explicit LayoutEditor(InspectorCSSAgent*);
+    LayoutEditor(Element*, InspectorCSSAgent*, InspectorDOMAgent*, ScriptController*);
     RefPtrWillBeRawPtr<CSSPrimitiveValue> getPropertyCSSValue(CSSPropertyID) const;
     PassRefPtr<JSONObject> createValueDescription(const String&) const;
+    void appendAnchorFor(JSONArray*, const String&, const String&, const FloatPoint&, const FloatPoint&) const;
+    bool setCSSPropertyValueInCurrentRule(const String&);
+    bool currentStyleIsInline() const;
+    void pushSelectorInfoInOverlay() const;
+    void evaluateInOverlay(const String&, PassRefPtr<JSONValue>) const;
+    PassRefPtr<JSONObject> currentSelectorInfo() const;
 
-    // InspectorOverlayHost::LayoutEditorListener implementation.
-    void overlayStartedPropertyChange(const String&) override;
-    void overlayPropertyChanged(float) override;
-    void overlayEndedPropertyChange() override;
-
-    RefPtrWillBeMember<Node> m_node;
+    RefPtrWillBeMember<Element> m_element;
     RawPtrWillBeMember<InspectorCSSAgent> m_cssAgent;
+    RawPtrWillBeMember<InspectorDOMAgent> m_domAgent;
+    RawPtrWillBeMember<ScriptController> m_scriptController;
     CSSPropertyID m_changingProperty;
     float m_propertyInitialValue;
+    float m_factor;
+    CSSPrimitiveValue::UnitType m_valueUnitType;
+    bool m_isDirty;
+
+    RefPtrWillBeMember<CSSRuleList> m_matchedRules;
+    // When m_currentRuleIndex == m_matchedRules.length(), current style is inline style.
+    unsigned m_currentRuleIndex;
 };
 
 } // namespace blink

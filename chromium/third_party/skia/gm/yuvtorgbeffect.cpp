@@ -39,7 +39,7 @@ protected:
     }
 
     SkISize onISize() override {
-        return SkISize::Make(238, 84);
+        return SkISize::Make(238, 120);
     }
 
     void onOnceBeforeDraw() override {
@@ -68,26 +68,26 @@ protected:
 
     void onDraw(SkCanvas* canvas) override {
         GrRenderTarget* rt = canvas->internal_private_accessTopLayerRenderTarget();
-        if (NULL == rt) {
+        if (nullptr == rt) {
             return;
         }
         GrContext* context = rt->getContext();
-        if (NULL == context) {
-            this->drawGpuOnlyMessage(canvas);
+        if (nullptr == context) {
+            skiagm::GM::DrawGpuOnlyMessage(canvas);
             return;
         }
 
         GrTestTarget tt;
         context->getTestTarget(&tt);
-        if (NULL == tt.target()) {
+        if (nullptr == tt.target()) {
             SkDEBUGFAIL("Couldn't get Gr test target.");
             return;
         }
 
         SkAutoTUnref<GrTexture> texture[3];
-        texture[0].reset(GrRefCachedBitmapTexture(context, fBmp[0], NULL));
-        texture[1].reset(GrRefCachedBitmapTexture(context, fBmp[1], NULL));
-        texture[2].reset(GrRefCachedBitmapTexture(context, fBmp[2], NULL));
+        texture[0].reset(GrRefCachedBitmapTexture(context, fBmp[0], nullptr));
+        texture[1].reset(GrRefCachedBitmapTexture(context, fBmp[1], nullptr));
+        texture[2].reset(GrRefCachedBitmapTexture(context, fBmp[2], nullptr));
 
         if (!texture[0] || !texture[1] || !texture[2]) {
             return;
@@ -123,11 +123,11 @@ protected:
                     SkMatrix viewMatrix;
                     viewMatrix.setTranslate(x, y);
                     pipelineBuilder.setRenderTarget(rt);
-                    pipelineBuilder.addColorProcessor(fp);
-                    tt.target()->drawSimpleRect(&pipelineBuilder,
-                                                GrColor_WHITE,
-                                                viewMatrix,
-                                                renderRect);
+                    pipelineBuilder.addColorFragmentProcessor(fp);
+                    tt.target()->drawNonAARect(pipelineBuilder,
+                                               GrColor_WHITE,
+                                               viewMatrix,
+                                               renderRect);
                 }
                 x += renderRect.width() + kTestPad;
             }
@@ -140,7 +140,7 @@ private:
     typedef GM INHERITED;
 };
 
-DEF_GM( return SkNEW(YUVtoRGBEffect); )
+DEF_GM(return new YUVtoRGBEffect;)
 }
 
 #endif

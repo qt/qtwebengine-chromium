@@ -387,7 +387,6 @@ void DecryptingDemuxerStream::InitializeDecoderConfig() {
                                input_audio_config.extra_data(),
                                input_audio_config.extra_data_size(),
                                false,  // Output audio is not encrypted.
-                               false,
                                input_audio_config.seek_preroll(),
                                input_audio_config.codec_delay());
       break;
@@ -396,17 +395,13 @@ void DecryptingDemuxerStream::InitializeDecoderConfig() {
     case VIDEO: {
       VideoDecoderConfig input_video_config =
           demuxer_stream_->video_decoder_config();
-      video_config_.Initialize(input_video_config.codec(),
-                               input_video_config.profile(),
-                               input_video_config.format(),
-                               VideoFrame::COLOR_SPACE_UNSPECIFIED,
-                               input_video_config.coded_size(),
-                               input_video_config.visible_rect(),
-                               input_video_config.natural_size(),
-                               input_video_config.extra_data(),
-                               input_video_config.extra_data_size(),
-                               false,  // Output video is not encrypted.
-                               false);
+      video_config_.Initialize(
+          input_video_config.codec(), input_video_config.profile(),
+          input_video_config.format(), input_video_config.color_space(),
+          input_video_config.coded_size(), input_video_config.visible_rect(),
+          input_video_config.natural_size(), input_video_config.extra_data(),
+          input_video_config.extra_data_size(),
+          false);  // Output video is not encrypted.
       break;
     }
 

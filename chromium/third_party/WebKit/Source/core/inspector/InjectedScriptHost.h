@@ -45,13 +45,12 @@ namespace blink {
 class EventTarget;
 class InjectedScriptHostClient;
 class InspectorConsoleAgent;
-class InspectorDebuggerAgent;
 class JSONValue;
-class Node;
 class ScriptValue;
+class V8DebuggerAgent;
 class V8Debugger;
 
-struct EventListenerInfo;
+class EventListenerInfo;
 
 // SECURITY NOTE: Although the InjectedScriptHost is intended for use solely by the inspector,
 // a reference to the InjectedScriptHost may be leaked to the page being inspected. Thus, the
@@ -66,7 +65,7 @@ public:
 
     using InspectCallback = Function<void(PassRefPtr<TypeBuilder::Runtime::RemoteObject>, PassRefPtr<JSONObject>)>;
 
-    void init(InspectorConsoleAgent* consoleAgent, InspectorDebuggerAgent* debuggerAgent, PassOwnPtr<InspectCallback> inspectCallback, V8Debugger* debugger, PassOwnPtr<InjectedScriptHostClient> injectedScriptHostClient)
+    void init(InspectorConsoleAgent* consoleAgent, V8DebuggerAgent* debuggerAgent, PassOwnPtr<InspectCallback> inspectCallback, V8Debugger* debugger, PassOwnPtr<InjectedScriptHostClient> injectedScriptHostClient)
     {
         m_consoleAgent = consoleAgent;
         m_debuggerAgent = debuggerAgent;
@@ -75,24 +74,23 @@ public:
         m_client = injectedScriptHostClient;
     }
 
-    static Node* scriptValueAsNode(ScriptState*, ScriptValue);
-    static ScriptValue nodeAsScriptValue(ScriptState*, Node*);
-    static EventTarget* scriptValueAsEventTarget(ScriptState*, ScriptValue);
+    static EventTarget* eventTargetFromV8Value(v8::Isolate*, v8::Local<v8::Value>);
 
     void disconnect();
 
-    class InspectableObject {
-        WTF_MAKE_FAST_ALLOCATED(InspectableObject);
+    class InspectableObject : public NoBaseWillBeGarbageCollectedFinalized<InspectableObject> {
+        WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(InspectableObject);
     public:
         virtual ScriptValue get(ScriptState*);
         virtual ~InspectableObject() { }
+        DEFINE_INLINE_VIRTUAL_TRACE() { }
     };
-    void addInspectedObject(PassOwnPtr<InspectableObject>);
+    void addInspectedObject(PassOwnPtrWillBeRawPtr<InspectableObject>);
     void clearInspectedObjects();
     InspectableObject* inspectedObject(unsigned num);
 
     void inspectImpl(PassRefPtr<JSONValue> objectToInspect, PassRefPtr<JSONValue> hints);
-    void getEventListenersImpl(EventTarget*, Vector<EventListenerInfo>& listenersArray);
+    void getEventListenersImpl(EventTarget*, WillBeHeapVector<EventListenerInfo>& listenersArray);
 
     void clearConsoleMessages();
     void debugFunction(const String& scriptId, int lineNumber, int columnNumber);
@@ -111,11 +109,11 @@ private:
     InjectedScriptHost();
 
     RawPtrWillBeMember<InspectorConsoleAgent> m_consoleAgent;
-    RawPtrWillBeMember<InspectorDebuggerAgent> m_debuggerAgent;
+    V8DebuggerAgent* m_debuggerAgent;
     OwnPtr<InspectCallback> m_inspectCallback;
-    RawPtrWillBeMember<V8Debugger> m_debugger;
-    Vector<OwnPtr<InspectableObject> > m_inspectedObjects;
-    OwnPtr<InspectableObject> m_defaultInspectableObject;
+    V8Debugger* m_debugger;
+    WillBeHeapVector<OwnPtrWillBeMember<InspectableObject>> m_inspectedObjects;
+    OwnPtrWillBeMember<InspectableObject> m_defaultInspectableObject;
     OwnPtr<InjectedScriptHostClient> m_client;
     v8::Global<v8::FunctionTemplate> m_wrapperTemplate;
 };

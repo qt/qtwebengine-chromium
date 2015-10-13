@@ -58,10 +58,6 @@ bool ProxyConnectRedirectHttpStream::IsResponseBodyComplete() const {
   return true;
 }
 
-bool ProxyConnectRedirectHttpStream::CanFindEndOfResponse() const {
-  return true;
-}
-
 bool ProxyConnectRedirectHttpStream::IsConnectionReused() const {
   NOTREACHED();
   return false;
@@ -71,12 +67,15 @@ void ProxyConnectRedirectHttpStream::SetConnectionReused() {
   NOTREACHED();
 }
 
-bool ProxyConnectRedirectHttpStream::IsConnectionReusable() const {
-  NOTREACHED();
+bool ProxyConnectRedirectHttpStream::CanReuseConnection() const {
   return false;
 }
 
-int64 ProxyConnectRedirectHttpStream::GetTotalReceivedBytes() const {
+int64_t ProxyConnectRedirectHttpStream::GetTotalReceivedBytes() const {
+  return 0;
+}
+
+int64_t ProxyConnectRedirectHttpStream::GetTotalSentBytes() const {
   return 0;
 }
 
@@ -98,7 +97,7 @@ void ProxyConnectRedirectHttpStream::GetSSLCertRequestInfo(
   NOTREACHED();
 }
 
-bool ProxyConnectRedirectHttpStream::IsSpdyHttpStream() const {
+bool ProxyConnectRedirectHttpStream::GetRemoteEndpoint(IPEndPoint* endpoint) {
   NOTREACHED();
   return false;
 }

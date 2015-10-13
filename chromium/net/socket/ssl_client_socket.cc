@@ -34,10 +34,6 @@ NextProto SSLClientSocket::NextProtoFromString(
     return kProtoSPDY3;
   } else if (proto_string == "spdy/3.1") {
     return kProtoSPDY31;
-  } else if (proto_string == "h2-14") {
-    // For internal consistency, HTTP/2 is named SPDY4 within Chromium.
-    // This is the HTTP/2 draft-14 identifier.
-    return kProtoHTTP2_14;
   } else if (proto_string == "h2") {
     return kProtoHTTP2;
   } else if (proto_string == "quic/1+spdy/3") {
@@ -58,10 +54,6 @@ const char* SSLClientSocket::NextProtoToString(NextProto next_proto) {
       return "spdy/3";
     case kProtoSPDY31:
       return "spdy/3.1";
-    case kProtoHTTP2_14:
-      // For internal consistency, HTTP/2 is named SPDY4 within Chromium.
-      // This is the HTTP/2 draft-14 identifier.
-      return "h2-14";
     case kProtoHTTP2:
       return "h2";
     case kProtoQUIC1SPDY3:
@@ -197,14 +189,9 @@ bool SSLClientSocket::IsTLSVersionAdequateForHTTP2(
 
 // static
 std::vector<uint8_t> SSLClientSocket::SerializeNextProtos(
-    const NextProtoVector& next_protos,
-    bool can_advertise_http2) {
+    const NextProtoVector& next_protos) {
   std::vector<uint8_t> wire_protos;
   for (const NextProto next_proto : next_protos) {
-    if (!can_advertise_http2 && kProtoHTTP2MinimumVersion <= next_proto &&
-        next_proto <= kProtoHTTP2MaximumVersion) {
-      continue;
-    }
     const std::string proto = NextProtoToString(next_proto);
     if (proto.size() > 255) {
       LOG(WARNING) << "Ignoring overlong NPN/ALPN protocol: " << proto;

@@ -28,7 +28,7 @@ class MEDIA_EXPORT VideoFrameMetadata {
     CAPTURE_END_TIME,
 
     // Some VideoFrames have an indication of the color space used.  Use
-    // GetInteger()/SetInteger() and VideoFrame::ColorSpace enumeration.
+    // GetInteger()/SetInteger() and ColorSpace enumeration.
     COLOR_SPACE,
 
     // Indicates if the current frame is the End of its current Stream. Use
@@ -49,6 +49,15 @@ class MEDIA_EXPORT VideoFrameMetadata {
     // same for all frames in the same session.  Use Get/SetDouble() for this
     // key.
     FRAME_RATE,
+
+    // This field represents the local time at which either: 1) the frame was
+    // generated, if it was done so locally; or 2) the targeted play-out time
+    // of the frame, if it was generated from a remote source. This value is NOT
+    // a high-resolution timestamp, and so it should not be used as a
+    // presentation time; but, instead, it should be used for buffering playback
+    // and for A/V synchronization purposes.
+    // Use Get/SetTimeTicks() for this key.
+    REFERENCE_TIME,
 
     // A feedback signal that indicates the fraction of the tolerable maximum
     // amount of resources that were utilized to process this frame.  A producer

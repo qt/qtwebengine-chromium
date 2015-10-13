@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "mojo/edk/js/drain_data.h"
+#include "third_party/mojo/src/mojo/edk/js/drain_data.h"
 
 #include "gin/array_buffer.h"
 #include "gin/converter.h"
@@ -42,11 +42,8 @@ DrainData::~DrainData() {
 
 void DrainData::WaitForData() {
   wait_id_ = Environment::GetDefaultAsyncWaiter()->AsyncWait(
-      handle_.get().value(),
-      MOJO_HANDLE_SIGNAL_READABLE,
-      MOJO_DEADLINE_INDEFINITE,
-      &DrainData::WaitCompleted,
-      this);
+      2, handle_.get().value(), MOJO_HANDLE_SIGNAL_READABLE,
+      MOJO_DEADLINE_INDEFINITE, &DrainData::WaitCompleted, this);
 }
 
 void DrainData::DataReady(MojoResult result) {

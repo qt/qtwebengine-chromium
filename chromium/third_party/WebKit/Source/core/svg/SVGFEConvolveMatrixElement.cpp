@@ -66,8 +66,7 @@ void SVGAnimatedOrder::setBaseValueAsString(const String& value, SVGParsingError
     ASSERT(contextElement());
     if (parseError == NoError && (firstInteger()->baseValue()->value() < 1 || secondInteger()->baseValue()->value() < 1)) {
         contextElement()->document().accessSVGExtensions().reportWarning(
-            "feConvolveMatrix: problem parsing order=\"" + value
-            + "\". Filtered element will not be displayed.");
+            "feConvolveMatrix: problem parsing order=\"" + value + "\".");
     }
 }
 
@@ -126,8 +125,6 @@ bool SVGFEConvolveMatrixElement::setFilterEffectAttribute(FilterEffect* effect, 
         return convolveMatrix->setTargetOffset(IntPoint(m_targetX->currentValue()->value(), m_targetY->currentValue()->value()));
     if (attrName == SVGNames::targetYAttr)
         return convolveMatrix->setTargetOffset(IntPoint(m_targetX->currentValue()->value(), m_targetY->currentValue()->value()));
-    if (attrName == SVGNames::kernelUnitLengthAttr)
-        return convolveMatrix->setKernelUnitLength(FloatPoint(kernelUnitLengthX()->currentValue()->value(), kernelUnitLengthY()->currentValue()->value()));
     if (attrName == SVGNames::preserveAlphaAttr)
         return convolveMatrix->setPreserveAlpha(m_preserveAlpha->currentValue()->value());
 
@@ -142,7 +139,6 @@ void SVGFEConvolveMatrixElement::svgAttributeChanged(const QualifiedName& attrNa
         || attrName == SVGNames::biasAttr
         || attrName == SVGNames::targetXAttr
         || attrName == SVGNames::targetYAttr
-        || attrName == SVGNames::kernelUnitLengthAttr
         || attrName == SVGNames::preserveAlphaAttr) {
         SVGElement::InvalidationGuard invalidationGuard(this);
         primitiveAttributeChanged(attrName);
@@ -169,47 +165,25 @@ PassRefPtrWillBeRawPtr<FilterEffect> SVGFEConvolveMatrixElement::build(SVGFilter
 
     int orderXValue = orderX()->currentValue()->value();
     int orderYValue = orderY()->currentValue()->value();
-    if (!hasAttribute(SVGNames::orderAttr)) {
+    if (!m_order->isSpecified()) {
         orderXValue = 3;
         orderYValue = 3;
     }
-    // Spec says order must be > 0. Bail if it is not.
-    if (orderXValue < 1 || orderYValue < 1)
-        return nullptr;
-    RefPtrWillBeRawPtr<SVGNumberList> kernelMatrix = this->m_kernelMatrix->currentValue();
-    size_t kernelMatrixSize = kernelMatrix->length();
-    // The spec says this is a requirement, and should bail out if fails
-    if (orderXValue * orderYValue != static_cast<int>(kernelMatrixSize))
-        return nullptr;
 
     int targetXValue = m_targetX->currentValue()->value();
-    int targetYValue = m_targetY->currentValue()->value();
-    if (hasAttribute(SVGNames::targetXAttr) && (targetXValue < 0 || targetXValue >= orderXValue))
-        return nullptr;
     // The spec says the default value is: targetX = floor ( orderX / 2 ))
-    if (!hasAttribute(SVGNames::targetXAttr))
+    if (!m_targetX->isSpecified())
         targetXValue = static_cast<int>(floorf(orderXValue / 2));
-    if (hasAttribute(SVGNames::targetYAttr) && (targetYValue < 0 || targetYValue >= orderYValue))
-        return nullptr;
+
+    int targetYValue = m_targetY->currentValue()->value();
     // The spec says the default value is: targetY = floor ( orderY / 2 ))
-    if (!hasAttribute(SVGNames::targetYAttr))
+    if (!m_targetY->isSpecified())
         targetYValue = static_cast<int>(floorf(orderYValue / 2));
 
-    // Spec says default kernelUnitLength is 1.0, and a specified length cannot be 0.
-    // FIXME: Why is this cast from float -> int -> float?
-    int kernelUnitLengthXValue = kernelUnitLengthX()->currentValue()->value();
-    int kernelUnitLengthYValue = kernelUnitLengthY()->currentValue()->value();
-    if (!hasAttribute(SVGNames::kernelUnitLengthAttr)) {
-        kernelUnitLengthXValue = 1;
-        kernelUnitLengthYValue = 1;
-    }
-    if (kernelUnitLengthXValue <= 0 || kernelUnitLengthYValue <= 0)
-        return nullptr;
-
     float divisorValue = m_divisor->currentValue()->value();
-    if (hasAttribute(SVGNames::divisorAttr) && !divisorValue)
-        return nullptr;
-    if (!hasAttribute(SVGNames::divisorAttr)) {
+    if (!m_divisor->isSpecified()) {
+        RefPtrWillBeRawPtr<SVGNumberList> kernelMatrix = m_kernelMatrix->currentValue();
+        size_t kernelMatrixSize = kernelMatrix->length();
         for (size_t i = 0; i < kernelMatrixSize; ++i)
             divisorValue += kernelMatrix->at(i)->value();
         if (!divisorValue)
@@ -217,9 +191,9 @@ PassRefPtrWillBeRawPtr<FilterEffect> SVGFEConvolveMatrixElement::build(SVGFilter
     }
 
     RefPtrWillBeRawPtr<FilterEffect> effect = FEConvolveMatrix::create(filter,
-                    IntSize(orderXValue, orderYValue), divisorValue,
-                    m_bias->currentValue()->value(), IntPoint(targetXValue, targetYValue), m_edgeMode->currentValue()->enumValue(),
-                    FloatPoint(kernelUnitLengthXValue, kernelUnitLengthYValue), m_preserveAlpha->currentValue()->value(), m_kernelMatrix->currentValue()->toFloatVector());
+        IntSize(orderXValue, orderYValue), divisorValue,
+        m_bias->currentValue()->value(), IntPoint(targetXValue, targetYValue), m_edgeMode->currentValue()->enumValue(),
+        m_preserveAlpha->currentValue()->value(), m_kernelMatrix->currentValue()->toFloatVector());
     effect->inputEffects().append(input1);
     return effect.release();
 }

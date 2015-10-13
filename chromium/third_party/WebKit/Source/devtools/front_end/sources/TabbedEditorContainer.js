@@ -56,6 +56,7 @@ WebInspector.TabbedEditorContainer = function(delegate, setting, placeholderText
     this._tabbedPane.setTabDelegate(new WebInspector.EditorContainerTabDelegate(this));
 
     this._tabbedPane.setCloseableTabs(true);
+    this._tabbedPane.setAllowTabReorder(true, true);
     this._tabbedPane.insertBeforeTabStrip(createElementWithClass("div", "sources-editor-tabstrip-left"));
     this._tabbedPane.appendAfterTabStrip(createElementWithClass("div", "sources-editor-tabstrip-right"));
 
@@ -451,7 +452,6 @@ WebInspector.TabbedEditorContainer.prototype = {
         uiSourceCode.addEventListener(WebInspector.UISourceCode.Events.TitleChanged, this._uiSourceCodeTitleChanged, this);
         uiSourceCode.addEventListener(WebInspector.UISourceCode.Events.WorkingCopyChanged, this._uiSourceCodeWorkingCopyChanged, this);
         uiSourceCode.addEventListener(WebInspector.UISourceCode.Events.WorkingCopyCommitted, this._uiSourceCodeWorkingCopyCommitted, this);
-        uiSourceCode.addEventListener(WebInspector.UISourceCode.Events.SavedStateUpdated, this._uiSourceCodeSavedStateUpdated, this);
     },
 
     /**
@@ -462,7 +462,6 @@ WebInspector.TabbedEditorContainer.prototype = {
         uiSourceCode.removeEventListener(WebInspector.UISourceCode.Events.TitleChanged, this._uiSourceCodeTitleChanged, this);
         uiSourceCode.removeEventListener(WebInspector.UISourceCode.Events.WorkingCopyChanged, this._uiSourceCodeWorkingCopyChanged, this);
         uiSourceCode.removeEventListener(WebInspector.UISourceCode.Events.WorkingCopyCommitted, this._uiSourceCodeWorkingCopyCommitted, this);
-        uiSourceCode.removeEventListener(WebInspector.UISourceCode.Events.SavedStateUpdated, this._uiSourceCodeSavedStateUpdated, this);
     },
 
     /**
@@ -495,12 +494,6 @@ WebInspector.TabbedEditorContainer.prototype = {
     },
 
     _uiSourceCodeWorkingCopyCommitted: function(event)
-    {
-        var uiSourceCode = /** @type {!WebInspector.UISourceCode} */ (event.target);
-        this._updateFileTitle(uiSourceCode);
-    },
-
-    _uiSourceCodeSavedStateUpdated: function(event)
     {
         var uiSourceCode = /** @type {!WebInspector.UISourceCode} */ (event.target);
         this._updateFileTitle(uiSourceCode);

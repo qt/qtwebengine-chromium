@@ -42,11 +42,12 @@
 #include "bindings/core/v8/V8ScriptRunner.h"
 #include "core/dom/Document.h"
 #include "core/dom/Node.h"
+#include "core/events/ErrorEvent.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/csp/ContentSecurityPolicy.h"
 #include "core/html/HTMLElement.h"
 #include "core/html/HTMLFormElement.h"
-
+#include "core/inspector/ScriptCallStack.h"
 #include "wtf/StdLibExtras.h"
 
 namespace blink {
@@ -136,67 +137,44 @@ void V8LazyEventListener::prepareListenerObject(ExecutionContext* executionConte
 
     ScriptState::Scope scope(scriptState);
 
-    // FIXME: Remove the following 'with' hack.
-    //
     // Nodes other than the document object, when executing inline event
     // handlers push document, form owner, and the target node on the scope chain.
     // We do this by using 'with' statement.
-    // See chrome/fast/forms/form-action.html
-    //     chrome/fast/forms/selected-index-value.html
-    //     base/fast/overflow/onscroll-layer-self-destruct.html
-    //
-    // Don't use new lines so that lines in the modified handler
-    // have the same numbers as in the original code.
-    // FIXME: V8 does not allow us to programmatically create object environments so
-    //        we have to do this hack! What if m_code escapes to run arbitrary script?
-    //
-    // Call with 4 arguments instead of 3, pass additional null as the last parameter.
-    // By calling the function with 4 arguments, we create a setter on arguments object
-    // which would shadow property "3" on the prototype.
-    String code = "(function() {"
-        "with (this[2]) {"
-        "with (this[1]) {"
-        "with (this[0]) {"
-            "return function(" + m_eventParameterName + ") {" +
-                m_code + "\n" // Insert '\n' otherwise //-style comments could break the handler.
-            "};"
-        "}}}})";
-
-    v8::Local<v8::String> codeExternalString = v8String(isolate(), code);
-
-    v8::Local<v8::Value> result;
-    if (!V8ScriptRunner::compileAndRunInternalScript(codeExternalString, isolate(), m_sourceURL, m_position).ToLocal(&result))
-        return;
-
-    // Call the outer function to get the inner function.
-    if (!result->IsFunction())
-        return;
-    v8::Local<v8::Function> intermediateFunction = result.As<v8::Function>();
-
+    // See fast/forms/form-action.html
+    //     fast/forms/selected-index-value.html
+    //     fast/overflow/onscroll-layer-self-destruct.html
     HTMLFormElement* formElement = 0;
     if (m_node && m_node->isHTMLElement())
         formElement = toHTMLElement(m_node)->formOwner();
 
-    v8::Local<v8::Object> nodeWrapper = toObjectWrapper<Node>(m_node, scriptState);
-    v8::Local<v8::Object> formWrapper = toObjectWrapper<HTMLFormElement>(formElement, scriptState);
-    v8::Local<v8::Object> documentWrapper = toObjectWrapper<Document>(m_node ? m_node->ownerDocument() : 0, scriptState);
+    v8::Local<v8::Object> scopes[3];
 
-    v8::Local<v8::Object> thisObject = v8::Object::New(isolate());
-    if (thisObject.IsEmpty())
-        return;
-    if (!v8CallBoolean(thisObject->CreateDataProperty(scriptState->context(), 0, nodeWrapper)))
-        return;
-    if (!v8CallBoolean(thisObject->CreateDataProperty(scriptState->context(), 1, formWrapper)))
-        return;
-    if (!v8CallBoolean(thisObject->CreateDataProperty(scriptState->context(), 2, documentWrapper)))
-        return;
+    scopes[2] = toObjectWrapper<Node>(m_node, scriptState);
+    scopes[1] = toObjectWrapper<HTMLFormElement>(formElement, scriptState);
+    scopes[0] = toObjectWrapper<Document>(m_node ? m_node->ownerDocument() : 0, scriptState);
 
-    // FIXME: Remove this code when we stop doing the 'with' hack above.
-    v8::Local<v8::Value> innerValue;
-    if (!V8ScriptRunner::callInternalFunction(intermediateFunction, thisObject, 0, 0, isolate()).ToLocal(&innerValue) || !innerValue->IsFunction())
-        return;
+    v8::Local<v8::String> parameterName = v8String(isolate(), m_eventParameterName);
+    v8::ScriptOrigin origin(
+        v8String(isolate(), m_sourceURL),
+        v8::Integer::New(isolate(), m_position.m_line.zeroBasedInt()),
+        v8::Integer::New(isolate(), m_position.m_column.zeroBasedInt()),
+        v8::True(isolate()),
+        v8::Local<v8::Integer>(),
+        v8::True(isolate()));
+    v8::ScriptCompiler::Source source(v8String(isolate(), m_code), origin);
 
-    v8::Local<v8::Function> wrappedFunction = innerValue.As<v8::Function>();
+    v8::Local<v8::Function> wrappedFunction;
+    {
+        // JavaScript compilation error shouldn't be reported as a runtime
+        // exception because we're not running any program code.  Instead,
+        // it should be reported as an ErrorEvent.
+        v8::TryCatch block(isolate());
+        wrappedFunction = v8::ScriptCompiler::CompileFunctionInContext(isolate(), &source, v8Context, 1, &parameterName, 3, scopes);
+        if (block.HasCaught()) {
+            fireErrorEvent(v8Context, executionContext, block.Message());
+            return;
+        }
+    }
 
     // Change the toString function on the wrapper function to avoid it
     // returning the source for the actual wrapper function. Instead it
@@ -225,8 +203,26 @@ void V8LazyEventListener::prepareListenerObject(ExecutionContext* executionConte
     // m_code = String();
     // m_eventParameterName = String();
     // m_sourceURL = String();
-
     setListenerObject(wrappedFunction);
+}
+
+void V8LazyEventListener::fireErrorEvent(v8::Local<v8::Context> v8Context, ExecutionContext* executionContext, v8::Local<v8::Message> message)
+{
+    String messageText = toCoreStringWithNullCheck(message->Get());
+    int lineNumber = 0;
+    int columnNumber = 0;
+    if (v8Call(message->GetLineNumber(v8Context), lineNumber)
+        && v8Call(message->GetStartColumn(v8Context), columnNumber))
+        ++columnNumber;
+    RefPtrWillBeRawPtr<ErrorEvent> event = ErrorEvent::create(messageText, m_sourceURL, lineNumber, columnNumber, &world());
+
+    AccessControlStatus accessControlStatus = NotSharableCrossOrigin;
+    if (message->IsOpaque())
+        accessControlStatus = OpaqueResource;
+    else if (message->IsSharedCrossOrigin())
+        accessControlStatus = SharableCrossOrigin;
+
+    executionContext->reportException(event.release(), 0, nullptr, accessControlStatus);
 }
 
 } // namespace blink

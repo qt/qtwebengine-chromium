@@ -38,7 +38,6 @@ public:
     {
         return adoptRef(new ClipRects);
     }
-
     static PassRefPtr<ClipRects> create(const ClipRects& other)
     {
         return adoptRef(new ClipRects(other));

@@ -18,6 +18,7 @@ namespace ui {
 class DrmDisplayHostManager;
 class DrmCursor;
 class DrmGpuPlatformSupportHost;
+class DrmOverlayCandidatesHost;
 class DrmGpuWindow;
 class DrmWindowHostManager;
 class EventFactoryEvdev;
@@ -57,6 +58,7 @@ class DrmWindowHost : public PlatformWindow,
   void Close() override;
   void SetBounds(const gfx::Rect& bounds) override;
   gfx::Rect GetBounds() override;
+  void SetTitle(const base::string16& title) override;
   void SetCapture() override;
   void ReleaseCapture() override;
   void ToggleFullscreen() override;
@@ -66,6 +68,7 @@ class DrmWindowHost : public PlatformWindow,
   void SetCursor(PlatformCursor cursor) override;
   void MoveCursorTo(const gfx::Point& location) override;
   void ConfineCursorToBounds(const gfx::Rect& bounds) override;
+  PlatformImeController* GetPlatformImeController() override;
 
   // PlatformEventDispatcher:
   bool CanDispatchEvent(const PlatformEvent& event) override;
@@ -75,15 +78,18 @@ class DrmWindowHost : public PlatformWindow,
   void OnChannelEstablished() override;
   void OnChannelDestroyed() override;
 
+  void SetOverlayCandidatesHost(DrmOverlayCandidatesHost* host);
+
  private:
   void SendBoundsChange();
 
-  PlatformWindowDelegate* delegate_;        // Not owned.
-  DrmGpuPlatformSupportHost* sender_;       // Not owned.
-  EventFactoryEvdev* event_factory_;        // Not owned.
-  DrmCursor* cursor_;                       // Not owned.
-  DrmWindowHostManager* window_manager_;    // Not owned.
-  DrmDisplayHostManager* display_manager_;  // Not owned.
+  PlatformWindowDelegate* delegate_;                   // Not owned.
+  DrmGpuPlatformSupportHost* sender_;                  // Not owned.
+  EventFactoryEvdev* event_factory_;                   // Not owned.
+  DrmCursor* cursor_;                                  // Not owned.
+  DrmWindowHostManager* window_manager_;               // Not owned.
+  DrmDisplayHostManager* display_manager_;             // Not owned.
+  DrmOverlayCandidatesHost* overlay_candidates_host_;  // Not owned.
 
   gfx::Rect bounds_;
   gfx::AcceleratedWidget widget_;

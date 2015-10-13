@@ -25,12 +25,8 @@ gfx::Size GetNaturalSize(const gfx::Size& visible_size,
   double aspect_ratio = aspect_ratio_numerator /
       static_cast<double>(aspect_ratio_denominator);
 
-  int width = floor(visible_size.width() * aspect_ratio + 0.5);
-  int height = visible_size.height();
-
-  // An even width makes things easier for YV12 and appears to be the behavior
-  // expected by WebKit layout tests.
-  return gfx::Size(width & ~1, height);
+  return gfx::Size(round(visible_size.width() * aspect_ratio),
+                   visible_size.height());
 }
 
 void CopyPlane(size_t plane, const uint8* source, int stride, int rows,
@@ -159,8 +155,8 @@ void LetterboxYUV(VideoFrame* frame, const gfx::Rect& view_area) {
   DCHECK(!(view_area.y() & 1));
   DCHECK(!(view_area.width() & 1));
   DCHECK(!(view_area.height() & 1));
-  DCHECK(frame->format() == VideoFrame::YV12 ||
-         frame->format() == VideoFrame::I420);
+  DCHECK(frame->format() == PIXEL_FORMAT_YV12 ||
+         frame->format() == PIXEL_FORMAT_I420);
   LetterboxPlane(frame, VideoFrame::kYPlane, view_area, 0x00);
   gfx::Rect half_view_area(view_area.x() / 2,
                            view_area.y() / 2,

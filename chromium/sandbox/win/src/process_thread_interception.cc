@@ -267,7 +267,8 @@ BOOL WINAPI TargetCreateProcessW(CreateProcessWFunction orig_CreateProcessW,
                                  LPVOID environment, LPCWSTR current_directory,
                                  LPSTARTUPINFOW startup_info,
                                  LPPROCESS_INFORMATION process_information) {
-  if (orig_CreateProcessW(application_name, command_line, process_attributes,
+  if (SandboxFactory::GetTargetServices()->GetState()->IsCsrssConnected() &&
+      orig_CreateProcessW(application_name, command_line, process_attributes,
                           thread_attributes, inherit_handles, flags,
                           environment, current_directory, startup_info,
                           process_information)) {
@@ -278,6 +279,8 @@ BOOL WINAPI TargetCreateProcessW(CreateProcessWFunction orig_CreateProcessW,
   if (!SandboxFactory::GetTargetServices()->GetState()->InitCalled())
     return FALSE;
 
+  // Don't call GetLastError before InitCalled() succeeds because kernel32 may
+  // not be mapped yet.
   DWORD original_error = ::GetLastError();
 
   do {
@@ -337,6 +340,8 @@ BOOL WINAPI TargetCreateProcessA(CreateProcessAFunction orig_CreateProcessA,
   if (!SandboxFactory::GetTargetServices()->GetState()->InitCalled())
     return FALSE;
 
+  // Don't call GetLastError before InitCalled() succeeds because kernel32 may
+  // not be mapped yet.
   DWORD original_error = ::GetLastError();
 
   do {

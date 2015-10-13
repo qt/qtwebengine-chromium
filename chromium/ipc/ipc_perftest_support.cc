@@ -7,8 +7,8 @@
 #include <algorithm>
 #include <string>
 
-#include "base/basictypes.h"
 #include "base/logging.h"
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/pickle.h"
 #include "base/strings/stringprintf.h"
@@ -67,7 +67,7 @@ class EventTimeTracker {
  private:
   const std::string name_;
 
-  uint64 count_;
+  uint64_t count_;
   base::TimeDelta total_duration_;
   base::TimeDelta max_duration_;
 
@@ -99,7 +99,7 @@ class ChannelReflectorListener : public Listener {
     CHECK(channel_);
 
     base::PickleIterator iter(message);
-    int64 time_internal;
+    int64_t time_internal;
     EXPECT_TRUE(iter.ReadInt64(&time_internal));
     int msgid;
     EXPECT_TRUE(iter.ReadInt(&msgid));
@@ -168,7 +168,7 @@ class PerformanceChannelListener : public Listener {
     CHECK(sender_);
 
     base::PickleIterator iter(message);
-    int64 time_internal;
+    int64_t time_internal;
     EXPECT_TRUE(iter.ReadInt64(&time_internal));
     int msgid;
     EXPECT_TRUE(iter.ReadInt(&msgid));
@@ -328,7 +328,7 @@ PingPongTestClient::~PingPongTestClient() {
 scoped_ptr<Channel> PingPongTestClient::CreateChannel(
     Listener* listener) {
   return Channel::CreateClient(IPCTestBase::GetChannelName("PerformanceClient"),
-                               listener, nullptr);
+                               listener);
 }
 
 int PingPongTestClient::RunMain() {

@@ -8,11 +8,16 @@
    *
    * The input element can be accessed by the `inputElement` property if you need to access
    * properties or methods that are not exposed.
-   * @polymerBehavior
+   * @polymerBehavior Polymer.PaperInputBehavior
    */
-  Polymer.PaperInputBehavior = {
+  Polymer.PaperInputBehaviorImpl = {
 
     properties: {
+      /**
+       * Fired when the input changes due to user interaction.
+       *
+       * @event change
+       */
 
       /**
        * The label for this input. Bind this to `<paper-input-container>`'s `label` property.
@@ -45,7 +50,8 @@
        */
       invalid: {
         type: Boolean,
-        value: false
+        value: false,
+        notify: true
       },
 
       /**
@@ -73,6 +79,14 @@
       },
 
       /**
+       * The datalist of the input (if any). This should match the id of an existing <datalist>. Bind this
+       * to the `<input is="iron-input">`'s `list` property.
+       */
+      list: {
+        type: String
+      },
+
+      /**
        * A pattern to validate the `input` with. Bind this to the `<input is="iron-input">`'s
        * `pattern` property.
        */
@@ -87,14 +101,6 @@
       required: {
         type: Boolean,
         value: false
-      },
-
-      /**
-       * The maximum length of the input value. Bind this to the `<input is="iron-input">`'s
-       * `maxlength` property.
-       */
-      maxlength: {
-        type: Number
       },
 
       /**
@@ -180,6 +186,39 @@
       },
 
       /**
+       * The maximum length of the input value. Bind this to the `<input is="iron-input">`'s
+       * `maxlength` property.
+       */
+      maxlength: {
+        type: Number
+      },
+
+      /**
+       * The minimum (numeric or date-time) input value.
+       * Bind this to the `<input is="iron-input">`'s `min` property.
+       */
+      min: {
+        type: String
+      },
+
+      /**
+       * The maximum (numeric or date-time) input value.
+       * Can be a String (e.g. `"2000-1-1"`) or a Number (e.g. `2`).
+       * Bind this to the `<input is="iron-input">`'s `max` property.
+       */
+      max: {
+        type: String
+      },
+
+      /**
+       * Limits the numeric or date-time increments.
+       * Bind this to the `<input is="iron-input">`'s `step` property.
+       */
+      step: {
+        type: String
+      },
+
+      /**
        * Bind this to the `<input is="iron-input">`'s `name` property.
        */
       name: {
@@ -210,6 +249,38 @@
         type: Number
       },
 
+      // Nonstandard attributes for binding if needed
+
+      /**
+       * Bind this to the `<input is="iron-input">`'s `autocapitalize` property.
+       */
+      autocapitalize: {
+        type: String,
+        value: 'none'
+      },
+
+      /**
+       * Bind this to the `<input is="iron-input">`'s `autocorrect` property.
+       */
+      autocorrect: {
+        type: String,
+        value: 'off'
+      },
+
+      /**
+       * Bind this to the `<input is="iron-input">`'s `autosave` property, used with type=search.
+       */
+      autosave: {
+        type: String
+      },
+
+      /**
+       * Bind this to the `<input is="iron-input">`'s `results` property, , used with type=search.
+       */
+      results: {
+        type: Number
+      },
+
       _ariaDescribedBy: {
         type: String,
         value: ''
@@ -220,6 +291,10 @@
     listeners: {
       'addon-attached': '_onAddonAttached'
     },
+
+    observers: [
+      '_focusedControlStateChanged(focused)'
+    ],
 
     /**
      * Returns a reference to the input element.
@@ -254,10 +329,20 @@
 
     /**
      * Validates the input element and sets an error style if needed.
+     *
+     * @return {boolean}
      */
-     validate: function() {
-       return this.inputElement.validate();
-     },
+    validate: function() {
+      return this.inputElement.validate();
+    },
+
+    /**
+     * If `autoValidate` is true, then validates the element.
+     */
+    _handleAutoValidate: function() {
+      if (this.autoValidate)
+        this.validate();
+    },
 
     /**
      * Restores the cursor to its original position after updating the value.
@@ -285,6 +370,24 @@
       return placeholder || alwaysFloatLabel;
     },
 
+    _focusedControlStateChanged: function(focused) {
+      // IronControlState stops the focus and blur events in order to redispatch them on the host
+      // element, but paper-input-container listens to those events. Since there are more
+      // pending work on focus/blur in IronControlState, I'm putting in this hack to get the
+      // input focus state working for now.
+      if (!this.$.container) {
+        this.$.container = Polymer.dom(this.root).querySelector('paper-input-container');
+        if (!this.$.container) {
+          return;
+        }
+      }
+      if (focused) {
+        this.$.container._onFocus();
+      } else {
+        this.$.container._onBlur();
+      }
+    },
+
     _updateAriaLabelledBy: function() {
       var label = Polymer.dom(this.root).querySelector('label');
       if (!label) {
@@ -299,7 +402,23 @@
         label.id = labelledBy;
       }
       this._ariaLabelledBy = labelledBy;
+    },
+
+    _onChange:function(event) {
+      // In the Shadow DOM, the `change` event is not leaked into the
+      // ancestor tree, so we must do this manually.
+      // See https://w3c.github.io/webcomponents/spec/shadow/#events-that-are-not-leaked-into-ancestor-trees.
+      if (this.shadowRoot) {
+        this.fire(event.type, {sourceEvent: event}, {
+          node: this,
+          bubbles: event.bubbles,
+          cancelable: event.cancelable
+        });
+      }
     }
 
   };
+
+  /** @polymerBehavior */
+  Polymer.PaperInputBehavior = [Polymer.IronControlState, Polymer.PaperInputBehaviorImpl];
 

@@ -1101,7 +1101,7 @@
 
     result = T1_ToFixedArray( parser, 6, temp, 3 );
 
-    if ( result < 0 )
+    if ( result < 6 )
     {
       parser->root.error = T1_Err_Invalid_File_Format;
       return;
@@ -1269,6 +1269,13 @@
           {
             charcode = (FT_Int)T1_ToInt( parser );
             T1_Skip_Spaces( parser );
+
+            /* protect against invalid charcode */
+            if ( cur == parser->root.cursor )
+            {
+              parser->root.error = FT_Err_Unknown_File_Format;
+              return;
+            }
           }
 
           cur = parser->root.cursor;

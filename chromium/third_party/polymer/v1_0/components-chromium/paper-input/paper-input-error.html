@@ -29,32 +29,28 @@ Custom property | Description | Default
 `--paper-input-error`                   | Mixin applied to the error        | `{}`
 -->
 </head><body><dom-module id="paper-input-error">
-
-  <style>
-
-    :host {
-      /* need to use display: none for role="alert" */
-      display: none;
-      float: left;
-
-      color: var(--paper-input-container-invalid-color, --google-red-500);
-
-      @apply(--paper-font-caption);
-      @apply(--paper-input-error);
-    }
-
-    :host([invalid]) {
-      display: inline-block;
-    };
-
-  </style>
-
   <template>
 
+    <style>
+      :host {
+        display: inline-block;
+        visibility: hidden;
+
+        color: var(--paper-input-container-invalid-color, --google-red-500);
+
+        @apply(--paper-font-caption);
+        @apply(--paper-input-error);
+        position: absolute;
+      }
+
+      :host([invalid]) {
+        visibility: visible;
+      };
+    </style>
+
     <content></content>
-
+    
   </template>
-
 </dom-module>
 
 <script src="paper-input-error-extracted.js"></script></body></html>

@@ -164,12 +164,12 @@ spatialNavigationEnabled initial=false
 # crbug.com/304894 tracks removal once it's been enabled on all platforms.
 touchDragDropEnabled initial=false
 
-unifiedTextCheckerEnabled initial=defaultUnifiedTextCheckerEnabled
+unifiedTextCheckerEnabled initial=false
 
 # Some apps could have a default video poster if it is not set.
 defaultVideoPosterURL type=String
 
-smartInsertDeleteEnabled initial=defaultSmartInsertDeleteEnabled
+smartInsertDeleteEnabled initial=false
 selectTrailingWhitespaceEnabled initial=defaultSelectTrailingWhitespaceEnabled
 
 selectionIncludesAltImageText initial=false
@@ -238,6 +238,10 @@ pinchOverlayScrollbarThickness type=int, initial=0
 # generated scrolls like "scroll into view".
 invertViewportScrollOrder initial=false
 
+# Experiment to have all APIs reflect the layout viewport.
+# crbug.com/489206 tracks the experiment.
+inertVisualViewport initial=false
+
 # The rubber-band overscroll effect is implemented in Blink and is being moved
 # to the compositor thread. This will be set to true and eventually removed.
 # crbug.com/133097
@@ -266,7 +270,6 @@ backgroundHtmlParserPendingTokenLimit type=unsigned, initial=0
 # be loaded later.
 doHtmlPreloadScanning initial=true
 
-javaEnabled initial=false
 pluginsEnabled initial=false
 
 viewportEnabled initial=false, invalidate=ViewportDescription
@@ -331,7 +334,9 @@ showContextMenuOnMouseUp initial=false
 
 disableReadingFromCanvas initial=false
 strictMixedContentChecking initial=false
+strictMixedContentCheckingForPlugin initial=false
 strictPowerfulFeatureRestrictions initial=false
+strictlyBlockBlockableMixedContent initial=false
 logDnsPrefetchAndPreconnect initial=false
 logPreload initial=false
 
@@ -355,3 +360,24 @@ textTrackTextSize type=String
 lowPriorityIframes initial=false
 
 reportWheelOverscroll initial=false
+
+mainResourceOnlyProgress initial=false
+
+# Do we want to try to save screen real estate in the media player by hiding
+# the volume slider / mute button?
+preferHiddenVolumeControls initial=false
+
+# Controls for resource fetch prioritization.
+# Overall rationale and details here: https://docs.google.com/document/d/1bCDuq9H1ih9iNjgzyAL0gpwNFiEP4TZS-YLRp_RuMlc/edit?usp=sharing
+fetchDeferLateScripts initial=false
+fetchIncreaseFontPriority initial=false
+fetchIncreaseAsyncScriptPriority initial=false
+# Increases the priorities for CSS, Scripts, Fonts and Images all by one level
+# and parser-blocking scripts and visible images by 2.
+# This is used in conjunction with logic on the Chrome side to raise the threshold
+# of "layout-blocking" resources and provide a boost to resources that are needed
+# as soon as possible for something currently on the screen.
+fetchIncreasePriorities initial=false
+
+# The autoplay gesture override experiment is described in crbug.com/487345 .
+autoplayExperimentMode type=String, initial="off"

@@ -18,7 +18,7 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
 {
   "name": "software rendering list",
   // Please update the version number whenever you change this file.
-  "version": "10.9",
+  "version": "10.11",
   "entries": [
     {
       "id": 1,
@@ -733,10 +733,11 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
 LONG_STRING_CONST(
     {
       "id": 76,
-      "description": "WebGL is disabled on Android unless GPU reset notification is supported",
+      "description": "WebGL is disabled on Android unless the GPU runs in a separate process or reset notification is supported",
       "os": {
         "type": "android"
       },
+      "in_process_gpu": true,
       "exceptions": [
         {
           "gl_reset_notification_strategy": {
@@ -745,7 +746,7 @@ LONG_STRING_CONST(
           }
         },
         {
-          "gl_renderer": "Mali-400.*",
+          "gl_renderer": "Mali-4.*",
           "gl_extensions": ".*EXT_robustness.*"
         }
       ],
@@ -1011,21 +1012,19 @@ LONG_STRING_CONST(
         },
         {
           "os": {
-            "type": "android"
+            "type": "android",
+            "version": {
+              "op": ">=",
+              "value": "4.4"
+            }
           },
-          "gl_renderer": "Mali-400.*"
+          "gl_renderer": "Mali-4.*"
         },
         {
           "os": {
             "type": "android"
           },
           "gl_renderer": "NVIDIA.*"
-        },
-        {
-          "os": {
-            "type": "android"
-          },
-          "gl_renderer": "VideoCore IV.*"
         },
         {
           "os": {

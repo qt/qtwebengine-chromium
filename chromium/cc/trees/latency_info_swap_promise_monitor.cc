@@ -30,7 +30,7 @@ bool AddForwardingScrollUpdateToMainComponent(ui::LatencyInfo* latency_info) {
     return false;
   latency_info->AddLatencyNumber(
       ui::INPUT_EVENT_LATENCY_FORWARD_SCROLL_UPDATE_TO_MAIN_COMPONENT, 0,
-      latency_info->trace_id);
+      latency_info->trace_id());
   return true;
 }
 
@@ -59,7 +59,12 @@ void LatencyInfoSwapPromiseMonitor::OnSetNeedsCommitOnMain() {
 void LatencyInfoSwapPromiseMonitor::OnSetNeedsRedrawOnImpl() {
   if (AddRenderingScheduledComponent(latency_, false /* on_main */)) {
     scoped_ptr<SwapPromise> swap_promise(new LatencyInfoSwapPromise(*latency_));
-    layer_tree_host_impl_->active_tree()->QueueSwapPromise(swap_promise.Pass());
+    // Queue a pinned swap promise on the active tree. This will allow
+    // measurement of the time to the next SwapBuffers(). The swap
+    // promise is pinned so that it is not interrupted by new incoming
+    // activations (which would otherwise break the swap promise).
+    layer_tree_host_impl_->active_tree()->QueuePinnedSwapPromise(
+        swap_promise.Pass());
   }
 }
 
@@ -67,8 +72,8 @@ void LatencyInfoSwapPromiseMonitor::OnForwardScrollUpdateToMainThreadOnImpl() {
   if (AddForwardingScrollUpdateToMainComponent(latency_)) {
     int64 new_sequence_number = 0;
     for (ui::LatencyInfo::LatencyMap::const_iterator it =
-             latency_->latency_components.begin();
-         it != latency_->latency_components.end(); ++it) {
+             latency_->latency_components().begin();
+         it != latency_->latency_components().end(); ++it) {
       if (it->first.first == ui::INPUT_EVENT_LATENCY_BEGIN_RWH_COMPONENT) {
         new_sequence_number =
             ((static_cast<int64>(base::PlatformThread::CurrentId()) << 32) ^

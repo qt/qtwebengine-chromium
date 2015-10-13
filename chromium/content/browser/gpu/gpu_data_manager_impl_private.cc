@@ -99,6 +99,9 @@ int GetGpuBlacklistHistogramValueWin(GpuFeatureStatus status) {
     case kGpuFeatureDisabled:
       entry_index += 2;
       break;
+    case kGpuFeatureNumStatus:
+      NOTREACHED();
+      break;
   }
   return entry_index;
 }
@@ -147,20 +150,25 @@ void UpdateStats(const gpu::GPUInfo& gpu_info,
 
   const gpu::GpuFeatureType kGpuFeatures[] = {
       gpu::GPU_FEATURE_TYPE_ACCELERATED_2D_CANVAS,
-      gpu::GPU_FEATURE_TYPE_GPU_COMPOSITING, gpu::GPU_FEATURE_TYPE_WEBGL};
+      gpu::GPU_FEATURE_TYPE_GPU_COMPOSITING,
+      gpu::GPU_FEATURE_TYPE_GPU_RASTERIZATION,
+      gpu::GPU_FEATURE_TYPE_WEBGL};
   const std::string kGpuBlacklistFeatureHistogramNames[] = {
       "GPU.BlacklistFeatureTestResults.Accelerated2dCanvas",
       "GPU.BlacklistFeatureTestResults.GpuCompositing",
-      "GPU.BlacklistFeatureTestResults.Webgl", };
+      "GPU.BlacklistFeatureTestResults.GpuRasterization",
+      "GPU.BlacklistFeatureTestResults.Webgl"};
   const bool kGpuFeatureUserFlags[] = {
       command_line.HasSwitch(switches::kDisableAccelerated2dCanvas),
       command_line.HasSwitch(switches::kDisableGpu),
-      command_line.HasSwitch(switches::kDisableExperimentalWebGL), };
+      command_line.HasSwitch(switches::kDisableGpuRasterization),
+      command_line.HasSwitch(switches::kDisableExperimentalWebGL)};
 #if defined(OS_WIN)
   const std::string kGpuBlacklistFeatureHistogramNamesWin[] = {
       "GPU.BlacklistFeatureTestResultsWindows.Accelerated2dCanvas",
       "GPU.BlacklistFeatureTestResultsWindows.GpuCompositing",
-      "GPU.BlacklistFeatureTestResultsWindows.Webgl", };
+      "GPU.BlacklistFeatureTestResultsWindows.GpuRasterization",
+      "GPU.BlacklistFeatureTestResultsWindows.Webgl"};
 #endif
   const size_t kNumFeatures =
       sizeof(kGpuFeatures) / sizeof(gpu::GpuFeatureType);
@@ -566,7 +574,7 @@ void GpuDataManagerImplPrivate::UpdateGpuInfoHelper() {
         gpu::GpuControlList::kOsAny, std::string(), gpu_info_);
 
     disabled_extensions_ =
-        JoinString(gpu_driver_bug_list_->GetDisabledExtensions(), ' ');
+        base::JoinString(gpu_driver_bug_list_->GetDisabledExtensions(), " ");
   }
   gpu::GpuDriverBugList::AppendWorkaroundsFromCommandLine(
       &gpu_driver_bugs_, *base::CommandLine::ForCurrentProcess());
@@ -919,11 +927,11 @@ void GpuDataManagerImplPrivate::BlockDomainFrom3DAPIs(
   BlockDomainFrom3DAPIsAtTime(url, guilt, base::Time::Now());
 }
 
-bool GpuDataManagerImplPrivate::Are3DAPIsBlocked(const GURL& url,
+bool GpuDataManagerImplPrivate::Are3DAPIsBlocked(const GURL& top_origin_url,
                                                  int render_process_id,
-                                                 int render_view_id,
+                                                 int render_frame_id,
                                                  ThreeDAPIType requester) {
-  bool blocked = Are3DAPIsBlockedAtTime(url, base::Time::Now()) !=
+  bool blocked = Are3DAPIsBlockedAtTime(top_origin_url, base::Time::Now()) !=
       GpuDataManagerImpl::DOMAIN_BLOCK_STATUS_NOT_BLOCKED;
   if (blocked) {
     // Unretained is ok, because it's posted to UI thread, the thread
@@ -931,8 +939,8 @@ bool GpuDataManagerImplPrivate::Are3DAPIsBlocked(const GURL& url,
     BrowserThread::PostTask(
         BrowserThread::UI, FROM_HERE,
         base::Bind(&GpuDataManagerImpl::Notify3DAPIBlocked,
-                   base::Unretained(owner_), url, render_process_id,
-                   render_view_id, requester));
+                   base::Unretained(owner_), top_origin_url, render_process_id,
+                   render_frame_id, requester));
   }
 
   return blocked;
@@ -1183,13 +1191,14 @@ int64 GpuDataManagerImplPrivate::GetBlockAllDomainsDurationInMs() const {
   return kBlockAllDomainsMs;
 }
 
-void GpuDataManagerImplPrivate::Notify3DAPIBlocked(const GURL& url,
+void GpuDataManagerImplPrivate::Notify3DAPIBlocked(const GURL& top_origin_url,
                                                    int render_process_id,
-                                                   int render_view_id,
+                                                   int render_frame_id,
                                                    ThreeDAPIType requester) {
   GpuDataManagerImpl::UnlockedSession session(owner_);
   observer_list_->Notify(FROM_HERE, &GpuDataManagerObserver::DidBlock3DAPIs,
-                         url, render_process_id, render_view_id, requester);
+                         top_origin_url, render_process_id, render_frame_id,
+                         requester);
 }
 
 void GpuDataManagerImplPrivate::OnGpuProcessInitFailure() {

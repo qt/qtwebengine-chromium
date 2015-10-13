@@ -74,14 +74,16 @@ public:
     void handleEvent(ExecutionContext*, Event*) final;
     virtual void handleEvent(ScriptState*, Event*);
 
-    // Returns the listener object, either a function or an object.
+    // Returns the listener object, either a function or an object, or the empty
+    // handle if the user script is not compilable.  No exception will be thrown
+    // even if the user script is not compilable.
     v8::Local<v8::Object> getListenerObject(ExecutionContext* executionContext)
     {
         // prepareListenerObject can potentially deref this event listener
         // as it may attempt to compile a function (lazy event listener), get an error
         // and invoke onerror callback which can execute arbitrary JS code.
         // Protect this event listener to keep it alive.
-        RefPtr<V8AbstractEventListener> guard(this);
+        RefPtrWillBeRawPtr<V8AbstractEventListener> protect(this);
         prepareListenerObject(executionContext);
         return m_listener.newLocal(m_isolate);
     }
@@ -111,6 +113,16 @@ public:
     bool belongsToTheCurrentWorld() const final;
     v8::Isolate* isolate() const { return m_isolate; }
     DOMWrapperWorld& world() const { return *m_world; }
+
+    // Oilpan: promptly clear listener wrapper.
+    EAGERLY_FINALIZE();
+#if ENABLE(OILPAN)
+    DECLARE_EAGER_FINALIZATION_OPERATOR_NEW();
+#endif
+    DEFINE_INLINE_VIRTUAL_TRACE()
+    {
+        EventListener::trace(visitor);
+    }
 
 protected:
     V8AbstractEventListener(bool isAttribute, DOMWrapperWorld&, v8::Isolate*);

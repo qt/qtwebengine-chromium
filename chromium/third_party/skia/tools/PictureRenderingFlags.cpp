@@ -19,6 +19,8 @@
 #include "SkImageDecoder.h"
 #include "SkString.h"
 
+#include <stdlib.h>
+
 // Alphabetized list of flags used by this file or bench_ and render_pictures.
 DEFINE_string(bbh, "none", "bbhType [width height]: Set the bounding box hierarchy type to "
               "be used. Accepted values are: none, rtree, grid. "
@@ -40,6 +42,11 @@ static const char kGpuAPINameGLES[] = "gles";
 #else
 #define ANGLE_CONFIG_STRING ""
 #endif
+#if SK_COMMAND_BUFFER
+#define COMMAND_BUFFER_CONFIG_STRING "|commandbuffer"
+#else
+#define COMMAND_BUFFER_CONFIG_STRING ""
+#endif
 #if SK_MESA
 #define MESA_CONFIG_STRING "|mesa"
 #else
@@ -49,7 +56,7 @@ static const char kGpuAPINameGLES[] = "gles";
 // Although this config does not support all the same options as gm, the names should be kept
 // consistent.
 DEFINE_string(config, "8888", "["
-              "8888" GPU_CONFIG_STRING ANGLE_CONFIG_STRING MESA_CONFIG_STRING
+              "8888" GPU_CONFIG_STRING ANGLE_CONFIG_STRING COMMAND_BUFFER_CONFIG_STRING MESA_CONFIG_STRING
               "]: Use the corresponding config.");
 
 DEFINE_bool(deferImageDecoding, false, "Defer decoding until drawing images. "
@@ -90,11 +97,11 @@ sk_tools::PictureRenderer* parseRenderer(SkString& error, PictureTool tool) {
     error.reset();
 
     bool useTiles = false;
-    const char* widthString = NULL;
-    const char* heightString = NULL;
+    const char* widthString = nullptr;
+    const char* heightString = nullptr;
     bool isPowerOf2Mode = false;
     bool isCopyMode = false;
-    const char* mode = NULL;
+    const char* mode = nullptr;
 
 #if SK_SUPPORT_GPU
     GrContextOptions grContextOpts;
@@ -108,7 +115,7 @@ sk_tools::PictureRenderer* parseRenderer(SkString& error, PictureTool tool) {
     if (FLAGS_mode.count() >= 1) {
         mode = FLAGS_mode[0];
         if (0 == strcmp(mode, "record")) {
-            renderer.reset(SkNEW_ARGS(sk_tools::RecordPictureRenderer, RENDERER_ARGS));
+            renderer.reset(new sk_tools::RecordPictureRenderer RENDERER_ARGS);
         } else if (0 == strcmp(mode, "tile") || 0 == strcmp(mode, "pow2tile")
                    || 0 == strcmp(mode, "copyTile")) {
             useTiles = true;
@@ -121,33 +128,33 @@ sk_tools::PictureRenderer* parseRenderer(SkString& error, PictureTool tool) {
 
             if (FLAGS_mode.count() < 2) {
                 error.printf("Missing width for --mode %s\n", mode);
-                return NULL;
+                return nullptr;
             }
 
             widthString = FLAGS_mode[1];
             if (FLAGS_mode.count() < 3) {
                 error.printf("Missing height for --mode %s\n", mode);
-                return NULL;
+                return nullptr;
             }
 
             heightString = FLAGS_mode[2];
         } else if (0 == strcmp(mode, "playbackCreation") && kBench_PictureTool == tool) {
-            renderer.reset(SkNEW_ARGS(sk_tools::PlaybackCreationRenderer, RENDERER_ARGS));
+            renderer.reset(new sk_tools::PlaybackCreationRenderer RENDERER_ARGS);
         // undocumented
         } else if (0 == strcmp(mode, "rerecord") && kRender_PictureTool == tool) {
-            renderer.reset(SkNEW_ARGS(sk_tools::RecordPictureRenderer, RENDERER_ARGS));
+            renderer.reset(new sk_tools::RecordPictureRenderer RENDERER_ARGS);
         } else if (0 == strcmp(mode, "simple")) {
             // Allow 'mode' to be set to 'simple', but do not create a renderer, so we can
             // ensure that pipe does not override a mode besides simple. The renderer will
             // be created below.
         } else {
             error.printf("%s is not a valid mode for --mode\n", mode);
-            return NULL;
+            return nullptr;
         }
     }
 
     if (useTiles) {
-        SkASSERT(NULL == renderer);
+        SkASSERT(nullptr == renderer);
         SkAutoTUnref<sk_tools::TiledPictureRenderer> tiledRenderer;
         if (isCopyMode) {
             int xTiles = -1;
@@ -155,7 +162,7 @@ sk_tools::PictureRenderer* parseRenderer(SkString& error, PictureTool tool) {
             if (FLAGS_tiles.count() > 0) {
                 if (FLAGS_tiles.count() != 2) {
                     error.printf("--tiles requires an x value and a y value.\n");
-                    return NULL;
+                    return nullptr;
                 }
                 xTiles = atoi(FLAGS_tiles[0]);
                 yTiles = atoi(FLAGS_tiles[1]);
@@ -167,18 +174,18 @@ sk_tools::PictureRenderer* parseRenderer(SkString& error, PictureTool tool) {
                 y = yTiles;
                 if (x <= 0 || y <= 0) {
                     error.printf("--tiles must be given values > 0\n");
-                    return NULL;
+                    return nullptr;
                 }
             } else {
                 x = y = 4;
             }
 #if SK_SUPPORT_GPU
-            tiledRenderer.reset(SkNEW_ARGS(sk_tools::CopyTilesRenderer, (grContextOpts, x, y)));
+            tiledRenderer.reset(new sk_tools::CopyTilesRenderer(grContextOpts, x, y));
 #else
-            tiledRenderer.reset(SkNEW_ARGS(sk_tools::CopyTilesRenderer, (x, y)));
+            tiledRenderer.reset(new sk_tools::CopyTilesRenderer(x, y));
 #endif
         } else {
-            tiledRenderer.reset(SkNEW_ARGS(sk_tools::TiledPictureRenderer, RENDERER_ARGS));
+            tiledRenderer.reset(new sk_tools::TiledPictureRenderer RENDERER_ARGS);
         }
 
         if (isPowerOf2Mode) {
@@ -187,43 +194,43 @@ sk_tools::PictureRenderer* parseRenderer(SkString& error, PictureTool tool) {
                 SkString err;
                 error.printf("-mode %s must be given a width"
                              " value that is a power of two\n", mode);
-                return NULL;
+                return nullptr;
             }
             tiledRenderer->setTileMinPowerOf2Width(minWidth);
         } else if (sk_tools::is_percentage(widthString)) {
             if (isCopyMode) {
                 error.printf("--mode %s does not support percentages.\n", mode);
-                return NULL;
+                return nullptr;
             }
             tiledRenderer->setTileWidthPercentage(atof(widthString));
             if (!(tiledRenderer->getTileWidthPercentage() > 0)) {
                 error.printf("--mode %s must be given a width percentage > 0\n", mode);
-                return NULL;
+                return nullptr;
             }
         } else {
             tiledRenderer->setTileWidth(atoi(widthString));
             if (!(tiledRenderer->getTileWidth() > 0)) {
                 error.printf("--mode %s must be given a width > 0\n", mode);
-                return NULL;
+                return nullptr;
             }
         }
 
         if (sk_tools::is_percentage(heightString)) {
             if (isCopyMode) {
                 error.printf("--mode %s does not support percentages.\n", mode);
-                return NULL;
+                return nullptr;
             }
             tiledRenderer->setTileHeightPercentage(atof(heightString));
             if (!(tiledRenderer->getTileHeightPercentage() > 0)) {
                 error.printf("--mode %s must be given a height percentage > 0\n", mode);
-                return NULL;
+                return nullptr;
             }
         } else {
             tiledRenderer->setTileHeight(atoi(heightString));
             if (!(tiledRenderer->getTileHeight() > 0)) {
                 SkString err;
                 error.printf("--mode %s must be given a height > 0\n", mode);
-                return NULL;
+                return nullptr;
             }
         }
 
@@ -235,22 +242,22 @@ sk_tools::PictureRenderer* parseRenderer(SkString& error, PictureTool tool) {
 
     } else { // useTiles
         if (FLAGS_pipe) {
-            if (renderer != NULL) {
+            if (renderer != nullptr) {
                 error.printf("Pipe is incompatible with other modes.\n");
-                return NULL;
+                return nullptr;
             }
-            renderer.reset(SkNEW_ARGS(sk_tools::PipePictureRenderer, RENDERER_ARGS));
+            renderer.reset(new sk_tools::PipePictureRenderer RENDERER_ARGS);
         }
     }
 
-    if (NULL == renderer) {
-        renderer.reset(SkNEW_ARGS(sk_tools::SimplePictureRenderer, RENDERER_ARGS));
+    if (nullptr == renderer) {
+        renderer.reset(new sk_tools::SimplePictureRenderer RENDERER_ARGS);
     }
 
     if (FLAGS_viewport.count() > 0) {
         if (FLAGS_viewport.count() != 2) {
             error.printf("--viewport requires a width and a height.\n");
-            return NULL;
+            return nullptr;
         }
         SkISize viewport;
         viewport.fWidth = atoi(FLAGS_viewport[0]);
@@ -269,11 +276,11 @@ sk_tools::PictureRenderer* parseRenderer(SkString& error, PictureTool tool) {
             gpuAPI = kGLES_GrGLStandard;
         } else {
             error.printf("--gpuAPI invalid api value.\n");
-            return NULL;
+            return nullptr;
         }
     } else if (FLAGS_gpuAPI.count() > 1) {
         error.printf("--gpuAPI invalid api value.\n");
-        return NULL;
+        return nullptr;
     }
 
     int sampleCount = 0;
@@ -312,6 +319,11 @@ sk_tools::PictureRenderer* parseRenderer(SkString& error, PictureTool tool) {
             deviceType = sk_tools::PictureRenderer::kAngle_DeviceType;
         }
 #endif
+#if SK_COMMAND_BUFFER
+        else if (0 == strcmp(FLAGS_config[0], "commandbuffer")) {
+            deviceType = sk_tools::PictureRenderer::kCommandBuffer_DeviceType;
+        }
+#endif
 #if SK_MESA
         else if (0 == strcmp(FLAGS_config[0], "mesa")) {
             deviceType = sk_tools::PictureRenderer::kMesa_DeviceType;
@@ -320,7 +332,7 @@ sk_tools::PictureRenderer* parseRenderer(SkString& error, PictureTool tool) {
 #endif
         else {
             error.printf("%s is not a valid mode for --config\n", FLAGS_config[0]);
-            return NULL;
+            return nullptr;
         }
 #if SK_SUPPORT_GPU
         if (!renderer->setDeviceType(deviceType, gpuAPI)) {
@@ -328,7 +340,7 @@ sk_tools::PictureRenderer* parseRenderer(SkString& error, PictureTool tool) {
         if (!renderer->setDeviceType(deviceType)) {
 #endif
             error.printf("Could not create backend for --config %s\n", FLAGS_config[0]);
-            return NULL;
+            return nullptr;
         }
 #if SK_SUPPORT_GPU
         renderer->setSampleCount(sampleCount);
@@ -347,11 +359,11 @@ sk_tools::PictureRenderer* parseRenderer(SkString& error, PictureTool tool) {
             bbhType = sk_tools::PictureRenderer::kRTree_BBoxHierarchyType;
         } else {
             error.printf("%s is not a valid value for --bbhType\n", type);
-            return NULL;
+            return nullptr;
         }
         if (FLAGS_pipe && sk_tools::PictureRenderer::kNone_BBoxHierarchyType != bbhType) {
             error.printf("--pipe and --bbh cannot be used together\n");
-            return NULL;
+            return nullptr;
         }
     }
     renderer->setBBoxHierarchyType(bbhType);

@@ -51,10 +51,12 @@
 #include "base/win/windows_version.h"
 #endif
 
-#if defined(USE_OPENSSL_CERTS)
-#include "net/ssl/openssl_client_key_store.h"
-#else
+#if !defined(OS_NACL)
 #include "net/ssl/ssl_platform_key.h"
+#endif
+
+#if defined(USE_NSS_CERTS) || defined(OS_IOS)
+#include "net/cert_net/nss_ocsp.h"
 #endif
 
 namespace net {
@@ -86,11 +88,6 @@ void FreeX509Stack(STACK_OF(X509)* ptr) {
 }
 
 using ScopedX509Stack = crypto::ScopedOpenSSL<STACK_OF(X509), FreeX509Stack>;
-
-#if OPENSSL_VERSION_NUMBER < 0x1000103fL
-// This method doesn't seem to have made it into the OpenSSL headers.
-unsigned long SSL_CIPHER_get_id(const SSL_CIPHER* cipher) { return cipher->id; }
-#endif
 
 // Used for encoding the |connection_status| field of an SSLInfo object.
 int EncodeSSLConnectionStatus(uint16 cipher_suite,
@@ -171,7 +168,7 @@ bool EVP_MDToPrivateKeyHash(const EVP_MD* md, SSLPrivateKey::Hash* hash) {
   }
 }
 
-#if !defined(USE_OPENSSL_CERTS)
+#if !defined(OS_NACL)
 class PlatformKeyTaskRunner {
  public:
   PlatformKeyTaskRunner() {
@@ -196,13 +193,15 @@ class PlatformKeyTaskRunner {
 
 base::LazyInstance<PlatformKeyTaskRunner>::Leaky g_platform_key_task_runner =
     LAZY_INSTANCE_INITIALIZER;
-#endif  // !USE_OPENSSL_CERTS
+#endif
 
 }  // namespace
 
 class SSLClientSocketOpenSSL::SSLContext {
  public:
-  static SSLContext* GetInstance() { return Singleton<SSLContext>::get(); }
+  static SSLContext* GetInstance() {
+    return base::Singleton<SSLContext>::get();
+  }
   SSL_CTX* ssl_ctx() { return ssl_ctx_.get(); }
   SSLClientSessionCacheOpenSSL* session_cache() { return &session_cache_; }
 
@@ -221,7 +220,7 @@ class SSLClientSocketOpenSSL::SSLContext {
   static const SSL_PRIVATE_KEY_METHOD kPrivateKeyMethod;
 
  private:
-  friend struct DefaultSingletonTraits<SSLContext>;
+  friend struct base::DefaultSingletonTraits<SSLContext>;
 
   SSLContext() : session_cache_(SSLClientSessionCacheOpenSSL::Config()) {
     crypto::EnsureOpenSSLInit();
@@ -240,7 +239,6 @@ class SSLClientSocketOpenSSL::SSLContext {
     // but that is an OpenSSL issue.
     SSL_CTX_set_next_proto_select_cb(ssl_ctx_.get(), SelectNextProtoCallback,
                                      NULL);
-    ssl_ctx_->tlsext_channel_id_enabled_new = 1;
 
     // Disable the internal session cache. Session caching is handled
     // externally (i.e. by SSLClientSessionCacheOpenSSL).
@@ -296,11 +294,6 @@ class SSLClientSocketOpenSSL::SSLContext {
     return socket->PrivateKeyTypeCallback();
   }
 
-  static int PrivateKeySupportsDigestCallback(SSL* ssl, const EVP_MD* md) {
-    SSLClientSocketOpenSSL* socket = GetInstance()->GetClientSocketFromSSL(ssl);
-    return socket->PrivateKeySupportsDigestCallback(md);
-  }
-
   static size_t PrivateKeyMaxSignatureLenCallback(SSL* ssl) {
     SSLClientSocketOpenSSL* socket = GetInstance()->GetClientSocketFromSSL(ssl);
     return socket->PrivateKeyMaxSignatureLenCallback();
@@ -344,7 +337,6 @@ class SSLClientSocketOpenSSL::SSLContext {
 const SSL_PRIVATE_KEY_METHOD
     SSLClientSocketOpenSSL::SSLContext::kPrivateKeyMethod = {
         &SSLClientSocketOpenSSL::SSLContext::PrivateKeyTypeCallback,
-        &SSLClientSocketOpenSSL::SSLContext::PrivateKeySupportsDigestCallback,
         &SSLClientSocketOpenSSL::SSLContext::PrivateKeyMaxSignatureLenCallback,
         &SSLClientSocketOpenSSL::SSLContext::PrivateKeySignCallback,
         &SSLClientSocketOpenSSL::SSLContext::PrivateKeySignCompleteCallback,
@@ -438,11 +430,6 @@ void SSLClientSocket::ClearSessionCache() {
   context->session_cache()->Flush();
 }
 
-// static
-uint16 SSLClientSocket::GetMaxSupportedSSLVersion() {
-  return SSL_PROTOCOL_VERSION_TLS1_2;
-}
-
 SSLClientSocketOpenSSL::SSLClientSocketOpenSSL(
     scoped_ptr<ClientSocketHandle> transport_socket,
     const HostPortPair& host_and_port,
@@ -467,6 +454,7 @@ SSLClientSocketOpenSSL::SSLClientSocketOpenSSL(
       ssl_config_(ssl_config),
       ssl_session_cache_shard_(context.ssl_session_cache_shard),
       next_handshake_state_(STATE_NONE),
+      disconnected_(false),
       npn_status_(kNextProtoUnsupported),
       channel_id_sent_(false),
       session_pending_(false),
@@ -540,6 +528,14 @@ int SSLClientSocketOpenSSL::Connect(const CompletionCallback& callback) {
   // TransportSecurityState.
   DCHECK(transport_security_state_);
 
+  // Although StreamSocket does allow calling Connect() after Disconnect(),
+  // this has never worked for layered sockets. CHECK to detect any consumers
+  // reconnecting an SSL socket.
+  //
+  // TODO(davidben,mmenke): Remove this API feature. See
+  // https://crbug.com/499289.
+  CHECK(!disconnected_);
+
   net_log_.BeginEvent(NetLog::TYPE_SSL_CONNECT);
 
   // Set up new ssl object.
@@ -575,6 +571,8 @@ void SSLClientSocketOpenSSL::Disconnect() {
     BIO_free_all(transport_bio_);
     transport_bio_ = NULL;
   }
+
+  disconnected_ = true;
 
   // Shut down anything that may call us back.
   cert_verifier_request_.reset();
@@ -717,6 +715,8 @@ bool SSLClientSocketOpenSSL::GetSSLInfo(SSLInfo* ssl_info) {
   const SSL_CIPHER* cipher = SSL_get_current_cipher(ssl_);
   CHECK(cipher);
   ssl_info->security_bits = SSL_CIPHER_get_bits(cipher, NULL);
+  ssl_info->key_exchange_info =
+      SSL_SESSION_get_key_exchange_info(SSL_get_session(ssl_));
 
   ssl_info->connection_status = EncodeSSLConnectionStatus(
       static_cast<uint16>(SSL_CIPHER_get_id(cipher)), 0 /* no compression */,
@@ -794,6 +794,14 @@ int SSLClientSocketOpenSSL::SetSendBufferSize(int32 size) {
 int SSLClientSocketOpenSSL::Init() {
   DCHECK(!ssl_);
   DCHECK(!transport_bio_);
+
+#if defined(USE_NSS_CERTS) || defined(OS_IOS)
+  if (ssl_config_.cert_io_enabled) {
+    // TODO(davidben): Move this out of SSLClientSocket. See
+    // https://crbug.com/539520.
+    EnsureNSSHttpIOInit();
+  }
+#endif
 
   SSLContext* context = SSLContext::GetInstance();
   crypto::OpenSSLErrStackTracer err_tracer(FROM_HERE);
@@ -876,10 +884,10 @@ int SSLClientSocketOpenSSL::Init() {
   STACK_OF(SSL_CIPHER)* ciphers = SSL_get_ciphers(ssl_);
   DCHECK(ciphers);
   // See SSLConfig::disabled_cipher_suites for description of the suites
-  // disabled by default. Note that !SHA256 and !SHA384 only remove HMAC-SHA256
+  // disabled by default. Note that SHA256 and SHA384 only select HMAC-SHA256
   // and HMAC-SHA384 cipher suites, not GCM cipher suites with SHA256 or SHA384
   // as the handshake hash.
-  std::string command("DEFAULT:!SHA256:!SHA384:!AESGCM+AES256:!aPSK");
+  std::string command("DEFAULT:!SHA256:-SHA384:!AESGCM+AES256:!aPSK");
   // Walk through all the installed ciphers, seeing if any need to be
   // appended to the cipher removal |command|.
   for (size_t i = 0; i < sk_SSL_CIPHER_num(ciphers); ++i) {
@@ -904,8 +912,15 @@ int SSLClientSocketOpenSSL::Init() {
      }
   }
 
-  if (!ssl_config_.enable_deprecated_cipher_suites)
+  if (!ssl_config_.enable_deprecated_cipher_suites) {
     command.append(":!RC4");
+  } else {
+    // Add TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384 under a fallback. This is
+    // believed to work around a bug in some out-of-date Microsoft IIS servers
+    // which cause them to require the version downgrade
+    // (https://crbug.com/433406).
+    command.append(":ECDHE-RSA-AES256-SHA384");
+  }
 
   // Disable ECDSA cipher suites on platforms that do not support ECDSA
   // signed certificates, as servers may use the presence of such
@@ -938,10 +953,12 @@ int SSLClientSocketOpenSSL::Init() {
       enabled_ciphers_vector.push_back(id);
     }
 
-    std::vector<uint8_t> wire_protos =
-        SerializeNextProtos(ssl_config_.next_protos,
-                            HasCipherAdequateForHTTP2(enabled_ciphers_vector) &&
-                                IsTLSVersionAdequateForHTTP2(ssl_config_));
+    NextProtoVector next_protos = ssl_config_.next_protos;
+    if (!HasCipherAdequateForHTTP2(enabled_ciphers_vector) ||
+        !IsTLSVersionAdequateForHTTP2(ssl_config_)) {
+      DisableHTTP2(&next_protos);
+    }
+    std::vector<uint8_t> wire_protos = SerializeNextProtos(next_protos);
     SSL_set_alpn_protos(ssl_, wire_protos.empty() ? NULL : &wire_protos[0],
                         wire_protos.size());
   }
@@ -953,11 +970,6 @@ int SSLClientSocketOpenSSL::Init() {
 
   if (cert_verifier_->SupportsOCSPStapling())
     SSL_enable_ocsp_stapling(ssl_);
-
-  // Enable fastradio padding.
-  SSL_enable_fastradio_padding(ssl_,
-                               ssl_config_.fastradio_padding_enabled &&
-                                   ssl_config_.fastradio_padding_eligible);
 
   // By default, renegotiations are rejected. After the initial handshake
   // completes, some application protocols may re-enable it.
@@ -1186,6 +1198,12 @@ int SSLClientSocketOpenSSL::DoVerifyCert(int result) {
 
   GotoState(STATE_VERIFY_CERT_COMPLETE);
 
+  // OpenSSL decoded the certificate, but the platform certificate
+  // implementation could not. This is treated as a fatal SSL-level protocol
+  // error rather than a certificate error. See https://crbug.com/91341.
+  if (!server_cert_.get())
+    return ERR_SSL_SERVER_CERT_BAD_FORMAT;
+
   // If the certificate is bad and has been previously accepted, use
   // the previous status and bypass the error.
   base::StringPiece der_cert;
@@ -1200,15 +1218,6 @@ int SSLClientSocketOpenSSL::DoVerifyCert(int result) {
     server_cert_verify_result_.cert_status = cert_status;
     server_cert_verify_result_.verified_cert = server_cert_;
     return OK;
-  }
-
-  // When running in a sandbox, it may not be possible to create an
-  // X509Certificate*, as that may depend on OS functionality blocked
-  // in the sandbox.
-  if (!server_cert_.get()) {
-    server_cert_verify_result_.Reset();
-    server_cert_verify_result_.cert_status = CERT_STATUS_INVALID;
-    return ERR_CERT_INVALID;
   }
 
   std::string ocsp_response;
@@ -1261,10 +1270,10 @@ int SSLClientSocketOpenSSL::DoVerifyCertComplete(int result) {
       (result == OK ||
        (IsCertificateError(result) && IsCertStatusMinorError(cert_status))) &&
       !transport_security_state_->CheckPublicKeyPins(
-          host_and_port_.host(),
-          server_cert_verify_result_.is_issued_by_known_root,
-          server_cert_verify_result_.public_key_hashes,
-          &pinning_failure_log_)) {
+          host_and_port_, server_cert_verify_result_.is_issued_by_known_root,
+          server_cert_verify_result_.public_key_hashes, server_cert_.get(),
+          server_cert_verify_result_.verified_cert.get(),
+          TransportSecurityState::ENABLE_PIN_REPORTS, &pinning_failure_log_)) {
     result = ERR_SSL_PINNED_KEY_NOT_IN_CERT_CHAIN;
   }
 
@@ -1345,6 +1354,8 @@ void SSLClientSocketOpenSSL::VerifyCT() {
               << server_cert_verify_result_.verified_cert->subject()
                      .GetDisplayName()
               << " does not conform to CT policy, removing EV status.";
+      server_cert_verify_result_.cert_status |=
+          CERT_STATUS_CT_COMPLIANCE_FAILED;
       server_cert_verify_result_.cert_status &= ~CERT_STATUS_IS_EV;
     }
   }
@@ -1801,24 +1812,10 @@ int SSLClientSocketOpenSSL::ClientCertRequestCallback(SSL* ssl) {
       return -1;
     }
 
-#if defined(USE_OPENSSL_CERTS)
-    // TODO(davidben): Move Android to the SSLPrivateKey codepath and disable
-    // client auth on NaCl altogether.
-    crypto::ScopedEVP_PKEY privkey =
-        OpenSSLClientKeyStore::GetInstance()->FetchClientCertPrivateKey(
-            ssl_config_.client_cert.get());
-    if (!privkey) {
-      // Could not find the private key. Fail the handshake and surface an
-      // appropriate error to the caller.
-      LOG(WARNING) << "Client cert found without private key";
+#if defined(OS_NACL)
       OpenSSLPutNetError(FROM_HERE, ERR_SSL_CLIENT_AUTH_CERT_NO_PRIVATE_KEY);
       return -1;
-    }
-    if (!SSL_use_PrivateKey(ssl_, privkey.get())) {
-      LOG(WARNING) << "Failed to set private key";
-      return -1;
-    }
-#else   // !USE_OPENSSL_CERTS
+#else
     // TODO(davidben): Lift this call up to the embedder so we can actually test
     // this code. https://crbug.com/394131
     private_key_ = FetchClientCertPrivateKey(
@@ -1833,7 +1830,35 @@ int SSLClientSocketOpenSSL::ClientCertRequestCallback(SSL* ssl) {
     }
 
     SSL_set_private_key_method(ssl_, &SSLContext::kPrivateKeyMethod);
-#endif  // USE_OPENSSL_CERTS
+
+    std::vector<SSLPrivateKey::Hash> digest_prefs =
+        private_key_->GetDigestPreferences();
+
+    size_t digests_len = digest_prefs.size();
+    std::vector<int> digests;
+    for (size_t i = 0; i < digests_len; i++) {
+      switch (digest_prefs[i]) {
+        case SSLPrivateKey::Hash::SHA1:
+          digests.push_back(NID_sha1);
+          break;
+        case SSLPrivateKey::Hash::SHA256:
+          digests.push_back(NID_sha256);
+          break;
+        case SSLPrivateKey::Hash::SHA384:
+          digests.push_back(NID_sha384);
+          break;
+        case SSLPrivateKey::Hash::SHA512:
+          digests.push_back(NID_sha512);
+          break;
+        case SSLPrivateKey::Hash::MD5_SHA1:
+          // MD5-SHA1 is not used in TLS 1.2.
+          break;
+      }
+    }
+
+    SSL_set_private_key_digest_prefs(ssl_, vector_as_array(&digests),
+                                     digests.size());
+#endif  // !OS_NACL
 
     int cert_count = 1 + sk_X509_num(chain.get());
     net_log_.AddEvent(NetLog::TYPE_SSL_CLIENT_CERT_PROVIDED,
@@ -2068,11 +2093,6 @@ int SSLClientSocketOpenSSL::PrivateKeyTypeCallback() {
   }
   NOTREACHED();
   return EVP_PKEY_NONE;
-}
-
-int SSLClientSocketOpenSSL::PrivateKeySupportsDigestCallback(const EVP_MD* md) {
-  SSLPrivateKey::Hash hash;
-  return EVP_MDToPrivateKeyHash(md, &hash) && private_key_->SupportsHash(hash);
 }
 
 size_t SSLClientSocketOpenSSL::PrivateKeyMaxSignatureLenCallback() {

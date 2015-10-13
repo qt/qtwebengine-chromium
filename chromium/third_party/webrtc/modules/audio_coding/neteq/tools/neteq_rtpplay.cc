@@ -19,10 +19,12 @@
 
 #include <algorithm>
 #include <iostream>
+#include <limits>
 #include <string>
 
 #include "google/gflags.h"
 #include "webrtc/base/checks.h"
+#include "webrtc/base/safe_conversions.h"
 #include "webrtc/base/scoped_ptr.h"
 #include "webrtc/modules/audio_coding/codecs/pcm16b/include/pcm16b.h"
 #include "webrtc/modules/audio_coding/neteq/interface/neteq.h"
@@ -30,9 +32,11 @@
 #include "webrtc/modules/audio_coding/neteq/tools/output_audio_file.h"
 #include "webrtc/modules/audio_coding/neteq/tools/output_wav_file.h"
 #include "webrtc/modules/audio_coding/neteq/tools/packet.h"
+#include "webrtc/modules/audio_coding/neteq/tools/rtc_event_log_source.h"
 #include "webrtc/modules/audio_coding/neteq/tools/rtp_file_source.h"
 #include "webrtc/modules/interface/module_common_types.h"
 #include "webrtc/system_wrappers/interface/trace.h"
+#include "webrtc/test/rtp_file_reader.h"
 #include "webrtc/test/testsupport/fileutils.h"
 #include "webrtc/typedefs.h"
 
@@ -324,7 +328,7 @@ size_t ReplacePayload(webrtc::test::InputAudioFile* replacement_audio_file,
     // Encode it as PCM16.
     assert((*payload).get());
     payload_len = WebRtcPcm16b_Encode((*replacement_audio).get(),
-                                      static_cast<int16_t>(*frame_size_samples),
+                                      *frame_size_samples,
                                       (*payload).get());
     assert(payload_len == 2 * *frame_size_samples);
     // Change payload type to PCM16.
@@ -358,7 +362,7 @@ size_t ReplacePayload(webrtc::test::InputAudioFile* replacement_audio_file,
 
 int main(int argc, char* argv[]) {
   static const int kMaxChannels = 5;
-  static const int kMaxSamplesPerMs = 48000 / 1000;
+  static const size_t kMaxSamplesPerMs = 48000 / 1000;
   static const int kOutputBlockSizeMs = 10;
 
   std::string program_name = argv[0];
@@ -384,14 +388,36 @@ int main(int argc, char* argv[]) {
   }
 
   printf("Input file: %s\n", argv[1]);
-  rtc::scoped_ptr<webrtc::test::RtpFileSource> file_source(
-      webrtc::test::RtpFileSource::Create(argv[1]));
+
+  // TODO(ivoc): Modify the RtpFileSource::Create and RtcEventLogSource::Create
+  //             functions to return a nullptr on failure instead of crashing
+  //             the program.
+
+  // This temporary solution uses a RtpFileReader directly to check if the file
+  // is a valid RtpDump file.
+  bool is_rtp_dump = false;
+  {
+    rtc::scoped_ptr<webrtc::test::RtpFileReader> rtp_reader(
+        webrtc::test::RtpFileReader::Create(
+            webrtc::test::RtpFileReader::kRtpDump, argv[1]));
+    if (rtp_reader)
+      is_rtp_dump = true;
+  }
+  rtc::scoped_ptr<webrtc::test::PacketSource> file_source;
+  webrtc::test::RtcEventLogSource* event_log_source = nullptr;
+  if (is_rtp_dump) {
+    file_source.reset(webrtc::test::RtpFileSource::Create(argv[1]));
+  } else {
+    event_log_source = webrtc::test::RtcEventLogSource::Create(argv[1]);
+    file_source.reset(event_log_source);
+  }
+
   assert(file_source.get());
 
   // Check if an SSRC value was provided.
   if (!FLAGS_ssrc.empty()) {
     uint32_t ssrc;
-    CHECK(ParseSsrc(FLAGS_ssrc, &ssrc)) << "Flag verification has failed.";
+    RTC_CHECK(ParseSsrc(FLAGS_ssrc, &ssrc)) << "Flag verification has failed.";
     file_source->SelectSsrc(ssrc);
   }
 
@@ -413,7 +439,12 @@ int main(int argc, char* argv[]) {
     webrtc::Trace::ReturnTrace();
     return 0;
   }
-  bool packet_available = true;
+  if (packet->payload_length_bytes() == 0 && !replace_payload) {
+    std::cerr << "Warning: input file contains header-only packets, but no "
+              << "replacement file is specified." << std::endl;
+    webrtc::Trace::ReturnTrace();
+    return -1;
+  }
 
   // Check the sample rate.
   int sample_rate_hz = CodecSampleRate(packet->header().payloadType);
@@ -475,17 +506,29 @@ int main(int argc, char* argv[]) {
 
   // This is the main simulation loop.
   // Set the simulation clock to start immediately with the first packet.
-  int start_time_ms = packet->time_ms();
-  int time_now_ms = packet->time_ms();
-  int next_input_time_ms = time_now_ms;
-  int next_output_time_ms = time_now_ms;
+  int64_t start_time_ms = rtc::checked_cast<int64_t>(packet->time_ms());
+  int64_t time_now_ms = start_time_ms;
+  int64_t next_input_time_ms = time_now_ms;
+  int64_t next_output_time_ms = time_now_ms;
   if (time_now_ms % kOutputBlockSizeMs != 0) {
     // Make sure that next_output_time_ms is rounded up to the next multiple
     // of kOutputBlockSizeMs. (Legacy bit-exactness.)
     next_output_time_ms +=
         kOutputBlockSizeMs - time_now_ms % kOutputBlockSizeMs;
   }
-  while (packet_available) {
+
+  bool packet_available = true;
+  bool output_event_available = true;
+  if (!is_rtp_dump) {
+    next_output_time_ms = event_log_source->NextAudioOutputEventMs();
+    if (next_output_time_ms == std::numeric_limits<int64_t>::max())
+      output_event_available = false;
+    start_time_ms = time_now_ms =
+        std::min(next_input_time_ms, next_output_time_ms);
+  }
+  while (packet_available || output_event_available) {
+    // Advance time to next event.
+    time_now_ms = std::min(next_input_time_ms, next_output_time_ms);
     // Check if it is time to insert packet.
     while (time_now_ms >= next_input_time_ms && packet_available) {
       assert(packet->virtual_payload_length_bytes() > 0);
@@ -504,11 +547,9 @@ int main(int argc, char* argv[]) {
                                      next_packet.get());
         payload_ptr = payload.get();
       }
-      int error =
-          neteq->InsertPacket(rtp_header,
-                              payload_ptr,
-                              payload_len,
-                              packet->time_ms() * sample_rate_hz / 1000);
+      int error = neteq->InsertPacket(
+          rtp_header, payload_ptr, payload_len,
+          static_cast<uint32_t>(packet->time_ms() * sample_rate_hz / 1000));
       if (error != NetEq::kOK) {
         if (neteq->LastError() == NetEq::kUnknownRtpPayloadType) {
           std::cerr << "RTP Payload type "
@@ -534,29 +575,32 @@ int main(int argc, char* argv[]) {
       webrtc::test::Packet* temp_packet = file_source->NextPacket();
       if (temp_packet) {
         packet.reset(temp_packet);
+        if (replace_payload) {
+          // At this point |packet| contains the packet *after* |next_packet|.
+          // Swap Packet objects between |packet| and |next_packet|.
+          packet.swap(next_packet);
+          // Swap the status indicators unless they're already the same.
+          if (packet_available != next_packet_available) {
+            packet_available = !packet_available;
+            next_packet_available = !next_packet_available;
+          }
+        }
+        next_input_time_ms = rtc::checked_cast<int64_t>(packet->time_ms());
       } else {
+        // Set next input time to the maximum value of int64_t to prevent the
+        // time_now_ms from becoming stuck at the final value.
+        next_input_time_ms = std::numeric_limits<int64_t>::max();
         packet_available = false;
       }
-      if (replace_payload) {
-        // At this point |packet| contains the packet *after* |next_packet|.
-        // Swap Packet objects between |packet| and |next_packet|.
-        packet.swap(next_packet);
-        // Swap the status indicators unless they're already the same.
-        if (packet_available != next_packet_available) {
-          packet_available = !packet_available;
-          next_packet_available = !next_packet_available;
-        }
-      }
-      next_input_time_ms = packet->time_ms();
     }
 
     // Check if it is time to get output audio.
-    if (time_now_ms >= next_output_time_ms) {
-      static const int kOutDataLen =
+    while (time_now_ms >= next_output_time_ms && output_event_available) {
+      static const size_t kOutDataLen =
           kOutputBlockSizeMs * kMaxSamplesPerMs * kMaxChannels;
       int16_t out_data[kOutDataLen];
       int num_channels;
-      int samples_per_channel;
+      size_t samples_per_channel;
       int error = neteq->GetAudio(kOutDataLen, out_data, &samples_per_channel,
                                    &num_channels, NULL);
       if (error != NetEq::kOK) {
@@ -564,7 +608,8 @@ int main(int argc, char* argv[]) {
             neteq->LastError() << std::endl;
       } else {
         // Calculate sample rate from output size.
-        sample_rate_hz = 1000 * samples_per_channel / kOutputBlockSizeMs;
+        sample_rate_hz = rtc::checked_cast<int>(
+            1000 * samples_per_channel / kOutputBlockSizeMs);
       }
 
       // Write to file.
@@ -575,14 +620,20 @@ int main(int argc, char* argv[]) {
         webrtc::Trace::ReturnTrace();
         exit(1);
       }
-      next_output_time_ms += kOutputBlockSizeMs;
+      if (is_rtp_dump) {
+        next_output_time_ms += kOutputBlockSizeMs;
+        if (!packet_available)
+          output_event_available = false;
+      } else {
+        next_output_time_ms = event_log_source->NextAudioOutputEventMs();
+        if (next_output_time_ms == std::numeric_limits<int64_t>::max())
+          output_event_available = false;
+      }
     }
-    // Advance time to next event.
-    time_now_ms = std::min(next_input_time_ms, next_output_time_ms);
   }
-
   printf("Simulation done\n");
-  printf("Produced %i ms of audio\n", time_now_ms - start_time_ms);
+  printf("Produced %i ms of audio\n",
+         static_cast<int>(time_now_ms - start_time_ms));
 
   delete neteq;
   webrtc::Trace::ReturnTrace();

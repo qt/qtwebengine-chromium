@@ -8,6 +8,7 @@
 #ifndef SkGlyph_DEFINED
 #define SkGlyph_DEFINED
 
+#include "SkChecksum.h"
 #include "SkTypes.h"
 #include "SkFixed.h"
 #include "SkMask.h"
@@ -114,14 +115,24 @@ class SkGlyph {
 
     void toMask(SkMask* mask) const;
 
+    class HashTraits {
+    public:
+        static uint32_t GetKey(const SkGlyph& glyph) {
+            return glyph.fID;
+        }
+        static uint32_t Hash(uint32_t glyphId) {
+            return SkChecksum::CheapMix(glyphId);
+        }
+    };
+
  private:
     // TODO(herb) remove friend statement after SkGlyphCache cleanup.
     friend class SkGlyphCache;
 
     void initCommon(uint32_t id) {
         fID             = id;
-        fImage          = NULL;
-        fPath           = NULL;
+        fImage          = nullptr;
+        fPath           = nullptr;
         fMaskFormat     = MASK_FORMAT_UNKNOWN;
         fForceBW        = 0;
     }

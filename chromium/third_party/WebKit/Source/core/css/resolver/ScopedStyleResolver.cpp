@@ -46,30 +46,13 @@
 
 namespace blink {
 
-TreeScope* ScopedStyleResolver::treeScopeFor(Document& document, const CSSStyleSheet* sheet)
-{
-    ASSERT(sheet);
-
-    if (!sheet->ownerDocument())
-        return 0;
-
-    Node* ownerNode = sheet->ownerNode();
-    if (!isHTMLStyleElement(ownerNode) && !isSVGStyleElement(ownerNode))
-        return &document;
-
-    Element& styleElement = toElement(*ownerNode);
-    if (styleElement.isInShadowTree())
-        return styleElement.containingShadowRoot();
-    return &document;
-}
-
 ScopedStyleResolver* ScopedStyleResolver::parent() const
 {
     for (TreeScope* scope = treeScope().parentTreeScope(); scope; scope = scope->parentTreeScope()) {
         if (ScopedStyleResolver* resolver = scope->scopedStyleResolver())
             return resolver;
     }
-    return 0;
+    return nullptr;
 }
 
 void ScopedStyleResolver::addKeyframeRules(const RuleSet& ruleSet)
@@ -248,6 +231,7 @@ void ScopedStyleResolver::addTreeBoundaryCrossingRules(const RuleSet& authorRule
 
 DEFINE_TRACE(ScopedStyleResolver::RuleSubSet)
 {
+    visitor->trace(m_parentStyleSheet);
     visitor->trace(m_ruleSet);
 }
 

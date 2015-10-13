@@ -193,7 +193,7 @@ const QualifiedName* supportedSVGAttribute(const String& property, SVGElement* s
 
 } // namespace
 
-PassRefPtrWillBeRawPtr<EffectModel> EffectInput::convert(Element* element, const Vector<Dictionary>& keyframeDictionaryVector, ExceptionState& exceptionState)
+EffectModel* EffectInput::convert(Element* element, const Vector<Dictionary>& keyframeDictionaryVector, ExceptionState& exceptionState)
 {
     if (!element)
         return nullptr;
@@ -207,7 +207,7 @@ PassRefPtrWillBeRawPtr<EffectModel> EffectInput::convert(Element* element, const
     double lastOffset = 0;
 
     for (const auto& keyframeDictionary : keyframeDictionaryVector) {
-        RefPtrWillBeRawPtr<StringKeyframe> keyframe = StringKeyframe::create();
+        RefPtr<StringKeyframe> keyframe = StringKeyframe::create();
 
         ScriptValue scriptValue;
         bool frameHasOffset = DictionaryHelper::get(keyframeDictionary, "offset", scriptValue) && !scriptValue.isNull();
@@ -241,6 +241,7 @@ PassRefPtrWillBeRawPtr<EffectModel> EffectInput::convert(Element* element, const
         DictionaryHelper::get(keyframeDictionary, "composite", compositeString);
         if (compositeString == "add")
             keyframe->setComposite(EffectModel::CompositeAdd);
+        // TODO(alancutter): Support "accumulate" keyframe composition.
 
         String timingFunctionString;
         if (DictionaryHelper::get(keyframeDictionary, "easing", timingFunctionString)) {
@@ -276,26 +277,33 @@ PassRefPtrWillBeRawPtr<EffectModel> EffectInput::convert(Element* element, const
         }
     }
 
-    RefPtrWillBeRawPtr<StringKeyframeEffectModel> keyframeEffectModel = StringKeyframeEffectModel::create(keyframes);
-    if (keyframeEffectModel->hasSyntheticKeyframes()) {
-        exceptionState.throwDOMException(NotSupportedError, "Partial keyframes are not supported.");
-        return nullptr;
-    }
-    if (!keyframeEffectModel->isReplaceOnly()) {
-        exceptionState.throwDOMException(NotSupportedError, "Additive animations are not supported.");
-        return nullptr;
+    StringKeyframeEffectModel* keyframeEffectModel = StringKeyframeEffectModel::create(keyframes);
+    if (!RuntimeEnabledFeatures::additiveAnimationsEnabled()) {
+        if (keyframeEffectModel->hasSyntheticKeyframes()) {
+            exceptionState.throwDOMException(NotSupportedError, "Partial keyframes are not supported.");
+            return nullptr;
+        }
+        if (!keyframeEffectModel->isReplaceOnly()) {
+            exceptionState.throwDOMException(NotSupportedError, "Additive animations are not supported.");
+            return nullptr;
+        }
     }
     keyframeEffectModel->forceConversionsToAnimatableValues(*element, element->computedStyle());
 
     return keyframeEffectModel;
 }
 
-PassRefPtrWillBeRawPtr<EffectModel> EffectInput::convert(Element* element, const EffectModelOrDictionarySequence& effectInput, ExceptionState& exceptionState)
+EffectModel* EffectInput::convert(Element* element, const EffectModelOrDictionarySequenceOrDictionary& effectInput, ExceptionState& exceptionState)
 {
     if (effectInput.isEffectModel())
         return effectInput.getAsEffectModel();
     if (effectInput.isDictionarySequence())
         return convert(element, effectInput.getAsDictionarySequence(), exceptionState);
+    if (effectInput.isDictionary()) {
+        Vector<Dictionary> keyframes;
+        keyframes.append(effectInput.getAsDictionary());
+        return convert(element, keyframes, exceptionState);
+    }
     return nullptr;
 }
 

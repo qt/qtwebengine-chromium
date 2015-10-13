@@ -32,41 +32,29 @@
 #define WorkerThreadDebugger_h
 
 #include "core/inspector/ScriptDebuggerBase.h"
-#include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
 
 #include <v8.h>
 
 namespace blink {
 
-class WorkerGlobalScope;
+class WorkerThread;
 
-class WorkerThreadDebugger final : public NoBaseWillBeGarbageCollectedFinalized<WorkerThreadDebugger>, public ScriptDebuggerBase {
+class WorkerThreadDebugger final : public ScriptDebuggerBase {
     WTF_MAKE_NONCOPYABLE(WorkerThreadDebugger);
-    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(WorkerThreadDebugger);
 public:
-    static PassOwnPtrWillBeRawPtr<WorkerThreadDebugger> create(WorkerGlobalScope* workerGlobalScope)
-    {
-        return adoptPtrWillBeNoop(new WorkerThreadDebugger(workerGlobalScope));
-    }
-
+    explicit WorkerThreadDebugger(WorkerThread*);
     ~WorkerThreadDebugger() override;
 
     static void setContextDebugData(v8::Local<v8::Context>);
-    void addListener(ScriptDebugListener*);
-    void removeListener(ScriptDebugListener*);
+    static int contextGroupId();
 
-    DECLARE_VIRTUAL_TRACE();
+    void runMessageLoopOnPause(int contextGroupId) override;
+    void quitMessageLoopOnPause() override;
 
 private:
-    explicit WorkerThreadDebugger(WorkerGlobalScope*);
-
-    ScriptDebugListener* getDebugListenerForContext(v8::Local<v8::Context>);
-    void runMessageLoopOnPause(v8::Local<v8::Context>);
-    void quitMessageLoopOnPause();
-
-    ScriptDebugListener* m_listener;
-    RawPtrWillBeMember<WorkerGlobalScope> m_workerGlobalScope;
+    WorkerThread* m_workerThread;
+    bool m_paused;
 };
 
 } // namespace blink

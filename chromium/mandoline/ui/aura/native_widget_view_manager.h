@@ -5,7 +5,7 @@
 #ifndef MANDOLINE_UI_AURA_NATIVE_WIDGET_VIEW_MANAGER_H_
 #define MANDOLINE_UI_AURA_NATIVE_WIDGET_VIEW_MANAGER_H_
 
-#include "components/view_manager/public/cpp/view_observer.h"
+#include "components/mus/public/cpp/view_observer.h"
 #include "ui/views/widget/native_widget_aura.h"
 
 namespace aura {
@@ -33,11 +33,11 @@ namespace mandoline {
 class WindowTreeHostMojo;
 
 class NativeWidgetViewManager : public views::NativeWidgetAura,
-                                       public mojo::ViewObserver {
+                                public mus::ViewObserver {
  public:
   NativeWidgetViewManager(views::internal::NativeWidgetDelegate* delegate,
                           mojo::Shell* shell,
-                          mojo::View* view);
+                          mus::View* view);
   ~NativeWidgetViewManager() override;
 
  private:
@@ -46,17 +46,19 @@ class NativeWidgetViewManager : public views::NativeWidgetAura,
   void OnWindowVisibilityChanged(aura::Window* window, bool visible) override;
 
   // ViewObserver:
-  void OnViewDestroyed(mojo::View* view) override;
-  void OnViewBoundsChanged(mojo::View* view,
+  void OnViewDestroyed(mus::View* view) override;
+  void OnViewBoundsChanged(mus::View* view,
                            const mojo::Rect& old_bounds,
                            const mojo::Rect& new_bounds) override;
-  void OnViewInputEvent(mojo::View* view, const mojo::EventPtr& event) override;
+  void OnViewFocusChanged(mus::View* gained_focus,
+                          mus::View* lost_focus) override;
+  void OnViewInputEvent(mus::View* view, const mojo::EventPtr& event) override;
 
   scoped_ptr<WindowTreeHostMojo> window_tree_host_;
 
   scoped_ptr<wm::FocusController> focus_client_;
 
-  mojo::View* view_;
+  mus::View* view_;
 
   scoped_ptr<aura::client::DefaultCaptureClient> capture_client_;
 

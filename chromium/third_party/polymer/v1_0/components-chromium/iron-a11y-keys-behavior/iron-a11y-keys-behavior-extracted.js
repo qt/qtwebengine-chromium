@@ -82,10 +82,10 @@
      * in a KeyboardEvent instance.
      */
     var MODIFIER_KEYS = {
-      shift: 'shiftKey',
-      ctrl: 'ctrlKey',
-      alt: 'altKey',
-      meta: 'metaKey'
+      'shift': 'shiftKey',
+      'ctrl': 'ctrlKey',
+      'alt': 'altKey',
+      'meta': 'metaKey'
     };
 
     /**
@@ -229,7 +229,7 @@
      * `keys` property is pressed.
      *
      * @demo demo/index.html
-     * @polymerBehavior IronA11yKeysBehavior
+     * @polymerBehavior
      */
     Polymer.IronA11yKeysBehavior = {
       properties: {

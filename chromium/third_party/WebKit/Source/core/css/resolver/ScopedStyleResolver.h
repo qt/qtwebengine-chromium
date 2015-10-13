@@ -51,8 +51,6 @@ public:
         return adoptPtrWillBeNoop(new ScopedStyleResolver(scope));
     }
 
-    static TreeScope* treeScopeFor(Document&, const CSSStyleSheet*);
-
     const TreeScope& treeScope() const { return *m_scope; }
     ScopedStyleResolver* parent() const;
 
@@ -84,7 +82,7 @@ private:
 
     WillBeHeapVector<RawPtrWillBeMember<CSSStyleSheet>> m_authorStyleSheets;
 
-    typedef WillBeHeapHashMap<const StringImpl*, RefPtrWillBeMember<StyleRuleKeyframes>> KeyframesRuleMap;
+    using KeyframesRuleMap = WillBeHeapHashMap<const StringImpl*, RefPtrWillBeMember<StyleRuleKeyframes>>;
     KeyframesRuleMap m_keyframesRuleMap;
 
     class RuleSubSet final : public NoBaseWillBeGarbageCollected<RuleSubSet> {
@@ -94,7 +92,7 @@ private:
             return adoptPtrWillBeNoop(new RuleSubSet(sheet, index, rules));
         }
 
-        CSSStyleSheet* m_parentStyleSheet;
+        RawPtrWillBeMember<CSSStyleSheet> m_parentStyleSheet;
         unsigned m_parentIndex;
         OwnPtrWillBeMember<RuleSet> m_ruleSet;
 
@@ -108,7 +106,7 @@ private:
         {
         }
     };
-    typedef WillBeHeapVector<OwnPtrWillBeMember<RuleSubSet>> CSSStyleSheetRuleSubSet;
+    using CSSStyleSheetRuleSubSet = WillBeHeapVector<OwnPtrWillBeMember<RuleSubSet>>;
 
     OwnPtrWillBeMember<CSSStyleSheetRuleSubSet> m_treeBoundaryCrossingRuleSet;
 };

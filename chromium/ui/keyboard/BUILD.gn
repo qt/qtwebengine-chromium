@@ -36,6 +36,7 @@ component("keyboard") {
     "//content/public/browser",
     "//content/public/common",
     "//ipc",
+    "//media",
     "//skia",
     "//ui/aura",
     "//ui/base",
@@ -61,7 +62,6 @@ grit("resources_grit") {
     "grit/keyboard_resources.h",
     "grit/keyboard_resources_map.h",
     "keyboard_resources.pak",
-    "keyboard_resources.rc",
   ]
 
   input_tools_root_dir = "//third_party/google_input_tools/src/chrome/os"
@@ -102,6 +102,7 @@ build_closure("inputview") {
 test("keyboard_unittests") {
   sources = [
     "keyboard_controller_unittest.cc",
+    "keyboard_util_unittest.cc",
     "test/run_all_unittests.cc",
   ]
 
@@ -111,6 +112,7 @@ test("keyboard_unittests") {
     "//base/allocator",
     "//base/test:test_support",
     "//content",
+    "//media",
     "//skia",
     "//testing/gtest",
     "//ui/aura:test_support",

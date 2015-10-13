@@ -16,7 +16,6 @@
 #include "SkWriteBuffer.h"
 #include "SkMallocPixelRef.h"
 #include "SkUtils.h"
-#include "SkTemplates.h"
 #include "SkShader.h"
 #include "SkOnce.h"
 
@@ -138,7 +137,7 @@ public:
         unsigned getAlpha() const { return fCacheAlpha; }
 
     private:
-        // Working pointers. If either is NULL, we need to recompute the corresponding cache values.
+        // Working pointers. If either is nullptr, we need to recompute the corresponding cache values.
         uint16_t*   fCache16;
         SkPMColor*  fCache32;
 
@@ -294,9 +293,8 @@ static inline int next_dither_toggle16(int toggle) {
 
 #include "GrCoordTransform.h"
 #include "GrFragmentProcessor.h"
-#include "gl/GrGLProcessor.h"
+#include "gl/GrGLFragmentProcessor.h"
 
-class GrFragmentStage;
 class GrInvariantOutput;
 
 /*
@@ -360,7 +358,7 @@ protected:
         The function decides whether stop values should be used or not. The return value indicates
         the number of colors, which will be capped by kMaxRandomGradientColors. colors should be
         sized to be at least kMaxRandomGradientColors. stops is a pointer to an array of at least
-        size kMaxRandomGradientColors. It may be updated to NULL, indicating that NULL should be
+        size kMaxRandomGradientColors. It may be updated to nullptr, indicating that nullptr should be
         passed to the gradient factory rather than the array.
     */
     static const int kMaxRandomGradientColors = 4;
@@ -400,7 +398,8 @@ public:
     GrGLGradientEffect();
     virtual ~GrGLGradientEffect();
 
-    void setData(const GrGLProgramDataManager&, const GrProcessor&) override;
+protected:
+    void onSetData(const GrGLProgramDataManager&, const GrProcessor&) override;
 
 protected:
     /**

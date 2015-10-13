@@ -5,14 +5,21 @@
 #ifndef WebPresentationAvailabilityObserver_h
 #define WebPresentationAvailabilityObserver_h
 
+#include "public/platform/WebCommon.h"
+#include "public/platform/WebURL.h"
+
 namespace blink {
 
 // WebPresentationAvailabilityObserver is an interface that is implemented by
 // objects that wish to be notified when there is a presentation display
-// availability change.
-class WebPresentationAvailabilityObserver {
+// availability change for a given URL.
+class BLINK_PLATFORM_EXPORT WebPresentationAvailabilityObserver {
 public:
+    virtual ~WebPresentationAvailabilityObserver() = default;
+
     virtual void availabilityChanged(bool) = 0;
+
+    virtual const WebURL url() const = 0;
 };
 
 } // namespace blink

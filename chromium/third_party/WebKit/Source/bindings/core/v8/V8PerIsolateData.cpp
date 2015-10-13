@@ -80,7 +80,7 @@ V8PerIsolateData::V8PerIsolateData()
     : m_destructionPending(false)
     , m_isolateHolder(adoptPtr(new gin::IsolateHolder()))
     , m_stringCache(adoptPtr(new StringCache(isolate())))
-    , m_hiddenValue(adoptPtr(new V8HiddenValue()))
+    , m_hiddenValue(V8HiddenValue::create())
     , m_constructorMode(ConstructorMode::CreateNewObject)
     , m_recursionLevel(0)
     , m_isHandlingRecursionLevelError(false)
@@ -121,6 +121,11 @@ v8::Isolate* V8PerIsolateData::initialize()
     return isolate;
 }
 
+void V8PerIsolateData::enableIdleTasks(v8::Isolate* isolate, PassOwnPtr<gin::V8IdleTaskRunner> taskRunner)
+{
+    from(isolate)->m_isolateHolder->EnableIdleTasks(scoped_ptr<gin::V8IdleTaskRunner>(taskRunner.leakPtr()));
+}
+
 v8::Persistent<v8::Value>& V8PerIsolateData::ensureLiveRoot()
 {
     if (m_liveRoot.isEmpty())
@@ -128,6 +133,8 @@ v8::Persistent<v8::Value>& V8PerIsolateData::ensureLiveRoot()
     return m_liveRoot.getUnsafe();
 }
 
+// willBeDestroyed() clear things that should be cleared before
+// ThreadState::detach() gets called.
 void V8PerIsolateData::willBeDestroyed(v8::Isolate* isolate)
 {
     V8PerIsolateData* data = from(isolate);
@@ -135,11 +142,14 @@ void V8PerIsolateData::willBeDestroyed(v8::Isolate* isolate)
     ASSERT(!data->m_destructionPending);
     data->m_destructionPending = true;
 
+    data->m_scriptDebugger.clear();
     // Clear any data that may have handles into the heap,
     // prior to calling ThreadState::detach().
     data->clearEndOfScopeTasks();
 }
 
+// destroy() clear things that should be cleared after ThreadState::detach()
+// gets called but before the Isolate exits.
 void V8PerIsolateData::destroy(v8::Isolate* isolate)
 {
 #if ENABLE(ASSERT)
@@ -151,7 +161,6 @@ void V8PerIsolateData::destroy(v8::Isolate* isolate)
     // Clear everything before exiting the Isolate.
     if (data->m_scriptRegexpScriptState)
         data->m_scriptRegexpScriptState->disposePerContextData();
-    data->m_scriptDebugger.clear();
     data->m_liveRoot.clear();
     data->m_hiddenValue.clear();
     data->m_stringCache->dispose();
@@ -207,6 +216,13 @@ v8::Local<v8::Context> V8PerIsolateData::ensureScriptRegexpContext()
         m_scriptRegexpScriptState = ScriptState::create(context, DOMWrapperWorld::create(isolate()));
     }
     return m_scriptRegexpScriptState->context();
+}
+
+void V8PerIsolateData::clearScriptRegexpContext()
+{
+    if (m_scriptRegexpScriptState)
+        m_scriptRegexpScriptState->disposePerContextData();
+    m_scriptRegexpScriptState.clear();
 }
 
 bool V8PerIsolateData::hasInstance(const WrapperTypeInfo* untrustedWrapperTypeInfo, v8::Local<v8::Value> value)
@@ -290,7 +306,7 @@ void V8PerIsolateData::clearEndOfScopeTasks()
     m_endOfScopeTasks.clear();
 }
 
-void V8PerIsolateData::setScriptDebugger(PassOwnPtrWillBeRawPtr<ScriptDebuggerBase> debugger)
+void V8PerIsolateData::setScriptDebugger(PassOwnPtr<ScriptDebuggerBase> debugger)
 {
     ASSERT(!m_scriptDebugger);
     m_scriptDebugger = debugger;

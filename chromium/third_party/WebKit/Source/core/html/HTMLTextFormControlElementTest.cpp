@@ -5,12 +5,12 @@
 #include "config.h"
 #include "core/html/HTMLTextFormControlElement.h"
 
-#include "core/dom/Position.h"
 #include "core/dom/Text.h"
 #include "core/editing/FrameSelection.h"
-#include "core/editing/SpellChecker.h"
+#include "core/editing/Position.h"
 #include "core/editing/VisibleSelection.h"
 #include "core/editing/VisibleUnits.h"
+#include "core/editing/spellcheck/SpellChecker.h"
 #include "core/frame/FrameView.h"
 #include "core/html/HTMLBRElement.h"
 #include "core/html/HTMLDocument.h"
@@ -136,10 +136,10 @@ typedef VisiblePosition(*VisblePositionFunction)(const VisiblePosition&);
 
 void testFunctionEquivalence(const Position& position, PositionFunction positionFunction, VisblePositionFunction visibleFunction)
 {
-    VisiblePosition visiblePosition(position);
+    VisiblePosition visiblePosition = createVisiblePosition(position);
     VisiblePosition expected = visibleFunction(visiblePosition);
-    VisiblePosition actual = VisiblePosition(positionFunction(position));
-    EXPECT_EQ(expected, actual);
+    VisiblePosition actual = createVisiblePosition(positionFunction(position));
+    EXPECT_EQ(expected.deepEquivalent(), actual.deepEquivalent());
 }
 
 static VisiblePosition startOfWord(const VisiblePosition& position)
@@ -157,7 +157,7 @@ void testBoundary(HTMLDocument& document, HTMLTextFormControlElement& textContro
     for (unsigned i = 0; i < textControl.innerEditorValue().length(); i++) {
         textControl.setSelectionRange(i, i);
         Position position = document.frame()->selection().start();
-        SCOPED_TRACE(::testing::Message() << "offset " << position.deprecatedEditingOffset() << " of " << nodePositionAsStringForTesting(position.deprecatedNode()).ascii().data());
+        SCOPED_TRACE(::testing::Message() << "offset " << position.computeEditingOffset() << " of " << nodePositionAsStringForTesting(position.anchorNode()).ascii().data());
         {
             SCOPED_TRACE("HTMLTextFormControlElement::startOfWord");
             testFunctionEquivalence(position, HTMLTextFormControlElement::startOfWord, startOfWord);
@@ -212,7 +212,7 @@ TEST_F(HTMLTextFormControlElementTest, SpellCheckDoesNotCauseUpdateLayout)
     VisibleSelection oldSelection = document().frame()->selection().selection();
 
     Position newPosition(input->innerEditorElement()->firstChild(), 3);
-    VisibleSelection newSelection(newPosition, DOWNSTREAM);
+    VisibleSelection newSelection(newPosition, TextAffinity::Downstream);
     document().frame()->selection().setSelection(newSelection, FrameSelection::CloseTyping | FrameSelection::ClearTypingStyle | FrameSelection::DoNotUpdateAppearance);
     ASSERT_EQ(3, input->selectionStart());
 

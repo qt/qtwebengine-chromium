@@ -19,6 +19,7 @@ public:
      */
     enum SrcConfig {
         kUnknown,  // Invalid type.
+        kBit,      // A single bit to distinguish between white and black
         kGray,
         kIndex1,
         kIndex2,
@@ -76,6 +77,7 @@ public:
      */
     static int BitsPerPixel(SrcConfig sc) {
         switch (sc) {
+            case kBit:
             case kIndex1:
                 return 1;
             case kIndex2:
@@ -115,20 +117,22 @@ public:
     /**
      *  Create a new SkSwizzler.
      *  @param SrcConfig Description of the format of the source.
-     *  @param SkImageInfo dimensions() describe both the src and the dst.
-     *              Other fields describe the dst.
-     *  @param dst Destination to write pixels. Must match info and dstRowBytes
-     *  @param dstRowBytes rowBytes for dst.
+     *  @param dstInfo describes the destination.
      *  @param ZeroInitialized Whether dst is zero-initialized. The
                                implementation may choose to skip writing zeroes
      *                         if set to kYes_ZeroInitialized.
-     *  @return A new SkSwizzler or NULL on failure.
+     *  @param srcInfo is the info of the source. Used to calculate the width samplesize.
+     *                  Width sampling is supported by the swizzler, by skipping pixels when 
+                        swizzling the row. Height sampling is not supported by the swizzler, 
+                        but is implemented in SkScaledCodec.
+                        Sampling in Y can be done by a client with a scanline decoder, 
+                        but sampling in X allows the swizzler to skip swizzling pixels and
+                        reading from and writing to memory.
+     *  @return A new SkSwizzler or nullptr on failure.
      */
     static SkSwizzler* CreateSwizzler(SrcConfig, const SkPMColor* ctable,
-                                      const SkImageInfo&, void* dst,
-                                      size_t dstRowBytes,
-                                      SkCodec::ZeroInitialized);
-
+                                      const SkImageInfo& dstInfo, SkCodec::ZeroInitialized, 
+                                      const SkImageInfo& srcInfo);
     /**
      * Fill the remainder of the destination with a single color
      *
@@ -145,13 +149,13 @@ public:
      * index.
      *
      * If dstInfo.colorType() is kN32, colorOrIndex is treated differently depending on
-     * whether colorTable is NULL:
+     * whether colorTable is nullptr:
      *
-     * A NULL colorTable means colorOrIndex is treated as an SkPMColor (premul or
+     * A nullptr colorTable means colorOrIndex is treated as an SkPMColor (premul or
      * unpremul, depending on dstInfo.alphaType()). Each 4-byte pixel will be set to
      * colorOrIndex.
 
-     * A non-NULL colorTable means colorOrIndex is treated as a uint8_t index into
+     * A non-nullptr colorTable means colorOrIndex is treated as a uint8_t index into
      * the colorTable. i.e. each 4-byte pixel will be set to
      * colorTable[(uint8_t) colorOrIndex].
      *
@@ -159,80 +163,45 @@ public:
      *
      * Other SkColorTypes are not supported.
      *
+     * @param zeroInit
+     * Indicates whether memory is already zero initialized.
+     *
      */
     static void Fill(void* dstStartRow, const SkImageInfo& dstInfo, size_t dstRowBytes,
-            uint32_t numRows, uint32_t colorOrIndex, const SkPMColor* colorTable);
+            uint32_t numRows, uint32_t colorOrIndex, const SkPMColor* colorTable,
+            SkCodec::ZeroInitialized zeroInit);
 
     /**
-     *  Swizzle the next line. Call height times, once for each row of source.
+     *  Swizzle a line. Generally this will be called height times, once
+     *  for each row of source.
+     *  By allowing the caller to pass in the dst pointer, we give the caller
+     *  flexibility to use the swizzler even when the encoded data does not
+     *  store the rows in order.  This also improves usability for scaled and
+     *  subset decodes.
+     *  @param dst Where we write the output.
      *  @param src The next row of the source data.
      *  @return A result code describing if the row was fully opaque, fully
      *          transparent, or neither
      */
-    ResultAlpha next(const uint8_t* SK_RESTRICT src);
-
-    /**
-     *
-     * Alternate version of next that allows the caller to specify the row.
-     * It is very important to only use one version of next.  Since the other
-     * version modifies the dst pointer, it will change the behavior of this
-     * function.  We will check this in Debug mode.
-     *
-     */
-    ResultAlpha next(const uint8_t* SK_RESTRICT src, int y);
-
-    /**
-     *  Update the destination row.
-     *
-     *  Typically this is done by next, but for a client that wants to manually
-     *  modify the destination row (for example, for decoding scanline one at a
-     *  time) they can call this before each call to next.
-     *  TODO: Maybe replace this with a version of next which allows supplying the
-     *  destination?
-     */
-    void setDstRow(void* dst) { fDstRow = dst; }
-
-    /**
-     *  Get the next destination row to decode to
-     */
-    void* getDstRow() {
-        // kDesignateRow_NextMode does not update the fDstRow ptr.  This function is
-        // unnecessary in that case since fDstRow will always be equal to the pointer
-        // passed to CreateSwizzler().
-        SkASSERT(kDesignateRow_NextMode != fNextMode);
-        return fDstRow;
-    }
+    ResultAlpha swizzle(void* dst, const uint8_t* SK_RESTRICT src);
 
 private:
-
-#ifdef SK_DEBUG
-    /*
-     *
-     * Keep track of which version of next the caller is using
-     *
-     */
-    enum NextMode {
-        kUninitialized_NextMode,
-        kConsecutive_NextMode,
-        kDesignateRow_NextMode,
-    };
-
-    NextMode fNextMode;
-#endif
 
     /**
      *  Method for converting raw data to Skia pixels.
      *  @param dstRow Row in which to write the resulting pixels.
      *  @param src Row of src data, in format specified by SrcConfig
-     *  @param width Width in pixels
-     *  @param deltaSrc if bitsPerPixel % 8 == 0, deltaSrc is bytesPerPixel
-     *                  else, deltaSrc is bitsPerPixel
-     *  @param y Line of source.
+     *  @param dstWidth Width in pixels of the destination
+     *  @param bpp if bitsPerPixel % 8 == 0, deltaSrc is bytesPerPixel
+     *             else, deltaSrc is bitsPerPixel
+     *  @param deltaSrc bpp * sampleX
      *  @param ctable Colors (used for kIndex source).
+     *  @param offset The offset before the first pixel to sample.
+                        Is in bytes or bits based on what deltaSrc is in.
      */
     typedef ResultAlpha (*RowProc)(void* SK_RESTRICT dstRow,
                                    const uint8_t* SK_RESTRICT src,
-                                   int width, int deltaSrc, int y,
+                                   int dstWidth, int bpp, int deltaSrc, int offset,
                                    const SkPMColor ctable[]);
 
     const RowProc       fRowProc;
@@ -242,12 +211,11 @@ private:
                                           // else
                                           //     deltaSrc is bitsPerPixel
     const SkImageInfo   fDstInfo;
-    void*               fDstRow;
-    const size_t        fDstRowBytes;
     int                 fCurrY;
+    const int           fX0;              // first X coord to sample
+    const int           fSampleX;         // step between X samples
 
-    SkSwizzler(RowProc proc, const SkPMColor* ctable, int deltaSrc,
-               const SkImageInfo& info, void* dst, size_t rowBytes);
-
+    SkSwizzler(RowProc proc, const SkPMColor* ctable, int deltaSrc, const SkImageInfo& info, 
+               int sampleX);
 };
 #endif // SkSwizzler_DEFINED

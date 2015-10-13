@@ -36,12 +36,12 @@ class CSSParserSelector;
 class CORE_EXPORT CSSSelectorList {
     WTF_MAKE_FAST_ALLOCATED(CSSSelectorList);
 public:
-    CSSSelectorList() : m_selectorArray(0) { }
+    CSSSelectorList() : m_selectorArray(nullptr) { }
     CSSSelectorList(const CSSSelectorList&);
 
     ~CSSSelectorList();
 
-    void adopt(CSSSelectorList& list);
+    void adopt(CSSSelectorList&);
     void adoptSelectorVector(Vector<OwnPtr<CSSParserSelector>>& selectorVector);
 
     bool isValid() const { return !!m_selectorArray; }

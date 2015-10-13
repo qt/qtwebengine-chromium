@@ -26,7 +26,6 @@
  */
 
 #include "config.h"
-
 #include "core/layout/svg/ReferenceFilterBuilder.h"
 
 #include "core/css/CSSPrimitiveValue.h"
@@ -35,10 +34,13 @@
 #include "core/dom/Element.h"
 #include "core/dom/ElementTraversal.h"
 #include "core/fetch/DocumentResource.h"
+#include "core/layout/LayoutBox.h"
 #include "core/layout/svg/LayoutSVGResourceFilter.h"
 #include "core/svg/SVGDocumentExtensions.h"
 #include "core/svg/SVGFilterPrimitiveStandardAttributes.h"
 #include "core/svg/graphics/filters/SVGFilterBuilder.h"
+#include "platform/graphics/filters/Filter.h"
+#include "platform/graphics/filters/SourceGraphic.h"
 
 namespace blink {
 
@@ -87,7 +89,7 @@ static EColorInterpolation colorInterpolationForElement(SVGElement& element, ECo
     return parentColorInterpolation;
 }
 
-PassRefPtrWillBeRawPtr<FilterEffect> ReferenceFilterBuilder::build(Filter* parentFilter, Element* element, FilterEffect* previousEffect, const ReferenceFilterOperation& filterOperation)
+PassRefPtrWillBeRawPtr<Filter> ReferenceFilterBuilder::build(float zoom, Element* element, FilterEffect* previousEffect, const ReferenceFilterOperation& filterOperation)
 {
     TreeScope* treeScope = &element->treeScope();
 
@@ -117,6 +119,16 @@ PassRefPtrWillBeRawPtr<FilterEffect> ReferenceFilterBuilder::build(Filter* paren
 
     SVGFilterElement& filterElement = toSVGFilterElement(*filter);
 
+    FloatRect referenceBox;
+    if (element->inDocument() && element->layoutObject() && element->layoutObject()->isBoxModelObject())
+        referenceBox = toLayoutBoxModelObject(element->layoutObject())->borderBoundingBox();
+    referenceBox.scale(1.0f / zoom);
+    FloatRect filterRegion = SVGLengthContext::resolveRectangle<SVGFilterElement>(&filterElement, filterElement.filterUnits()->currentValue()->enumValue(), referenceBox);
+    bool primitiveBoundingBoxMode = filterElement.primitiveUnits()->currentValue()->enumValue() == SVGUnitTypes::SVG_UNIT_TYPE_OBJECTBOUNDINGBOX;
+    Filter::UnitScaling unitScaling = primitiveBoundingBoxMode ? Filter::BoundingBox : Filter::UserSpace;
+    RefPtrWillBeRawPtr<Filter> result(Filter::create(referenceBox, filterRegion, zoom, unitScaling));
+    if (!previousEffect)
+        previousEffect = result->sourceGraphic();
     RefPtrWillBeRawPtr<SVGFilterBuilder> builder = SVGFilterBuilder::create(previousEffect);
 
     EColorInterpolation filterColorInterpolation = colorInterpolationForElement(filterElement, CI_AUTO);
@@ -126,17 +138,18 @@ PassRefPtrWillBeRawPtr<FilterEffect> ReferenceFilterBuilder::build(Filter* paren
             continue;
 
         SVGFilterPrimitiveStandardAttributes* effectElement = static_cast<SVGFilterPrimitiveStandardAttributes*>(element);
-        RefPtrWillBeRawPtr<FilterEffect> effect = effectElement->build(builder.get(), parentFilter);
+        RefPtrWillBeRawPtr<FilterEffect> effect = effectElement->build(builder.get(), result.get());
         if (!effect)
             continue;
 
         effectElement->setStandardAttributes(effect.get());
-        effect->setEffectBoundaries(SVGLengthContext::resolveRectangle<SVGFilterPrimitiveStandardAttributes>(effectElement, filterElement.primitiveUnits()->currentValue()->enumValue(), parentFilter->sourceImageRect()));
+        effect->setEffectBoundaries(SVGLengthContext::resolveRectangle<SVGFilterPrimitiveStandardAttributes>(effectElement, filterElement.primitiveUnits()->currentValue()->enumValue(), referenceBox));
         EColorInterpolation colorInterpolation = colorInterpolationForElement(*effectElement, filterColorInterpolation);
         effect->setOperatingColorSpace(colorInterpolation == CI_LINEARRGB ? ColorSpaceLinearRGB : ColorSpaceDeviceRGB);
         builder->add(AtomicString(effectElement->result()->currentValue()->value()), effect);
     }
-    return builder->lastEffect();
+    result->setLastEffect(builder->lastEffect());
+    return result.release();
 }
 
 } // namespace blink

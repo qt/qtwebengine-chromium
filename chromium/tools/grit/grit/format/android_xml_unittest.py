@@ -39,16 +39,13 @@ a sledge hammer.
           <message name="IDS_WHITESPACE" desc="A string with extra whitespace.">
             '''   How old fashioned  --  she thought. '''
           </message>
-          <message name="IDS_PRODUCT_SPECIFIC_product_nosdcard"
-              desc="A string that only applies if there's no sdcard">
-            Lasers will probably be helpful.
-          </message>
-          <message name="IDS_PRODUCT_DEFAULT" desc="New style product tag"
-              formatter_data="android_java_product=default android_java_name=custom_name">
-            You have an SD card
-          </message>
           <message name="IDS_PLACEHOLDERS" desc="A string with placeholders">
             I'll buy a <ph name="WAVELENGTH">%d<ex>200</ex></ph> nm laser at <ph name="STORE_NAME">%s<ex>the grocery store</ex></ph>.
+          </message>
+          <message name="IDS_PLURALS" desc="A string using the ICU plural format">
+            {NUM_THINGS, plural,
+            =1 {Maybe I'll get one laser.}
+            other {Maybe I'll get # lasers.}}
           </message>
         </messages>
         """)
@@ -66,9 +63,11 @@ a sledge hammer.
 wood, charcoal, and
 a sledge hammer."</string>
 <string name="whitespace">"   How old fashioned  --  she thought. "</string>
-<string name="product_specific" product="nosdcard">"Lasers will probably be helpful."</string>
-<string name="custom_name" product="default">"You have an SD card"</string>
 <string name="placeholders">"I\'ll buy a %d nm laser at %s."</string>
+<plurals name="plurals">
+  <item quantity="one">"Maybe I\'ll get one laser."</item>
+  <item quantity="other">"Maybe I\'ll get %d lasers."</item>
+</plurals>
 </resources>
 """
     self.assertEqual(output.strip(), expected.strip())

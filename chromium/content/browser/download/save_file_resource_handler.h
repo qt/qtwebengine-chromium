@@ -23,13 +23,12 @@ class SaveFileResourceHandler : public ResourceHandler {
  public:
   SaveFileResourceHandler(net::URLRequest* request,
                           int render_process_host_id,
-                          int render_view_id,
+                          int render_frame_id,
                           const GURL& url,
                           SaveFileManager* manager);
   ~SaveFileResourceHandler() override;
 
   // ResourceHandler Implementation:
-  bool OnUploadProgress(uint64 position, uint64 size) override;
 
   // Saves the redirected URL to final_url_, we need to use the original
   // URL to match original request.
@@ -74,7 +73,7 @@ class SaveFileResourceHandler : public ResourceHandler {
  private:
   int save_id_;
   int render_process_id_;
-  int render_view_id_;
+  int render_frame_id_;
   scoped_refptr<net::IOBuffer> read_buffer_;
   std::string content_disposition_;
   GURL url_;

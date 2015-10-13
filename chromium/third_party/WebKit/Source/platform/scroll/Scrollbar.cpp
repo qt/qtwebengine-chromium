@@ -176,7 +176,7 @@ void Scrollbar::updateThumbProportion()
     updateThumb();
 }
 
-void Scrollbar::paint(GraphicsContext* context, const IntRect& damageRect)
+void Scrollbar::paint(GraphicsContext* context, const IntRect& damageRect) const
 {
     if (!frameRect().intersects(damageRect))
         return;
@@ -475,6 +475,12 @@ void Scrollbar::mouseDown(const PlatformMouseEvent& evt)
     m_pressedPos = pressedPos;
 
     autoscrollPressedPart(theme()->initialAutoscrollTimerDelay());
+}
+
+void Scrollbar::visibilityChanged()
+{
+    if (m_scrollableArea)
+        m_scrollableArea->scrollbarVisibilityChanged();
 }
 
 void Scrollbar::setEnabled(bool e)

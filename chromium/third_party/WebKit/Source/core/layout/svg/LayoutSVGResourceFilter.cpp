@@ -93,19 +93,19 @@ void LayoutSVGResourceFilter::removeClientFromCache(LayoutObject* client, bool m
         m_filter.remove(client);
 
     // If the filter has a cached subtree, invalidate the associated display item.
-    if (RuntimeEnabledFeatures::slimmingPaintEnabled() && markForInvalidation && filterCached)
+    if (markForInvalidation && filterCached)
         markClientForInvalidation(client, PaintInvalidation);
 
     markClientForInvalidation(client, markForInvalidation ? BoundariesInvalidation : ParentOnlyInvalidation);
 }
 
-PassRefPtrWillBeRawPtr<SVGFilterBuilder> LayoutSVGResourceFilter::buildPrimitives(SVGFilter* filter)
+PassRefPtrWillBeRawPtr<SVGFilterBuilder> LayoutSVGResourceFilter::buildPrimitives(Filter* filter)
 {
     SVGFilterElement* filterElement = toSVGFilterElement(element());
-    FloatRect targetBoundingBox = filter->targetBoundingBox();
+    FloatRect referenceBox = filter->referenceBox();
 
     // Add effects to the builder
-    RefPtrWillBeRawPtr<SVGFilterBuilder> builder = SVGFilterBuilder::create(SourceGraphic::create(filter));
+    RefPtrWillBeRawPtr<SVGFilterBuilder> builder = SVGFilterBuilder::create(filter->sourceGraphic());
     for (SVGElement* element = Traversal<SVGElement>::firstChild(*filterElement); element; element = Traversal<SVGElement>::nextSibling(*element)) {
         if (!element->isFilterEffect() || !element->layoutObject())
             continue;
@@ -118,11 +118,12 @@ PassRefPtrWillBeRawPtr<SVGFilterBuilder> LayoutSVGResourceFilter::buildPrimitive
         }
         builder->appendEffectToEffectReferences(effect, effectElement->layoutObject());
         effectElement->setStandardAttributes(effect.get());
-        effect->setEffectBoundaries(SVGLengthContext::resolveRectangle<SVGFilterPrimitiveStandardAttributes>(effectElement, filterElement->primitiveUnits()->currentValue()->enumValue(), targetBoundingBox));
+        effect->setEffectBoundaries(SVGLengthContext::resolveRectangle<SVGFilterPrimitiveStandardAttributes>(effectElement, filterElement->primitiveUnits()->currentValue()->enumValue(), referenceBox));
         effect->setOperatingColorSpace(
             effectElement->layoutObject()->style()->svgStyle().colorInterpolationFilters() == CI_LINEARRGB ? ColorSpaceLinearRGB : ColorSpaceDeviceRGB);
         builder->add(AtomicString(effectElement->result()->currentValue()->value()), effect);
     }
+    filter->setLastEffect(builder->lastEffect());
     return builder.release();
 }
 

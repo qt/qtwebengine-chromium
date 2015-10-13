@@ -5,12 +5,14 @@
 #ifndef CONTENT_CHILD_PUSH_MESSAGING_PUSH_PROVIDER_H_
 #define CONTENT_CHILD_PUSH_MESSAGING_PUSH_PROVIDER_H_
 
+#include <stdint.h>
 #include <string>
+#include <vector>
 
 #include "base/id_map.h"
 #include "base/memory/ref_counted.h"
 #include "content/child/push_messaging/push_dispatcher.h"
-#include "content/child/worker_task_runner.h"
+#include "content/public/child/worker_thread.h"
 #include "content/public/common/push_messaging_status.h"
 #include "third_party/WebKit/public/platform/modules/push_messaging/WebPushError.h"
 #include "third_party/WebKit/public/platform/modules/push_messaging/WebPushProvider.h"
@@ -26,7 +28,7 @@ namespace content {
 class ThreadSafeSender;
 
 class PushProvider : public blink::WebPushProvider,
-                     public WorkerTaskRunner::Observer {
+                     public WorkerThread::Observer {
  public:
   ~PushProvider() override;
 
@@ -36,24 +38,24 @@ class PushProvider : public blink::WebPushProvider,
       ThreadSafeSender* thread_safe_sender,
       PushDispatcher* push_dispatcher);
 
-  // WorkerTaskRunner::Observer implementation.
-  void OnWorkerRunLoopStopped() override;
+  // WorkerThread::Observer implementation.
+  void WillStopCurrentWorkerThread() override;
 
   // blink::WebPushProvider implementation.
-  virtual void subscribe(
+  void subscribe(
       blink::WebServiceWorkerRegistration* service_worker_registration,
       const blink::WebPushSubscriptionOptions& options,
-      blink::WebPushSubscriptionCallbacks* callbacks);
-  virtual void unsubscribe(
+      blink::WebPushSubscriptionCallbacks* callbacks) override;
+  void unsubscribe(
       blink::WebServiceWorkerRegistration* service_worker_registration,
-      blink::WebPushUnsubscribeCallbacks* callbacks);
-  virtual void getSubscription(
+      blink::WebPushUnsubscribeCallbacks* callbacks) override;
+  void getSubscription(
       blink::WebServiceWorkerRegistration* service_worker_registration,
-      blink::WebPushSubscriptionCallbacks* callbacks);
-  virtual void getPermissionStatus(
+      blink::WebPushSubscriptionCallbacks* callbacks) override;
+  void getPermissionStatus(
       blink::WebServiceWorkerRegistration* service_worker_registration,
       const blink::WebPushSubscriptionOptions& options,
-      blink::WebPushPermissionStatusCallbacks* callbacks);
+      blink::WebPushPermissionStatusCallbacks* callbacks) override;
 
   // Called by the PushDispatcher.
   bool OnMessageReceived(const IPC::Message& message);
@@ -64,7 +66,8 @@ class PushProvider : public blink::WebPushProvider,
 
   // IPC message handlers.
   void OnSubscribeFromWorkerSuccess(int request_id,
-                                    const GURL& endpoint);
+                                    const GURL& endpoint,
+                                    const std::vector<uint8_t>& curve25519dh);
   void OnSubscribeFromWorkerError(int request_id,
                                   PushRegistrationStatus status);
   void OnUnsubscribeSuccess(int request_id, bool did_unsubscribe);
@@ -72,7 +75,8 @@ class PushProvider : public blink::WebPushProvider,
                           blink::WebPushError::ErrorType error_type,
                           const std::string& error_message);
   void OnGetRegistrationSuccess(int request_id,
-                                const GURL& endpoint);
+                                const GURL& endpoint,
+                                const std::vector<uint8_t>& curve25519dh);
   void OnGetRegistrationError(int request_id, PushGetRegistrationStatus status);
   void OnGetPermissionStatusSuccess(int request_id,
                                     blink::WebPushPermissionStatus status);

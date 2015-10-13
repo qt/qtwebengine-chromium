@@ -46,7 +46,7 @@ class ChromeClient;
 class DragData;
 class ExceptionState;
 class FileList;
-class FormDataList;
+class FormData;
 
 // An InputType object represents the type-specific part of an HTMLInputElement.
 // Do not expose instances of InputType and classes derived from it to classes
@@ -84,7 +84,7 @@ public:
     virtual FormControlState saveFormControlState() const;
     virtual void restoreFormControlState(const FormControlState&);
     virtual bool isFormDataAppendable() const;
-    virtual bool appendFormData(FormDataList&, bool multipart) const;
+    virtual void appendToFormData(FormData&) const;
     virtual String resultForDialogSubmit() const;
 
     // DOM property functions
@@ -97,6 +97,7 @@ public:
     virtual double valueAsDouble() const;
     virtual void setValueAsDouble(double, TextFieldEventBehavior, ExceptionState&) const;
     virtual void setValueAsDecimal(const Decimal&, TextFieldEventBehavior, ExceptionState&) const;
+    virtual void readingChecked() const;
 
     // Validation functions
     virtual String validationMessage() const;

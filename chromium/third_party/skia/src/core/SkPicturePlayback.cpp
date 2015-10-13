@@ -44,7 +44,7 @@ static const SkRect* get_rect_ptr(SkReader32* reader) {
     if (reader->readBool()) {
         return &reader->skipT<SkRect>();
     } else {
-        return NULL;
+        return nullptr;
     }
 }
 
@@ -164,13 +164,13 @@ void SkPicturePlayback::handleOp(SkReader32* reader,
             const int count = reader->readU32();
             const SkRSXform* xform = (const SkRSXform*)reader->skip(count * sizeof(SkRSXform));
             const SkRect* tex = (const SkRect*)reader->skip(count * sizeof(SkRect));
-            const SkColor* colors = NULL;
+            const SkColor* colors = nullptr;
             SkXfermode::Mode mode = SkXfermode::kDst_Mode;
             if (flags & DRAW_ATLAS_HAS_COLORS) {
                 colors = (const SkColor*)reader->skip(count * sizeof(SkColor));
                 mode = (SkXfermode::Mode)reader->readU32();
             }
-            const SkRect* cull = NULL;
+            const SkRect* cull = nullptr;
             if (flags & DRAW_ATLAS_HAS_CULL) {
                 cull = (const SkRect*)reader->skip(sizeof(SkRect));
             }
@@ -182,14 +182,13 @@ void SkPicturePlayback::handleOp(SkReader32* reader,
             const SkPoint& loc = reader->skipT<SkPoint>();
             canvas->drawBitmap(bitmap, loc.fX, loc.fY, paint);
         } break;
-        case DRAW_BITMAP_RECT_TO_RECT: {
+        case DRAW_BITMAP_RECT: {
             const SkPaint* paint = fPictureData->getPaint(reader);
             const SkBitmap bitmap = shallow_copy(fPictureData->getBitmap(reader));
             const SkRect* src = get_rect_ptr(reader);   // may be null
             const SkRect& dst = reader->skipT<SkRect>();     // required
-            SkCanvas::DrawBitmapRectFlags flags;
-            flags = (SkCanvas::DrawBitmapRectFlags) reader->readInt();
-            canvas->drawBitmapRectToRect(bitmap, src, dst, paint, flags);
+            SkCanvas::SrcRectConstraint constraint = (SkCanvas::SrcRectConstraint)reader->readInt();
+            canvas->legacy_drawBitmapRect(bitmap, src, dst, paint, constraint);
         } break;
         case DRAW_BITMAP_MATRIX: {
             const SkPaint* paint = fPictureData->getPaint(reader);
@@ -249,12 +248,19 @@ void SkPicturePlayback::handleOp(SkReader32* reader,
             const SkRect& dst = reader->skipT<SkRect>();
             canvas->drawImageNine(image, center, dst, paint);
         } break;
+        case DRAW_IMAGE_RECT_STRICT:
         case DRAW_IMAGE_RECT: {
             const SkPaint* paint = fPictureData->getPaint(reader);
             const SkImage* image = fPictureData->getImage(reader);
             const SkRect* src = get_rect_ptr(reader);   // may be null
             const SkRect& dst = reader->skipT<SkRect>();     // required
-            canvas->drawImageRect(image, src, dst, paint);
+            // DRAW_IMAGE_RECT_STRICT assumes this constraint, and doesn't store it
+            SkCanvas::SrcRectConstraint constraint = SkCanvas::kStrict_SrcRectConstraint;
+            if (DRAW_IMAGE_RECT == op) {
+                // newer op-code stores the constraint explicitly
+                constraint = (SkCanvas::SrcRectConstraint)reader->readInt();
+            }
+            canvas->legacy_drawImageRect(image, src, dst, paint, constraint);
         } break;
         case DRAW_OVAL: {
             const SkPaint& paint = *fPictureData->getPaint(reader);
@@ -269,11 +275,11 @@ void SkPicturePlayback::handleOp(SkReader32* reader,
             const SkPoint* cubics = (const SkPoint*)reader->skip(SkPatchUtils::kNumCtrlPts *
                                                                  sizeof(SkPoint));
             uint32_t flag = reader->readInt();
-            const SkColor* colors = NULL;
+            const SkColor* colors = nullptr;
             if (flag & DRAW_VERTICES_HAS_COLORS) {
                 colors = (const SkColor*)reader->skip(SkPatchUtils::kNumCorners * sizeof(SkColor));
             }
-            const SkPoint* texCoords = NULL;
+            const SkPoint* texCoords = nullptr;
             if (flag & DRAW_VERTICES_HAS_TEXS) {
                 texCoords = (const SkPoint*)reader->skip(SkPatchUtils::kNumCorners *
                                                          sizeof(SkPoint));
@@ -412,9 +418,9 @@ void SkPicturePlayback::handleOp(SkReader32* reader,
             SkCanvas::VertexMode vmode = (SkCanvas::VertexMode)reader->readInt();
             int vCount = reader->readInt();
             const SkPoint* verts = (const SkPoint*)reader->skip(vCount * sizeof(SkPoint));
-            const SkPoint* texs = NULL;
-            const SkColor* colors = NULL;
-            const uint16_t* indices = NULL;
+            const SkPoint* texs = nullptr;
+            const SkColor* colors = nullptr;
+            const uint16_t* indices = nullptr;
             int iCount = 0;
             if (flags & DRAW_VERTICES_HAS_TEXS) {
                 texs = (const SkPoint*)reader->skip(vCount * sizeof(SkPoint));

@@ -31,27 +31,23 @@ class SVGLinearGradientElement;
 class LayoutSVGResourceLinearGradient final : public LayoutSVGResourceGradient {
 public:
     explicit LayoutSVGResourceLinearGradient(SVGLinearGradientElement*);
-    virtual ~LayoutSVGResourceLinearGradient();
+    ~LayoutSVGResourceLinearGradient() override;
 
-    virtual const char* name() const override { return "LayoutSVGResourceLinearGradient"; }
+    const char* name() const override { return "LayoutSVGResourceLinearGradient"; }
 
     static const LayoutSVGResourceType s_resourceType = LinearGradientResourceType;
-    virtual LayoutSVGResourceType resourceType() const override { return s_resourceType; }
+    LayoutSVGResourceType resourceType() const override { return s_resourceType; }
 
-    virtual SVGUnitTypes::SVGUnitType gradientUnits() const override { return attributes().gradientUnits(); }
-    virtual void calculateGradientTransform(AffineTransform& transform) override { transform = attributes().gradientTransform(); }
-    virtual bool collectGradientAttributes(SVGGradientElement*) override;
-    virtual void buildGradient(GradientData*) const override;
+    SVGUnitTypes::SVGUnitType gradientUnits() const override { return attributes().gradientUnits(); }
+    void calculateGradientTransform(AffineTransform& transform) override { transform = attributes().gradientTransform(); }
+    bool collectGradientAttributes(SVGGradientElement*) override;
+    void buildGradient(GradientData*) const override;
 
     FloatPoint startPoint(const LinearGradientAttributes&) const;
     FloatPoint endPoint(const LinearGradientAttributes&) const;
 
 private:
 #if ENABLE(OILPAN)
-    // FIXME: Oilpan: the LayoutObject hierarchy isn't on the heap, but
-    // the SVG property hierarchy is. And the two meet here, so keep a
-    // persistent reference to the SVG part object by way of a heap-allocated
-    // wrapper object.
     Persistent<LinearGradientAttributesWrapper> m_attributesWrapper;
 
     LinearGradientAttributes& mutableAttributes() { return m_attributesWrapper->attributes(); }

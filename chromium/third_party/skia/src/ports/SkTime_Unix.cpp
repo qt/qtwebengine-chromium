@@ -6,8 +6,8 @@
  * found in the LICENSE file.
  */
 
-
 #include "SkTime.h"
+#include "SkTypes.h"
 
 #include <sys/time.h>
 #include <time.h>
@@ -38,6 +38,6 @@ void SkTime::GetDateTime(DateTime* dt)
 SkMSec SkTime::GetMSecs()
 {
     struct timeval tv;
-    gettimeofday(&tv, NULL);
+    gettimeofday(&tv, nullptr);
     return (SkMSec) (tv.tv_sec * 1000 + tv.tv_usec / 1000 ); // microseconds to milliseconds
 }

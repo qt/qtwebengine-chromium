@@ -7,29 +7,34 @@
 
 #include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
+#include "ui/gfx/buffer_types.h"
 #include "ui/gfx/geometry/size.h"
 #include "ui/ozone/platform/drm/gpu/gbm_buffer_base.h"
-#include "ui/ozone/platform/drm/gpu/screen_manager.h"
 #include "ui/ozone/public/native_pixmap.h"
-#include "ui/ozone/public/surface_factory_ozone.h"
 
 struct gbm_bo;
 
 namespace ui {
 
 class GbmDevice;
+class GbmSurfaceFactory;
 
 class GbmBuffer : public GbmBufferBase {
  public:
   static scoped_refptr<GbmBuffer> CreateBuffer(
       const scoped_refptr<GbmDevice>& gbm,
-      SurfaceFactoryOzone::BufferFormat format,
+      gfx::BufferFormat format,
       const gfx::Size& size,
-      bool scanout);
+      gfx::BufferUsage usage);
+  gfx::BufferUsage GetUsage() const { return usage_; }
 
  private:
-  GbmBuffer(const scoped_refptr<GbmDevice>& gbm, gbm_bo* bo, bool scanout);
+  GbmBuffer(const scoped_refptr<GbmDevice>& gbm,
+            gbm_bo* bo,
+            gfx::BufferUsage usage);
   ~GbmBuffer() override;
+
+  gfx::BufferUsage usage_;
 
   DISALLOW_COPY_AND_ASSIGN(GbmBuffer);
 };
@@ -37,7 +42,7 @@ class GbmBuffer : public GbmBufferBase {
 class GbmPixmap : public NativePixmap {
  public:
   GbmPixmap(const scoped_refptr<GbmBuffer>& buffer,
-            ScreenManager* screen_manager);
+            GbmSurfaceFactory* surface_manager);
   bool Initialize();
   void SetScalingCallback(const ScalingCallback& scaling_callback) override;
   scoped_refptr<NativePixmap> GetScaledPixmap(gfx::Size new_size) override;
@@ -51,6 +56,7 @@ class GbmPixmap : public NativePixmap {
                             gfx::OverlayTransform plane_transform,
                             const gfx::Rect& display_bounds,
                             const gfx::RectF& crop_rect) override;
+  gfx::NativePixmapHandle ExportHandle() override;
 
   scoped_refptr<GbmBuffer> buffer() { return buffer_; }
 
@@ -63,7 +69,7 @@ class GbmPixmap : public NativePixmap {
   scoped_refptr<GbmBuffer> buffer_;
   int dma_buf_ = -1;
 
-  ScreenManager* screen_manager_;  // Not owned.
+  GbmSurfaceFactory* surface_manager_;
 
   ScalingCallback scaling_callback_;
 

@@ -322,8 +322,7 @@ bool WebPluginDelegateProxy::Initialize(
     }
 
     channel_host = PluginChannelHost::GetPluginChannelHost(
-        channel_handle, ChildProcess::current()->io_task_runner(),
-        RenderThreadImpl::current()->GetAttachmentBroker());
+        channel_handle, ChildProcess::current()->io_task_runner());
     if (!channel_host.get()) {
       LOG(ERROR) << "Couldn't get PluginChannelHost";
       continue;
@@ -502,10 +501,7 @@ static void CopySharedMemoryHandleForMessage(
   *handle_out = base::SharedMemory::DuplicateHandle(handle_in);
 #elif defined(OS_WIN)
   // On Windows we need to duplicate the handle for the plugin process.
-  *handle_out = NULL;
-  BrokerDuplicateHandle(handle_in, peer_pid, handle_out,
-                        FILE_MAP_READ | FILE_MAP_WRITE, 0);
-  DCHECK(*handle_out != NULL);
+  BrokerDuplicateSharedMemoryHandle(handle_in, peer_pid, handle_out);
 #else
 #error Shared memory copy not implemented.
 #endif
@@ -609,13 +605,13 @@ void WebPluginDelegateProxy::ResetWindowlessBitmaps() {
   front_buffer_diff_ = gfx::Rect();
 }
 
+#if !defined(OS_WIN)
 static size_t BitmapSizeForPluginRect(const gfx::Rect& plugin_rect) {
   const size_t stride =
       skia::PlatformCanvasStrideForWidth(plugin_rect.width());
   return stride * plugin_rect.height();
 }
 
-#if !defined(OS_WIN)
 bool WebPluginDelegateProxy::CreateLocalBitmap(
     std::vector<uint8>* memory,
     scoped_ptr<skia::PlatformCanvas>* canvas) {
@@ -646,7 +642,8 @@ bool WebPluginDelegateProxy::CreateSharedBitmap(
 #else
   canvas->reset(skia::CreatePlatformCanvas(
       plugin_rect_.width(), plugin_rect_.height(), true,
-      (*memory)->shared_memory()->handle(), skia::RETURN_NULL_ON_FAILURE));
+      (*memory)->shared_memory()->handle().GetHandle(),
+      skia::RETURN_NULL_ON_FAILURE));
 #endif
   return !!canvas->get();
 }
@@ -697,9 +694,9 @@ void WebPluginDelegateProxy::Paint(SkCanvas* canvas,
   SkPaint paint;
   paint.setXfermodeMode(
       transparent_ ? SkXfermode::kSrcATop_Mode : SkXfermode::kSrc_Mode);
-  SkIRect src_rect = gfx::RectToSkIRect(offset_rect);
+  SkRect src_rect = gfx::RectToSkRect(offset_rect);
   canvas->drawBitmapRect(bitmap,
-                         &src_rect,
+                         src_rect,
                          gfx::RectToSkRect(rect),
                          &paint);
 
@@ -911,11 +908,12 @@ void WebPluginDelegateProxy::OnNotifyIMEStatus(int input_type,
   if (!render_view_)
     return;
 
-  render_view_->Send(new ViewHostMsg_TextInputTypeChanged(
-      render_view_->routing_id(),
-      static_cast<ui::TextInputType>(input_type),
-      ui::TEXT_INPUT_MODE_DEFAULT,
-      true, 0));
+  ViewHostMsg_TextInputState_Params params;
+  params.type = static_cast<ui::TextInputType>(input_type);
+  params.mode = ui::TEXT_INPUT_MODE_DEFAULT;
+  params.can_compose_inline = true;
+  render_view_->Send(new ViewHostMsg_TextInputStateChanged(
+      render_view_->routing_id(), params));
 
   ViewHostMsg_SelectionBounds_Params bounds_params;
   bounds_params.anchor_rect = bounds_params.focus_rect = caret_rect;

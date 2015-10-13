@@ -43,6 +43,8 @@
         'dummy/audio_device_dummy.h',
         'dummy/file_audio_device.cc',
         'dummy/file_audio_device.h',
+        'fine_audio_buffer.cc',
+        'fine_audio_buffer.h',
       ],
       'conditions': [
         ['OS=="linux"', {
@@ -93,8 +95,6 @@
             'android/audio_track_jni.h',
             'android/build_info.cc',
             'android/build_info.h',
-            'android/fine_audio_buffer.cc',
-            'android/fine_audio_buffer.h',
             'android/opensles_common.cc',
             'android/opensles_common.h',
             'android/opensles_player.cc',
@@ -103,6 +103,7 @@
             'audio_device_impl.h',
             'ios/audio_device_ios.h',
             'ios/audio_device_ios.mm',
+            'ios/audio_device_not_implemented_ios.mm',
             'linux/alsasymboltable_linux.cc',
             'linux/alsasymboltable_linux.h',
             'linux/audio_device_alsa_linux.cc',
@@ -177,6 +178,7 @@
                     '-framework AudioToolbox',
                     '-framework AVFoundation',
                     '-framework Foundation',
+                    '-framework UIKit',
                   ],
                 },
               },
@@ -234,25 +236,6 @@
           ],
         },
       ], # targets
-      'conditions': [
-        ['test_isolation_mode != "noop"', {
-          'targets': [
-            {
-              'target_name': 'audio_device_tests_run',
-              'type': 'none',
-              'dependencies': [
-                'audio_device_tests',
-              ],
-              'includes': [
-                '../../build/isolate.gypi',
-              ],
-              'sources': [
-                'audio_device_tests.isolate',
-              ],
-            },
-          ],
-        }],
-      ],
     }], # include_tests
   ],
 }

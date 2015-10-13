@@ -43,12 +43,12 @@ LayoutHTMLCanvas::LayoutHTMLCanvas(HTMLCanvasElement* element)
     view()->frameView()->setIsVisuallyNonEmpty();
 }
 
-DeprecatedPaintLayerType LayoutHTMLCanvas::layerTypeRequired() const
+PaintLayerType LayoutHTMLCanvas::layerTypeRequired() const
 {
-    return NormalDeprecatedPaintLayer;
+    return NormalPaintLayer;
 }
 
-void LayoutHTMLCanvas::paintReplaced(const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
+void LayoutHTMLCanvas::paintReplaced(const PaintInfo& paintInfo, const LayoutPoint& paintOffset) const
 {
     HTMLCanvasPainter(*this).paintReplaced(paintInfo, paintOffset);
 }
@@ -96,6 +96,12 @@ CompositingReasons LayoutHTMLCanvas::additionalCompositingReasons() const
     if (toHTMLCanvasElement(node())->shouldBeDirectComposited())
         return CompositingReasonCanvas;
     return CompositingReasonNone;
+}
+
+void LayoutHTMLCanvas::styleDidChange(StyleDifference diff, const ComputedStyle* oldStyle)
+{
+    LayoutReplaced::styleDidChange(diff, oldStyle);
+    toHTMLCanvasElement(node())->styleDidChange(oldStyle, styleRef());
 }
 
 } // namespace blink

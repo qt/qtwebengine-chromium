@@ -8,6 +8,7 @@
 #include "base/memory/weak_ptr.h"
 #include "content/browser/devtools/protocol/devtools_protocol_dispatcher.h"
 #include "content/browser/renderer_host/input/synthetic_gesture.h"
+#include "content/common/input/synthetic_smooth_scroll_gesture_params.h"
 #include "ui/gfx/geometry/size_f.h"
 
 namespace cc {
@@ -84,7 +85,10 @@ class InputHandler {
                                    const int* y_overscroll,
                                    const bool* prevent_fling,
                                    const int* speed,
-                                   const std::string* gesture_source_type);
+                                   const std::string* gesture_source_type,
+                                   const int* repeat_count,
+                                   const int* repeat_delay_ms,
+                                   const std::string* interaction_marker_name);
 
   Response SynthesizeTapGesture(DevToolsCommandId command_id,
                                 int x,
@@ -103,6 +107,20 @@ class InputHandler {
   void SendSynthesizeTapGestureResponse(DevToolsCommandId command_id,
                                         bool send_success,
                                         SyntheticGesture::Result result);
+
+  void SynthesizeRepeatingScroll(
+      SyntheticSmoothScrollGestureParams gesture_params,
+      int repeat_count,
+      base::TimeDelta repeat_delay,
+      std::string interaction_marker_name,
+      DevToolsCommandId command_id);
+
+  void OnScrollFinished(SyntheticSmoothScrollGestureParams gesture_params,
+                        int repeat_count,
+                        base::TimeDelta repeat_delay,
+                        std::string interaction_marker_name,
+                        DevToolsCommandId command_id,
+                        SyntheticGesture::Result result);
 
   RenderWidgetHostImpl* host_;
   scoped_ptr<Client> client_;

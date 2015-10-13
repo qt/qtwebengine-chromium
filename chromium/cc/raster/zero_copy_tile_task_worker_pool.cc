@@ -13,6 +13,7 @@
 #include "cc/raster/raster_buffer.h"
 #include "cc/resources/platform_color.h"
 #include "cc/resources/resource.h"
+#include "ui/gfx/buffer_format_util.h"
 #include "ui/gfx/gpu_memory_buffer.h"
 
 namespace cc {
@@ -29,10 +30,13 @@ class RasterBufferImpl : public RasterBuffer {
                 const gfx::Rect& raster_full_rect,
                 const gfx::Rect& raster_dirty_rect,
                 uint64_t new_content_id,
-                float scale) override {
+                float scale,
+                bool include_images) override {
     gfx::GpuMemoryBuffer* gpu_memory_buffer = lock_.GetGpuMemoryBuffer();
     if (!gpu_memory_buffer)
       return;
+    DCHECK_EQ(
+        1u, gfx::NumberOfPlanesForBufferFormat(gpu_memory_buffer->GetFormat()));
     void* data = NULL;
     bool rv = gpu_memory_buffer->Map(&data);
     DCHECK(rv);
@@ -44,7 +48,7 @@ class RasterBufferImpl : public RasterBuffer {
     TileTaskWorkerPool::PlaybackToMemory(
         data, resource_->format(), resource_->size(),
         static_cast<size_t>(stride), raster_source, raster_full_rect,
-        raster_full_rect, scale);
+        raster_full_rect, scale, include_images);
     gpu_memory_buffer->Unmap();
   }
 
@@ -61,21 +65,24 @@ class RasterBufferImpl : public RasterBuffer {
 scoped_ptr<TileTaskWorkerPool> ZeroCopyTileTaskWorkerPool::Create(
     base::SequencedTaskRunner* task_runner,
     TaskGraphRunner* task_graph_runner,
-    ResourceProvider* resource_provider) {
+    ResourceProvider* resource_provider,
+    bool use_rgba_4444_texture_format) {
   return make_scoped_ptr<TileTaskWorkerPool>(new ZeroCopyTileTaskWorkerPool(
-      task_runner, task_graph_runner, resource_provider));
+      task_runner, task_graph_runner, resource_provider,
+      use_rgba_4444_texture_format));
 }
 
 ZeroCopyTileTaskWorkerPool::ZeroCopyTileTaskWorkerPool(
     base::SequencedTaskRunner* task_runner,
     TaskGraphRunner* task_graph_runner,
-    ResourceProvider* resource_provider)
+    ResourceProvider* resource_provider,
+    bool use_rgba_4444_texture_format)
     : task_runner_(task_runner),
       task_graph_runner_(task_graph_runner),
       namespace_token_(task_graph_runner->GetNamespaceToken()),
       resource_provider_(resource_provider),
-      task_set_finished_weak_ptr_factory_(this) {
-}
+      use_rgba_4444_texture_format_(use_rgba_4444_texture_format),
+      task_set_finished_weak_ptr_factory_(this) {}
 
 ZeroCopyTileTaskWorkerPool::~ZeroCopyTileTaskWorkerPool() {
 }
@@ -171,18 +178,21 @@ void ZeroCopyTileTaskWorkerPool::CheckForCompletedTasks() {
     task->WillComplete();
     task->CompleteOnOriginThread(this);
     task->DidComplete();
-
-    task->RunReplyOnOriginThread();
   }
   completed_tasks_.clear();
 }
 
-ResourceFormat ZeroCopyTileTaskWorkerPool::GetResourceFormat() const {
-  return resource_provider_->best_texture_format();
+ResourceFormat ZeroCopyTileTaskWorkerPool::GetResourceFormat(
+    bool must_support_alpha) const {
+  return use_rgba_4444_texture_format_
+             ? RGBA_4444
+             : resource_provider_->best_texture_format();
 }
 
-bool ZeroCopyTileTaskWorkerPool::GetResourceRequiresSwizzle() const {
-  return !PlatformColor::SameComponentOrder(GetResourceFormat());
+bool ZeroCopyTileTaskWorkerPool::GetResourceRequiresSwizzle(
+    bool must_support_alpha) const {
+  return !PlatformColor::SameComponentOrder(
+      GetResourceFormat(must_support_alpha));
 }
 
 scoped_ptr<RasterBuffer> ZeroCopyTileTaskWorkerPool::AcquireBufferForRaster(

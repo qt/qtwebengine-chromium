@@ -69,7 +69,6 @@ IPC_ENUM_TRAITS_MAX_VALUE(MediaPlayerHostMsg_Initialize_Type,
 // Parameters to describe a media player
 IPC_STRUCT_BEGIN(MediaPlayerHostMsg_Initialize_Params)
   IPC_STRUCT_MEMBER(MediaPlayerHostMsg_Initialize_Type, type)
-  IPC_STRUCT_MEMBER(base::SharedMemoryHandle, metafile_data_handle)
   IPC_STRUCT_MEMBER(int, player_id)
   IPC_STRUCT_MEMBER(int, demuxer_client_id)
   IPC_STRUCT_MEMBER(GURL, url)

@@ -19,13 +19,13 @@ class CONTENT_EXPORT BrowserAccessibilityManagerWin
     : public BrowserAccessibilityManager {
  public:
   BrowserAccessibilityManagerWin(
-      const ui::AXTreeUpdate& initial_tree,
+      const SimpleAXTreeUpdate& initial_tree,
       BrowserAccessibilityDelegate* delegate,
       BrowserAccessibilityFactory* factory = new BrowserAccessibilityFactory());
 
   ~BrowserAccessibilityManagerWin() override;
 
-  static ui::AXTreeUpdate GetEmptyDocument();
+  static SimpleAXTreeUpdate GetEmptyDocument();
 
   // Get the closest containing HWND.
   HWND GetParentHWND();
@@ -76,9 +76,17 @@ class CONTENT_EXPORT BrowserAccessibilityManagerWin
   // browser process) to accessibility ids within this page.
   base::hash_map<long, int32> unique_id_to_ax_id_map_;
 
+  // A mapping from the Windows-specific unique IDs (unique within the
+  // browser process) to the AXTreeID that contains this unique ID.
+  base::hash_map<long, AXTreeIDRegistry::AXTreeID> unique_id_to_ax_tree_id_map_;
+
   // Set to true if we need to fire a focus event on the root as soon as
   // possible.
   bool focus_event_on_root_needed_;
+
+  // A flag to keep track of if we're inside the OnWindowFocused call stack
+  // so we don't keep calling it recursively.
+  bool inside_on_window_focused_;
 
   DISALLOW_COPY_AND_ASSIGN(BrowserAccessibilityManagerWin);
 };

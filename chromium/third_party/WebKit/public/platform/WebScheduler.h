@@ -6,10 +6,12 @@
 #define WebScheduler_h
 
 #include "WebCommon.h"
+#include "public/platform/WebTaskRunner.h"
 #include "public/platform/WebThread.h"
 
 namespace blink {
 
+class WebFrameHostScheduler;
 class WebTraceLocation;
 
 // This class is used to submit tasks and pass other information from Blink to
@@ -56,24 +58,23 @@ public:
     // Takes ownership of |IdleTask|. Can be called from any thread.
     virtual void postIdleTaskAfterWakeup(const WebTraceLocation&, WebThread::IdleTask*) { }
 
-    // Schedule a loading task to be run on the the associated WebThread. Loading
-    // tasks usually have the default priority, but may be deprioritised
-    // when the user is interacting with the device.
-    // Takes ownership of |WebThread::Task|. Can be called from any thread.
-    virtual void postLoadingTask(const WebTraceLocation&, WebThread::Task*) { }
-
-    // Schedule a timer task to be run on the the associated WebThread. Timer Tasks
-    // tasks usually have the default priority, but may be delayed
-    // when the user is interacting with the device.
-    // Takes ownership of |WebThread::Task|. Can be called from any thread.
-    virtual void postTimerTask(const WebTraceLocation&, WebThread::Task*, long long delayMs) {}
-
     // Schedule a timer task to be run on the the associated WebThread. Timer Tasks
     // tasks usually have the default priority, but may be delayed
     // when the user is interacting with the device.
     // |monotonicTime| is in the timebase of WTF::monotonicallyIncreasingTime().
-    // Takes ownership of |WebThread::Task|. Can be called from any thread.
-    virtual void postTimerTaskAt(const WebTraceLocation&, WebThread::Task*, double monotonicTime) {}
+    // Takes ownership of |WebTaskRunner::Task|. Can be called from any thread.
+    // TODO(alexclarke): Move timer throttling for background pages to the
+    // chromium side and remove this.
+    virtual void postTimerTaskAt(const WebTraceLocation&, WebTaskRunner::Task*, double monotonicTime) {}
+
+    // Returns a WebTaskRunner for loading tasks. Can be called from any thread.
+    virtual WebTaskRunner* loadingTaskRunner() { return nullptr; }
+
+    // Returns a WebTaskRunner for timer tasks. Can be called from any thread.
+    virtual WebTaskRunner* timerTaskRunner() { return nullptr; }
+
+    // Creates a new WebFrameHostScheduler. Must be called from the associated WebThread.
+    virtual WebFrameHostScheduler* createFrameHostScheduler() { return nullptr; }
 
     // Suspends the timer queue and increments the timer queue suspension count.
     // May only be called from the main thread.
@@ -83,15 +84,23 @@ public:
     // if the suspension count is zero and the current scheduler policy allows it.
     virtual void resumeTimerQueue() { }
 
+    // Tells the scheduler that a navigation task is pending.
+    // TODO(alexclarke): Long term should this be a task trait?
+    virtual void addPendingNavigation() { }
+
+    // Tells the scheduler that a navigation task is no longer pending.
+    virtual void removePendingNavigation() { }
+
+    // Tells the scheduler that an expected navigation was started.
+    virtual void onNavigationStarted() { }
+
 #ifdef INSIDE_BLINK
     // Helpers for posting bound functions as tasks.
     typedef Function<void(double deadlineSeconds)> IdleTask;
-    typedef Function<void()> Task;
 
     void postIdleTask(const WebTraceLocation&, PassOwnPtr<IdleTask>);
     void postNonNestableIdleTask(const WebTraceLocation&, PassOwnPtr<IdleTask>);
     void postIdleTaskAfterWakeup(const WebTraceLocation&, PassOwnPtr<IdleTask>);
-    void postLoadingTask(const WebTraceLocation&, PassOwnPtr<Task>);
 #endif
 };
 

@@ -144,8 +144,7 @@ ReliableQuicStream::~ReliableQuicStream() {
 }
 
 void ReliableQuicStream::SetFromConfig() {
-  if (FLAGS_quic_send_fec_packet_only_on_fec_alarm &&
-      session_->config()->HasClientSentConnectionOption(kFSTR, perspective_)) {
+  if (session_->config()->HasClientSentConnectionOption(kFSTR, perspective_)) {
     fec_policy_ = FEC_PROTECT_ALWAYS;
   }
 }
@@ -352,7 +351,7 @@ void ReliableQuicStream::MaybeSendBlocked() {
   // WINDOW_UPDATE arrives.
   if (connection_flow_controller_->IsBlocked() &&
       !flow_controller_.IsBlocked()) {
-    session_->MarkWriteBlocked(id(), EffectivePriority());
+    session_->MarkConnectionLevelWriteBlocked(id(), EffectivePriority());
   }
 }
 
@@ -411,10 +410,10 @@ QuicConsumedData ReliableQuicStream::WritevData(
       }
       CloseWriteSide();
     } else if (fin && !consumed_data.fin_consumed) {
-      session_->MarkWriteBlocked(id(), EffectivePriority());
+      session_->MarkConnectionLevelWriteBlocked(id(), EffectivePriority());
     }
   } else {
-    session_->MarkWriteBlocked(id(), EffectivePriority());
+    session_->MarkConnectionLevelWriteBlocked(id(), EffectivePriority());
   }
   return consumed_data;
 }

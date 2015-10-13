@@ -7,7 +7,7 @@
 
 #include "core/css/CSSBorderImageSliceValue.h"
 #include "core/css/CSSPrimitiveValue.h"
-#include "core/css/Rect.h"
+#include "core/css/CSSQuadValue.h"
 #include "core/css/resolver/StyleBuilder.h"
 
 namespace blink {
@@ -32,15 +32,15 @@ public:
         decompose(value);
     }
 
-    OwnPtrWillBeMember<InterpolableValue> interpolableValue;
+    OwnPtr<InterpolableValue> interpolableValue;
     ImageSliceStyleInterpolation::Metadata metadata;
 
 private:
     void decompose(const CSSBorderImageSliceValue& value)
     {
         const size_t kQuadSides = 4;
-        OwnPtrWillBeRawPtr<InterpolableList> interpolableList = InterpolableList::create(kQuadSides);
-        const Quad& quad = *value.slices();
+        OwnPtr<InterpolableList> interpolableList = InterpolableList::create(kQuadSides);
+        const CSSQuadValue& quad = *value.slices();
         interpolableList->set(0, InterpolableNumber::create(quad.top()->getDoubleValue()));
         interpolableList->set(1, InterpolableNumber::create(quad.right()->getDoubleValue()));
         interpolableList->set(2, InterpolableNumber::create(quad.bottom()->getDoubleValue()));
@@ -58,18 +58,17 @@ private:
 PassRefPtrWillBeRawPtr<CSSBorderImageSliceValue> compose(const InterpolableValue& value, const ImageSliceStyleInterpolation::Metadata& metadata)
 {
     const InterpolableList& interpolableList = toInterpolableList(value);
-    CSSPrimitiveValue::UnitType type = metadata.isPercentage ? CSSPrimitiveValue::CSS_PERCENTAGE : CSSPrimitiveValue::CSS_NUMBER;
-    RefPtrWillBeRawPtr<Quad> quad = Quad::create();
-    quad->setTop(CSSPrimitiveValue::create(clampTo<double>(toInterpolableNumber(interpolableList.get(0))->value(), 0), type));
-    quad->setRight(CSSPrimitiveValue::create(clampTo<double>(toInterpolableNumber(interpolableList.get(1))->value(), 0), type));
-    quad->setBottom(CSSPrimitiveValue::create(clampTo<double>(toInterpolableNumber(interpolableList.get(2))->value(), 0), type));
-    quad->setLeft(CSSPrimitiveValue::create(clampTo<double>(toInterpolableNumber(interpolableList.get(3))->value(), 0), type));
-    return CSSBorderImageSliceValue::create(CSSPrimitiveValue::create(quad.release()), metadata.fill);
+    CSSPrimitiveValue::UnitType type = metadata.isPercentage ? CSSPrimitiveValue::UnitType::Percentage : CSSPrimitiveValue::UnitType::Number;
+    RefPtrWillBeRawPtr<CSSPrimitiveValue> top = CSSPrimitiveValue::create(clampTo<double>(toInterpolableNumber(interpolableList.get(0))->value(), 0), type);
+    RefPtrWillBeRawPtr<CSSPrimitiveValue> right = CSSPrimitiveValue::create(clampTo<double>(toInterpolableNumber(interpolableList.get(1))->value(), 0), type);
+    RefPtrWillBeRawPtr<CSSPrimitiveValue> bottom = CSSPrimitiveValue::create(clampTo<double>(toInterpolableNumber(interpolableList.get(2))->value(), 0), type);
+    RefPtrWillBeRawPtr<CSSPrimitiveValue> left = CSSPrimitiveValue::create(clampTo<double>(toInterpolableNumber(interpolableList.get(3))->value(), 0), type);
+    return CSSBorderImageSliceValue::create(CSSQuadValue::create(top.release(), right.release(), bottom.release(), left.release(), CSSQuadValue::SerializeAsQuad), metadata.fill);
 }
 
 } // namespace
 
-PassRefPtrWillBeRawPtr<ImageSliceStyleInterpolation> ImageSliceStyleInterpolation::maybeCreate(const CSSValue& start, const CSSValue& end, CSSPropertyID property)
+PassRefPtr<ImageSliceStyleInterpolation> ImageSliceStyleInterpolation::maybeCreate(const CSSValue& start, const CSSValue& end, CSSPropertyID property)
 {
     if (!start.isBorderImageSliceValue() || !end.isBorderImageSliceValue())
         return nullptr;
@@ -79,7 +78,7 @@ PassRefPtrWillBeRawPtr<ImageSliceStyleInterpolation> ImageSliceStyleInterpolatio
     if (!(startDecompose.metadata == endDecompose.metadata))
         return nullptr;
 
-    return adoptRefWillBeNoop(new ImageSliceStyleInterpolation(
+    return adoptRef(new ImageSliceStyleInterpolation(
         startDecompose.interpolableValue.release(),
         endDecompose.interpolableValue.release(),
         property,
@@ -90,11 +89,6 @@ PassRefPtrWillBeRawPtr<ImageSliceStyleInterpolation> ImageSliceStyleInterpolatio
 void ImageSliceStyleInterpolation::apply(StyleResolverState& state) const
 {
     StyleBuilder::applyProperty(m_id, state, compose(*m_cachedValue, m_metadata).get());
-}
-
-DEFINE_TRACE(ImageSliceStyleInterpolation)
-{
-    StyleInterpolation::trace(visitor);
 }
 
 } // namespace blink

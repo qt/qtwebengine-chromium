@@ -35,6 +35,7 @@
 #include "core/animation/EffectModel.h"
 #include "core/animation/Timing.h"
 #include "platform/animation/TimingFunction.h"
+#include "wtf/Allocator.h"
 #include "wtf/Vector.h"
 
 namespace blink {
@@ -44,11 +45,13 @@ class Element;
 class FloatBox;
 
 class CORE_EXPORT CompositorAnimations {
+    WTF_MAKE_FAST_ALLOCATED(CompositorAnimations);
+    WTF_MAKE_NONCOPYABLE(CompositorAnimations);
 public:
     static CompositorAnimations* instance() { return instance(0); }
     static void setInstanceForTesting(CompositorAnimations* newInstance) { instance(newInstance); }
     static bool isCompositableProperty(CSSPropertyID);
-    static const CSSPropertyID compositableProperties[6];
+    static const CSSPropertyID compositableProperties[7];
 
     virtual bool isCandidateForAnimationOnCompositor(const Timing&, const Element&, const Animation*, const EffectModel&, double animationPlaybackRate);
     virtual void cancelIncompatibleAnimationsOnCompositor(const Element&, const Animation&, const EffectModel&);
@@ -62,18 +65,12 @@ public:
     virtual void attachCompositedLayers(const Element&, const Animation&);
 
     virtual bool getAnimatedBoundingBox(FloatBox&, const EffectModel&, double minValue, double maxValue) const;
+
 protected:
-    CompositorAnimations() { }
+    CompositorAnimations();
 
 private:
-    static CompositorAnimations* instance(CompositorAnimations* newInstance)
-    {
-        static CompositorAnimations* instance = new CompositorAnimations();
-        if (newInstance) {
-            instance = newInstance;
-        }
-        return instance;
-    }
+    static CompositorAnimations* instance(CompositorAnimations* newInstance);
 };
 
 } // namespace blink

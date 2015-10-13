@@ -17,6 +17,7 @@
         '../include/effects',
         '../include/images',
         '../include/ports',
+        '../include/private',
         '../include/utils',
         '../include/utils/win',
         '../src/core',
@@ -65,8 +66,6 @@
         '../include/ports/SkFontMgr_custom.h',
         '../include/ports/SkFontMgr_fontconfig.h',
         '../include/ports/SkFontMgr_indirect.h',
-        '../include/ports/SkMutex_pthread.h',
-        '../include/ports/SkMutex_win.h',
         '../include/ports/SkRemotableFontMgr.h',
       ],
       'sources/': [
@@ -77,29 +76,33 @@
           'sources': [
             '../src/ports/SkFontHost_FreeType.cpp',
             '../src/ports/SkFontHost_FreeType_common.cpp',
+            '../src/ports/SkFontMgr_android.cpp',
+            '../src/ports/SkFontMgr_android_parser.cpp',
+            '../src/ports/SkFontMgr_custom.cpp',
           ],
           'dependencies': [
             'freetype.gyp:freetype',
           ],
-        }],
-        [ 'skia_os in ["linux", "freebsd", "openbsd", "solaris", "chromeos"]', {
           'conditions': [
-            [ 'skia_embedded_fonts', {
+            [ 'skia_os == "android"', {
+              'dependencies': [
+                 'android_deps.gyp:expat',
+              ],
+            }, {
               'link_settings': {
                 'libraries': [
                   '-ldl',
+                  '-lexpat',
                 ],
               },
+            }],
+            [ 'skia_embedded_fonts', {
               'variables': {
                 'embedded_font_data_identifier': 'sk_fonts',
                 'fonts_to_include': [
                   '../resources/fonts/Funkster.ttf',
                 ],
               },
-              'sources': [
-                '../include/ports/SkFontMgr_custom.h',
-                '../src/ports/SkFontMgr_custom.cpp',
-              ],
               'sources/': [['include', '../src/ports/SkFontMgr_custom_embedded_factory.cpp']],
               'actions': [{
                 'action_name': 'generate_embedded_font_data',
@@ -123,21 +126,13 @@
                 'SK_EMBEDDED_FONTS=<(embedded_font_data_identifier)',
               ],
             }, 'skia_no_fontconfig', {
-              'link_settings': {
-                'libraries': [
-                  '-ldl',
-                ],
-              },
-              'sources': [
-                '../include/ports/SkFontMgr_custom.h',
-                '../src/ports/SkFontMgr_custom.cpp',
-              ],
               'sources/': [['include', '../src/ports/SkFontMgr_custom_directory_factory.cpp']],
+            }, 'skia_os == "android"', {
+              'sources/': [['include', '../src/ports/SkFontMgr_android_factory.cpp']],
             }, {
               'link_settings': {
                 'libraries': [
                   '-lfontconfig',
-                  '-ldl',
                 ],
               },
               'sources': [
@@ -157,9 +152,6 @@
             '../src/ports/SkFontHost_mac.cpp',
             '../src/utils/mac/SkStream_mac.cpp',
           ],
-          'sources!': [
-            '../src/ports/SkFontHost_tables.cpp',
-          ],
         }],
         [ 'skia_os == "ios"', {
           'include_dirs': [
@@ -169,9 +161,6 @@
           'sources': [
             '../src/ports/SkFontHost_mac.cpp',
             '../src/utils/mac/SkStream_mac.cpp',
-          ],
-          'sources!': [
-            '../src/ports/SkFontHost_tables.cpp',
           ],
         }],
         [ 'skia_os == "win"', {
@@ -214,12 +203,6 @@
           ],
           'sources': [
             '../src/ports/SkDebug_android.cpp',
-            '../src/ports/SkFontMgr_android.cpp',
-            '../src/ports/SkFontMgr_android_parser.cpp',
-          ],
-          'sources/': [['include', '../src/ports/SkFontMgr_android_factory.cpp']],
-          'dependencies': [
-             'android_deps.gyp:expat',
           ],
         }],
       ],

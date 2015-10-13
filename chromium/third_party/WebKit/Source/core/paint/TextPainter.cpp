@@ -11,6 +11,7 @@
 #include "core/layout/LayoutTextCombine.h"
 #include "core/layout/line/InlineTextBox.h"
 #include "core/paint/BoxPainter.h"
+#include "core/paint/PaintInfo.h"
 #include "core/style/ComputedStyle.h"
 #include "core/style/ShadowList.h"
 #include "platform/fonts/Font.h"
@@ -100,8 +101,7 @@ void TextPainter::updateGraphicsContext(GraphicsContext* context, const Style& t
             context->setStrokeThickness(textStyle.strokeWidth);
     }
 
-    // Text shadows are disabled when printing. http://crbug.com/258321
-    if (textStyle.shadow && !context->printing()) {
+    if (textStyle.shadow) {
         if (!stateSaver.saved())
             stateSaver.save();
         context->setDrawLooper(textStyle.shadow->createDrawLooper(DrawLooperBuilder::ShadowIgnoresAlpha, textStyle.currentColor, horizontal));
@@ -116,11 +116,12 @@ static Color textColorForWhiteBackground(Color textColor)
 }
 
 // static
-TextPainter::Style TextPainter::textPaintingStyle(LayoutObject& layoutObject, const ComputedStyle& style, bool usesTextAsClip, bool isPrinting)
+TextPainter::Style TextPainter::textPaintingStyle(const LayoutObject& layoutObject, const ComputedStyle& style, const PaintInfo& paintInfo)
 {
     TextPainter::Style textStyle;
+    bool isPrinting = paintInfo.isPrinting();
 
-    if (usesTextAsClip) {
+    if (paintInfo.phase == PaintPhaseTextClip) {
         // When we use the text as a clip, we only care about the alpha, thus we make all the colors black.
         textStyle.currentColor = Color::black;
         textStyle.fillColor = Color::black;
@@ -153,14 +154,16 @@ TextPainter::Style TextPainter::textPaintingStyle(LayoutObject& layoutObject, co
     return textStyle;
 }
 
-TextPainter::Style TextPainter::selectionPaintingStyle(LayoutObject& layoutObject, bool haveSelection, bool usesTextAsClip, bool isPrinting, const TextPainter::Style& textStyle)
+TextPainter::Style TextPainter::selectionPaintingStyle(const LayoutObject& layoutObject, bool haveSelection, const PaintInfo& paintInfo, const TextPainter::Style& textStyle)
 {
     TextPainter::Style selectionStyle = textStyle;
+    bool usesTextAsClip = paintInfo.phase == PaintPhaseTextClip;
+    bool isPrinting = paintInfo.isPrinting();
 
     if (haveSelection) {
         if (!usesTextAsClip) {
-            selectionStyle.fillColor = layoutObject.selectionForegroundColor();
-            selectionStyle.emphasisMarkColor = layoutObject.selectionEmphasisMarkColor();
+            selectionStyle.fillColor = layoutObject.selectionForegroundColor(paintInfo.globalPaintFlags());
+            selectionStyle.emphasisMarkColor = layoutObject.selectionEmphasisMarkColor(paintInfo.globalPaintFlags());
         }
 
         if (const ComputedStyle* pseudoStyle = layoutObject.getCachedPseudoStyle(SELECTION)) {
@@ -199,7 +202,7 @@ template <TextPainter::PaintInternalStep Step>
 void TextPainter::paintInternal(int startOffset, int endOffset, int truncationPoint, TextBlobPtr* cachedTextBlob)
 {
     TextRunPaintInfo textRunPaintInfo(m_run);
-    textRunPaintInfo.bounds = m_textBounds;
+    textRunPaintInfo.bounds = FloatRect(m_textBounds);
     if (startOffset <= endOffset) {
         // FIXME: We should be able to use cachedTextBlob in more cases.
         textRunPaintInfo.cachedTextBlob = cachedTextBlob;
@@ -218,7 +221,7 @@ void TextPainter::paintEmphasisMarkForCombinedText()
     DEFINE_STATIC_LOCAL(TextRun, placeholderTextRun, (&ideographicFullStopCharacter, 1));
     FloatPoint emphasisMarkTextOrigin(m_textBounds.x().toFloat(), m_textBounds.y().toFloat() + m_font.fontMetrics().ascent() + m_emphasisMarkOffset);
     TextRunPaintInfo textRunPaintInfo(placeholderTextRun);
-    textRunPaintInfo.bounds = m_textBounds;
+    textRunPaintInfo.bounds = FloatRect(m_textBounds);
     m_graphicsContext->concatCTM(rotation(m_textBounds, Clockwise));
     m_graphicsContext->drawEmphasisMarks(m_combinedText->originalFont(), textRunPaintInfo, m_emphasisMark, emphasisMarkTextOrigin);
     m_graphicsContext->concatCTM(rotation(m_textBounds, Counterclockwise));

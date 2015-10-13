@@ -194,8 +194,10 @@ void ChromeClassTester::BuildBannedLists() {
   banned_namespaces_.push_back("std");
   banned_namespaces_.push_back("__gnu_cxx");
 
-  banned_namespaces_.push_back("blink");
-  banned_namespaces_.push_back("WTF");
+  if (!options_.enforce_blink) {
+    banned_namespaces_.push_back("blink");
+    banned_namespaces_.push_back("WTF");
+  }
 
   banned_directories_.push_back("/third_party/");
   banned_directories_.push_back("/native_client/");
@@ -222,13 +224,6 @@ void ChromeClassTester::BuildBannedLists() {
   banned_directories_.push_back("/geni/");
   banned_directories_.push_back("/xcodebuild/");
 
-  // You are standing in a mazy of twisty dependencies, all resolved by
-  // putting everything in the header.
-  banned_directories_.push_back("/automation/");
-
-  // Don't check system headers.
-  banned_directories_.push_back("/Developer/");
-
   // Used in really low level threading code that probably shouldn't be out of
   // lined.
   ignored_record_names_.insert("ThreadLocalBoolean");
@@ -243,9 +238,6 @@ void ChromeClassTester::BuildBannedLists() {
   // Has a UNIT_TEST only constructor. Isn't *terribly* complex...
   ignored_record_names_.insert("AutocompleteController");
   ignored_record_names_.insert("HistoryURLProvider");
-
-  // Because of chrome frame
-  ignored_record_names_.insert("ReliabilityTestSuite");
 
   // Used over in the net unittests. A large enough bundle of integers with 1
   // non-pod class member. Probably harmless.

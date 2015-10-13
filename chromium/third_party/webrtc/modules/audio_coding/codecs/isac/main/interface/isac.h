@@ -11,6 +11,8 @@
 #ifndef WEBRTC_MODULES_AUDIO_CODING_CODECS_ISAC_MAIN_INTERFACE_ISAC_H_
 #define WEBRTC_MODULES_AUDIO_CODING_CODECS_ISAC_MAIN_INTERFACE_ISAC_H_
 
+#include <stddef.h>
+
 #include "webrtc/modules/audio_coding/codecs/isac/bandwidth_info.h"
 #include "webrtc/typedefs.h"
 
@@ -155,15 +157,9 @@ extern "C" {
    *
    * Input:
    *        - ISAC_main_inst    : ISAC instance.
-   *
-   * Return value
-   *                            : 0 - Ok
-   *                             -1 - Error
    */
 
-  int16_t WebRtcIsac_DecoderInit(
-      ISACStruct* ISAC_main_inst);
-
+  void WebRtcIsac_DecoderInit(ISACStruct* ISAC_main_inst);
 
   /******************************************************************************
    * WebRtcIsac_UpdateBwEstimate(...)
@@ -186,7 +182,7 @@ extern "C" {
   int16_t WebRtcIsac_UpdateBwEstimate(
       ISACStruct*         ISAC_main_inst,
       const uint8_t* encoded,
-      int32_t         packet_size,
+      size_t         packet_size,
       uint16_t        rtp_seq_number,
       uint32_t        send_ts,
       uint32_t        arr_ts);
@@ -215,7 +211,7 @@ extern "C" {
   int WebRtcIsac_Decode(
       ISACStruct*           ISAC_main_inst,
       const uint8_t* encoded,
-      int16_t         len,
+      size_t         len,
       int16_t*        decoded,
       int16_t*        speechType);
 
@@ -235,14 +231,13 @@ extern "C" {
    * Output:
    *        - decoded           : The decoded vector.
    *
-   * Return value               : >0 - number of samples in decoded PLC vector
-   *                              -1 - Error
+   * Return value               : Number of samples in decoded PLC vector
    */
 
-  int16_t WebRtcIsac_DecodePlc(
+  size_t WebRtcIsac_DecodePlc(
       ISACStruct*  ISAC_main_inst,
       int16_t* decoded,
-      int16_t  noOfLostFrames);
+      size_t  noOfLostFrames);
 
 
   /******************************************************************************
@@ -269,6 +264,8 @@ extern "C" {
       int32_t rate,
       int framesize);
 
+  void WebRtcIsac_SetInitialBweBottleneck(ISACStruct* ISAC_main_inst,
+                                          int bottleneck_bits_per_second);
 
   /******************************************************************************
    * WebRtcIsac_ControlBwe(...)
@@ -702,16 +699,21 @@ extern "C" {
   int WebRtcIsac_DecodeRcu(
       ISACStruct*           ISAC_main_inst,
       const uint8_t* encoded,
-      int16_t         len,
+      size_t         len,
       int16_t*        decoded,
       int16_t*        speechType);
 
-  /* Fills in an IsacBandwidthInfo struct. */
+  /* Fills in an IsacBandwidthInfo struct. |inst| should be a decoder. */
   void WebRtcIsac_GetBandwidthInfo(ISACStruct* inst, IsacBandwidthInfo* bwinfo);
 
-  /* Uses the values from an IsacBandwidthInfo struct. */
+  /* Uses the values from an IsacBandwidthInfo struct. |inst| should be an
+     encoder. */
   void WebRtcIsac_SetBandwidthInfo(ISACStruct* inst,
                                    const IsacBandwidthInfo* bwinfo);
+
+  /* If |inst| is a decoder but not an encoder: tell it what sample rate the
+     encoder is using, for bandwidth estimation purposes. */
+  void WebRtcIsac_SetEncSampRateInDecoder(ISACStruct* inst, int sample_rate_hz);
 
 #if defined(__cplusplus)
 }

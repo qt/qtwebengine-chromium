@@ -23,9 +23,7 @@ const int kFeedbackIntervalMs = 50;
 FullBweSender::FullBweSender(int kbps, BitrateObserver* observer, Clock* clock)
     : bitrate_controller_(
           BitrateController::CreateBitrateController(clock, observer)),
-      rbe_(new RemoteBitrateEstimatorAbsSendTime(this,
-                                                 clock,
-                                                 1000 * kMinBitrateKbps)),
+      rbe_(new RemoteBitrateEstimatorAbsSendTime(this, clock)),
       feedback_observer_(bitrate_controller_->CreateRtcpBandwidthObserver()),
       clock_(clock),
       send_time_history_(10000),
@@ -36,6 +34,7 @@ FullBweSender::FullBweSender(int kbps, BitrateObserver* observer, Clock* clock)
   bitrate_controller_->SetStartBitrate(1000 * kbps);
   bitrate_controller_->SetMinMaxBitrate(1000 * kMinBitrateKbps,
                                         1000 * kMaxBitrateKbps);
+  rbe_->SetMinBitrate(1000 * kMinBitrateKbps);
 }
 
 FullBweSender::~FullBweSender() {
@@ -50,18 +49,16 @@ void FullBweSender::GiveFeedback(const FeedbackPacket& feedback) {
       static_cast<const SendSideBweFeedback&>(feedback);
   if (fb.packet_feedback_vector().empty())
     return;
-  // TODO(sprang): Unconstify PacketInfo so we don't need temp copy?
   std::vector<PacketInfo> packet_feedback_vector(fb.packet_feedback_vector());
-  for (PacketInfo& packet : packet_feedback_vector) {
-    if (!send_time_history_.GetSendTime(packet.sequence_number,
-                                        &packet.send_time_ms, true)) {
+  for (PacketInfo& packet_info : packet_feedback_vector) {
+    if (!send_time_history_.GetInfo(&packet_info, true)) {
       LOG(LS_WARNING) << "Ack arrived too late.";
     }
   }
 
   int64_t rtt_ms =
       clock_->TimeInMilliseconds() - feedback.latest_send_time_ms();
-  rbe_->OnRttUpdate(rtt_ms);
+  rbe_->OnRttUpdate(rtt_ms, rtt_ms);
   BWE_TEST_LOGGING_PLOT(1, "RTT", clock_->TimeInMilliseconds(), rtt_ms);
 
   rbe_->IncomingPacketFeedbackVector(packet_feedback_vector);
@@ -95,9 +92,10 @@ void FullBweSender::OnPacketsSent(const Packets& packets) {
   for (Packet* packet : packets) {
     if (packet->GetPacketType() == Packet::kMedia) {
       MediaPacket* media_packet = static_cast<MediaPacket*>(packet);
-      send_time_history_.AddAndRemoveOldSendTimes(
-          media_packet->header().sequenceNumber,
-          media_packet->GetAbsSendTimeInMs());
+      PacketInfo info(0, media_packet->sender_timestamp_ms(),
+                      media_packet->header().sequenceNumber,
+                      media_packet->payload_size(), packet->paced());
+      send_time_history_.AddAndRemoveOld(info);
     }
   }
 }
@@ -127,12 +125,11 @@ SendSideBweReceiver::~SendSideBweReceiver() {
 void SendSideBweReceiver::ReceivePacket(int64_t arrival_time_ms,
                                         const MediaPacket& media_packet) {
   packet_feedback_vector_.push_back(PacketInfo(
-      arrival_time_ms, media_packet.sender_timestamp_us() / 1000,
+      arrival_time_ms, media_packet.sender_timestamp_ms(),
       media_packet.header().sequenceNumber, media_packet.payload_size(), true));
 
-  received_packets_.Insert(media_packet.sequence_number(),
-                           media_packet.send_time_ms(), arrival_time_ms,
-                           media_packet.payload_size());
+  // Log received packet information.
+  BweReceiver::ReceivePacket(arrival_time_ms, media_packet);
 }
 
 FeedbackPacket* SendSideBweReceiver::GetFeedback(int64_t now_ms) {

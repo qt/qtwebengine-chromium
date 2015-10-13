@@ -11,6 +11,7 @@
 #include "base/logging.h"
 #include "base/path_service.h"
 #include "build/build_config.h"
+#include "mojo/shell/capability_filter.h"
 #include "mojo/util/filename_util.h"
 #include "url/gurl.h"
 
@@ -29,15 +30,13 @@ void QuitIfRunning() {
 
 }  // namespace
 
-ShellTestBase::ShellTestBase() {
-}
+ShellTestBase::ShellTestBase() : shell_context_(GetTestAppFilePath()) {}
 
 ShellTestBase::~ShellTestBase() {
 }
 
 void ShellTestBase::SetUp() {
   CHECK(shell_context_.Init());
-  SetUpTestApplications();
 }
 
 void ShellTestBase::TearDown() {
@@ -48,26 +47,24 @@ ScopedMessagePipeHandle ShellTestBase::ConnectToService(
     const GURL& application_url,
     const std::string& service_name) {
   ServiceProviderPtr services;
-  mojo::URLRequestPtr request(mojo::URLRequest::New());
-  request->url = mojo::String::From(application_url.spec());
-  shell_context_.application_manager()->ConnectToApplication(
-      request.Pass(), std::string(), GURL(), GetProxy(&services), nullptr,
-      base::Bind(&QuitIfRunning));
+
+  scoped_ptr<shell::ConnectToApplicationParams> params(
+      new shell::ConnectToApplicationParams);
+  params->SetTarget(shell::Identity(application_url, std::string(),
+                                    shell::GetPermissiveCapabilityFilter()));
+  params->set_services(GetProxy(&services));
+  params->set_on_application_end(base::Bind(&QuitIfRunning));
+  shell_context_.application_manager()->ConnectToApplication(params.Pass());
   MessagePipe pipe;
   services->ConnectToService(service_name, pipe.handle1.Pass());
   return pipe.handle0.Pass();
 }
 
 #if !defined(OS_ANDROID)
-void ShellTestBase::SetUpTestApplications() {
-  // Set the URLResolver origin to be the same as the base file path for
-  // local files. This is primarily for test convenience, so that references
-  // to unknown mojo: urls that do not have specific local file or custom
-  // mappings registered on the URL resolver are treated as shared libraries.
-  base::FilePath service_dir;
-  CHECK(PathService::Get(base::DIR_MODULE, &service_dir));
-  shell_context_.url_resolver()->SetMojoBaseURL(
-      util::FilePathToFileURL(service_dir));
+base::FilePath ShellTestBase::GetTestAppFilePath() const {
+  base::FilePath shell_dir;
+  PathService::Get(base::DIR_MODULE, &shell_dir);
+  return shell_dir;
 }
 #endif
 

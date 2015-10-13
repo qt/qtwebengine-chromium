@@ -63,7 +63,7 @@ struct OZONE_EXPORT HardwareDisplayPlaneList {
   std::vector<PageFlipInfo> legacy_page_flips;
 
 #if defined(USE_DRM_ATOMIC)
-  ScopedDrmPropertySetPtr atomic_property_set;
+  ScopedDrmAtomicReqPtr atomic_property_set;
 #endif  // defined(USE_DRM_ATOMIC)
 };
 
@@ -90,14 +90,12 @@ class OZONE_EXPORT HardwareDisplayPlaneManager {
 
   // Commit the plane states in |plane_list|.
   virtual bool Commit(HardwareDisplayPlaneList* plane_list,
-                      bool is_sync,
                       bool test_only) = 0;
 
-  // Set all planes in |plane_list| owned by |crtc_id| to free.
-  static void ResetPlanes(HardwareDisplayPlaneList* plane_list,
-                          uint32_t crtc_id);
-
   const ScopedVector<HardwareDisplayPlane>& planes() { return planes_; }
+
+  std::vector<uint32_t> GetCompatibleHardwarePlaneIds(const OverlayPlane& plane,
+                                                      uint32_t crtc_id) const;
 
  protected:
   virtual bool SetPlaneData(HardwareDisplayPlaneList* plane_list,
@@ -112,10 +110,18 @@ class OZONE_EXPORT HardwareDisplayPlaneManager {
 
   // Finds the plane located at or after |*index| that is not in use and can
   // be used with |crtc_index|.
-  HardwareDisplayPlane* FindNextUnusedPlane(size_t* index, uint32_t crtc_index);
+  HardwareDisplayPlane* FindNextUnusedPlane(size_t* index,
+                                            uint32_t crtc_index,
+                                            const OverlayPlane& overlay) const;
 
   // Convert |crtc_id| into an index, returning -1 if the ID couldn't be found.
-  int LookupCrtcIndex(uint32_t crtc_id);
+  int LookupCrtcIndex(uint32_t crtc_id) const;
+
+  // Returns true if |plane| can support |overlay| and compatible with
+  // |crtc_index|.
+  bool IsCompatible(HardwareDisplayPlane* plane,
+                    const OverlayPlane& overlay,
+                    uint32_t crtc_index) const;
 
   // Object containing the connection to the graphics device and wraps the API
   // calls to control it. Not owned.

@@ -251,7 +251,7 @@ bool MutableStylePropertySet::setProperty(CSSPropertyID unresolvedProperty, cons
 
     // When replacing an existing property value, this moves the property to the end of the list.
     // Firefox preserves the position, and MSIE moves the property to the beginning.
-    return CSSParser::parseValue(this, unresolvedProperty, value, important, cssParserMode(), contextStyleSheet);
+    return CSSParser::parseValue(this, unresolvedProperty, value, important, contextStyleSheet);
 }
 
 void MutableStylePropertySet::setProperty(CSSPropertyID propertyID, PassRefPtrWillBeRawPtr<CSSValue> prpValue, bool important)
@@ -388,7 +388,7 @@ CSSProperty* MutableStylePropertySet::findCSSPropertyWithID(CSSPropertyID proper
 {
     int foundPropertyIndex = findPropertyIndex(propertyID);
     if (foundPropertyIndex == -1)
-        return 0;
+        return nullptr;
     return &m_propertyVector.at(foundPropertyIndex);
 }
 

@@ -33,7 +33,7 @@ class FineAudioBuffer;
 //
 // An instance must be created and destroyed on one and the same thread.
 // All public methods must also be called on the same thread. A thread checker
-// will DCHECK if any method is called on an invalid thread. Decoded audio
+// will RTC_DCHECK if any method is called on an invalid thread. Decoded audio
 // buffers are requested on a dedicated internal thread managed by the OpenSL
 // ES layer.
 //
@@ -96,7 +96,7 @@ class OpenSLESPlayer {
   // Configures the SL_DATAFORMAT_PCM structure.
   SLDataFormat_PCM CreatePCMConfiguration(int channels,
                                           int sample_rate,
-                                          int bits_per_sample);
+                                          size_t bits_per_sample);
 
   // Allocate memory for audio buffers which will be used to render audio
   // via the SLAndroidSimpleBufferQueueItf interface.
@@ -145,7 +145,7 @@ class OpenSLESPlayer {
   // Number of bytes per audio buffer in each |audio_buffers_[i]|.
   // Typical sizes are 480 or 512 bytes corresponding to native output buffer
   // sizes of 240 or 256 audio frames respectively.
-  int bytes_per_buffer_;
+  size_t bytes_per_buffer_;
 
   // Queue of audio buffers to be used by the player object for rendering
   // audio. They will be used in a Round-robin way and the size of each buffer

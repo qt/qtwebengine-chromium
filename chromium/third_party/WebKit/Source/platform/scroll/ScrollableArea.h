@@ -46,6 +46,7 @@ class PlatformWheelEvent;
 class ProgrammaticScrollAnimator;
 struct ScrollAlignment;
 class ScrollAnimator;
+class WebCompositorAnimationTimeline;
 
 enum ScrollBehavior {
     ScrollBehaviorAuto,
@@ -95,13 +96,7 @@ public:
     // element.
     virtual LayoutRect scrollIntoView(const LayoutRect& rectInContent, const ScrollAlignment& alignX, const ScrollAlignment& alignY);
 
-    // Scrolls the area so that the given rect, given in the area's content coordinates, such that it's
-    // cenetered in the second rect, which is given relative to the area's origin.
-    void scrollIntoRect(const LayoutRect& rectInContent, const FloatRect& targetRectInFrame);
-
     static bool scrollBehaviorFromString(const String&, ScrollBehavior&);
-
-    virtual ScrollResult handleWheel(const PlatformWheelEvent&);
 
     bool inLiveResize() const { return m_inLiveResize; }
     void willStartLiveResize();
@@ -202,7 +197,7 @@ public:
 
     virtual bool shouldSuspendScrollAnimations() const { return true; }
     virtual void scrollbarStyleChanged() { }
-
+    virtual void scrollbarVisibilityChanged() { }
     virtual bool scrollbarsCanBeActive() const = 0;
 
     // Returns the bounding box of this scrollable area, in the coordinate system of the enclosing scroll view.
@@ -268,7 +263,7 @@ public:
     bool hasLayerForVerticalScrollbar() const;
     bool hasLayerForScrollCorner() const;
 
-    void layerForScrollingDidChange();
+    void layerForScrollingDidChange(WebCompositorAnimationTimeline*);
 
     void cancelScrollAnimation();
     void cancelProgrammaticScrollAnimation();

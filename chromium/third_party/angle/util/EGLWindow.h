@@ -7,19 +7,16 @@
 #ifndef UTIL_EGLWINDOW_H_
 #define UTIL_EGLWINDOW_H_
 
-#define GL_GLEXT_PROTOTYPES
+#include <list>
+#include <memory>
+#include <stdint.h>
+#include <string>
 
-#include <GLES3/gl3.h>
-#include <GLES3/gl3ext.h>
 #include <GLES2/gl2.h>
 #include <GLES2/gl2ext.h>
+#include <GLES3/gl3.h>
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
-
-#include <string>
-#include <list>
-#include <cstdint>
-#include <memory>
 
 #include "common/angleutils.h"
 
@@ -49,13 +46,12 @@ bool operator==(const EGLPlatformParameters &a, const EGLPlatformParameters &b);
 class EGLWindow : angle::NonCopyable
 {
   public:
-    EGLWindow(size_t width, size_t height, EGLint glesMajorVersion, const EGLPlatformParameters &platform);
+    EGLWindow(EGLint glesMajorVersion,
+              EGLint glesMinorVersion,
+              const EGLPlatformParameters &platform);
 
     ~EGLWindow();
 
-    void setClientVersion(EGLint glesMajorVersion) { mClientVersion = glesMajorVersion; }
-    void setWidth(size_t width) { mWidth = width; }
-    void setHeight(size_t height) { mHeight = height; }
     void setConfigRedBits(int bits) { mRedBits = bits; }
     void setConfigGreenBits(int bits) { mGreenBits = bits; }
     void setConfigBlueBits(int bits) { mBlueBits = bits; }
@@ -69,14 +65,13 @@ class EGLWindow : angle::NonCopyable
 
     void swap();
 
-    EGLint getClientVersion() const { return mClientVersion; }
+    EGLint getClientMajorVersion() const { return mClientMajorVersion; }
+    EGLint getClientMinorVersion() const { return mClientMinorVersion; }
     const EGLPlatformParameters &getPlatform() const { return mPlatform; }
     EGLConfig getConfig() const;
     EGLDisplay getDisplay() const;
     EGLSurface getSurface() const;
     EGLContext getContext() const;
-    size_t getWidth() const { return mWidth; }
-    size_t getHeight() const { return mHeight; }
     int getConfigRedBits() const { return mRedBits; }
     int getConfigGreenBits() const { return mGreenBits; }
     int getConfigBlueBits() const { return mBlueBits; }
@@ -96,10 +91,9 @@ class EGLWindow : angle::NonCopyable
     EGLSurface mSurface;
     EGLContext mContext;
 
-    EGLint mClientVersion;
+    EGLint mClientMajorVersion;
+    EGLint mClientMinorVersion;
     EGLPlatformParameters mPlatform;
-    size_t mWidth;
-    size_t mHeight;
     int mRedBits;
     int mGreenBits;
     int mBlueBits;

@@ -59,8 +59,9 @@ class MockGLES2Decoder : public GLES2Decoder {
   MOCK_METHOD0(GetContextGroup, ContextGroup*());
   MOCK_METHOD0(GetContextState, const ContextState*());
   MOCK_METHOD0(GetCapabilities, Capabilities());
-  MOCK_METHOD1(ProcessPendingQueries, bool(bool));
-  MOCK_METHOD0(HasMoreIdleWork, bool());
+  MOCK_CONST_METHOD0(HasPendingQueries, bool());
+  MOCK_METHOD1(ProcessPendingQueries, void(bool));
+  MOCK_CONST_METHOD0(HasMoreIdleWork, bool());
   MOCK_METHOD0(PerformIdleWork, void());
   MOCK_METHOD1(RestoreState, void(const ContextState* prev_state));
   MOCK_CONST_METHOD0(RestoreActiveTexture, void());
@@ -83,13 +84,6 @@ class MockGLES2Decoder : public GLES2Decoder {
   MOCK_METHOD0(GetValuebufferManager, gpu::gles2::ValuebufferManager*());
   MOCK_METHOD1(
       SetResizeCallback, void(const base::Callback<void(gfx::Size, float)>&));
-  MOCK_METHOD0(GetAsyncPixelTransferDelegate,
-      AsyncPixelTransferDelegate*());
-  MOCK_METHOD0(GetAsyncPixelTransferManager,
-      AsyncPixelTransferManager*());
-  MOCK_METHOD0(ResetAsyncPixelTransferManagerForTest, void());
-  MOCK_METHOD1(SetAsyncPixelTransferManagerForTest,
-      void(AsyncPixelTransferManager*));
   MOCK_METHOD1(SetIgnoreCachedStateForTest, void(bool ignore));
   MOCK_METHOD1(SetAllowExit, void(bool allow));
   MOCK_METHOD3(DoCommand, error::Error(unsigned int command,

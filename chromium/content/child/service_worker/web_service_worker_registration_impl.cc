@@ -9,9 +9,29 @@
 #include "content/child/service_worker/web_service_worker_impl.h"
 #include "content/child/service_worker/web_service_worker_provider_impl.h"
 #include "content/common/service_worker/service_worker_types.h"
-#include "third_party/WebKit/public/platform/WebServiceWorkerRegistrationProxy.h"
+#include "third_party/WebKit/public/platform/modules/serviceworker/WebServiceWorkerRegistrationProxy.h"
 
 namespace content {
+
+namespace {
+
+class HandleImpl : public blink::WebServiceWorkerRegistration::Handle {
+ public:
+  explicit HandleImpl(WebServiceWorkerRegistrationImpl* registration)
+      : registration_(registration) {}
+  ~HandleImpl() override {}
+
+  blink::WebServiceWorkerRegistration* registration() override {
+    return registration_.get();
+  }
+
+ private:
+  scoped_refptr<WebServiceWorkerRegistrationImpl> registration_;
+
+  DISALLOW_COPY_AND_ASSIGN(HandleImpl);
+};
+
+}  // namespace
 
 WebServiceWorkerRegistrationImpl::QueuedTask::QueuedTask(
     QueuedTaskType type,
@@ -31,14 +51,6 @@ WebServiceWorkerRegistrationImpl::WebServiceWorkerRegistrationImpl(
       ServiceWorkerDispatcher::GetThreadSpecificInstance();
   DCHECK(dispatcher);
   dispatcher->AddServiceWorkerRegistration(handle_ref_->handle_id(), this);
-}
-
-WebServiceWorkerRegistrationImpl::~WebServiceWorkerRegistrationImpl() {
-  ServiceWorkerDispatcher* dispatcher =
-      ServiceWorkerDispatcher::GetThreadSpecificInstance();
-  if (dispatcher)
-    dispatcher->RemoveServiceWorkerRegistration(handle_ref_->handle_id());
-  ClearQueuedTasks();
 }
 
 void WebServiceWorkerRegistrationImpl::SetInstalling(
@@ -114,14 +126,15 @@ blink::WebURL WebServiceWorkerRegistrationImpl::scope() const {
 }
 
 void WebServiceWorkerRegistrationImpl::update(
-    blink::WebServiceWorkerProvider* provider) {
+    blink::WebServiceWorkerProvider* provider,
+    WebServiceWorkerUpdateCallbacks* callbacks) {
   WebServiceWorkerProviderImpl* provider_impl =
       static_cast<WebServiceWorkerProviderImpl*>(provider);
   ServiceWorkerDispatcher* dispatcher =
       ServiceWorkerDispatcher::GetThreadSpecificInstance();
   DCHECK(dispatcher);
   dispatcher->UpdateServiceWorker(provider_impl->provider_id(),
-                                  registration_id());
+                                  registration_id(), callbacks);
 }
 
 void WebServiceWorkerRegistrationImpl::unregister(
@@ -138,6 +151,24 @@ void WebServiceWorkerRegistrationImpl::unregister(
 
 int64 WebServiceWorkerRegistrationImpl::registration_id() const {
   return handle_ref_->registration_id();
+}
+
+blink::WebPassOwnPtr<blink::WebServiceWorkerRegistration::Handle>
+WebServiceWorkerRegistrationImpl::CreateHandle() {
+  return blink::adoptWebPtr(new HandleImpl(this));
+}
+
+blink::WebServiceWorkerRegistration::Handle*
+WebServiceWorkerRegistrationImpl::CreateLeakyHandle() {
+  return new HandleImpl(this);
+}
+
+WebServiceWorkerRegistrationImpl::~WebServiceWorkerRegistrationImpl() {
+  ServiceWorkerDispatcher* dispatcher =
+      ServiceWorkerDispatcher::GetThreadSpecificInstance();
+  if (dispatcher)
+    dispatcher->RemoveServiceWorkerRegistration(handle_ref_->handle_id());
+  ClearQueuedTasks();
 }
 
 }  // namespace content

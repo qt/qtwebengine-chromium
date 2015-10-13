@@ -99,6 +99,8 @@ void MinidumpFileWriter::InitializeFromSnapshot(
     AddStream(crashpad_info.Pass());
   }
 
+  memory_list->AddFromSnapshot(process_snapshot->ExtraMemory());
+
   AddStream(memory_list.Pass());
 }
 

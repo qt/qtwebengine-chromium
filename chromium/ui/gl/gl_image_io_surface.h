@@ -5,20 +5,28 @@
 #ifndef UI_GL_GL_IMAGE_IO_SURFACE_H_
 #define UI_GL_GL_IMAGE_IO_SURFACE_H_
 
-#include <IOSurface/IOSurfaceAPI.h>
+#include <IOSurface/IOSurface.h>
 
 #include "base/mac/scoped_cftyperef.h"
 #include "base/threading/thread_checker.h"
 #include "ui/gfx/gpu_memory_buffer.h"
 #include "ui/gl/gl_image.h"
 
+#if defined(__OBJC__)
+@class CALayer;
+#else
+typedef void* CALayer;
+#endif
+
 namespace gfx {
 
 class GL_EXPORT GLImageIOSurface : public GLImage {
  public:
-  GLImageIOSurface(const gfx::Size& size, unsigned internalformat);
+  GLImageIOSurface(gfx::GenericSharedMemoryId io_surface_id,
+                   const gfx::Size& size,
+                   unsigned internalformat);
 
-  bool Initialize(IOSurfaceRef io_surface, GpuMemoryBuffer::Format format);
+  bool Initialize(IOSurfaceRef io_surface, BufferFormat format);
 
   // Overridden from GLImage:
   void Destroy(bool have_context) override;
@@ -38,14 +46,23 @@ class GL_EXPORT GLImageIOSurface : public GLImage {
                             OverlayTransform transform,
                             const Rect& bounds_rect,
                             const RectF& crop_rect) override;
+  void OnMemoryDump(base::trace_event::ProcessMemoryDump* pmd,
+                    uint64_t process_tracing_id,
+                    const std::string& dump_name) override;
+
+  base::ScopedCFTypeRef<IOSurfaceRef> io_surface();
+
+  static void SetLayerForWidget(gfx::AcceleratedWidget widget,
+                                CALayer* layer);
 
  protected:
   ~GLImageIOSurface() override;
 
  private:
+  gfx::GenericSharedMemoryId io_surface_id_;
   const gfx::Size size_;
   const unsigned internalformat_;
-  GpuMemoryBuffer::Format format_;
+  BufferFormat format_;
   base::ScopedCFTypeRef<IOSurfaceRef> io_surface_;
   base::ThreadChecker thread_checker_;
 

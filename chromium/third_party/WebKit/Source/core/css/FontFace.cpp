@@ -112,7 +112,7 @@ PassRefPtrWillBeRawPtr<FontFace> FontFace::create(Document* document, const Styl
 
     // Obtain the font-family property and the src property. Both must be defined.
     RefPtrWillBeRawPtr<CSSValue> family = properties.getPropertyCSSValue(CSSPropertyFontFamily);
-    if (!family || !family->isValueList())
+    if (!family || !family->isPrimitiveValue())
         return nullptr;
     RefPtrWillBeRawPtr<CSSValue> src = properties.getPropertyCSSValue(CSSPropertySrc);
     if (!src || !src->isValueList())
@@ -120,7 +120,7 @@ PassRefPtrWillBeRawPtr<FontFace> FontFace::create(Document* document, const Styl
 
     RefPtrWillBeRawPtr<FontFace> fontFace = adoptRefWillBeNoop(new FontFace(document));
 
-    if (fontFace->setFamilyValue(toCSSValueList(family.get()))
+    if (fontFace->setFamilyValue(toCSSPrimitiveValue(family.get()))
         && fontFace->setPropertyFromStyle(properties, CSSPropertyFontStyle)
         && fontFace->setPropertyFromStyle(properties, CSSPropertyFontWeight)
         && fontFace->setPropertyFromStyle(properties, CSSPropertyFontStretch)
@@ -150,7 +150,7 @@ FontFace::FontFace(ExecutionContext* context, const AtomicString& family, const 
     Document* document = toDocument(context);
     setPropertyFromString(document, descriptors.style(), CSSPropertyFontStyle);
     setPropertyFromString(document, descriptors.weight(), CSSPropertyFontWeight);
-    // FIXME: we don't implement 'font-strech' property yet so we can't set the property.
+    setPropertyFromString(document, descriptors.stretch(), CSSPropertyFontStretch);
     setPropertyFromString(document, descriptors.unicodeRange(), CSSPropertyUnicodeRange);
     setPropertyFromString(document, descriptors.variant(), CSSPropertyFontVariant);
     setPropertyFromString(document, descriptors.featureSettings(), CSSPropertyWebkitFontFeatureSettings);
@@ -270,13 +270,8 @@ bool FontFace::setPropertyValue(PassRefPtrWillBeRawPtr<CSSValue> value, CSSPrope
     return true;
 }
 
-bool FontFace::setFamilyValue(CSSValueList* familyList)
+bool FontFace::setFamilyValue(CSSPrimitiveValue* familyValue)
 {
-    // The font-family descriptor has to have exactly one family name.
-    if (familyList->length() != 1)
-        return false;
-
-    CSSPrimitiveValue* familyValue = toCSSPrimitiveValue(familyList->item(0));
     AtomicString family;
     if (familyValue->isCustomIdent()) {
         family = AtomicString(familyValue->getStringValue());
@@ -398,6 +393,41 @@ void FontFace::loadInternal(ExecutionContext* context)
 
 FontTraits FontFace::traits() const
 {
+    FontStretch stretch = FontStretchNormal;
+    if (m_stretch) {
+        if (!m_stretch->isPrimitiveValue())
+            return 0;
+
+        switch (toCSSPrimitiveValue(m_stretch.get())->getValueID()) {
+        case CSSValueUltraCondensed:
+            stretch = FontStretchUltraCondensed;
+            break;
+        case CSSValueExtraCondensed:
+            stretch = FontStretchExtraCondensed;
+            break;
+        case CSSValueCondensed:
+            stretch = FontStretchCondensed;
+            break;
+        case CSSValueSemiCondensed:
+            stretch = FontStretchSemiCondensed;
+            break;
+        case CSSValueSemiExpanded:
+            stretch = FontStretchSemiExpanded;
+            break;
+        case CSSValueExpanded:
+            stretch = FontStretchExpanded;
+            break;
+        case CSSValueExtraExpanded:
+            stretch = FontStretchExtraExpanded;
+            break;
+        case CSSValueUltraExpanded:
+            stretch = FontStretchUltraExpanded;
+            break;
+        default:
+            break;
+        }
+    }
+
     FontStyle style = FontStyleNormal;
     if (m_style) {
         if (!m_style->isPrimitiveValue())
@@ -407,8 +437,10 @@ FontTraits FontFace::traits() const
         case CSSValueNormal:
             style = FontStyleNormal;
             break;
-        case CSSValueItalic:
         case CSSValueOblique:
+            style = FontStyleOblique;
+            break;
+        case CSSValueItalic:
             style = FontStyleItalic;
             break;
         default:
@@ -492,7 +524,7 @@ FontTraits FontFace::traits() const
         }
     }
 
-    return FontTraits(style, variant, weight, FontStretchNormal);
+    return FontTraits(style, variant, weight, stretch);
 }
 
 static PassOwnPtrWillBeRawPtr<CSSFontFace> createCSSFontFace(FontFace* fontFace, CSSValue* unicodeRange)
@@ -527,7 +559,7 @@ void FontFace::initCSSFontFace(Document* document, PassRefPtrWillBeRawPtr<CSSVal
         OwnPtrWillBeRawPtr<CSSFontFaceSource> source = nullptr;
 
         if (!item->isLocal()) {
-            Settings* settings = document ? document->frame() ? document->frame()->settings() : 0 : 0;
+            const Settings* settings = document ? document->settings() : nullptr;
             bool allowDownloading = settings && settings->downloadableBinaryFontsEnabled();
             if (allowDownloading && item->isSupportedFormat() && document) {
                 FontResource* fetched = item->fetch(document);

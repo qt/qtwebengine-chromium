@@ -7,6 +7,7 @@
 
 #include <stdint.h>
 #include <string>
+#include <vector>
 
 #include "base/id_map.h"
 #include "content/public/common/push_messaging_status.h"
@@ -32,17 +33,17 @@ class PushMessagingDispatcher : public RenderFrameObserver,
                                 public blink::WebPushClient {
  public:
   explicit PushMessagingDispatcher(RenderFrame* render_frame);
-  virtual ~PushMessagingDispatcher();
+  ~PushMessagingDispatcher() override;
 
  private:
   // RenderFrame::Observer implementation.
   bool OnMessageReceived(const IPC::Message& message) override;
 
   // WebPushClient implementation.
-  virtual void subscribe(
+  void subscribe(
       blink::WebServiceWorkerRegistration* service_worker_registration,
       const blink::WebPushSubscriptionOptions& options,
-      blink::WebPushSubscriptionCallbacks* callbacks);
+      blink::WebPushSubscriptionCallbacks* callbacks) override;
 
   void DoSubscribe(
       blink::WebServiceWorkerRegistration* service_worker_registration,
@@ -51,7 +52,8 @@ class PushMessagingDispatcher : public RenderFrameObserver,
       const Manifest& manifest);
 
   void OnSubscribeFromDocumentSuccess(int32_t request_id,
-                                      const GURL& endpoint);
+                                      const GURL& endpoint,
+                                      const std::vector<uint8_t>& curve25519dh);
 
   void OnSubscribeFromDocumentError(int32_t request_id,
                                     PushRegistrationStatus status);

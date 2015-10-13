@@ -64,27 +64,30 @@
 #include "platform/network/ContentSecurityPolicyParsers.h"
 #include "platform/weborigin/KURL.h"
 #include "platform/weborigin/SecurityOrigin.h"
+#include "public/platform/Platform.h"
+#include "public/platform/WebScheduler.h"
 #include "public/platform/WebURLRequest.h"
 
 namespace blink {
 
-WorkerGlobalScope::WorkerGlobalScope(const KURL& url, const String& userAgent, WorkerThread* thread, double timeOrigin, const SecurityOrigin* starterOrigin, PassOwnPtrWillBeRawPtr<WorkerClients> workerClients)
+WorkerGlobalScope::WorkerGlobalScope(const KURL& url, const String& userAgent, WorkerThread* thread, double timeOrigin, PassOwnPtr<SecurityOrigin::PrivilegeData> starterOriginPrivilageData, PassOwnPtrWillBeRawPtr<WorkerClients> workerClients)
     : m_url(url)
     , m_userAgent(userAgent)
     , m_v8CacheOptions(V8CacheOptionsDefault)
-    , m_script(adoptPtr(new WorkerScriptController(*this, thread->isolate())))
+    , m_script(WorkerScriptController::create(this, thread->isolate()))
     , m_thread(thread)
     , m_workerInspectorController(adoptRefWillBeNoop(new WorkerInspectorController(this)))
     , m_closing(false)
     , m_eventQueue(WorkerEventQueue::create(this))
     , m_workerClients(workerClients)
+    , m_timers(Platform::current()->currentThread()->scheduler()->timerTaskRunner())
     , m_timeOrigin(timeOrigin)
     , m_messageStorage(ConsoleMessageStorage::create())
     , m_workerExceptionUniqueIdentifier(0)
 {
     setSecurityOrigin(SecurityOrigin::create(url));
-    if (starterOrigin)
-        securityOrigin()->transferPrivilegesFrom(*starterOrigin);
+    if (starterOriginPrivilageData)
+        securityOrigin()->transferPrivilegesFrom(starterOriginPrivilageData);
 
     if (m_workerClients)
         m_workerClients->reattachThread();
@@ -101,7 +104,7 @@ WorkerGlobalScope::~WorkerGlobalScope()
 void WorkerGlobalScope::applyContentSecurityPolicyFromVector(const Vector<CSPHeaderAndType>& headers)
 {
     if (!contentSecurityPolicy()) {
-        RefPtr<ContentSecurityPolicy> csp = ContentSecurityPolicy::create();
+        RefPtrWillBeRawPtr<ContentSecurityPolicy> csp = ContentSecurityPolicy::create();
         setContentSecurityPolicy(csp);
     }
     for (const auto& policyAndType : headers)
@@ -186,6 +189,13 @@ void WorkerGlobalScope::postTask(const WebTraceLocation& location, PassOwnPtr<Ex
     thread()->postTask(location, task);
 }
 
+void WorkerGlobalScope::clearScript()
+{
+    ASSERT(m_script);
+    m_script->dispose();
+    m_script.clear();
+}
+
 void WorkerGlobalScope::clearInspector()
 {
     ASSERT(m_workerInspectorController);
@@ -241,23 +251,23 @@ void WorkerGlobalScope::importScripts(const Vector<String>& urls, ExceptionState
     }
 
     for (const KURL& completeURL : completedURLs) {
-        WorkerScriptLoader scriptLoader;
-        scriptLoader.setRequestContext(WebURLRequest::RequestContextScript);
-        scriptLoader.loadSynchronously(executionContext, completeURL, AllowCrossOriginRequests);
+        RefPtr<WorkerScriptLoader> scriptLoader(WorkerScriptLoader::create());
+        scriptLoader->setRequestContext(WebURLRequest::RequestContextScript);
+        scriptLoader->loadSynchronously(executionContext, completeURL, AllowCrossOriginRequests);
 
         // If the fetching attempt failed, throw a NetworkError exception and abort all these steps.
-        if (scriptLoader.failed()) {
+        if (scriptLoader->failed()) {
             exceptionState.throwDOMException(NetworkError, "The script at '" + completeURL.elidedString() + "' failed to load.");
             return;
         }
 
-        InspectorInstrumentation::scriptImported(&executionContext, scriptLoader.identifier(), scriptLoader.script());
-        scriptLoaded(scriptLoader.script().length(), scriptLoader.cachedMetadata() ? scriptLoader.cachedMetadata()->size() : 0);
+        InspectorInstrumentation::scriptImported(&executionContext, scriptLoader->identifier(), scriptLoader->script());
+        scriptLoaded(scriptLoader->script().length(), scriptLoader->cachedMetadata() ? scriptLoader->cachedMetadata()->size() : 0);
 
         RefPtrWillBeRawPtr<ErrorEvent> errorEvent = nullptr;
-        OwnPtr<Vector<char>> cachedMetaData(scriptLoader.releaseCachedMetadata());
-        OwnPtr<CachedMetadataHandler> handler(createWorkerScriptCachedMetadataHandler(completeURL, cachedMetaData.get()));
-        m_script->evaluate(ScriptSourceCode(scriptLoader.script(), scriptLoader.responseURL()), &errorEvent, handler.get(), m_v8CacheOptions);
+        OwnPtr<Vector<char>> cachedMetaData(scriptLoader->releaseCachedMetadata());
+        OwnPtrWillBeRawPtr<CachedMetadataHandler> handler(createWorkerScriptCachedMetadataHandler(completeURL, cachedMetaData.get()));
+        m_script->evaluate(ScriptSourceCode(scriptLoader->script(), scriptLoader->responseURL()), &errorEvent, handler.get(), m_v8CacheOptions);
         if (errorEvent) {
             m_script->rethrowExceptionFromImportedScript(errorEvent.release(), exceptionState);
             return;
@@ -349,12 +359,12 @@ void WorkerGlobalScope::exceptionHandled(int exceptionId, bool isHandled)
         addConsoleMessage(consoleMessage.release());
 }
 
-bool WorkerGlobalScope::isPrivilegedContext(String& errorMessage, const PrivilegeContextCheck privilegeContextCheck) const
+bool WorkerGlobalScope::isSecureContext(String& errorMessage, const SecureContextCheck privilegeContextCheck) const
 {
     // Until there are APIs that are available in workers and that
     // require a privileged context test that checks ancestors, just do
     // a simple check here. Once we have a need for a real
-    // |isPrivilegedContext| check here, we can check the responsible
+    // |isSecureContext| check here, we can check the responsible
     // document for a privileged context at worker creation time, pass
     // it in via WorkerThreadStartupData, and check it here.
     return securityOrigin()->isPotentiallyTrustworthy(errorMessage);
@@ -390,6 +400,7 @@ DEFINE_TRACE(WorkerGlobalScope)
     visitor->trace(m_console);
     visitor->trace(m_location);
     visitor->trace(m_navigator);
+    visitor->trace(m_script);
     visitor->trace(m_workerInspectorController);
     visitor->trace(m_eventQueue);
     visitor->trace(m_workerClients);
@@ -400,6 +411,7 @@ DEFINE_TRACE(WorkerGlobalScope)
 #endif
     ExecutionContext::trace(visitor);
     EventTargetWithInlineData::trace(visitor);
+    SecurityContext::trace(visitor);
 }
 
 } // namespace blink

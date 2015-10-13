@@ -19,7 +19,6 @@ class GLContextFake : public GLContext {
                   GpuPreference gpu_preference) override {
     return true;
   }
-  void Destroy() override {}
   bool MakeCurrent(GLSurface* surface) override { return true; }
   void ReleaseCurrent(GLSurface* surface) override {}
   bool IsCurrent(GLSurface* surface) override { return true; }
@@ -37,16 +36,11 @@ class GLApiTest : public testing::Test {
  public:
   void SetUp() override {
     fake_extension_string_ = "";
+    fake_version_string_ = "";
     num_fake_extension_strings_ = 0;
     fake_extension_strings_ = nullptr;
 
     g_current_gl_context_tls = new base::ThreadLocalPointer<GLApi>;
-    api_.reset(new RealGLApi());
-
-    g_driver_gl.ClearBindings();
-    g_driver_gl.fn.glGetStringFn = &FakeGetString;
-    g_driver_gl.fn.glGetStringiFn = &FakeGetStringi;
-    g_driver_gl.fn.glGetIntegervFn = &FakeGetIntegervFn;
 
     SetGLGetProcAddressProc(
         static_cast<GLGetProcAddressProc>(&FakeGLGetProcAddress));
@@ -62,6 +56,7 @@ class GLApiTest : public testing::Test {
 
     SetGLImplementation(kGLImplementationNone);
     fake_extension_string_ = "";
+    fake_version_string_ = "";
     num_fake_extension_strings_ = 0;
     fake_extension_strings_ = nullptr;
   }
@@ -69,6 +64,11 @@ class GLApiTest : public testing::Test {
   void InitializeAPI(base::CommandLine* command_line) {
     api_.reset(new RealGLApi());
     g_current_gl_context_tls->Set(api_.get());
+
+    g_driver_gl.ClearBindings();
+    g_driver_gl.fn.glGetStringFn = &FakeGetString;
+    g_driver_gl.fn.glGetStringiFn = &FakeGetStringi;
+    g_driver_gl.fn.glGetIntegervFn = &FakeGetIntegervFn;
 
     fake_context_ = new GLContextFake();
     if (command_line)
@@ -82,15 +82,19 @@ class GLApiTest : public testing::Test {
   void SetFakeExtensionString(const char* fake_string) {
     SetGLImplementation(kGLImplementationDesktopGL);
     fake_extension_string_ = fake_string;
+    fake_version_string_ = "2.1";
   }
 
   void SetFakeExtensionStrings(const char** fake_strings, uint32_t count) {
-    SetGLImplementation(kGLImplementationDesktopGLCoreProfile);
+    SetGLImplementation(kGLImplementationDesktopGL);
     num_fake_extension_strings_ = count;
     fake_extension_strings_ = fake_strings;
+    fake_version_string_ = "3.0";
   }
 
   static const GLubyte* GL_BINDING_CALL FakeGetString(GLenum name) {
+    if (name == GL_VERSION)
+      return reinterpret_cast<const GLubyte*>(fake_version_string_);
     return reinterpret_cast<const GLubyte*>(fake_extension_string_);
   }
 
@@ -122,6 +126,7 @@ class GLApiTest : public testing::Test {
 
  protected:
   static const char* fake_extension_string_;
+  static const char* fake_version_string_;
 
   static uint32_t num_fake_extension_strings_;
   static const char** fake_extension_strings_;
@@ -132,6 +137,7 @@ class GLApiTest : public testing::Test {
 };
 
 const char* GLApiTest::fake_extension_string_ = "";
+const char* GLApiTest::fake_version_string_ = "";
 
 uint32_t GLApiTest::num_fake_extension_strings_ = 0;
 const char** GLApiTest::fake_extension_strings_ = nullptr;

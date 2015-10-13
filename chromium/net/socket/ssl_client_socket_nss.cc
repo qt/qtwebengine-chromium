@@ -68,6 +68,7 @@
 #include "base/bind_helpers.h"
 #include "base/callback_helpers.h"
 #include "base/compiler_specific.h"
+#include "base/location.h"
 #include "base/logging.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/single_thread_task_runner.h"
@@ -87,6 +88,7 @@
 #include "net/base/dns_util.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
+#include "net/base/net_util.h"
 #include "net/cert/asn1_util.h"
 #include "net/cert/cert_policy_enforcer.h"
 #include "net/cert/cert_status_flags.h"
@@ -133,14 +135,6 @@ namespace net {
       VLOG(1) << (void *)this << " " << __FUNCTION__ << " jump to state " << s;\
       next_handshake_state_ = s;\
     } while (0)
-#endif
-
-#if !defined(CKM_AES_GCM)
-#define CKM_AES_GCM 0x00001087
-#endif
-
-#if !defined(CKM_NSS_CHACHA20_POLY1305)
-#define CKM_NSS_CHACHA20_POLY1305 (CKM_NSS + 26)
 #endif
 
 namespace {
@@ -850,16 +844,11 @@ bool SSLClientSocketNSS::Core::Init(PRFileDesc* socket,
   SECStatus rv = SECSuccess;
 
   if (!ssl_config_.next_protos.empty()) {
+    NextProtoVector next_protos = ssl_config_.next_protos;
     // TODO(bnc): Check ssl_config_.disabled_cipher_suites.
-    const bool adequate_encryption =
-        PK11_TokenExists(CKM_AES_GCM) ||
-        PK11_TokenExists(CKM_NSS_CHACHA20_POLY1305);
-    const bool adequate_key_agreement = PK11_TokenExists(CKM_DH_PKCS_DERIVE) ||
-                                        PK11_TokenExists(CKM_ECDH1_DERIVE);
-    std::vector<uint8_t> wire_protos =
-        SerializeNextProtos(ssl_config_.next_protos,
-                            adequate_encryption && adequate_key_agreement &&
-                                IsTLSVersionAdequateForHTTP2(ssl_config_));
+    if (!IsTLSVersionAdequateForHTTP2(ssl_config_))
+      DisableHTTP2(&next_protos);
+    std::vector<uint8_t> wire_protos = SerializeNextProtos(next_protos);
     rv = SSL_SetNextProtoNego(
         nss_fd_, wire_protos.empty() ? NULL : &wire_protos[0],
         wire_protos.size());
@@ -2366,13 +2355,11 @@ void SSLClientSocketNSS::Core::SetChannelIDProvided() {
 }
 
 SSLClientSocketNSS::SSLClientSocketNSS(
-    base::SequencedTaskRunner* nss_task_runner,
     scoped_ptr<ClientSocketHandle> transport_socket,
     const HostPortPair& host_and_port,
     const SSLConfig& ssl_config,
     const SSLClientSocketContext& context)
-    : nss_task_runner_(nss_task_runner),
-      transport_(transport_socket.Pass()),
+    : transport_(transport_socket.Pass()),
       host_and_port_(host_and_port),
       ssl_config_(ssl_config),
       cert_verifier_(context.cert_verifier),
@@ -2381,6 +2368,7 @@ SSLClientSocketNSS::SSLClientSocketNSS(
       ssl_session_cache_shard_(context.ssl_session_cache_shard),
       completed_handshake_(false),
       next_handshake_state_(STATE_NONE),
+      disconnected_(false),
       nss_fd_(NULL),
       net_log_(transport_->socket()->NetLog()),
       transport_security_state_(context.transport_security_state),
@@ -2407,20 +2395,6 @@ void SSLClientSocket::ClearSessionCache() {
     return;
 
   SSL_ClearSessionCache();
-}
-
-#if !defined(CKM_NSS_TLS_MASTER_KEY_DERIVE_DH_SHA256)
-#define CKM_NSS_TLS_MASTER_KEY_DERIVE_DH_SHA256 (CKM_NSS + 24)
-#endif
-
-// static
-uint16 SSLClientSocket::GetMaxSupportedSSLVersion() {
-  crypto::EnsureNSSInit();
-  if (PK11_TokenExists(CKM_NSS_TLS_MASTER_KEY_DERIVE_DH_SHA256)) {
-    return SSL_PROTOCOL_VERSION_TLS1_2;
-  } else {
-    return SSL_PROTOCOL_VERSION_TLS1_1;
-  }
 }
 
 bool SSLClientSocketNSS::GetSSLInfo(SSLInfo* ssl_info) {
@@ -2532,6 +2506,14 @@ int SSLClientSocketNSS::Connect(const CompletionCallback& callback) {
   DCHECK(user_connect_callback_.is_null());
   DCHECK(!callback.is_null());
 
+  // Although StreamSocket does allow calling Connect() after Disconnect(),
+  // this has never worked for layered sockets. CHECK to detect any consumers
+  // reconnecting an SSL socket.
+  //
+  // TODO(davidben,mmenke): Remove this API feature. See
+  // https://crbug.com/499289.
+  CHECK(!disconnected_);
+
   EnsureThreadIdAssigned();
 
   net_log_.BeginEvent(NetLog::TYPE_SSL_CONNECT);
@@ -2576,6 +2558,8 @@ void SSLClientSocketNSS::Disconnect() {
   core_->Detach();
   cert_verifier_request_.reset();
   transport_->socket()->Disconnect();
+
+  disconnected_ = true;
 
   // Reset object state.
   user_connect_callback_.Reset();
@@ -2702,13 +2686,12 @@ int SSLClientSocketNSS::Init() {
 }
 
 void SSLClientSocketNSS::InitCore() {
+  // TODO(davidben): Both task runners are now always the same. Unwind this code
+  // further, although the entire class is due to be deleted eventually, so it
+  // may not be worth bothering.
   core_ = new Core(base::ThreadTaskRunnerHandle::Get().get(),
-                   nss_task_runner_.get(),
-                   transport_.get(),
-                   host_and_port_,
-                   ssl_config_,
-                   &net_log_,
-                   channel_id_service_);
+                   base::ThreadTaskRunnerHandle::Get().get(), transport_.get(),
+                   host_and_port_, ssl_config_, &net_log_, channel_id_service_);
 }
 
 int SSLClientSocketNSS::InitializeSSLOptions() {
@@ -2986,6 +2969,7 @@ int SSLClientSocketNSS::DoHandshakeLoop(int last_io_result) {
 
 int SSLClientSocketNSS::DoHandshake() {
   EnterFunction("");
+
   int rv = core_->Connect(
       base::Bind(&SSLClientSocketNSS::OnHandshakeIOComplete,
                  base::Unretained(this)));
@@ -3026,6 +3010,12 @@ int SSLClientSocketNSS::DoVerifyCert(int result) {
 
   GotoState(STATE_VERIFY_CERT_COMPLETE);
 
+  // NSS decoded the certificate, but the platform certificate implementation
+  // could not. This is treated as a fatal SSL-level protocol error rather than
+  // a certificate error. See https://crbug.com/91341.
+  if (!core_->state().server_cert.get())
+    return ERR_SSL_SERVER_CERT_BAD_FORMAT;
+
   // If the certificate is expected to be bad we can use the expectation as
   // the cert status.
   base::StringPiece der_cert(
@@ -3040,14 +3030,6 @@ int SSLClientSocketNSS::DoVerifyCert(int result) {
     server_cert_verify_result_.cert_status = cert_status;
     server_cert_verify_result_.verified_cert = core_->state().server_cert;
     return OK;
-  }
-
-  // We may have failed to create X509Certificate object if we are
-  // running inside sandbox.
-  if (!core_->state().server_cert.get()) {
-    server_cert_verify_result_.Reset();
-    server_cert_verify_result_.cert_status = CERT_STATUS_INVALID;
-    return ERR_CERT_INVALID;
   }
 
   start_cert_verification_time_ = base::TimeTicks::Now();
@@ -3090,10 +3072,11 @@ int SSLClientSocketNSS::DoVerifyCertComplete(int result) {
       (result == OK ||
        (IsCertificateError(result) && IsCertStatusMinorError(cert_status))) &&
       !transport_security_state_->CheckPublicKeyPins(
-          host_and_port_.host(),
-          server_cert_verify_result_.is_issued_by_known_root,
+          host_and_port_, server_cert_verify_result_.is_issued_by_known_root,
           server_cert_verify_result_.public_key_hashes,
-          &pinning_failure_log_)) {
+          core_->state().server_cert.get(),
+          server_cert_verify_result_.verified_cert.get(),
+          TransportSecurityState::ENABLE_PIN_REPORTS, &pinning_failure_log_)) {
     result = ERR_SSL_PINNED_KEY_NOT_IN_CERT_CHAIN;
   }
 
@@ -3139,6 +3122,8 @@ void SSLClientSocketNSS::VerifyCT() {
               << server_cert_verify_result_.verified_cert->subject()
                      .GetDisplayName()
               << " does not conform to CT policy, removing EV status.";
+      server_cert_verify_result_.cert_status |=
+          CERT_STATUS_CT_COMPLIANCE_FAILED;
       server_cert_verify_result_.cert_status &= ~CERT_STATUS_IS_EV;
     }
   }

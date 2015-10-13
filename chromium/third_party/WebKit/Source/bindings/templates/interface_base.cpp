@@ -26,7 +26,7 @@ namespace blink {
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wglobal-constructors"
 #endif
-{{wrapper_type_info_const}}WrapperTypeInfo {{v8_class}}::wrapperTypeInfo = { gin::kEmbedderBlink, {{dom_template}}, {{v8_class}}::refObject, {{v8_class}}::derefObject, {{v8_class}}::trace, {{to_active_dom_object}}, {{visit_dom_wrapper}}, {{v8_class}}::preparePrototypeObject, {{v8_class}}::installConditionallyEnabledProperties, "{{interface_name}}", {{parent_wrapper_type_info}}, WrapperTypeInfo::{{wrapper_type_prototype}}, WrapperTypeInfo::{{wrapper_class_id}}, WrapperTypeInfo::{{event_target_inheritance}}, WrapperTypeInfo::{{lifetime}}, WrapperTypeInfo::{{gc_type}} };
+{{wrapper_type_info_const}}WrapperTypeInfo {{v8_class}}::wrapperTypeInfo = { gin::kEmbedderBlink, {{dom_template}}, {{v8_class}}::refObject, {{v8_class}}::derefObject, {{v8_class}}::trace, {{to_active_dom_object}}, {{visit_dom_wrapper}}, {{v8_class}}::preparePrototypeAndInterfaceObject, {{v8_class}}::installConditionallyEnabledProperties, "{{interface_name}}", {{parent_wrapper_type_info}}, WrapperTypeInfo::{{wrapper_type_prototype}}, WrapperTypeInfo::{{wrapper_class_id}}, WrapperTypeInfo::{{event_target_inheritance}}, WrapperTypeInfo::{{lifetime}}, WrapperTypeInfo::{{gc_type}} };
 #if defined(COMPONENT_BUILD) && defined(WIN32) && COMPILER(CLANG)
 #pragma clang diagnostic pop
 #endif
@@ -215,7 +215,6 @@ bool namedSecurityCheck(v8::Local<v8::Object> host, v8::Local<v8::Value> key, v8
 } // namespace {{cpp_class_or_partial}}V8Internal
 
 {% block visit_dom_wrapper %}{% endblock %}
-{% block shadow_attributes %}{% endblock %}
 {##############################################################################}
 {% block install_attributes %}
 {% from 'attributes.cpp' import attribute_configuration with context %}
@@ -226,14 +225,12 @@ bool namedSecurityCheck(v8::Local<v8::Object> host, v8::Local<v8::Value> key, v8
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wglobal-constructors"
 #endif
-static const V8DOMConfiguration::AttributeConfiguration {{v8_class}}Attributes[] = {
+const V8DOMConfiguration::AttributeConfiguration {{v8_class}}Attributes[] = {
     {% for attribute in attributes
-       if not (attribute.is_expose_js_accessors or
-               attribute.is_static or
-               attribute.runtime_enabled_function or
-               attribute.exposed_test or
-               (interface_name == 'Window' and attribute.is_unforgeable))
-           and attribute.should_be_exposed_to_script %}
+       if not (attribute.exposed_test or
+               attribute.runtime_enabled_function) and
+          attribute.is_data_type_property and
+          attribute.should_be_exposed_to_script %}
     {% filter conditional(attribute.conditional_string) %}
     {{attribute_configuration(attribute)}},
     {% endfilter %}
@@ -249,13 +246,12 @@ static const V8DOMConfiguration::AttributeConfiguration {{v8_class}}Attributes[]
 {% block install_accessors %}
 {% from 'attributes.cpp' import attribute_configuration with context %}
 {% if has_accessor_configuration %}
-static const V8DOMConfiguration::AccessorConfiguration {{v8_class}}Accessors[] = {
+const V8DOMConfiguration::AccessorConfiguration {{v8_class}}Accessors[] = {
     {% for attribute in attributes
-       if (attribute.is_expose_js_accessors and
-           not (attribute.is_static or
-                attribute.runtime_enabled_function or
-                attribute.exposed_test) and
-           attribute.should_be_exposed_to_script) %}
+       if not (attribute.exposed_test or
+               attribute.runtime_enabled_function) and
+          not attribute.is_data_type_property and
+          attribute.should_be_exposed_to_script %}
     {% filter conditional(attribute.conditional_string) %}
     {{attribute_configuration(attribute)}},
     {% endfilter %}
@@ -268,7 +264,7 @@ static const V8DOMConfiguration::AccessorConfiguration {{v8_class}}Accessors[] =
 {% block install_methods %}
 {% from 'methods.cpp' import method_configuration with context %}
 {% if method_configuration_methods %}
-static const V8DOMConfiguration::MethodConfiguration {{v8_class}}Methods[] = {
+const V8DOMConfiguration::MethodConfiguration {{v8_class}}Methods[] = {
     {% for method in method_configuration_methods %}
     {% filter conditional(method.conditional_string) %}
     {{method_configuration(method)}},
@@ -282,7 +278,6 @@ static const V8DOMConfiguration::MethodConfiguration {{v8_class}}Methods[] = {
 {##############################################################################}
 {% block named_constructor %}{% endblock %}
 {% block constructor_callback %}{% endblock %}
-{% block configure_shadow_object_template %}{% endblock %}
 {##############################################################################}
 {% block install_dom_template %}
 {% if not is_array_buffer_or_view %}
@@ -344,23 +339,26 @@ static void install{{v8_class}}Template(v8::Local<v8::FunctionTemplate> function
     ALLOW_UNUSED_LOCAL(instanceTemplate);
     v8::Local<v8::ObjectTemplate> prototypeTemplate = functionTemplate->PrototypeTemplate();
     ALLOW_UNUSED_LOCAL(prototypeTemplate);
+    {% if custom_registration_methods %}
+    ExecutionContext* context = currentExecutionContext(isolate);
+    ALLOW_UNUSED_LOCAL(context);
+    {% endif %}
     {% if has_access_check_callbacks %}
     instanceTemplate->SetAccessCheckCallbacks({{cpp_class}}V8Internal::namedSecurityCheck, {{cpp_class}}V8Internal::indexedSecurityCheck, v8::External::New(isolate, const_cast<WrapperTypeInfo*>(&{{v8_class}}::wrapperTypeInfo)));
     {% endif %}
     {% for attribute in attributes
        if attribute.runtime_enabled_function and
-          not attribute.exposed_test and
-          not attribute.is_static %}
+          not attribute.exposed_test %}
     {% filter conditional(attribute.conditional_string) %}
     if ({{attribute.runtime_enabled_function}}()) {
-        {% if attribute.is_expose_js_accessors %}
-        static const V8DOMConfiguration::AccessorConfiguration accessorConfiguration =\
-        {{attribute_configuration(attribute)}};
-        V8DOMConfiguration::installAccessor(isolate, instanceTemplate, prototypeTemplate, functionTemplate, defaultSignature, accessorConfiguration);
-        {% else %}
-        static const V8DOMConfiguration::AttributeConfiguration attributeConfiguration =\
+        {% if attribute.is_data_type_property %}
+        const V8DOMConfiguration::AttributeConfiguration attributeConfiguration = \
         {{attribute_configuration(attribute)}};
         V8DOMConfiguration::installAttribute(isolate, instanceTemplate, prototypeTemplate, attributeConfiguration);
+        {% else %}
+        const V8DOMConfiguration::AccessorConfiguration accessorConfiguration = \
+        {{attribute_configuration(attribute)}};
+        V8DOMConfiguration::installAccessor(isolate, instanceTemplate, prototypeTemplate, functionTemplate, defaultSignature, accessorConfiguration);
         {% endif %}
     }
     {% endfilter %}
@@ -415,26 +413,22 @@ static void install{{v8_class}}Template(v8::Local<v8::FunctionTemplate> function
            '%sV8Internal::namedPropertyEnumeratorCallback' % cpp_class
            if named_property_getter.is_enumerable else '0' %}
     {
-        v8::NamedPropertyHandlerConfiguration config({{named_property_getter_callback}}, {{named_property_setter_callback}}, {{named_property_query_callback}}, {{named_property_deleter_callback}}, {{named_property_enumerator_callback}});
-        {# TODO(yukishiino): Determine how to treat Window interface. #}
-        {% if interface_name != 'Window' %}
-        config.flags = static_cast<v8::PropertyHandlerFlags>(static_cast<int>(config.flags) | static_cast<int>(v8::PropertyHandlerFlags::kOnlyInterceptStrings));
-        {% endif %}
+        int flags = static_cast<int>(v8::PropertyHandlerFlags::kOnlyInterceptStrings);
         {% if named_property_getter.do_not_check_security %}
-        config.flags = v8::PropertyHandlerFlags::kAllCanRead;
+        flags |= static_cast<int>(v8::PropertyHandlerFlags::kAllCanRead);
         {% endif %}
-        {# TODO(yukishiino): Determine how to treat Window interface. #}
-        {% if not is_override_builtins and interface_name != 'Window' %}
-        config.flags = static_cast<v8::PropertyHandlerFlags>(static_cast<int>(config.flags) | static_cast<int>(v8::PropertyHandlerFlags::kNonMasking));
+        {% if not is_override_builtins %}
+        flags |= static_cast<int>(v8::PropertyHandlerFlags::kNonMasking);
         {% endif %}
+        v8::NamedPropertyHandlerConfiguration config({{named_property_getter_callback}}, {{named_property_setter_callback}}, {{named_property_query_callback}}, {{named_property_deleter_callback}}, {{named_property_enumerator_callback}}, v8::Handle<v8::Value>(), static_cast<v8::PropertyHandlerFlags>(flags));
         functionTemplate->{{set_on_template}}()->SetHandler(config);
     }
     {% endif %}
     {% if iterator_method %}
     {% filter exposed(iterator_method.exposed_test) %}
     {% filter runtime_enabled(iterator_method.runtime_enabled_function) %}
-    static const V8DOMConfiguration::SymbolKeyedMethodConfiguration symbolKeyedIteratorConfiguration = { v8::Symbol::GetIterator, {{cpp_class_or_partial}}V8Internal::iteratorMethodCallback, 0, V8DOMConfiguration::ExposedToAllScripts };
-    V8DOMConfiguration::installMethod(isolate, prototypeTemplate, defaultSignature, v8::DontDelete, symbolKeyedIteratorConfiguration);
+    const V8DOMConfiguration::SymbolKeyedMethodConfiguration symbolKeyedIteratorConfiguration = { v8::Symbol::GetIterator, {{cpp_class_or_partial}}V8Internal::iteratorMethodCallback, 0, v8::DontDelete, V8DOMConfiguration::ExposedToAllScripts, V8DOMConfiguration::OnPrototype };
+    V8DOMConfiguration::installMethod(isolate, prototypeTemplate, defaultSignature, symbolKeyedIteratorConfiguration);
     {% endfilter %}{# runtime_enabled() #}
     {% endfilter %}{# exposed() #}
     {% endif %}
@@ -456,23 +450,14 @@ static void install{{v8_class}}Template(v8::Local<v8::FunctionTemplate> function
                               if method.overloads else
                               method.runtime_enabled_function) %}
     {% if method.is_do_not_check_security %}
-    {{install_do_not_check_security_signature(method) | indent}}
+    {{install_do_not_check_security_method(method, '', 'instanceTemplate', 'prototypeTemplate') | indent}}
     {% else %}{# is_do_not_check_security #}
-    {{install_custom_signature(method) | indent}}
+    {% set signature = 'v8::Local<v8::Signature>()' if method.is_do_not_check_signature else 'defaultSignature' %}
+    {{install_custom_signature(method, 'instanceTemplate', 'prototypeTemplate', 'functionTemplate', signature) | indent}}
     {% endif %}{# is_do_not_check_security #}
     {% endfilter %}{# runtime_enabled() #}
     {% endfilter %}{# exposed() #}
     {% endfilter %}{# conditional() #}
-    {% endfor %}
-    {% for attribute in attributes if attribute.is_static %}
-    {% set getter_callback = '%sV8Internal::%sAttributeGetterCallback' %
-               (cpp_class, attribute.name) %}
-    {% set setter_callback = '%sV8Internal::%sAttributeSetterCallback' %
-               (cpp_class, attribute.name)
-           if attribute.has_setter else '0' %}
-    {% filter conditional(attribute.conditional_string) %}
-    functionTemplate->SetNativeDataProperty(v8AtomicString(isolate, "{{attribute.name}}"), {{getter_callback}}, {{setter_callback}}, v8::External::New(isolate, 0), static_cast<v8::PropertyAttribute>(v8::None), v8::Local<v8::AccessorSignature>(), static_cast<v8::AccessControl>(v8::DEFAULT));
-    {% endfilter %}
     {% endfor %}
     {# Special interfaces #}
     {% if not is_partial %}
@@ -501,10 +486,9 @@ static void install{{v8_class}}Template(v8::Local<v8::FunctionTemplate> function
 {% block to_impl_with_type_check %}{% endblock %}
 {% block install_conditional_attributes %}{% endblock %}
 {##############################################################################}
-{% block prepare_prototype_object %}{% endblock %}
+{% block prepare_prototype_and_interface_object %}{% endblock %}
 {##############################################################################}
 {% block to_active_dom_object %}{% endblock %}
-{% block get_shadow_object_template %}{% endblock %}
 {% block ref_object_and_deref_object %}{% endblock %}
 {% for method in methods if method.is_implemented_in_private_script and method.visible %}
 {{method_implemented_in_private_script(method)}}

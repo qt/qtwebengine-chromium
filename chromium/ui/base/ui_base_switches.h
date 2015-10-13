@@ -13,9 +13,9 @@
 namespace switches {
 
 #if defined(OS_MACOSX) && !defined(OS_IOS)
+UI_BASE_EXPORT extern const char kDisableMacOverlays[];
 UI_BASE_EXPORT extern const char kDisableRemoteCoreAnimation[];
-UI_BASE_EXPORT extern const char kDisableNSCGLSurfaceApi[];
-UI_BASE_EXPORT extern const char kForceNSCGLSurfaceApi[];
+UI_BASE_EXPORT extern const char kShowMacOverlayBorders[];
 #endif
 
 UI_BASE_EXPORT extern const char kDisableDwmComposition[];
@@ -29,6 +29,9 @@ UI_BASE_EXPORT extern const char kEnableLinkDisambiguationPopup[];
 UI_BASE_EXPORT extern const char kEnableTouchDragDrop[];
 UI_BASE_EXPORT extern const char kEnableTouchEditing[];
 UI_BASE_EXPORT extern const char kLang[];
+UI_BASE_EXPORT extern const char kMaterialDesignInkDropAnimationSpeed[];
+UI_BASE_EXPORT extern const char kMaterialDesignInkDropAnimationSpeedFast[];
+UI_BASE_EXPORT extern const char kMaterialDesignInkDropAnimationSpeedSlow[];
 
 #if defined(ENABLE_TOPCHROME_MD)
 UI_BASE_EXPORT extern const char kTopChromeMD[];

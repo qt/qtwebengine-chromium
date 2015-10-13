@@ -22,6 +22,7 @@ source_set("process") {
     "memory_linux.cc",
     "memory_mac.mm",
     "memory_win.cc",
+    "port_provider_mac.h",
     "process.h",
     "process_handle_freebsd.cc",
     "process_handle_linux.cc",
@@ -41,7 +42,6 @@ source_set("process") {
     "process_iterator_openbsd.cc",
     "process_iterator_win.cc",
     "process_linux.cc",
-    "process_mac.cc",
     "process_metrics.cc",
     "process_metrics.h",
     "process_metrics_freebsd.cc",
@@ -96,7 +96,10 @@ source_set("process") {
   }
 
   if (is_ios) {
-    sources += [ "process_metrics.cc" ]
+    sources += [
+      "memory_stubs.cc",
+      "process_metrics.cc",
+    ]
   }
 
   configs += [ "//base:base_implementation" ]

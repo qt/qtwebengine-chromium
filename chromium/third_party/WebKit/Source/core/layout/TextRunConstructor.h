@@ -47,6 +47,8 @@ class Font;
 class LayoutObject;
 class ComputedStyle;
 class LayoutText;
+class LineLayoutText;
+class LineLayoutItem;
 
 enum TextRunFlag {
     DefaultTextRunFlags = 0,
@@ -57,15 +59,14 @@ enum TextRunFlag {
 typedef unsigned TextRunFlags;
 
 // Direction resolved from string value.
-TextRun constructTextRun(LayoutObject* context, const Font&, const String&, const ComputedStyle&, TextRunFlags = DefaultTextRunFlags);
-TextRun constructTextRun(LayoutObject* context, const Font&, const LayoutText*, unsigned offset, unsigned length, const ComputedStyle&);
+TextRun constructTextRun(const Font&, const String&, const ComputedStyle&, TextRunFlags = DefaultTextRunFlags);
+TextRun constructTextRun(const Font&, const LineLayoutText, unsigned offset, unsigned length, const ComputedStyle&);
 
 // Explicit direction.
-TextRun constructTextRun(LayoutObject*, const Font&, const String&, const ComputedStyle&, TextDirection, TextRunFlags = DefaultTextRunFlags);
-TextRun constructTextRun(LayoutObject*, const Font&, const LayoutText*, const ComputedStyle&, TextDirection);
-TextRun constructTextRun(LayoutObject*, const Font&, const LayoutText*, unsigned offset, unsigned length, const ComputedStyle&, TextDirection);
-TextRun constructTextRun(LayoutObject*, const Font&, const LChar*, int length, const ComputedStyle&, TextDirection);
-TextRun constructTextRun(LayoutObject*, const Font&, const UChar*, int length, const ComputedStyle&, TextDirection);
+TextRun constructTextRun(const Font&, const String&, const ComputedStyle&, TextDirection, TextRunFlags = DefaultTextRunFlags);
+TextRun constructTextRun(const Font&, const LayoutText*, unsigned offset, unsigned length, const ComputedStyle&, TextDirection);
+TextRun constructTextRun(const Font&, const LChar*, int length, const ComputedStyle&, TextDirection);
+TextRun constructTextRun(const Font&, const UChar*, int length, const ComputedStyle&, TextDirection);
 
 } // namespace blink
 

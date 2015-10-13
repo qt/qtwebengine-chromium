@@ -7,9 +7,9 @@
 #include "base/bind.h"
 #include "base/callback_helpers.h"
 #include "base/stl_util.h"
-#include "media/base/buffers.h"
 #include "media/base/stream_parser_buffer.h"
 #include "media/base/text_track_config.h"
+#include "media/base/timestamp_constants.h"
 #include "media/formats/mp2t/es_parser.h"
 #include "media/formats/mp2t/es_parser_adts.h"
 #include "media/formats/mp2t/es_parser_h264.h"
@@ -170,7 +170,7 @@ void Mp2tStreamParser::Init(
     const EncryptedMediaInitDataCB& encrypted_media_init_data_cb,
     const NewMediaSegmentCB& new_segment_cb,
     const base::Closure& end_of_segment_cb,
-    const LogCB& log_cb) {
+    const scoped_refptr<MediaLog>& media_log) {
   DCHECK(!is_initialized_);
   DCHECK(init_cb_.is_null());
   DCHECK(!init_cb.is_null());
@@ -185,7 +185,7 @@ void Mp2tStreamParser::Init(
   encrypted_media_init_data_cb_ = encrypted_media_init_data_cb;
   new_segment_cb_ = new_segment_cb;
   end_of_segment_cb_ = end_of_segment_cb;
-  log_cb_ = log_cb;
+  media_log_ = media_log;
 }
 
 void Mp2tStreamParser::Flush() {
@@ -200,6 +200,25 @@ void Mp2tStreamParser::Flush() {
     delete pid_state;
   }
   pids_.clear();
+
+  // Flush is invoked from SourceBuffer.abort/SourceState::ResetParserState, and
+  // MSE spec prohibits emitting new configs in ResetParserState algorithm (see
+  // https://w3c.github.io/media-source/#sourcebuffer-reset-parser-state,
+  // 3.5.2 Reset Parser State states that new frames might be processed only in
+  // PARSING_MEDIA_SEGMENT and therefore doesn't allow emitting new configs,
+  // since that might need to run "init segment received" algorithm).
+  // So before we emit remaining buffers here, we need to trim our buffer queue
+  // so that we leave only buffers with configs that were already sent.
+  for (auto buffer_queue_iter = buffer_queue_chain_.begin();
+       buffer_queue_iter != buffer_queue_chain_.end(); ++buffer_queue_iter) {
+    const BufferQueueWithConfig& queue_with_config = *buffer_queue_iter;
+    if (!queue_with_config.is_config_sent) {
+      DVLOG(LOG_LEVEL_ES) << "Flush: dropping buffers with unsent new configs.";
+      buffer_queue_chain_.erase(buffer_queue_iter, buffer_queue_chain_.end());
+      break;
+    }
+  }
+
   EmitRemainingBuffers();
   buffer_queue_chain_.clear();
 
@@ -351,15 +370,12 @@ void Mp2tStreamParser::RegisterPes(int pmt_pid,
             sbr_in_mimetype_));
     is_audio = true;
   } else if (stream_type == kStreamTypeMpeg1Audio) {
-    es_parser.reset(
-        new EsParserMpeg1Audio(
-            base::Bind(&Mp2tStreamParser::OnAudioConfigChanged,
-                       base::Unretained(this),
-                       pes_pid),
-            base::Bind(&Mp2tStreamParser::OnEmitAudioBuffer,
-                       base::Unretained(this),
-                       pes_pid),
-            log_cb_));
+    es_parser.reset(new EsParserMpeg1Audio(
+        base::Bind(&Mp2tStreamParser::OnAudioConfigChanged,
+                   base::Unretained(this), pes_pid),
+        base::Bind(&Mp2tStreamParser::OnEmitAudioBuffer, base::Unretained(this),
+                   pes_pid),
+        media_log_));
     is_audio = true;
   } else {
     return;

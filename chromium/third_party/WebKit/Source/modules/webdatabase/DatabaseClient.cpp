@@ -39,8 +39,13 @@
 namespace blink {
 
 DatabaseClient::DatabaseClient()
-    : m_inspectorAgent(0)
+    : m_inspectorAgent(nullptr)
 { }
+
+DEFINE_TRACE(DatabaseClient)
+{
+    visitor->trace(m_inspectorAgent);
+}
 
 DatabaseClient* DatabaseClient::fromPage(Page* page)
 {
@@ -65,7 +70,7 @@ void DatabaseClient::didOpenDatabase(Database* database, const String& domain, c
 
 void DatabaseClient::setInspectorAgent(InspectorDatabaseAgent* agent)
 {
-    ASSERT(!m_inspectorAgent);
+    // TODO(dgozman): we should not set agent twice, but it's happening in OOPIF case.
     m_inspectorAgent = agent;
 }
 

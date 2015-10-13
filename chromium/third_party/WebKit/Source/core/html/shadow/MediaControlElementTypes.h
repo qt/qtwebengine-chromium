@@ -67,34 +67,50 @@ enum MediaControlElementType {
     MediaOverlayCastOnButton,
 };
 
-CORE_EXPORT HTMLMediaElement* toParentMediaElement(Node*);
-inline HTMLMediaElement* toParentMediaElement(LayoutObject* layoutObject) { return toParentMediaElement(layoutObject->node()); }
+CORE_EXPORT const HTMLMediaElement* toParentMediaElement(const Node*);
+inline const HTMLMediaElement* toParentMediaElement(const LayoutObject& layoutObject) { return toParentMediaElement(layoutObject.node()); }
 
-CORE_EXPORT MediaControlElementType mediaControlElementType(Node*);
+CORE_EXPORT MediaControlElementType mediaControlElementType(const Node*);
 
 // ----------------------------
 
 class MediaControlElement : public WillBeGarbageCollectedMixin {
 public:
-    void hide();
-    void show();
+    // These hold the state about whether this control should be shown if
+    // space permits.  These will also show / hide as needed.
+    void setIsWanted(bool);
+    bool isWanted();
 
-    MediaControlElementType displayType() { return m_displayType; }
+    // Tell us whether we fit or not.  This will hide / show the control as
+    // needed, also.
+    void setDoesFit(bool);
+
+    MediaControlElementType displayType() const { return m_displayType; }
 
     DECLARE_VIRTUAL_TRACE();
 
 protected:
     MediaControlElement(MediaControls&, MediaControlElementType, HTMLElement*);
 
-    MediaControls& mediaControls() const { return m_mediaControls; }
+    MediaControls& mediaControls() const
+    {
+        ASSERT(m_mediaControls);
+        return *m_mediaControls;
+    }
     HTMLMediaElement& mediaElement() const;
 
     void setDisplayType(MediaControlElementType);
 
 private:
-    MediaControls& m_mediaControls;
+    // Hide or show based on our fits / wanted state.  We want to show
+    // if and only if we're wanted and we fit.
+    void updateShownState();
+
+    RawPtrWillBeMember<MediaControls> m_mediaControls;
     MediaControlElementType m_displayType;
     RawPtrWillBeMember<HTMLElement> m_element;
+    bool m_isWanted : 1;
+    bool m_doesFit : 1;
 };
 
 // ----------------------------

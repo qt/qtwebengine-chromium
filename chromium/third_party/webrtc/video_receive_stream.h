@@ -18,20 +18,15 @@
 #include "webrtc/common_types.h"
 #include "webrtc/config.h"
 #include "webrtc/frame_callback.h"
+#include "webrtc/stream.h"
 #include "webrtc/transport.h"
 #include "webrtc/video_renderer.h"
 
 namespace webrtc {
 
-namespace newapi {
-// RTCP mode to use. Compound mode is described by RFC 4585 and reduced-size
-// RTCP mode is described by RFC 5506.
-enum RtcpMode { kRtcpCompound, kRtcpReducedSize };
-}  // namespace newapi
-
 class VideoDecoder;
 
-class VideoReceiveStream {
+class VideoReceiveStream : public ReceiveStream {
  public:
   // TODO(mflodman) Move all these settings to VideoDecoder and move the
   // declaration to common_types.h.
@@ -74,6 +69,8 @@ class VideoReceiveStream {
     int min_playout_delay_ms = 0;
     int render_delay_ms = 10;
 
+    int current_payload_type = -1;
+
     int total_bitrate_bps = 0;
     int discarded_packets = 0;
 
@@ -85,6 +82,10 @@ class VideoReceiveStream {
   };
 
   struct Config {
+    Config() = delete;
+    explicit Config(Transport* rtcp_send_transport)
+        : rtcp_send_transport(rtcp_send_transport) {}
+
     std::string ToString() const;
 
     // Decoders for every payload that we can receive.
@@ -100,7 +101,7 @@ class VideoReceiveStream {
       uint32_t local_ssrc = 0;
 
       // See RtcpMode for description.
-      newapi::RtcpMode rtcp_mode = newapi::kRtcpCompound;
+      RtcpMode rtcp_mode = RtcpMode::kCompound;
 
       // Extended RTCP settings.
       struct RtcpXr {
@@ -136,6 +137,9 @@ class VideoReceiveStream {
       std::vector<RtpExtension> extensions;
     } rtp;
 
+    // Transport for outgoing packets (RTCP).
+    Transport* rtcp_send_transport = nullptr;
+
     // VideoRenderer will be called for each decoded frame. 'nullptr' disables
     // rendering of this stream.
     VideoRenderer* renderer = nullptr;
@@ -145,10 +149,10 @@ class VideoReceiveStream {
     // Only valid if 'renderer' is set.
     int render_delay_ms = 10;
 
-    // Audio channel corresponding to this video stream, used for audio/video
-    // synchronization. 'audio_channel_id' is ignored if no VoiceEngine is set
-    // when creating the VideoEngine instance. '-1' disables a/v sync.
-    int audio_channel_id = -1;
+    // Identifier for an A/V synchronization group. Empty string to disable.
+    // TODO(pbos): Synchronize streams in a sync group, not just video streams
+    // to one of the audio streams.
+    std::string sync_group;
 
     // Called for each incoming video frame, i.e. in encoded state. E.g. used
     // when
@@ -165,14 +169,8 @@ class VideoReceiveStream {
     int target_delay_ms = 0;
   };
 
-  virtual void Start() = 0;
-  virtual void Stop() = 0;
-
   // TODO(pbos): Add info on currently-received codec to Stats.
   virtual Stats GetStats() const = 0;
-
- protected:
-  virtual ~VideoReceiveStream() {}
 };
 
 }  // namespace webrtc

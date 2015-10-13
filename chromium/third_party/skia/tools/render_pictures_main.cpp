@@ -25,6 +25,8 @@
 #include "PictureRenderingFlags.h"
 #include "picture_utils.h"
 
+#include <stdlib.h>
+
 // Flags used by this file, alphabetically:
 DEFINE_bool(bench_record, false, "If true, drop into an infinite loop of recording the picture.");
 DECLARE_bool(deferImageDecoding);
@@ -110,7 +112,7 @@ static void reset_image_file_base_name(const SkString& name) {
     // Remove ".skp"
     const char* cName = name.c_str();
     const char* dot = strrchr(cName, '.');
-    if (dot != NULL) {
+    if (dot != nullptr) {
         gInputFileName.set(cName, dot - cName);
     } else {
         gInputFileName.set(name);
@@ -179,7 +181,7 @@ static bool render_picture_internal(const SkString& inputPath, const SkString* w
 
     SkAutoTUnref<SkPicture> picture(SkPicture::CreateFromStream(&inputStream, proc));
 
-    if (NULL == picture) {
+    if (nullptr == picture) {
         SkDebugf("Could not read an SkPicture from %s\n", inputPath.c_str());
         return false;
     }
@@ -188,7 +190,7 @@ static bool render_picture_internal(const SkString& inputPath, const SkString* w
         SkPictureRecorder recorder;
         picture->playback(recorder.beginRecording(picture->cullRect().width(), 
                                                   picture->cullRect().height(), 
-                                                  NULL, 0));
+                                                  nullptr, 0));
         SkAutoTUnref<SkPicture> other(recorder.endRecording());
     }
 
@@ -219,14 +221,14 @@ static inline int getByte(uint32_t value, int index) {
 }
 
 static int MaxByteDiff(uint32_t v1, uint32_t v2) {
-    return SkMax32(SkMax32(abs(getByte(v1, 0) - getByte(v2, 0)), abs(getByte(v1, 1) - getByte(v2, 1))),
-                   SkMax32(abs(getByte(v1, 2) - getByte(v2, 2)), abs(getByte(v1, 3) - getByte(v2, 3))));
+    return SkMax32(SkMax32(SkTAbs(getByte(v1, 0) - getByte(v2, 0)), SkTAbs(getByte(v1, 1) - getByte(v2, 1))),
+                   SkMax32(SkTAbs(getByte(v1, 2) - getByte(v2, 2)), SkTAbs(getByte(v1, 3) - getByte(v2, 3))));
 }
 
 class AutoRestoreBbhType {
 public:
     AutoRestoreBbhType() {
-        fRenderer = NULL;
+        fRenderer = nullptr;
         fSavedBbhType = sk_tools::PictureRenderer::kNone_BBoxHierarchyType;
     }
 
@@ -252,31 +254,31 @@ private:
  * Render the SKP file(s) within inputPath.
  *
  * @param inputPath path to an individual SKP file, or a directory of SKP files
- * @param writePath if not NULL, write all image(s) generated into this directory
- * @param mismatchPath if not NULL, write any image(s) not matching expectations into this directory
+ * @param writePath if not nullptr, write all image(s) generated into this directory
+ * @param mismatchPath if not nullptr, write any image(s) not matching expectations into this directory
  * @param renderer PictureRenderer to use to render the SKPs
- * @param jsonSummaryPtr if not NULL, add the image(s) generated to this summary
+ * @param jsonSummaryPtr if not nullptr, add the image(s) generated to this summary
  */
 static bool render_picture(const SkString& inputPath, const SkString* writePath,
                            const SkString* mismatchPath, sk_tools::PictureRenderer& renderer,
                            sk_tools::ImageResultsAndExpectations *jsonSummaryPtr) {
     int diffs[256] = {0};
-    SkBitmap* bitmap = NULL;
+    SkBitmap* bitmap = nullptr;
     renderer.setJsonSummaryPtr(jsonSummaryPtr);
     bool success = render_picture_internal(inputPath,
-        FLAGS_writeWholeImage ? NULL : writePath,
-        FLAGS_writeWholeImage ? NULL : mismatchPath,
+        FLAGS_writeWholeImage ? nullptr : writePath,
+        FLAGS_writeWholeImage ? nullptr : mismatchPath,
         renderer,
-        FLAGS_validate || FLAGS_writeWholeImage ? &bitmap : NULL);
+        FLAGS_validate || FLAGS_writeWholeImage ? &bitmap : nullptr);
 
-    if (!success || ((FLAGS_validate || FLAGS_writeWholeImage) && bitmap == NULL)) {
+    if (!success || ((FLAGS_validate || FLAGS_writeWholeImage) && bitmap == nullptr)) {
         SkDebugf("Failed to draw the picture.\n");
-        SkDELETE(bitmap);
+        delete bitmap;
         return false;
     }
 
     if (FLAGS_validate) {
-        SkBitmap* referenceBitmap = NULL;
+        SkBitmap* referenceBitmap = nullptr;
         sk_tools::PictureRenderer* referenceRenderer;
         // If the renderer uses a BBoxHierarchy, then the reference renderer
         // will be the same renderer, without the bbh.
@@ -288,36 +290,35 @@ static bool render_picture(const SkString& inputPath, const SkString* writePath,
             arbbh.set(referenceRenderer, sk_tools::PictureRenderer::kNone_BBoxHierarchyType);
         } else {
 #if SK_SUPPORT_GPU
-            referenceRenderer = SkNEW_ARGS(sk_tools::SimplePictureRenderer,
-                                           (renderer.getGrContextOptions()));
+            referenceRenderer = new sk_tools::SimplePictureRenderer(renderer.getGrContextOptions());
 #else
-            referenceRenderer = SkNEW(sk_tools::SimplePictureRenderer);
+            referenceRenderer = new sk_tools::SimplePictureRenderer;
 #endif
         }
         SkAutoTUnref<sk_tools::PictureRenderer> aurReferenceRenderer(referenceRenderer);
 
-        success = render_picture_internal(inputPath, NULL, NULL, *referenceRenderer,
+        success = render_picture_internal(inputPath, nullptr, nullptr, *referenceRenderer,
                                           &referenceBitmap);
 
-        if (!success || NULL == referenceBitmap || NULL == referenceBitmap->getPixels()) {
+        if (!success || nullptr == referenceBitmap || nullptr == referenceBitmap->getPixels()) {
             SkDebugf("Failed to draw the reference picture.\n");
-            SkDELETE(bitmap);
-            SkDELETE(referenceBitmap);
+            delete bitmap;
+            delete referenceBitmap;
             return false;
         }
 
         if (success && (bitmap->width() != referenceBitmap->width())) {
             SkDebugf("Expected image width: %i, actual image width %i.\n",
                      referenceBitmap->width(), bitmap->width());
-            SkDELETE(bitmap);
-            SkDELETE(referenceBitmap);
+            delete bitmap;
+            delete referenceBitmap;
             return false;
         }
         if (success && (bitmap->height() != referenceBitmap->height())) {
             SkDebugf("Expected image height: %i, actual image height %i",
                      referenceBitmap->height(), bitmap->height());
-            SkDELETE(bitmap);
-            SkDELETE(referenceBitmap);
+            delete bitmap;
+            delete referenceBitmap;
             return false;
         }
 
@@ -334,13 +335,13 @@ static bool render_picture(const SkString& inputPath, const SkString* writePath,
                              x, y, FLAGS_maxComponentDiff,
                              *referenceBitmap->getAddr32(x, y),
                              *bitmap->getAddr32(x, y));
-                    SkDELETE(bitmap);
-                    SkDELETE(referenceBitmap);
+                    delete bitmap;
+                    delete referenceBitmap;
                     return false;
                 }
             }
         }
-        SkDELETE(referenceBitmap);
+        delete referenceBitmap;
 
         for (int i = 1; i <= 255; ++i) {
             if(diffs[i] > 0) {
@@ -362,16 +363,16 @@ static bool render_picture(const SkString& inputPath, const SkString* writePath,
             jsonSummaryPtr->add(inputFilename.c_str(), outputFilename.c_str(), imageDigest);
             if ((mismatchPath) && !mismatchPath->isEmpty() &&
                 !jsonSummaryPtr->getExpectation(inputFilename.c_str()).matches(imageDigest)) {
-                success &= sk_tools::write_bitmap_to_disk(*bitmap, *mismatchPath, NULL,
+                success &= sk_tools::write_bitmap_to_disk(*bitmap, *mismatchPath, nullptr,
                                                           outputFilename);
             }
         }
 
         if ((writePath) && !writePath->isEmpty()) {
-            success &= sk_tools::write_bitmap_to_disk(*bitmap, *writePath, NULL, outputFilename);
+            success &= sk_tools::write_bitmap_to_disk(*bitmap, *writePath, nullptr, outputFilename);
         }
     }
-    SkDELETE(bitmap);
+    delete bitmap;
 
     return success;
 }
@@ -442,7 +443,7 @@ int tool_main(int argc, char** argv) {
         SkDebugf("%s\n", errorString.c_str());
     }
 
-    if (renderer.get() == NULL) {
+    if (renderer.get() == nullptr) {
         exit(-1);
     }
 
@@ -457,7 +458,7 @@ int tool_main(int argc, char** argv) {
         mismatchPath.set(FLAGS_mismatchPath[0]);
     }
     sk_tools::ImageResultsAndExpectations jsonSummary;
-    sk_tools::ImageResultsAndExpectations* jsonSummaryPtr = NULL;
+    sk_tools::ImageResultsAndExpectations* jsonSummaryPtr = nullptr;
     if (FLAGS_writeJsonSummaryPath.count() == 1) {
         jsonSummaryPtr = &jsonSummary;
         if (FLAGS_readJsonSummaryPath.count() == 1) {

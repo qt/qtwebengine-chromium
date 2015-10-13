@@ -32,6 +32,7 @@
 #include "core/dom/DOMArrayBuffer.h"
 #include "core/dom/DOMTypedArray.h"
 #include "core/dom/ExceptionCode.h"
+#include "core/dom/FlexibleArrayBufferView.h"
 #include "core/fetch/ImageResource.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/Settings.h"
@@ -60,6 +61,7 @@
 #include "modules/webgl/OESVertexArrayObject.h"
 #include "modules/webgl/WebGLActiveInfo.h"
 #include "modules/webgl/WebGLBuffer.h"
+#include "modules/webgl/WebGLCompressedTextureASTC.h"
 #include "modules/webgl/WebGLCompressedTextureATC.h"
 #include "modules/webgl/WebGLCompressedTextureETC1.h"
 #include "modules/webgl/WebGLCompressedTexturePVRTC.h"
@@ -201,7 +203,7 @@ void WebGLRenderingContextBase::willDestroyContext(WebGLRenderingContextBase* co
     deactivateContext(context);
 
     // Try to re-enable the oldest inactive contexts.
-    while(activeContexts().size() < maxGLActiveContexts && forciblyEvictedContexts().size()) {
+    while (activeContexts().size() < maxGLActiveContexts && forciblyEvictedContexts().size()) {
         WebGLRenderingContextBase* evictedContext = forciblyEvictedContexts().first();
         if (!evictedContext->m_restoreAllowed) {
             forciblyEvictedContexts().remove(0);
@@ -221,249 +223,222 @@ void WebGLRenderingContextBase::willDestroyContext(WebGLRenderingContextBase* co
 
 namespace {
 
-    // ScopedDrawingBufferBinder is used for ReadPixels/CopyTexImage2D/CopySubImage2D to read from
-    // a multisampled DrawingBuffer. In this situation, we need to blit to a single sampled buffer
-    // for reading, during which the bindings could be changed and need to be recovered.
-    class ScopedDrawingBufferBinder {
-        STACK_ALLOCATED();
-    public:
-        ScopedDrawingBufferBinder(DrawingBuffer* drawingBuffer, WebGLFramebuffer* framebufferBinding)
-            : m_drawingBuffer(drawingBuffer)
-            , m_readFramebufferBinding(framebufferBinding)
-        {
-            // Commit DrawingBuffer if needed (e.g., for multisampling)
-            if (!m_readFramebufferBinding && m_drawingBuffer)
-                m_drawingBuffer->commit();
-        }
+GLint clamp(GLint value, GLint min, GLint max)
+{
+    if (value < min)
+        value = min;
+    if (value > max)
+        value = max;
+    return value;
+}
 
-        ~ScopedDrawingBufferBinder()
-        {
-            // Restore DrawingBuffer if needed
-            if (!m_readFramebufferBinding && m_drawingBuffer)
-                m_drawingBuffer->restoreFramebufferBindings();
-        }
+// Return true if a character belongs to the ASCII subset as defined in
+// GLSL ES 1.0 spec section 3.1.
+bool validateCharacter(unsigned char c)
+{
+    // Printing characters are valid except " $ ` @ \ ' DEL.
+    if (c >= 32 && c <= 126
+        && c != '"' && c != '$' && c != '`' && c != '@' && c != '\\' && c != '\'')
+        return true;
+    // Horizontal tab, line feed, vertical tab, form feed, carriage return
+    // are also valid.
+    if (c >= 9 && c <= 13)
+        return true;
+    return false;
+}
 
-    private:
-        DrawingBuffer* m_drawingBuffer;
-        RawPtrWillBeMember<WebGLFramebuffer> m_readFramebufferBinding;
+bool isPrefixReserved(const String& name)
+{
+    if (name.startsWith("gl_") || name.startsWith("webgl_") || name.startsWith("_webgl_"))
+        return true;
+    return false;
+}
+
+// Strips comments from shader text. This allows non-ASCII characters
+// to be used in comments without potentially breaking OpenGL
+// implementations not expecting characters outside the GLSL ES set.
+class StripComments {
+public:
+    StripComments(const String& str)
+        : m_parseState(BeginningOfLine)
+        , m_sourceString(str)
+        , m_length(str.length())
+        , m_position(0)
+    {
+        parse();
+    }
+
+    String result()
+    {
+        return m_builder.toString();
+    }
+
+private:
+    bool hasMoreCharacters() const
+    {
+        return (m_position < m_length);
+    }
+
+    void parse()
+    {
+        while (hasMoreCharacters()) {
+            process(current());
+            // process() might advance the position.
+            if (hasMoreCharacters())
+                advance();
+        }
+    }
+
+    void process(UChar);
+
+    bool peek(UChar& character) const
+    {
+        if (m_position + 1 >= m_length)
+            return false;
+        character = m_sourceString[m_position + 1];
+        return true;
+    }
+
+    UChar current()
+    {
+        ASSERT_WITH_SECURITY_IMPLICATION(m_position < m_length);
+        return m_sourceString[m_position];
+    }
+
+    void advance()
+    {
+        ++m_position;
+    }
+
+    static bool isNewline(UChar character)
+    {
+        // Don't attempt to canonicalize newline related characters.
+        return (character == '\n' || character == '\r');
+    }
+
+    void emit(UChar character)
+    {
+        m_builder.append(character);
+    }
+
+    enum ParseState {
+        // Have not seen an ASCII non-whitespace character yet on
+        // this line. Possible that we might see a preprocessor
+        // directive.
+        BeginningOfLine,
+
+        // Have seen at least one ASCII non-whitespace character
+        // on this line.
+        MiddleOfLine,
+
+        // Handling a preprocessor directive. Passes through all
+        // characters up to the end of the line. Disables comment
+        // processing.
+        InPreprocessorDirective,
+
+        // Handling a single-line comment. The comment text is
+        // replaced with a single space.
+        InSingleLineComment,
+
+        // Handling a multi-line comment. Newlines are passed
+        // through to preserve line numbers.
+        InMultiLineComment
     };
 
-    GLint clamp(GLint value, GLint min, GLint max)
-    {
-        if (value < min)
-            value = min;
-        if (value > max)
-            value = max;
-        return value;
+    ParseState m_parseState;
+    String m_sourceString;
+    unsigned m_length;
+    unsigned m_position;
+    StringBuilder m_builder;
+};
+
+void StripComments::process(UChar c)
+{
+    if (isNewline(c)) {
+        // No matter what state we are in, pass through newlines
+        // so we preserve line numbers.
+        emit(c);
+
+        if (m_parseState != InMultiLineComment)
+            m_parseState = BeginningOfLine;
+
+        return;
     }
 
-    // Return true if a character belongs to the ASCII subset as defined in
-    // GLSL ES 1.0 spec section 3.1.
-    bool validateCharacter(unsigned char c)
-    {
-        // Printing characters are valid except " $ ` @ \ ' DEL.
-        if (c >= 32 && c <= 126
-            && c != '"' && c != '$' && c != '`' && c != '@' && c != '\\' && c != '\'')
-            return true;
-        // Horizontal tab, line feed, vertical tab, form feed, carriage return
-        // are also valid.
-        if (c >= 9 && c <= 13)
-            return true;
-        return false;
-    }
-
-    bool isPrefixReserved(const String& name)
-    {
-        if (name.startsWith("gl_") || name.startsWith("webgl_") || name.startsWith("_webgl_"))
-            return true;
-        return false;
-    }
-
-    // Strips comments from shader text. This allows non-ASCII characters
-    // to be used in comments without potentially breaking OpenGL
-    // implementations not expecting characters outside the GLSL ES set.
-    class StripComments {
-    public:
-        StripComments(const String& str)
-            : m_parseState(BeginningOfLine)
-            , m_sourceString(str)
-            , m_length(str.length())
-            , m_position(0)
-        {
-            parse();
-        }
-
-        String result()
-        {
-            return m_builder.toString();
-        }
-
-    private:
-        bool hasMoreCharacters() const
-        {
-            return (m_position < m_length);
-        }
-
-        void parse()
-        {
-            while (hasMoreCharacters()) {
-                process(current());
-                // process() might advance the position.
-                if (hasMoreCharacters())
-                    advance();
-            }
-        }
-
-        void process(UChar);
-
-        bool peek(UChar& character) const
-        {
-            if (m_position + 1 >= m_length)
-                return false;
-            character = m_sourceString[m_position + 1];
-            return true;
-        }
-
-        UChar current()
-        {
-            ASSERT_WITH_SECURITY_IMPLICATION(m_position < m_length);
-            return m_sourceString[m_position];
-        }
-
-        void advance()
-        {
-            ++m_position;
-        }
-
-        static bool isNewline(UChar character)
-        {
-            // Don't attempt to canonicalize newline related characters.
-            return (character == '\n' || character == '\r');
-        }
-
-        void emit(UChar character)
-        {
-            m_builder.append(character);
-        }
-
-        enum ParseState {
-            // Have not seen an ASCII non-whitespace character yet on
-            // this line. Possible that we might see a preprocessor
-            // directive.
-            BeginningOfLine,
-
-            // Have seen at least one ASCII non-whitespace character
-            // on this line.
-            MiddleOfLine,
-
-            // Handling a preprocessor directive. Passes through all
-            // characters up to the end of the line. Disables comment
-            // processing.
-            InPreprocessorDirective,
-
-            // Handling a single-line comment. The comment text is
-            // replaced with a single space.
-            InSingleLineComment,
-
-            // Handling a multi-line comment. Newlines are passed
-            // through to preserve line numbers.
-            InMultiLineComment
-        };
-
-        ParseState m_parseState;
-        String m_sourceString;
-        unsigned m_length;
-        unsigned m_position;
-        StringBuilder m_builder;
-    };
-
-    void StripComments::process(UChar c)
-    {
-        if (isNewline(c)) {
-            // No matter what state we are in, pass through newlines
-            // so we preserve line numbers.
-            emit(c);
-
-            if (m_parseState != InMultiLineComment)
-                m_parseState = BeginningOfLine;
-
-            return;
-        }
-
-        UChar temp = 0;
-        switch (m_parseState) {
-        case BeginningOfLine:
-            if (WTF::isASCIISpace(c)) {
-                emit(c);
-                break;
-            }
-
-            if (c == '#') {
-                m_parseState = InPreprocessorDirective;
-                emit(c);
-                break;
-            }
-
-            // Transition to normal state and re-handle character.
-            m_parseState = MiddleOfLine;
-            process(c);
-            break;
-
-        case MiddleOfLine:
-            if (c == '/' && peek(temp)) {
-                if (temp == '/') {
-                    m_parseState = InSingleLineComment;
-                    emit(' ');
-                    advance();
-                    break;
-                }
-
-                if (temp == '*') {
-                    m_parseState = InMultiLineComment;
-                    // Emit the comment start in case the user has
-                    // an unclosed comment and we want to later
-                    // signal an error.
-                    emit('/');
-                    emit('*');
-                    advance();
-                    break;
-                }
-            }
-
+    UChar temp = 0;
+    switch (m_parseState) {
+    case BeginningOfLine:
+        if (WTF::isASCIISpace(c)) {
             emit(c);
             break;
+        }
 
-        case InPreprocessorDirective:
-            // No matter what the character is, just pass it
-            // through. Do not parse comments in this state. This
-            // might not be the right thing to do long term, but it
-            // should handle the #error preprocessor directive.
+        if (c == '#') {
+            m_parseState = InPreprocessorDirective;
             emit(c);
             break;
+        }
 
-        case InSingleLineComment:
-            // The newline code at the top of this function takes care
-            // of resetting our state when we get out of the
-            // single-line comment. Swallow all other characters.
-            break;
+        // Transition to normal state and re-handle character.
+        m_parseState = MiddleOfLine;
+        process(c);
+        break;
 
-        case InMultiLineComment:
-            if (c == '*' && peek(temp) && temp == '/') {
-                emit('*');
-                emit('/');
-                m_parseState = MiddleOfLine;
+    case MiddleOfLine:
+        if (c == '/' && peek(temp)) {
+            if (temp == '/') {
+                m_parseState = InSingleLineComment;
+                emit(' ');
                 advance();
                 break;
             }
 
-            // Swallow all other characters. Unclear whether we may
-            // want or need to just emit a space per character to try
-            // to preserve column numbers for debugging purposes.
+            if (temp == '*') {
+                m_parseState = InMultiLineComment;
+                // Emit the comment start in case the user has
+                // an unclosed comment and we want to later
+                // signal an error.
+                emit('/');
+                emit('*');
+                advance();
+                break;
+            }
+        }
+
+        emit(c);
+        break;
+
+    case InPreprocessorDirective:
+        // No matter what the character is, just pass it
+        // through. Do not parse comments in this state. This
+        // might not be the right thing to do long term, but it
+        // should handle the #error preprocessor directive.
+        emit(c);
+        break;
+
+    case InSingleLineComment:
+        // The newline code at the top of this function takes care
+        // of resetting our state when we get out of the
+        // single-line comment. Swallow all other characters.
+        break;
+
+    case InMultiLineComment:
+        if (c == '*' && peek(temp) && temp == '/') {
+            emit('*');
+            emit('/');
+            m_parseState = MiddleOfLine;
+            advance();
             break;
         }
-    }
 
-    static bool shouldFailContextCreationForTesting = false;
+        // Swallow all other characters. Unclear whether we may
+        // want or need to just emit a space per character to try
+        // to preserve column numbers for debugging purposes.
+        break;
+    }
+}
+
+static bool shouldFailContextCreationForTesting = false;
 } // namespace anonymous
 
 class ScopedTexture2DRestorer {
@@ -500,12 +475,11 @@ private:
     RawPtrWillBeMember<WebGLRenderingContextBase> m_context;
 };
 
-class WebGLRenderingContextLostCallback final : public NoBaseWillBeGarbageCollectedFinalized<WebGLRenderingContextLostCallback>, public WebGraphicsContext3D::WebGraphicsContextLostCallback {
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(WebGLRenderingContextLostCallback);
+class WebGLRenderingContextLostCallback final : public GarbageCollectedFinalized<WebGLRenderingContextLostCallback>, public WebGraphicsContext3D::WebGraphicsContextLostCallback {
 public:
-    static PassOwnPtrWillBeRawPtr<WebGLRenderingContextLostCallback> create(WebGLRenderingContextBase* context)
+    static WebGLRenderingContextLostCallback* create(WebGLRenderingContextBase* context)
     {
-        return adoptPtrWillBeNoop(new WebGLRenderingContextLostCallback(context));
+        return new WebGLRenderingContextLostCallback(context);
     }
 
     ~WebGLRenderingContextLostCallback() override { }
@@ -524,12 +498,11 @@ private:
     RawPtrWillBeMember<WebGLRenderingContextBase> m_context;
 };
 
-class WebGLRenderingContextErrorMessageCallback final : public NoBaseWillBeGarbageCollectedFinalized<WebGLRenderingContextErrorMessageCallback>, public WebGraphicsContext3D::WebGraphicsErrorMessageCallback {
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(WebGLRenderingContextErrorMessageCallback);
+class WebGLRenderingContextErrorMessageCallback final : public GarbageCollectedFinalized<WebGLRenderingContextErrorMessageCallback>, public WebGraphicsContext3D::WebGraphicsErrorMessageCallback {
 public:
-    static PassOwnPtrWillBeRawPtr<WebGLRenderingContextErrorMessageCallback> create(WebGLRenderingContextBase* context)
+    static WebGLRenderingContextErrorMessageCallback* create(WebGLRenderingContextBase* context)
     {
-        return adoptPtrWillBeNoop(new WebGLRenderingContextErrorMessageCallback(context));
+        return new WebGLRenderingContextErrorMessageCallback(context);
     }
 
     ~WebGLRenderingContextErrorMessageCallback() override { }
@@ -623,6 +596,276 @@ void WebGLRenderingContextBase::forceNextWebGLContextCreationToFail()
     shouldFailContextCreationForTesting = true;
 }
 
+namespace {
+
+// ES2 enums
+static const GLenum kSupportedInternalFormatsES2[] = {
+    GL_RGB,
+    GL_RGBA,
+    GL_LUMINANCE_ALPHA,
+    GL_LUMINANCE,
+    GL_ALPHA,
+};
+
+// Exposed by GL_ANGLE_depth_texture
+static const GLenum kSupportedInternalFormatsOESDepthTex[] = {
+    GL_DEPTH_COMPONENT,
+    GL_DEPTH_STENCIL,
+};
+
+// Exposed by GL_EXT_sRGB
+static const GLenum kSupportedInternalFormatsEXTsRGB[] = {
+    GL_SRGB,
+    GL_SRGB_ALPHA_EXT,
+};
+
+// ES3 enums
+static const GLenum kSupportedInternalFormatsES3[] = {
+    GL_R8,
+    GL_R8_SNORM,
+    GL_R16F,
+    GL_R32F,
+    GL_R8UI,
+    GL_R8I,
+    GL_R16UI,
+    GL_R16I,
+    GL_R32UI,
+    GL_R32I,
+    GL_RG8,
+    GL_RG8_SNORM,
+    GL_RG16F,
+    GL_RG32F,
+    GL_RG8UI,
+    GL_RG8I,
+    GL_RG16UI,
+    GL_RG16I,
+    GL_RG32UI,
+    GL_RG32I,
+    GL_RGB8,
+    GL_SRGB8,
+    GL_RGB565,
+    GL_RGB8_SNORM,
+    GL_R11F_G11F_B10F,
+    GL_RGB9_E5,
+    GL_RGB16F,
+    GL_RGB32F,
+    GL_RGB8UI,
+    GL_RGB8I,
+    GL_RGB16UI,
+    GL_RGB16I,
+    GL_RGB32UI,
+    GL_RGB32I,
+    GL_RGBA8,
+    GL_SRGB8_ALPHA8,
+    GL_RGBA8_SNORM,
+    GL_RGB5_A1,
+    GL_RGBA4,
+    GL_RGB10_A2,
+    GL_RGBA16F,
+    GL_RGBA32F,
+    GL_RGBA8UI,
+    GL_RGBA8I,
+    GL_RGB10_A2UI,
+    GL_RGBA16UI,
+    GL_RGBA16I,
+    GL_RGBA32I,
+    GL_RGBA32UI,
+    GL_DEPTH_COMPONENT16,
+    GL_DEPTH_COMPONENT24,
+    GL_DEPTH_COMPONENT32F,
+    GL_DEPTH24_STENCIL8,
+};
+
+// ES2 enums
+static const GLenum kSupportedFormatsES2[] = {
+    GL_RGB,
+    GL_RGBA,
+    GL_LUMINANCE_ALPHA,
+    GL_LUMINANCE,
+    GL_ALPHA,
+};
+
+// Exposed by GL_ANGLE_depth_texture
+static const GLenum kSupportedFormatsOESDepthTex[] = {
+    GL_DEPTH_COMPONENT,
+    GL_DEPTH_STENCIL,
+};
+
+// Exposed by GL_EXT_sRGB
+static const GLenum kSupportedFormatsEXTsRGB[] = {
+    GL_SRGB,
+    GL_SRGB_ALPHA_EXT,
+};
+
+// ES3 enums
+static const GLenum kSupportedFormatsES3[] = {
+    GL_RED,
+    GL_RED_INTEGER,
+    GL_RG,
+    GL_RG_INTEGER,
+    GL_RGB,
+    GL_RGB_INTEGER,
+    GL_RGBA,
+    GL_RGBA_INTEGER,
+    GL_DEPTH_COMPONENT,
+    GL_DEPTH_STENCIL,
+};
+
+// ES2 enums
+static const GLenum kSupportedTypesES2[] = {
+    GL_UNSIGNED_BYTE,
+    GL_UNSIGNED_SHORT_5_6_5,
+    GL_UNSIGNED_SHORT_4_4_4_4,
+    GL_UNSIGNED_SHORT_5_5_5_1,
+};
+
+// Exposed by GL_OES_texture_float
+static const GLenum kSupportedTypesOESTexFloat[] = {
+    GL_FLOAT,
+};
+
+// Exposed by GL_OES_texture_half_float
+static const GLenum kSupportedTypesOESTexHalfFloat[] = {
+    GL_HALF_FLOAT_OES,
+};
+
+// Exposed by GL_ANGLE_depth_texture
+static const GLenum kSupportedTypesOESDepthTex[] = {
+    GL_UNSIGNED_SHORT,
+    GL_UNSIGNED_INT,
+    GL_UNSIGNED_INT_24_8,
+};
+
+// ES3 enums
+static const GLenum kSupportedTypesES3[] = {
+    GL_BYTE,
+    GL_UNSIGNED_SHORT,
+    GL_SHORT,
+    GL_UNSIGNED_INT,
+    GL_INT,
+    GL_HALF_FLOAT,
+    GL_FLOAT,
+    GL_UNSIGNED_INT_2_10_10_10_REV,
+    GL_UNSIGNED_INT_10F_11F_11F_REV,
+    GL_UNSIGNED_INT_5_9_9_9_REV,
+    GL_UNSIGNED_INT_24_8,
+};
+
+// ES2 enums
+static const FormatType kSupportedFormatTypesES2[] = {
+    { GL_RGB, GL_RGB, GL_UNSIGNED_BYTE },
+    { GL_RGB, GL_RGB, GL_UNSIGNED_SHORT_5_6_5 },
+    { GL_RGBA, GL_RGBA, GL_UNSIGNED_BYTE },
+    { GL_RGBA, GL_RGBA, GL_UNSIGNED_SHORT_4_4_4_4 },
+    { GL_RGBA, GL_RGBA, GL_UNSIGNED_SHORT_5_5_5_1 },
+    { GL_LUMINANCE_ALPHA, GL_LUMINANCE_ALPHA, GL_UNSIGNED_BYTE },
+    { GL_LUMINANCE, GL_LUMINANCE, GL_UNSIGNED_BYTE },
+    { GL_ALPHA, GL_ALPHA, GL_UNSIGNED_BYTE },
+};
+
+// Exposed by GL_OES_texture_float
+static const FormatType kSupportedFormatTypesOESTexFloat[] = {
+    { GL_RGB, GL_RGB, GL_FLOAT },
+    { GL_RGBA, GL_RGBA, GL_FLOAT },
+    { GL_LUMINANCE_ALPHA, GL_LUMINANCE_ALPHA, GL_FLOAT },
+    { GL_LUMINANCE, GL_LUMINANCE, GL_FLOAT },
+    { GL_ALPHA, GL_ALPHA, GL_FLOAT },
+};
+
+// Exposed by GL_OES_texture_half_float
+static const FormatType kSupportedFormatTypesOESTexHalfFloat[] = {
+    { GL_RGB, GL_RGB, GL_HALF_FLOAT_OES },
+    { GL_RGBA, GL_RGBA, GL_HALF_FLOAT_OES },
+    { GL_LUMINANCE_ALPHA, GL_LUMINANCE_ALPHA, GL_HALF_FLOAT_OES },
+    { GL_LUMINANCE, GL_LUMINANCE, GL_HALF_FLOAT_OES },
+    { GL_ALPHA, GL_ALPHA, GL_HALF_FLOAT_OES },
+};
+
+// Exposed by GL_ANGLE_depth_texture
+static const FormatType kSupportedFormatTypesOESDepthTex[] = {
+    { GL_DEPTH_COMPONENT, GL_DEPTH_COMPONENT, GL_UNSIGNED_SHORT },
+    { GL_DEPTH_COMPONENT, GL_DEPTH_COMPONENT, GL_UNSIGNED_INT },
+    { GL_DEPTH_STENCIL, GL_DEPTH_STENCIL, GL_UNSIGNED_INT_24_8 },
+};
+
+// Exposed by GL_EXT_sRGB
+static const FormatType kSupportedFormatTypesEXTsRGB[] = {
+    { GL_SRGB, GL_SRGB, GL_UNSIGNED_BYTE },
+    { GL_SRGB_ALPHA_EXT, GL_SRGB_ALPHA_EXT, GL_UNSIGNED_BYTE },
+};
+
+// ES3 enums
+static const FormatType kSupportedFormatTypesES3[] = {
+    { GL_R8, GL_RED, GL_UNSIGNED_BYTE },
+    { GL_R8_SNORM, GL_RED, GL_BYTE },
+    { GL_R16F, GL_RED, GL_HALF_FLOAT },
+    { GL_R16F, GL_RED, GL_FLOAT },
+    { GL_R32F, GL_RED, GL_FLOAT },
+    { GL_R8UI, GL_RED_INTEGER, GL_UNSIGNED_BYTE },
+    { GL_R8I, GL_RED_INTEGER, GL_BYTE },
+    { GL_R16UI, GL_RED_INTEGER, GL_UNSIGNED_SHORT },
+    { GL_R16I, GL_RED_INTEGER, GL_SHORT },
+    { GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT },
+    { GL_R32I, GL_RED_INTEGER, GL_INT },
+    { GL_RG8, GL_RG, GL_UNSIGNED_BYTE },
+    { GL_RG8_SNORM, GL_RG, GL_BYTE },
+    { GL_RG16F, GL_RG, GL_HALF_FLOAT },
+    { GL_RG16F, GL_RG, GL_FLOAT },
+    { GL_RG32F, GL_RG, GL_FLOAT },
+    { GL_RG8UI, GL_RG_INTEGER, GL_UNSIGNED_BYTE },
+    { GL_RG8I, GL_RG_INTEGER, GL_BYTE },
+    { GL_RG16UI, GL_RG_INTEGER, GL_UNSIGNED_SHORT },
+    { GL_RG16I, GL_RG_INTEGER, GL_SHORT },
+    { GL_RG32UI, GL_RG_INTEGER, GL_UNSIGNED_INT },
+    { GL_RG32I, GL_RG_INTEGER, GL_INT },
+    { GL_RGB8, GL_RGB, GL_UNSIGNED_BYTE },
+    { GL_SRGB8, GL_RGB, GL_UNSIGNED_BYTE },
+    { GL_RGB565, GL_RGB, GL_UNSIGNED_BYTE, },
+    { GL_RGB565, GL_RGB, GL_UNSIGNED_SHORT_5_6_5 },
+    { GL_RGB8_SNORM, GL_RGB, GL_BYTE },
+    { GL_R11F_G11F_B10F, GL_RGB, GL_UNSIGNED_INT_10F_11F_11F_REV },
+    { GL_R11F_G11F_B10F, GL_RGB, GL_HALF_FLOAT },
+    { GL_R11F_G11F_B10F, GL_RGB, GL_FLOAT },
+    { GL_RGB9_E5, GL_RGB, GL_UNSIGNED_INT_5_9_9_9_REV },
+    { GL_RGB9_E5, GL_RGB, GL_HALF_FLOAT },
+    { GL_RGB9_E5, GL_RGB, GL_FLOAT },
+    { GL_RGB16F, GL_RGB, GL_HALF_FLOAT },
+    { GL_RGB16F, GL_RGB, GL_FLOAT },
+    { GL_RGB32F, GL_RGB, GL_FLOAT },
+    { GL_RGB8UI, GL_RGB_INTEGER, GL_UNSIGNED_BYTE },
+    { GL_RGB8I, GL_RGB_INTEGER, GL_BYTE },
+    { GL_RGB16UI, GL_RGB_INTEGER, GL_UNSIGNED_SHORT },
+    { GL_RGB16I, GL_RGB_INTEGER, GL_SHORT },
+    { GL_RGB32UI, GL_RGB_INTEGER, GL_UNSIGNED_INT },
+    { GL_RGB32I, GL_RGB_INTEGER, GL_INT },
+    { GL_RGBA8, GL_RGBA, GL_UNSIGNED_BYTE },
+    { GL_SRGB8_ALPHA8, GL_RGBA, GL_UNSIGNED_BYTE },
+    { GL_RGBA8_SNORM, GL_RGBA, GL_BYTE },
+    { GL_RGB5_A1, GL_RGBA, GL_UNSIGNED_BYTE },
+    { GL_RGB5_A1, GL_RGBA, GL_UNSIGNED_SHORT_5_5_5_1 },
+    { GL_RGB5_A1, GL_RGBA, GL_UNSIGNED_INT_2_10_10_10_REV },
+    { GL_RGBA4, GL_RGBA, GL_UNSIGNED_BYTE },
+    { GL_RGBA4, GL_RGBA, GL_UNSIGNED_SHORT_4_4_4_4 },
+    { GL_RGB10_A2, GL_RGBA, GL_UNSIGNED_INT_2_10_10_10_REV },
+    { GL_RGBA16F, GL_RGBA, GL_HALF_FLOAT },
+    { GL_RGBA16F, GL_RGBA, GL_FLOAT },
+    { GL_RGBA32F, GL_RGBA, GL_FLOAT },
+    { GL_RGBA8UI, GL_RGBA_INTEGER, GL_UNSIGNED_BYTE },
+    { GL_RGBA8I, GL_RGBA_INTEGER, GL_BYTE },
+    { GL_RGB10_A2UI, GL_RGBA_INTEGER, GL_UNSIGNED_INT_2_10_10_10_REV },
+    { GL_RGBA16UI, GL_RGBA_INTEGER, GL_UNSIGNED_SHORT },
+    { GL_RGBA16I, GL_RGBA_INTEGER, GL_SHORT },
+    { GL_RGBA32I, GL_RGBA_INTEGER, GL_INT },
+    { GL_RGBA32UI, GL_RGBA_INTEGER, GL_UNSIGNED_INT },
+    { GL_DEPTH_COMPONENT16, GL_DEPTH_COMPONENT, GL_UNSIGNED_SHORT },
+    { GL_DEPTH_COMPONENT16, GL_DEPTH_COMPONENT, GL_UNSIGNED_INT },
+    { GL_DEPTH_COMPONENT24, GL_DEPTH_COMPONENT, GL_UNSIGNED_INT },
+    { GL_DEPTH_COMPONENT32F, GL_DEPTH_COMPONENT, GL_FLOAT },
+    { GL_DEPTH24_STENCIL8, GL_DEPTH_STENCIL, GL_UNSIGNED_INT_24_8 },
+};
+
+} // namespace anonymous
+
 WebGLRenderingContextBase::WebGLRenderingContextBase(HTMLCanvasElement* passedCanvas, PassOwnPtr<WebGraphicsContext3D> context, const WebGLContextAttributes& requestedAttributes)
     : CanvasRenderingContext(passedCanvas)
     , m_contextLostMode(NotLostContext)
@@ -637,6 +880,11 @@ WebGLRenderingContextBase::WebGLRenderingContextBase(HTMLCanvasElement* passedCa
     , m_multisamplingAllowed(false)
     , m_multisamplingObserverRegistered(false)
     , m_onePlusMaxNonDefaultTextureUnit(0)
+    , m_isWebGL2FormatsTypesAdded(false)
+    , m_isOESTextureFloatFormatsTypesAdded(false)
+    , m_isOESTextureHalfFloatFormatsTypesAdded(false)
+    , m_isWebGLDepthTextureFormatsTypesAdded(false)
+    , m_isEXTsRGBFormatsTypesAdded(false)
 {
     ASSERT(context);
 
@@ -656,6 +904,16 @@ WebGLRenderingContextBase::WebGLRenderingContextBase(HTMLCanvasElement* passedCa
 
     drawingBuffer()->bind(GL_FRAMEBUFFER);
     setupFlags();
+    
+#define ADD_VALUES_TO_SET(set, values) \
+    for (size_t i = 0; i < arraysize(values); ++i) {   \
+        set.insert(values[i]);                         \
+    }
+
+    ADD_VALUES_TO_SET(m_supportedInternalFormats, kSupportedInternalFormatsES2);
+    ADD_VALUES_TO_SET(m_supportedFormats, kSupportedFormatsES2);
+    ADD_VALUES_TO_SET(m_supportedTypes, kSupportedTypesES2);
+    ADD_VALUES_TO_SET(m_supportedFormatTypeCombinations, kSupportedFormatTypesES2);
 }
 
 PassRefPtr<DrawingBuffer> WebGLRenderingContextBase::createDrawingBuffer(PassOwnPtr<WebGraphicsContext3D> context)
@@ -756,6 +1014,21 @@ void WebGLRenderingContextBase::initializeNewContext()
     for (int i = 0; i < WebGLExtensionNameCount; ++i)
         m_extensionEnabled[i] = false;
 
+    m_isWebGL2FormatsTypesAdded = false;
+    m_isOESTextureFloatFormatsTypesAdded = false;
+    m_isOESTextureHalfFloatFormatsTypesAdded = false;
+    m_isWebGLDepthTextureFormatsTypesAdded = false;
+    m_isEXTsRGBFormatsTypesAdded = false;
+
+    m_supportedInternalFormats.clear();
+    ADD_VALUES_TO_SET(m_supportedInternalFormats, kSupportedInternalFormatsES2);
+    m_supportedFormats.clear();
+    ADD_VALUES_TO_SET(m_supportedFormats, kSupportedFormatsES2);
+    m_supportedTypes.clear();
+    ADD_VALUES_TO_SET(m_supportedTypes, kSupportedTypesES2);
+    m_supportedFormatTypeCombinations.clear();
+    ADD_VALUES_TO_SET(m_supportedFormatTypeCombinations, kSupportedFormatTypesES2);
+
     activateContext(this);
 }
 
@@ -807,6 +1080,9 @@ WebGLRenderingContextBase::~WebGLRenderingContextBase()
     m_renderbufferBinding = nullptr;
     m_valuebufferBinding = nullptr;
 
+    // WebGLTexture shared objects will be detached and deleted
+    // m_contextGroup->removeContext(this), which will bring about deleteTexture() calls.
+    // We null these out to avoid accessing those members in deleteTexture().
     for (size_t i = 0; i < m_textureUnits.size(); ++i) {
         m_textureUnits[i].m_texture2DBinding = nullptr;
         m_textureUnits[i].m_textureCubeMapBinding = nullptr;
@@ -820,6 +1096,9 @@ WebGLRenderingContextBase::~WebGLRenderingContextBase()
     detachAndRemoveAllObjects();
 
     // Release all extensions now.
+    for (ExtensionTracker* tracker : m_extensions) {
+        tracker->loseExtension(true);
+    }
     m_extensions.clear();
 
     // Context must be removed from the group prior to the destruction of the
@@ -828,9 +1107,10 @@ WebGLRenderingContextBase::~WebGLRenderingContextBase()
 
     destroyContext();
 
-    if (m_multisamplingObserverRegistered)
+    if (m_multisamplingObserverRegistered) {
         if (Page* page = canvas()->document().page())
             page->removeMultisamplingChangedObserver(this);
+    }
 
     willDestroyContext(this);
 }
@@ -965,6 +1245,9 @@ bool WebGLRenderingContextBase::paintRenderingResultsToCanvas(SourceDrawingBuffe
     canvas()->clearCopiedImage();
     m_markedCanvasDirty = false;
 
+    if (!canvas()->buffer())
+        return false;
+
     ScopedTexture2DRestorer restorer(this);
     ScopedFramebufferRestorer fboRestorer(this);
 
@@ -1007,13 +1290,22 @@ void WebGLRenderingContextBase::reshape(int width, int height)
     // This is an approximation because at WebGLRenderingContextBase level we don't
     // know if the underlying FBO uses textures or renderbuffers.
     GLint maxSize = std::min(m_maxTextureSize, m_maxRenderbufferSize);
-    // Limit drawing buffer size to 4k to avoid memory exhaustion.
-    const int sizeUpperLimit = 4096;
-    maxSize = std::min(maxSize, sizeUpperLimit);
     GLint maxWidth = std::min(maxSize, m_maxViewportDims[0]);
     GLint maxHeight = std::min(maxSize, m_maxViewportDims[1]);
     width = clamp(width, 1, maxWidth);
     height = clamp(height, 1, maxHeight);
+
+    // Limit drawing buffer area to 4k*4k to avoid memory exhaustion. Width or height may be larger than
+    // 4k as long as it's within the max viewport dimensions and total area remains within the limit.
+    // For example: 5120x2880 should be fine.
+    const int maxArea = 4096 * 4096;
+    int currentArea = width * height;
+    if (currentArea > maxArea) {
+        // If we've exceeded the area limit scale the buffer down, preserving ascpect ratio, until it fits.
+        float scaleFactor = sqrtf(static_cast<float>(maxArea) / static_cast<float>(currentArea));
+        width = std::max(1, static_cast<int>(width * scaleFactor));
+        height = std::max(1, static_cast<int>(height * scaleFactor));
+    }
 
     // We don't have to mark the canvas as dirty, since the newly created image buffer will also start off
     // clear (and this matches what reshape will do).
@@ -1284,18 +1576,13 @@ void WebGLRenderingContextBase::bufferDataImpl(GLenum target, long long size, co
     if (!buffer)
         return;
 
-    switch (usage) {
-    case GL_STREAM_DRAW:
-    case GL_STATIC_DRAW:
-    case GL_DYNAMIC_DRAW:
-        break;
-    default:
-        synthesizeGLError(GL_INVALID_ENUM, "bufferData", "invalid usage");
+    if (!validateBufferDataUsage("bufferData", usage))
         return;
-    }
 
     if (!validateValueFitNonNegInt32("bufferData", "size", size))
         return;
+
+    buffer->setSize(size);
 
     webContext()->bufferData(target, static_cast<GLsizeiptr>(size), data, usage);
 }
@@ -1304,10 +1591,6 @@ void WebGLRenderingContextBase::bufferData(GLenum target, long long size, GLenum
 {
     if (isContextLost())
         return;
-    if (!size) {
-        synthesizeGLError(GL_INVALID_VALUE, "bufferData", "size == 0");
-        return;
-    }
     bufferDataImpl(target, size, 0, usage);
 }
 
@@ -1342,6 +1625,10 @@ void WebGLRenderingContextBase::bufferSubDataImpl(GLenum target, long long offse
         return;
     if (!data)
         return;
+    if (offset + static_cast<long long>(size) > buffer->getSize()) {
+        synthesizeGLError(GL_INVALID_VALUE, "bufferSubData", "buffer overflow");
+        return;
+    }
 
     webContext()->bufferSubData(target, static_cast<GLintptr>(offset), size, data);
 }
@@ -1355,13 +1642,13 @@ void WebGLRenderingContextBase::bufferSubData(GLenum target, long long offset, D
     bufferSubDataImpl(target, offset, data->byteLength(), data->data());
 }
 
-void WebGLRenderingContextBase::bufferSubData(GLenum target, long long offset, DOMArrayBufferView* data)
+void WebGLRenderingContextBase::bufferSubData(GLenum target, long long offset, const FlexibleArrayBufferView& data)
 {
     if (isContextLost())
         return;
     if (!data)
         return;
-    bufferSubDataImpl(target, offset, data->byteLength(), data->baseAddress());
+    bufferSubDataImpl(target, offset, data.byteLength(), data.baseAddressMaybeOnStack());
 }
 
 bool WebGLRenderingContextBase::validateFramebufferTarget(GLenum target)
@@ -1524,7 +1811,7 @@ void WebGLRenderingContextBase::compressedTexSubImage2D(GLenum target, GLint lev
     if (!tex)
         return;
 
-    if (format != tex->getInternalFormat(target, level)) {
+    if (!isWebGL2OrHigher() && format != tex->getInternalFormat(target, level)) {
         synthesizeGLError(GL_INVALID_OPERATION, "compressedTexSubImage2D", "format does not match texture format");
         return;
     }
@@ -1538,28 +1825,11 @@ void WebGLRenderingContextBase::compressedTexSubImage2D(GLenum target, GLint lev
 
 bool WebGLRenderingContextBase::validateSettableTexFormat(const char* functionName, GLenum format)
 {
+    if (isWebGL2OrHigher())
+        return true;
+
     if (WebGLImageConversion::getChannelBitsByFormat(format) & WebGLImageConversion::ChannelDepthStencil) {
         synthesizeGLError(GL_INVALID_OPERATION, functionName, "format can not be set, only rendered to");
-        return false;
-    }
-    return true;
-}
-
-bool WebGLRenderingContextBase::validateReadBufferAttachment(const char* functionName, const WebGLFramebuffer* readFramebufferBinding)
-{
-    if (readFramebufferBinding) {
-        GLenum readBuffer = readFramebufferBinding->getReadBuffer();
-        if (readBuffer == GL_NONE) {
-            synthesizeGLError(GL_INVALID_OPERATION, functionName, "read buffer is GL_NONE");
-            return false;
-        }
-        WebGLSharedObject* attachmentObject = readFramebufferBinding->getAttachmentObject(readBuffer);
-        if (!attachmentObject) {
-            synthesizeGLError(GL_INVALID_OPERATION, functionName, "no image attached to read buffer");
-            return false;
-        }
-    } else if (m_readBufferOfDefaultFramebuffer == GL_NONE) {
-        synthesizeGLError(GL_INVALID_OPERATION, functionName, "read buffer is GL_NONE");
         return false;
     }
     return true;
@@ -1568,6 +1838,8 @@ bool WebGLRenderingContextBase::validateReadBufferAttachment(const char* functio
 void WebGLRenderingContextBase::copyTexImage2D(GLenum target, GLint level, GLenum internalformat, GLint x, GLint y, GLsizei width, GLsizei height, GLint border)
 {
     if (isContextLost())
+        return;
+    if (!validateTexFuncLevel("copyTexImage2D", target, level))
         return;
     if (!validateTexFuncParameters("copyTexImage2D", NotTexSubImage2D, target, level, internalformat, width, height, border, internalformat, GL_UNSIGNED_BYTE))
         return;
@@ -1588,14 +1860,8 @@ void WebGLRenderingContextBase::copyTexImage2D(GLenum target, GLint level, GLenu
         synthesizeGLError(GL_INVALID_VALUE, "copyTexImage2D", "level > 0 not power of 2");
         return;
     }
-    const char* reason = "framebuffer incomplete";
-    GLenum framebufferTarget = isWebGL2OrHigher() ? GL_READ_FRAMEBUFFER : GL_FRAMEBUFFER;
-    WebGLFramebuffer* readFramebufferBinding = getFramebufferBinding(framebufferTarget);
-    if (readFramebufferBinding && !readFramebufferBinding->onAccess(webContext(), &reason)) {
-        synthesizeGLError(GL_INVALID_FRAMEBUFFER_OPERATION, "copyTexImage2D", reason);
-        return;
-    }
-    if (!validateReadBufferAttachment("copyTexImage2D", readFramebufferBinding))
+    WebGLFramebuffer* readFramebufferBinding = nullptr;
+    if (!validateReadBufferAndGetInfo("copyTexImage2D", readFramebufferBinding, nullptr, nullptr))
         return;
     clearIfComposited();
     ScopedDrawingBufferBinder binder(drawingBuffer(), readFramebufferBinding);
@@ -1608,90 +1874,59 @@ void WebGLRenderingContextBase::copyTexSubImage2D(GLenum target, GLint level, GL
 {
     if (isContextLost())
         return;
-    if (!validateTexFuncLevel("copyTexSubImage2D", target, level))
+    if (!validateCopyTexSubImage("copyTexSubImage2D", target, level, xoffset, yoffset, 0, x, y, width, height))
         return;
-    WebGLTexture* tex = validateTextureBinding("copyTexSubImage2D", target, true);
-    if (!tex)
-        return;
-    if (!validateSize("copyTexSubImage2D", xoffset, yoffset) || !validateSize("copyTexSubImage2D", width, height))
-        return;
-    // Before checking if it is in the range, check if overflow happens first.
-    Checked<GLint, RecordOverflow> maxX = xoffset;
-    maxX += width;
-    Checked<GLint, RecordOverflow> maxY = yoffset;
-    maxY += height;
-    if (maxX.hasOverflowed() || maxY.hasOverflowed()) {
-        synthesizeGLError(GL_INVALID_VALUE, "copyTexSubImage2D", "bad dimensions");
-        return;
-    }
-    if (maxX.unsafeGet() > tex->getWidth(target, level) || maxY.unsafeGet() > tex->getHeight(target, level)) {
-        synthesizeGLError(GL_INVALID_VALUE, "copyTexSubImage2D", "rectangle out of range");
-        return;
-    }
-    GLenum internalformat = tex->getInternalFormat(target, level);
-    if (!validateSettableTexFormat("copyTexSubImage2D", internalformat))
-        return;
-    if (!isTexInternalFormatColorBufferCombinationValid(internalformat, boundFramebufferColorFormat())) {
-        synthesizeGLError(GL_INVALID_OPERATION, "copyTexSubImage2D", "framebuffer is incompatible format");
-        return;
-    }
-    const char* reason = "framebuffer incomplete";
-    GLenum framebufferTarget = isWebGL2OrHigher() ? GL_READ_FRAMEBUFFER : GL_FRAMEBUFFER;
-    WebGLFramebuffer* readFramebufferBinding = getFramebufferBinding(framebufferTarget);
-    if (readFramebufferBinding && !readFramebufferBinding->onAccess(webContext(), &reason)) {
-        synthesizeGLError(GL_INVALID_FRAMEBUFFER_OPERATION, "copyTexSubImage2D", reason);
-        return;
-    }
-    if (!validateReadBufferAttachment("copyTexSubImage2D", readFramebufferBinding))
+    WebGLFramebuffer* readFramebufferBinding = nullptr;
+    if (!validateReadBufferAndGetInfo("copyTexSubImage2D", readFramebufferBinding, nullptr, nullptr))
         return;
     clearIfComposited();
     ScopedDrawingBufferBinder binder(drawingBuffer(), readFramebufferBinding);
     webContext()->copyTexSubImage2D(target, level, xoffset, yoffset, x, y, width, height);
 }
 
-PassRefPtrWillBeRawPtr<WebGLBuffer> WebGLRenderingContextBase::createBuffer()
+WebGLBuffer* WebGLRenderingContextBase::createBuffer()
 {
     if (isContextLost())
         return nullptr;
-    RefPtrWillBeRawPtr<WebGLBuffer> o = WebGLBuffer::create(this);
-    addSharedObject(o.get());
-    return o.release();
+    WebGLBuffer* o = WebGLBuffer::create(this);
+    addSharedObject(o);
+    return o;
 }
 
-PassRefPtrWillBeRawPtr<WebGLFramebuffer> WebGLRenderingContextBase::createFramebuffer()
+WebGLFramebuffer* WebGLRenderingContextBase::createFramebuffer()
 {
     if (isContextLost())
         return nullptr;
-    RefPtrWillBeRawPtr<WebGLFramebuffer> o = WebGLFramebuffer::create(this);
-    addContextObject(o.get());
-    return o.release();
+    WebGLFramebuffer* o = WebGLFramebuffer::create(this);
+    addContextObject(o);
+    return o;
 }
 
-PassRefPtrWillBeRawPtr<WebGLTexture> WebGLRenderingContextBase::createTexture()
+WebGLTexture* WebGLRenderingContextBase::createTexture()
 {
     if (isContextLost())
         return nullptr;
-    RefPtrWillBeRawPtr<WebGLTexture> o = WebGLTexture::create(this);
-    addSharedObject(o.get());
-    return o.release();
+    WebGLTexture* o = WebGLTexture::create(this);
+    addSharedObject(o);
+    return o;
 }
 
-PassRefPtrWillBeRawPtr<WebGLProgram> WebGLRenderingContextBase::createProgram()
+WebGLProgram* WebGLRenderingContextBase::createProgram()
 {
     if (isContextLost())
         return nullptr;
-    RefPtrWillBeRawPtr<WebGLProgram> o = WebGLProgram::create(this);
-    addSharedObject(o.get());
-    return o.release();
+    WebGLProgram* o = WebGLProgram::create(this);
+    addSharedObject(o);
+    return o;
 }
 
-PassRefPtrWillBeRawPtr<WebGLRenderbuffer> WebGLRenderingContextBase::createRenderbuffer()
+WebGLRenderbuffer* WebGLRenderingContextBase::createRenderbuffer()
 {
     if (isContextLost())
         return nullptr;
-    RefPtrWillBeRawPtr<WebGLRenderbuffer> o = WebGLRenderbuffer::create(this);
-    addSharedObject(o.get());
-    return o.release();
+    WebGLRenderbuffer* o = WebGLRenderbuffer::create(this);
+    addSharedObject(o);
+    return o;
 }
 
 WebGLRenderbuffer* WebGLRenderingContextBase::ensureEmulatedStencilBuffer(GLenum target, WebGLRenderbuffer* renderbuffer)
@@ -1706,7 +1941,7 @@ WebGLRenderbuffer* WebGLRenderingContextBase::ensureEmulatedStencilBuffer(GLenum
     return renderbuffer->emulatedStencilBuffer();
 }
 
-PassRefPtrWillBeRawPtr<WebGLShader> WebGLRenderingContextBase::createShader(GLenum type)
+WebGLShader* WebGLRenderingContextBase::createShader(GLenum type)
 {
     if (isContextLost())
         return nullptr;
@@ -1715,9 +1950,9 @@ PassRefPtrWillBeRawPtr<WebGLShader> WebGLRenderingContextBase::createShader(GLen
         return nullptr;
     }
 
-    RefPtrWillBeRawPtr<WebGLShader> o = WebGLShader::create(this, type);
-    addSharedObject(o.get());
-    return o.release();
+    WebGLShader* o = WebGLShader::create(this, type);
+    addSharedObject(o);
+    return o;
 }
 
 void WebGLRenderingContextBase::cullFace(GLenum mode)
@@ -2054,7 +2289,7 @@ void WebGLRenderingContextBase::framebufferRenderbuffer(GLenum target, GLenum at
     Platform3DObject bufferObject = objectOrZero(buffer);
     switch (attachment) {
     case GL_DEPTH_STENCIL_ATTACHMENT:
-        if (isDepthStencilSupported() || !buffer) {
+        if (isWebGL2OrHigher() || isDepthStencilSupported() || !buffer) {
             webContext()->framebufferRenderbuffer(target, GL_DEPTH_ATTACHMENT, renderbuffertarget, bufferObject);
             webContext()->framebufferRenderbuffer(target, GL_STENCIL_ATTACHMENT, renderbuffertarget, bufferObject);
         } else {
@@ -2070,7 +2305,14 @@ void WebGLRenderingContextBase::framebufferRenderbuffer(GLenum target, GLenum at
     default:
         webContext()->framebufferRenderbuffer(target, attachment, renderbuffertarget, bufferObject);
     }
-    framebufferBinding->setAttachmentForBoundFramebuffer(target, attachment, buffer);
+    if (isWebGL2OrHigher() && attachment == GL_DEPTH_STENCIL_ATTACHMENT) {
+        // On ES3, DEPTH_STENCIL_ATTACHMENT is like an alias for DEPTH_ATTACHMENT + STENCIL_ATTACHMENT.
+        // We divide it here so in WebGLFramebuffer, we don't have to handle DEPTH_STENCIL_ATTACHMENT in WebGL 2.
+        framebufferBinding->setAttachmentForBoundFramebuffer(target, GL_DEPTH_ATTACHMENT, buffer);
+        framebufferBinding->setAttachmentForBoundFramebuffer(target, GL_STENCIL_ATTACHMENT, buffer);
+    } else {
+        framebufferBinding->setAttachmentForBoundFramebuffer(target, attachment, buffer);
+    }
     applyStencilTest();
 }
 
@@ -2139,7 +2381,7 @@ void WebGLRenderingContextBase::generateMipmap(GLenum target)
     if (!tex)
         return;
     if (!tex->canGenerateMipmaps()) {
-        synthesizeGLError(GL_INVALID_OPERATION, "generateMipmap", "level 0 not power of 2 or not all the same size");
+        synthesizeGLError(GL_INVALID_OPERATION, "generateMipmap", "cannot generate mipmaps");
         return;
     }
     if (tex->getInternalFormat(target, 0) == GL_SRGB_EXT || tex->getInternalFormat(target, 0) == GL_SRGB_ALPHA_EXT) {
@@ -2166,7 +2408,7 @@ void WebGLRenderingContextBase::generateMipmap(GLenum target)
     tex->generateMipmapLevelInfo();
 }
 
-PassRefPtrWillBeRawPtr<WebGLActiveInfo> WebGLRenderingContextBase::getActiveAttrib(WebGLProgram* program, GLuint index)
+WebGLActiveInfo* WebGLRenderingContextBase::getActiveAttrib(WebGLProgram* program, GLuint index)
 {
     if (isContextLost() || !validateWebGLObject("getActiveAttrib", program))
         return nullptr;
@@ -2176,7 +2418,7 @@ PassRefPtrWillBeRawPtr<WebGLActiveInfo> WebGLRenderingContextBase::getActiveAttr
     return WebGLActiveInfo::create(info.name, info.type, info.size);
 }
 
-PassRefPtrWillBeRawPtr<WebGLActiveInfo> WebGLRenderingContextBase::getActiveUniform(WebGLProgram* program, GLuint index)
+WebGLActiveInfo* WebGLRenderingContextBase::getActiveUniform(WebGLProgram* program, GLuint index)
 {
     if (isContextLost() || !validateWebGLObject("getActiveUniform", program))
         return nullptr;
@@ -2186,12 +2428,12 @@ PassRefPtrWillBeRawPtr<WebGLActiveInfo> WebGLRenderingContextBase::getActiveUnif
     return WebGLActiveInfo::create(info.name, info.type, info.size);
 }
 
-Nullable<WillBeHeapVector<RefPtrWillBeMember<WebGLShader>>> WebGLRenderingContextBase::getAttachedShaders(WebGLProgram* program)
+Nullable<HeapVector<Member<WebGLShader>>> WebGLRenderingContextBase::getAttachedShaders(WebGLProgram* program)
 {
     if (isContextLost() || !validateWebGLObject("getAttachedShaders", program))
         return nullptr;
 
-    WillBeHeapVector<RefPtrWillBeMember<WebGLShader>> shaderObjects;
+    HeapVector<Member<WebGLShader>> shaderObjects;
     const GLenum shaderType[] = {
         GL_VERTEX_SHADER,
         GL_FRAGMENT_SHADER
@@ -2246,14 +2488,11 @@ ScriptValue WebGLRenderingContextBase::getBufferParameter(ScriptState* scriptSta
             return WebGLAny(scriptState, static_cast<unsigned>(value));
         }
     case GL_BUFFER_SIZE:
-        if (!isWebGL2OrHigher()) {
+        {
             GLint value = 0;
             webContext()->getBufferParameteriv(target, pname, &value);
-            return WebGLAny(scriptState, value);
-        }
-        {
-            GLint64 value = 0;
-            webContext()->getBufferParameteri64v(target, pname, &value);
+            if (!isWebGL2OrHigher())
+                return WebGLAny(scriptState, value);
             return WebGLAny(scriptState, static_cast<GLint64>(value));
         }
     default:
@@ -2320,11 +2559,11 @@ bool WebGLRenderingContextBase::extensionSupportedAndAllowed(const ExtensionTrac
 
 ScriptValue WebGLRenderingContextBase::getExtension(ScriptState* scriptState, const String& name)
 {
-    RefPtrWillBeRawPtr<WebGLExtension> extension = nullptr;
+    WebGLExtension* extension = nullptr;
 
     if (!isContextLost()) {
         for (size_t i = 0; i < m_extensions.size(); ++i) {
-            ExtensionTracker* tracker = m_extensions[i].get();
+            ExtensionTracker* tracker = m_extensions[i];
             if (tracker->matchesNameWithPrefixes(name)) {
                 if (extensionSupportedAndAllowed(tracker)) {
                     extension = tracker->getExtension(this);
@@ -2365,7 +2604,7 @@ ScriptValue WebGLRenderingContextBase::getFramebufferAttachmentParameter(ScriptS
         case GL_FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE:
             return WebGLAny(scriptState, GL_TEXTURE);
         case GL_FRAMEBUFFER_ATTACHMENT_OBJECT_NAME:
-            return WebGLAny(scriptState, PassRefPtrWillBeRawPtr<WebGLObject>(attachmentObject));
+            return WebGLAny(scriptState, attachmentObject);
         case GL_FRAMEBUFFER_ATTACHMENT_TEXTURE_LEVEL:
         case GL_FRAMEBUFFER_ATTACHMENT_TEXTURE_CUBE_MAP_FACE:
             {
@@ -2390,9 +2629,9 @@ ScriptValue WebGLRenderingContextBase::getFramebufferAttachmentParameter(ScriptS
         case GL_FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE:
             return WebGLAny(scriptState, GL_RENDERBUFFER);
         case GL_FRAMEBUFFER_ATTACHMENT_OBJECT_NAME:
-            return WebGLAny(scriptState, PassRefPtrWillBeRawPtr<WebGLObject>(attachmentObject));
+            return WebGLAny(scriptState, attachmentObject);
         case GL_FRAMEBUFFER_ATTACHMENT_COLOR_ENCODING_EXT:
-            if (extensionEnabled(EXTsRGBName) || isWebGL2OrHigher()) {
+            if (extensionEnabled(EXTsRGBName)) {
                 GLint value = 0;
                 webContext()->getFramebufferAttachmentParameteriv(target, attachment, pname, &value);
                 return WebGLAny(scriptState, value);
@@ -2421,7 +2660,7 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* scriptState, GL
     case GL_ALPHA_BITS:
         return getIntParameter(scriptState, pname);
     case GL_ARRAY_BUFFER_BINDING:
-        return WebGLAny(scriptState, PassRefPtrWillBeRawPtr<WebGLObject>(m_boundArrayBuffer.get()));
+        return WebGLAny(scriptState, m_boundArrayBuffer.get());
     case GL_BLEND:
         return getBooleanParameter(scriptState, pname);
     case GL_BLEND_COLOR:
@@ -2451,7 +2690,7 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* scriptState, GL
     case GL_CULL_FACE_MODE:
         return getUnsignedIntParameter(scriptState, pname);
     case GL_CURRENT_PROGRAM:
-        return WebGLAny(scriptState, PassRefPtrWillBeRawPtr<WebGLObject>(m_currentProgram.get()));
+        return WebGLAny(scriptState, m_currentProgram.get());
     case GL_DEPTH_BITS:
         if (!m_framebufferBinding && !m_requestedAttributes.depth())
             return WebGLAny(scriptState, intZero);
@@ -2469,9 +2708,9 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* scriptState, GL
     case GL_DITHER:
         return getBooleanParameter(scriptState, pname);
     case GL_ELEMENT_ARRAY_BUFFER_BINDING:
-        return WebGLAny(scriptState, PassRefPtrWillBeRawPtr<WebGLObject>(m_boundVertexArrayObject->boundElementArrayBuffer()));
+        return WebGLAny(scriptState, m_boundVertexArrayObject->boundElementArrayBuffer());
     case GL_FRAMEBUFFER_BINDING:
-        return WebGLAny(scriptState, PassRefPtrWillBeRawPtr<WebGLObject>(m_framebufferBinding.get()));
+        return WebGLAny(scriptState, m_framebufferBinding.get());
     case GL_FRONT_FACE:
         return getUnsignedIntParameter(scriptState, pname);
     case GL_GENERATE_MIPMAP_HINT:
@@ -2520,7 +2759,7 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* scriptState, GL
     case GL_RED_BITS:
         return getIntParameter(scriptState, pname);
     case GL_RENDERBUFFER_BINDING:
-        return WebGLAny(scriptState, PassRefPtrWillBeRawPtr<WebGLObject>(m_renderbufferBinding.get()));
+        return WebGLAny(scriptState, m_renderbufferBinding.get());
     case GL_RENDERER:
         return WebGLAny(scriptState, String("WebKit WebGL"));
     case GL_SAMPLE_BUFFERS:
@@ -2576,9 +2815,9 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* scriptState, GL
     case GL_SUBPIXEL_BITS:
         return getIntParameter(scriptState, pname);
     case GL_TEXTURE_BINDING_2D:
-        return WebGLAny(scriptState, PassRefPtrWillBeRawPtr<WebGLObject>(m_textureUnits[m_activeTextureUnit].m_texture2DBinding.get()));
+        return WebGLAny(scriptState, m_textureUnits[m_activeTextureUnit].m_texture2DBinding.get());
     case GL_TEXTURE_BINDING_CUBE_MAP:
-        return WebGLAny(scriptState, PassRefPtrWillBeRawPtr<WebGLObject>(m_textureUnits[m_activeTextureUnit].m_textureCubeMapBinding.get()));
+        return WebGLAny(scriptState, m_textureUnits[m_activeTextureUnit].m_textureCubeMapBinding.get());
     case GL_UNPACK_ALIGNMENT:
         return getIntParameter(scriptState, pname);
     case GC3D_UNPACK_FLIP_Y_WEBGL:
@@ -2611,7 +2850,7 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* scriptState, GL
     case GL_VERTEX_ARRAY_BINDING_OES: // OES_vertex_array_object
         if (extensionEnabled(OESVertexArrayObjectName) || isWebGL2OrHigher()) {
             if (!m_boundVertexArrayObject->isDefaultObject())
-                return WebGLAny(scriptState, PassRefPtrWillBeRawPtr<WebGLObject>(m_boundVertexArrayObject.get()));
+                return WebGLAny(scriptState, m_boundVertexArrayObject.get());
             return ScriptValue::createNull(scriptState);
         }
         synthesizeGLError(GL_INVALID_ENUM, "getParameter", "invalid parameter name, OES_vertex_array_object not enabled");
@@ -2631,6 +2870,17 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* scriptState, GL
             return WebGLAny(scriptState, maxDrawBuffers());
         synthesizeGLError(GL_INVALID_ENUM, "getParameter", "invalid parameter name, WEBGL_draw_buffers not enabled");
         return ScriptValue::createNull(scriptState);
+    case GL_TIMESTAMP_EXT:
+        if (extensionEnabled(EXTDisjointTimerQueryName))
+            return getInt64Parameter(scriptState, GL_TIMESTAMP_EXT);
+        synthesizeGLError(GL_INVALID_ENUM, "getParameter", "invalid parameter name, EXT_disjoint_timer_query not enabled");
+        return ScriptValue::createNull(scriptState);
+    case GL_GPU_DISJOINT_EXT:
+        if (extensionEnabled(EXTDisjointTimerQueryName))
+            return getBooleanParameter(scriptState, GL_GPU_DISJOINT_EXT);
+        synthesizeGLError(GL_INVALID_ENUM, "getParameter", "invalid parameter name, EXT_disjoint_timer_query not enabled");
+        return ScriptValue::createNull(scriptState);
+
     default:
         if ((extensionEnabled(WebGLDrawBuffersName) || isWebGL2OrHigher())
             && pname >= GL_DRAW_BUFFER0_EXT
@@ -2763,7 +3013,7 @@ String WebGLRenderingContextBase::getShaderInfoLog(WebGLShader* shader)
     return ensureNotNull(webContext()->getShaderInfoLog(objectOrZero(shader)));
 }
 
-PassRefPtrWillBeRawPtr<WebGLShaderPrecisionFormat> WebGLRenderingContextBase::getShaderPrecisionFormat(GLenum shaderType, GLenum precisionType)
+WebGLShaderPrecisionFormat* WebGLRenderingContextBase::getShaderPrecisionFormat(GLenum shaderType, GLenum precisionType)
 {
     if (isContextLost())
         return nullptr;
@@ -3059,7 +3309,7 @@ ScriptValue WebGLRenderingContextBase::getUniform(ScriptState* scriptState, WebG
     return ScriptValue::createNull(scriptState);
 }
 
-PassRefPtrWillBeRawPtr<WebGLUniformLocation> WebGLRenderingContextBase::getUniformLocation(WebGLProgram* program, const String& name)
+WebGLUniformLocation* WebGLRenderingContextBase::getUniformLocation(WebGLProgram* program, const String& name)
 {
     if (isContextLost() || !validateWebGLObject("getUniformLocation", program))
         return nullptr;
@@ -3097,7 +3347,7 @@ ScriptValue WebGLRenderingContextBase::getVertexAttrib(ScriptState* scriptState,
     case GL_VERTEX_ATTRIB_ARRAY_BUFFER_BINDING:
         if (!state->bufferBinding || !state->bufferBinding->object())
             return ScriptValue::createNull(scriptState);
-        return WebGLAny(scriptState, PassRefPtrWillBeRawPtr<WebGLObject>(state->bufferBinding.get()));
+        return WebGLAny(scriptState, state->bufferBinding.get());
     case GL_VERTEX_ATTRIB_ARRAY_ENABLED:
         return WebGLAny(scriptState, state->enabled);
     case GL_VERTEX_ATTRIB_ARRAY_NORMALIZED:
@@ -3145,7 +3395,7 @@ long long WebGLRenderingContextBase::getVertexAttribOffset(GLuint index, GLenum 
         synthesizeGLError(GL_INVALID_ENUM, "getVertexAttribOffset", "invalid parameter name");
         return 0;
     }
-    GLsizeiptr result = webContext()->getVertexAttribOffset(index, pname);
+    GLintptr result = webContext()->getVertexAttribOffset(index, pname);
     return static_cast<long long>(result);
 }
 
@@ -3307,6 +3557,168 @@ void WebGLRenderingContextBase::polygonOffset(GLfloat factor, GLfloat units)
     webContext()->polygonOffset(factor, units);
 }
 
+bool WebGLRenderingContextBase::validateReadBufferAndGetInfo(const char* functionName, WebGLFramebuffer*& readFramebufferBinding, GLenum* format, GLenum* type)
+{
+    GLenum target = isWebGL2OrHigher() ? GL_READ_FRAMEBUFFER : GL_FRAMEBUFFER;
+    readFramebufferBinding = getFramebufferBinding(target);
+    if (readFramebufferBinding) {
+        const char* reason = "framebuffer incomplete";
+        if (!readFramebufferBinding->onAccess(webContext(), &reason)) {
+            synthesizeGLError(GL_INVALID_FRAMEBUFFER_OPERATION, functionName, reason);
+            return false;
+        }
+        if (!readFramebufferBinding->getReadBufferFormatAndType(format, type)) {
+            synthesizeGLError(GL_INVALID_OPERATION, functionName, "no image to read from");
+            return false;
+        }
+    } else {
+        if (m_readBufferOfDefaultFramebuffer == GL_NONE) {
+            ASSERT(isWebGL2OrHigher());
+            synthesizeGLError(GL_INVALID_OPERATION, functionName, "no image to read from");
+            return false;
+        }
+        // Obtain the default drawing buffer's format and type.
+        if (format)
+            *format = drawingBuffer()->getActualAttributes().alpha ? GL_RGBA : GL_RGB;
+        if (type)
+            *type = GL_UNSIGNED_BYTE;
+    }
+    return true;
+}
+
+bool WebGLRenderingContextBase::validateReadPixelsFormatAndType(GLenum format, GLenum type)
+{
+    switch (format) {
+    case GL_ALPHA:
+    case GL_RGB:
+    case GL_RGBA:
+        break;
+    default:
+        synthesizeGLError(GL_INVALID_ENUM, "readPixels", "invalid format");
+        return false;
+    }
+
+    switch (type) {
+    case GL_UNSIGNED_BYTE:
+    case GL_UNSIGNED_SHORT_5_6_5:
+    case GL_UNSIGNED_SHORT_4_4_4_4:
+    case GL_UNSIGNED_SHORT_5_5_5_1:
+    case GL_FLOAT:
+    case GL_HALF_FLOAT_OES:
+        break;
+    default:
+        synthesizeGLError(GL_INVALID_ENUM, "readPixels", "invalid type");
+        return false;
+    }
+
+    return true;
+}
+
+bool WebGLRenderingContextBase::validateReadPixelsFormatTypeCombination(GLenum format, GLenum type, GLenum readBufferInternalFormat, GLenum readBufferType)
+{
+    GLenum acceptedFormat = 0, acceptedType = 0;
+    switch (readBufferInternalFormat) { // This is internalformat.
+    case GL_R8UI:
+    case GL_R16UI:
+    case GL_R32UI:
+    case GL_RG8UI:
+    case GL_RG16UI:
+    case GL_RG32UI:
+    // All the RGB_INTEGER formats are not renderable.
+    case GL_RGBA8UI:
+    case GL_RGB10_A2UI:
+    case GL_RGBA16UI:
+    case GL_RGBA32UI:
+        acceptedFormat = GL_RGBA_INTEGER;
+        acceptedType = GL_UNSIGNED_INT;
+        break;
+    case GL_R8I:
+    case GL_R16I:
+    case GL_R32I:
+    case GL_RG8I:
+    case GL_RG16I:
+    case GL_RG32I:
+    case GL_RGBA8I:
+    case GL_RGBA16I:
+    case GL_RGBA32I:
+        acceptedFormat = GL_RGBA_INTEGER;
+        acceptedType = GL_INT;
+        break;
+    default:
+        acceptedFormat = GL_RGBA;
+        switch (readBufferType) {
+        case GL_HALF_FLOAT:
+        case GL_HALF_FLOAT_OES:
+        case GL_FLOAT:
+        case GL_UNSIGNED_INT_10F_11F_11F_REV:
+            acceptedType = GL_FLOAT;
+            break;
+        default:
+            acceptedType = GL_UNSIGNED_BYTE;
+            break;
+        }
+        break;
+    }
+
+    if (!(format == acceptedFormat && type == acceptedType)
+        && !(readBufferInternalFormat == GL_RGB10_A2 && format == GL_RGBA && type == GL_UNSIGNED_INT_2_10_10_10_REV)) {
+        // Check against the implementation color read format and type.
+        WGC3Dint implFormat = 0, implType = 0;
+        webContext()->getIntegerv(GL_IMPLEMENTATION_COLOR_READ_FORMAT, &implFormat);
+        webContext()->getIntegerv(GL_IMPLEMENTATION_COLOR_READ_TYPE, &implType);
+        if (!implFormat || !implType || format != static_cast<GLenum>(implFormat) || type != static_cast<GLenum>(implType)) {
+            synthesizeGLError(GL_INVALID_OPERATION, "readPixels", "invalid format/type combination");
+            return false;
+        }
+    }
+    return true;
+}
+
+DOMArrayBufferView::ViewType WebGLRenderingContextBase::readPixelsExpectedArrayBufferViewType(GLenum type)
+{
+    switch (type) {
+    case GL_UNSIGNED_BYTE:
+        return DOMArrayBufferView::TypeUint8;
+    case GL_UNSIGNED_SHORT_5_6_5:
+    case GL_UNSIGNED_SHORT_4_4_4_4:
+    case GL_UNSIGNED_SHORT_5_5_5_1:
+        return DOMArrayBufferView::TypeUint16;
+    case GL_FLOAT:
+        return DOMArrayBufferView::TypeFloat32;
+    case GL_HALF_FLOAT_OES:
+        return DOMArrayBufferView::TypeUint16;
+    default:
+        ASSERT_NOT_REACHED();
+        return DOMArrayBufferView::TypeUint8;
+    }
+}
+
+bool WebGLRenderingContextBase::validateReadPixelsFuncParameters(GLsizei width, GLsizei height, GLenum format, GLenum type, long long bufferSize)
+{
+    if (!validateReadPixelsFormatAndType(format, type))
+        return false;
+    WebGLFramebuffer* readFramebufferBinding = nullptr;
+    GLenum readBufferInternalFormat = 0, readBufferType = 0;
+    if (!validateReadBufferAndGetInfo("readPixels", readFramebufferBinding, &readBufferInternalFormat, &readBufferType))
+        return false;
+    if (!validateReadPixelsFormatTypeCombination(format, type, readBufferInternalFormat, readBufferType))
+        return false;
+
+    // Calculate array size, taking into consideration of PACK_ALIGNMENT.
+    unsigned totalBytesRequired = 0;
+    unsigned padding = 0;
+    GLenum error = WebGLImageConversion::computeImageSizeInBytes(format, type, width, height, m_packAlignment, &totalBytesRequired, &padding);
+    if (error != GL_NO_ERROR) {
+        synthesizeGLError(error, "readPixels", "invalid dimensions");
+        return false;
+    }
+    if (bufferSize < static_cast<long long>(totalBytesRequired)) {
+        synthesizeGLError(GL_INVALID_OPERATION, "readPixels", "buffer is not large enough for dimensions");
+        return false;
+    }
+    return true;
+}
+
 void WebGLRenderingContextBase::readPixels(GLint x, GLint y, GLsizei width, GLsizei height, GLenum format, GLenum type, DOMArrayBufferView* pixels)
 {
     if (isContextLost())
@@ -3319,97 +3731,26 @@ void WebGLRenderingContextBase::readPixels(GLint x, GLint y, GLsizei width, GLsi
         synthesizeGLError(GL_INVALID_VALUE, "readPixels", "no destination ArrayBufferView");
         return;
     }
-    switch (format) {
-    case GL_ALPHA:
-    case GL_RGB:
-    case GL_RGBA:
-        break;
-    default:
-        synthesizeGLError(GL_INVALID_ENUM, "readPixels", "invalid format");
-        return;
-    }
 
-    DOMArrayBufferView::ViewType expectedViewType;
-
-    switch (type) {
-    case GL_UNSIGNED_BYTE:
-        expectedViewType = DOMArrayBufferView::TypeUint8;
-        break;
-    case GL_UNSIGNED_SHORT_5_6_5:
-    case GL_UNSIGNED_SHORT_4_4_4_4:
-    case GL_UNSIGNED_SHORT_5_5_5_1:
-        expectedViewType = DOMArrayBufferView::TypeUint16;
-        break;
-    case GL_FLOAT:
-        expectedViewType = DOMArrayBufferView::TypeFloat32;
-        break;
-    case GL_HALF_FLOAT_OES:
-        expectedViewType = DOMArrayBufferView::TypeUint16;
-        break;
-    default:
-        synthesizeGLError(GL_INVALID_ENUM, "readPixels", "invalid type");
+    if (!validateReadPixelsFuncParameters(width, height, format, type, static_cast<long long>(pixels->byteLength())))
         return;
-    }
-    if (format != GL_RGBA || type != GL_UNSIGNED_BYTE) {
-        // Check against the implementation color read format and type.
-        WGC3Dint implFormat = 0, implType = 0;
-        webContext()->getIntegerv(GL_IMPLEMENTATION_COLOR_READ_FORMAT, &implFormat);
-        webContext()->getIntegerv(GL_IMPLEMENTATION_COLOR_READ_TYPE, &implType);
-        if (!implFormat || !implType || format != static_cast<GLenum>(implFormat) || type != static_cast<GLenum>(implType)) {
-            synthesizeGLError(GL_INVALID_OPERATION, "readPixels", "format/type not RGBA/UNSIGNED_BYTE or implementation-defined values");
-            return;
-        }
-    }
+
+    DOMArrayBufferView::ViewType expectedViewType = readPixelsExpectedArrayBufferViewType(type);
     // Validate array type against pixel type.
     if (pixels->type() != expectedViewType) {
         synthesizeGLError(GL_INVALID_OPERATION, "readPixels", "ArrayBufferView was the wrong type for the pixel format");
         return;
     }
-    const char* reason = "framebuffer incomplete";
-    GLenum target = isWebGL2OrHigher() ? GL_READ_FRAMEBUFFER : GL_FRAMEBUFFER;
-    WebGLFramebuffer* readFramebufferBinding = getFramebufferBinding(target);
-    if (readFramebufferBinding && !readFramebufferBinding->onAccess(webContext(), &reason)) {
-        synthesizeGLError(GL_INVALID_FRAMEBUFFER_OPERATION, "readPixels", reason);
-        return;
-    }
-    // Calculate array size, taking into consideration of PACK_ALIGNMENT.
-    unsigned totalBytesRequired = 0;
-    unsigned padding = 0;
-    GLenum error = WebGLImageConversion::computeImageSizeInBytes(format, type, width, height, m_packAlignment, &totalBytesRequired, &padding);
-    if (error != GL_NO_ERROR) {
-        synthesizeGLError(error, "readPixels", "invalid dimensions");
-        return;
-    }
-    if (pixels->byteLength() < totalBytesRequired) {
-        synthesizeGLError(GL_INVALID_OPERATION, "readPixels", "ArrayBufferView not large enough for dimensions");
-        return;
-    }
-
-    if (!validateReadBufferAttachment("readPixels", readFramebufferBinding))
-        return;
 
     clearIfComposited();
     void* data = pixels->baseAddress();
 
+    GLenum target = isWebGL2OrHigher() ? GL_READ_FRAMEBUFFER : GL_FRAMEBUFFER;
+    WebGLFramebuffer* readFramebufferBinding = getFramebufferBinding(target);
     {
         ScopedDrawingBufferBinder binder(drawingBuffer(), readFramebufferBinding);
         webContext()->readPixels(x, y, width, height, format, type, data);
     }
-
-#if OS(MACOSX)
-    // FIXME: remove this section when GL driver bug on Mac is fixed, i.e.,
-    // when alpha is off, readPixels should set alpha to 255 instead of 0.
-    if (!readFramebufferBinding && !drawingBuffer()->getActualAttributes().alpha) {
-        unsigned char* pixels = reinterpret_cast<unsigned char*>(data);
-        for (GLsizei iy = 0; iy < height; ++iy) {
-            for (GLsizei ix = 0; ix < width; ++ix) {
-                pixels[3] = 255;
-                pixels += 4;
-            }
-            pixels += padding;
-        }
-    }
-#endif
 }
 
 void WebGLRenderingContextBase::renderbufferStorageImpl(
@@ -3596,13 +3937,13 @@ void WebGLRenderingContextBase::stencilOpSeparate(GLenum face, GLenum fail, GLen
     webContext()->stencilOpSeparate(face, fail, zfail, zpass);
 }
 
-PassRefPtrWillBeRawPtr<CHROMIUMValuebuffer> WebGLRenderingContextBase::createValuebufferCHROMIUM()
+CHROMIUMValuebuffer* WebGLRenderingContextBase::createValuebufferCHROMIUM()
 {
     if (isContextLost())
         return nullptr;
-    RefPtrWillBeRawPtr<CHROMIUMValuebuffer> o = CHROMIUMValuebuffer::create(this);
-    addSharedObject(o.get());
-    return o.release();
+    CHROMIUMValuebuffer* o = CHROMIUMValuebuffer::create(this);
+    addSharedObject(o);
+    return o;
 }
 
 void WebGLRenderingContextBase::deleteValuebufferCHROMIUM(CHROMIUMValuebuffer *valuebuffer)
@@ -3668,25 +4009,25 @@ GLenum WebGLRenderingContextBase::convertTexInternalFormat(GLenum internalformat
     return internalformat;
 }
 
-void WebGLRenderingContextBase::texImage2DBase(GLenum target, GLint level, GLenum internalformat, GLsizei width, GLsizei height, GLint border, GLenum format, GLenum type, const void* pixels, ExceptionState& exceptionState)
+void WebGLRenderingContextBase::texImage2DBase(GLenum target, GLint level, GLenum internalformat, GLsizei width, GLsizei height, GLint border, GLenum format, GLenum type, const void* pixels)
 {
     // All calling functions check isContextLost, so a duplicate check is not needed here.
-    // FIXME: Handle errors.
     WebGLTexture* tex = validateTextureBinding("texImage2D", target, true);
-    ASSERT(validateTexFuncParameters("texImage2D", NotTexSubImage2D, target, level, internalformat, width, height, border, format, type));
     ASSERT(tex);
-    ASSERT(!isNPOTStrict() || !level || !WebGLTexture::isNPOT(width, height));
-    ASSERT(!pixels || validateSettableTexFormat("texImage2D", internalformat));
     webContext()->texImage2D(target, level, convertTexInternalFormat(internalformat, type), width, height, border, format, type, pixels);
     tex->setLevelInfo(target, level, internalformat, width, height, 1, type);
 }
 
-void WebGLRenderingContextBase::texImage2DImpl(GLenum target, GLint level, GLenum internalformat, GLenum format, GLenum type, Image* image, WebGLImageConversion::ImageHtmlDomSource domSource, bool flipY, bool premultiplyAlpha, ExceptionState& exceptionState)
+void WebGLRenderingContextBase::texImage2DImpl(GLenum target, GLint level, GLenum internalformat, GLenum format, GLenum type, Image* image, WebGLImageConversion::ImageHtmlDomSource domSource, bool flipY, bool premultiplyAlpha)
 {
     // All calling functions check isContextLost, so a duplicate check is not needed here.
+    if (type == GL_UNSIGNED_INT_10F_11F_11F_REV) {
+        // The UNSIGNED_INT_10F_11F_11F_REV type pack/unpack isn't implemented.
+        type = GL_FLOAT;
+    }
     Vector<uint8_t> data;
     WebGLImageConversion::ImageExtractor imageExtractor(image, domSource, premultiplyAlpha, m_unpackColorspaceConversion == GL_NONE);
-    if (!imageExtractor.extractSucceeded()) {
+    if (!imageExtractor.imagePixelData()) {
         synthesizeGLError(GL_INVALID_VALUE, "texImage2D", "bad image data");
         return;
     }
@@ -3695,9 +4036,9 @@ void WebGLRenderingContextBase::texImage2DImpl(GLenum target, GLint level, GLenu
     const void* imagePixelData = imageExtractor.imagePixelData();
 
     bool needConversion = true;
-    if (type == GL_UNSIGNED_BYTE && sourceDataFormat == WebGLImageConversion::DataFormatRGBA8 && format == GL_RGBA && alphaOp == WebGLImageConversion::AlphaDoNothing && !flipY)
+    if (type == GL_UNSIGNED_BYTE && sourceDataFormat == WebGLImageConversion::DataFormatRGBA8 && format == GL_RGBA && alphaOp == WebGLImageConversion::AlphaDoNothing && !flipY) {
         needConversion = false;
-    else {
+    } else {
         if (!WebGLImageConversion::packImageData(image, imagePixelData, format, type, flipY, alphaOp, sourceDataFormat, imageExtractor.imageWidth(), imageExtractor.imageHeight(), imageExtractor.imageSourceUnpackAlignment(), data)) {
             synthesizeGLError(GL_INVALID_VALUE, "texImage2D", "packImage error");
             return;
@@ -3706,25 +4047,25 @@ void WebGLRenderingContextBase::texImage2DImpl(GLenum target, GLint level, GLenu
 
     if (m_unpackAlignment != 1)
         webContext()->pixelStorei(GL_UNPACK_ALIGNMENT, 1);
-    texImage2DBase(target, level, internalformat, imageExtractor.imageWidth(), imageExtractor.imageHeight(), 0, format, type, needConversion ? data.data() : imagePixelData, exceptionState);
+    texImage2DBase(target, level, internalformat, imageExtractor.imageWidth(), imageExtractor.imageHeight(), 0, format, type, needConversion ? data.data() : imagePixelData);
     if (m_unpackAlignment != 1)
         webContext()->pixelStorei(GL_UNPACK_ALIGNMENT, m_unpackAlignment);
 }
 
-bool WebGLRenderingContextBase::validateInternalFormat(GLenum internalformat, GLenum format)
-{
-    if (internalformat == format)
-        return true;
-    if (isWebGL2OrHigher() && WebGLTexture::getValidFormatForInternalFormat(internalformat) == format)
-        return true;
-    return false;
-}
-
 bool WebGLRenderingContextBase::validateTexFunc(const char* functionName, TexImageFunctionType functionType, TexFuncValidationSourceType sourceType, GLenum target, GLint level, GLenum internalformat, GLsizei width, GLsizei height, GLint border, GLenum format, GLenum type, GLint xoffset, GLint yoffset)
 {
+    if (!validateTexFuncLevel(functionName, target, level))
+        return false;
     WebGLTexture* texture = validateTextureBinding(functionName, target, true);
     if (!texture)
         return false;
+
+    if (functionType == TexSubImage2D) {
+        if (!texture->isValid(target, level)) {
+            synthesizeGLError(GL_INVALID_OPERATION, "texSubImage2D", "no previously defined texture image");
+            return false;
+        }
+    }
 
     if (internalformat == 0)
         internalformat = texture->getInternalFormat(target, level);
@@ -3733,7 +4074,7 @@ bool WebGLRenderingContextBase::validateTexFunc(const char* functionName, TexIma
 
     if (functionType == NotTexSubImage2D) {
         if (texture->isImmutable()) {
-            synthesizeGLError(GL_INVALID_OPERATION, "texImage2DBase", "attempted to modify immutable texture");
+            synthesizeGLError(GL_INVALID_OPERATION, "texImage2D", "attempted to modify immutable texture");
             return false;
         }
 
@@ -3761,8 +4102,8 @@ bool WebGLRenderingContextBase::validateTexFunc(const char* functionName, TexIma
             synthesizeGLError(GL_INVALID_VALUE, functionName, "dimensions out of range");
             return false;
         }
-        if (!validateInternalFormat(internalformat, format) || texture->getType(target, level) != type) {
-            synthesizeGLError(GL_INVALID_OPERATION, functionName, "type and format do not match texture");
+        if (!isWebGL2OrHigher() && texture->getType(target, level) != type) {
+            synthesizeGLError(GL_INVALID_OPERATION, functionName, "type of incoming data does not match that used to define the texture");
             return false;
         }
     }
@@ -3785,8 +4126,14 @@ bool WebGLRenderingContextBase::validateValueFitNonNegInt32(const char* function
     return true;
 }
 
-PassRefPtr<Image> WebGLRenderingContextBase::drawImageIntoBuffer(Image* image, int width, int height, const char* functionName)
+// TODO(fmalita): figure why WebGLImageConversion::ImageExtractor can't handle SVG-backed images,
+// and get rid of this intermediate step.
+PassRefPtr<Image> WebGLRenderingContextBase::drawImageIntoBuffer(PassRefPtr<Image> passImage,
+    int width, int height, const char* functionName)
 {
+    RefPtr<Image> image(passImage);
+    ASSERT(image);
+
     IntSize size(width, height);
     ImageBuffer* buf = m_generatedImageCache.imageBuffer(size);
     if (!buf) {
@@ -3794,19 +4141,22 @@ PassRefPtr<Image> WebGLRenderingContextBase::drawImageIntoBuffer(Image* image, i
         return nullptr;
     }
 
+    if (!image->currentFrameKnownToBeOpaque())
+        buf->canvas()->clear(SK_ColorTRANSPARENT);
+
     IntRect srcRect(IntPoint(), image->size());
     IntRect destRect(0, 0, size.width(), size.height());
     SkPaint paint;
     image->draw(buf->canvas(), paint, destRect, srcRect, DoNotRespectImageOrientation, Image::DoNotClampImageToSourceRect);
-    return buf->copyImage(ImageBuffer::fastCopyImageMode());
+    return buf->newImageSnapshot();
 }
 
 void WebGLRenderingContextBase::texImage2D(GLenum target, GLint level, GLenum internalformat,
     GLsizei width, GLsizei height, GLint border,
-    GLenum format, GLenum type, DOMArrayBufferView* pixels, ExceptionState& exceptionState)
+    GLenum format, GLenum type, DOMArrayBufferView* pixels)
 {
-    if (isContextLost() || !validateTexFuncData("texImage2D", level, width, height, format, type, pixels, NullAllowed)
-        || !validateTexFunc("texImage2D", NotTexSubImage2D, SourceArrayBufferView, target, level, internalformat, width, height, border, format, type, 0, 0))
+    if (isContextLost() || !validateTexFunc("texImage2D", NotTexSubImage2D, SourceArrayBufferView, target, level, internalformat, width, height, border, format, type, 0, 0)
+        || !validateTexFuncData("texImage2D", level, width, height, format, type, pixels, NullAllowed))
         return;
     void* data = pixels ? pixels->baseAddress() : 0;
     Vector<uint8_t> tempData;
@@ -3819,23 +4169,31 @@ void WebGLRenderingContextBase::texImage2D(GLenum target, GLint level, GLenum in
     }
     if (changeUnpackAlignment)
         webContext()->pixelStorei(GL_UNPACK_ALIGNMENT, 1);
-    texImage2DBase(target, level, internalformat, width, height, border, format, type, data, exceptionState);
+    texImage2DBase(target, level, internalformat, width, height, border, format, type, data);
     if (changeUnpackAlignment)
         webContext()->pixelStorei(GL_UNPACK_ALIGNMENT, m_unpackAlignment);
 }
 
 void WebGLRenderingContextBase::texImage2D(GLenum target, GLint level, GLenum internalformat,
-    GLenum format, GLenum type, ImageData* pixels, ExceptionState& exceptionState)
+    GLenum format, GLenum type, ImageData* pixels)
 {
-    if (isContextLost() || !pixels || !validateTexFunc("texImage2D", NotTexSubImage2D, SourceImageData, target, level, internalformat, pixels->width(), pixels->height(), 0, format, type, 0, 0))
+    if (!pixels) {
+        synthesizeGLError(GL_INVALID_VALUE, "texImage2D", "no image data");
         return;
+    }
+    if (isContextLost() || !validateTexFunc("texImage2D", NotTexSubImage2D, SourceImageData, target, level, internalformat, pixels->width(), pixels->height(), 0, format, type, 0, 0))
+        return;
+    if (type == GL_UNSIGNED_INT_10F_11F_11F_REV) {
+        // The UNSIGNED_INT_10F_11F_11F_REV type pack/unpack isn't implemented.
+        type = GL_FLOAT;
+    }
     Vector<uint8_t> data;
     bool needConversion = true;
     // The data from ImageData is always of format RGBA8.
     // No conversion is needed if destination format is RGBA and type is USIGNED_BYTE and no Flip or Premultiply operation is required.
-    if (!m_unpackFlipY && !m_unpackPremultiplyAlpha && format == GL_RGBA && type == GL_UNSIGNED_BYTE)
+    if (!m_unpackFlipY && !m_unpackPremultiplyAlpha && format == GL_RGBA && type == GL_UNSIGNED_BYTE) {
         needConversion = false;
-    else {
+    } else {
         if (!WebGLImageConversion::extractImageData(pixels->data()->data(), pixels->size(), format, type, m_unpackFlipY, m_unpackPremultiplyAlpha, data)) {
             synthesizeGLError(GL_INVALID_VALUE, "texImage2D", "bad image data");
             return;
@@ -3843,7 +4201,7 @@ void WebGLRenderingContextBase::texImage2D(GLenum target, GLint level, GLenum in
     }
     if (m_unpackAlignment != 1)
         webContext()->pixelStorei(GL_UNPACK_ALIGNMENT, 1);
-    texImage2DBase(target, level, internalformat, pixels->width(), pixels->height(), 0, format, type, needConversion ? data.data() : pixels->data()->data(), exceptionState);
+    texImage2DBase(target, level, internalformat, pixels->width(), pixels->height(), 0, format, type, needConversion ? data.data() : pixels->data()->data());
     if (m_unpackAlignment != 1)
         webContext()->pixelStorei(GL_UNPACK_ALIGNMENT, m_unpackAlignment);
 }
@@ -3853,15 +4211,19 @@ void WebGLRenderingContextBase::texImage2D(GLenum target, GLint level, GLenum in
 {
     if (isContextLost() || !validateHTMLImageElement("texImage2D", image, exceptionState))
         return;
+    if (type == GL_UNSIGNED_INT_10F_11F_11F_REV) {
+        // The UNSIGNED_INT_10F_11F_11F_REV type pack/unpack isn't implemented.
+        type = GL_FLOAT;
+    }
 
     RefPtr<Image> imageForRender = image->cachedImage()->imageForLayoutObject(image->layoutObject());
-    if (imageForRender->isSVGImage())
-        imageForRender = drawImageIntoBuffer(imageForRender.get(), image->width(), image->height(), "texImage2D");
+    if (imageForRender && imageForRender->isSVGImage())
+        imageForRender = drawImageIntoBuffer(imageForRender.release(), image->width(), image->height(), "texImage2D");
 
     if (!imageForRender || !validateTexFunc("texImage2D", NotTexSubImage2D, SourceHTMLImageElement, target, level, internalformat, imageForRender->width(), imageForRender->height(), 0, format, type, 0, 0))
         return;
 
-    texImage2DImpl(target, level, internalformat, format, type, imageForRender.get(), WebGLImageConversion::HtmlDomImage, m_unpackFlipY, m_unpackPremultiplyAlpha, exceptionState);
+    texImage2DImpl(target, level, internalformat, format, type, imageForRender.get(), WebGLImageConversion::HtmlDomImage, m_unpackFlipY, m_unpackPremultiplyAlpha);
 }
 
 void WebGLRenderingContextBase::texImage2DCanvasByGPU(TexImageFunctionType functionType, WebGLTexture* texture, GLenum target,
@@ -3936,11 +4298,11 @@ void WebGLRenderingContextBase::texImage2D(GLenum target, GLint level, GLenum in
     ASSERT(texture);
 
     // texImage2DCanvasByGPU relies on copyTextureCHROMIUM which doesn't support float type.
-    bool isFloatType = type == GL_FLOAT || type == GL_HALF_FLOAT_OES;
+    bool isFloatType = type == GL_FLOAT || type == GL_HALF_FLOAT || type == GL_HALF_FLOAT_OES;
     if (!canvas->renderingContext() || !canvas->renderingContext()->isAccelerated() || isFloatType) {
         // 2D canvas has only FrontBuffer.
-        texImage2DImpl(target, level, internalformat, format, type, canvas->copiedImage(FrontBuffer).get(),
-            WebGLImageConversion::HtmlDomCanvas, m_unpackFlipY, m_unpackPremultiplyAlpha, exceptionState);
+        texImage2DImpl(target, level, internalformat, format, type, canvas->copiedImage(FrontBuffer, PreferAcceleration).get(),
+            WebGLImageConversion::HtmlDomCanvas, m_unpackFlipY, m_unpackPremultiplyAlpha);
         return;
     }
 
@@ -3948,7 +4310,7 @@ void WebGLRenderingContextBase::texImage2D(GLenum target, GLint level, GLenum in
     texture->setLevelInfo(target, level, internalformat, canvas->width(), canvas->height(), 1, type);
 }
 
-PassRefPtr<Image> WebGLRenderingContextBase::videoFrameToImage(HTMLVideoElement* video, BackingStoreCopy backingStoreCopy)
+PassRefPtr<Image> WebGLRenderingContextBase::videoFrameToImage(HTMLVideoElement* video)
 {
     IntSize size(video->videoWidth(), video->videoHeight());
     ImageBuffer* buf = m_generatedImageCache.imageBuffer(size);
@@ -3958,7 +4320,7 @@ PassRefPtr<Image> WebGLRenderingContextBase::videoFrameToImage(HTMLVideoElement*
     }
     IntRect destRect(0, 0, size.width(), size.height());
     video->paintCurrentFrame(buf->canvas(), destRect, nullptr);
-    return buf->copyImage(backingStoreCopy);
+    return buf->newImageSnapshot();
 }
 
 void WebGLRenderingContextBase::texImage2D(GLenum target, GLint level, GLenum internalformat,
@@ -4001,10 +4363,10 @@ void WebGLRenderingContextBase::texImage2D(GLenum target, GLint level, GLenum in
     }
 
     // Normal pure SW path.
-    RefPtr<Image> image = videoFrameToImage(video, ImageBuffer::fastCopyImageMode());
+    RefPtr<Image> image = videoFrameToImage(video);
     if (!image)
         return;
-    texImage2DImpl(target, level, internalformat, format, type, image.get(), WebGLImageConversion::HtmlDomVideo, m_unpackFlipY, m_unpackPremultiplyAlpha, exceptionState);
+    texImage2DImpl(target, level, internalformat, format, type, image.get(), WebGLImageConversion::HtmlDomVideo, m_unpackFlipY, m_unpackPremultiplyAlpha);
 }
 
 void WebGLRenderingContextBase::texParameter(GLenum target, GLenum pname, GLfloat paramf, GLint parami, bool isFloat)
@@ -4072,33 +4434,16 @@ void WebGLRenderingContextBase::texParameteri(GLenum target, GLenum pname, GLint
     texParameter(target, pname, 0, param, false);
 }
 
-void WebGLRenderingContextBase::texSubImage2DBase(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLsizei width, GLsizei height, GLenum format, GLenum type, const void* pixels, ExceptionState& exceptionState)
-{
-    // FIXME: Handle errors.
-    ASSERT(!isContextLost());
-    WebGLTexture* tex = validateTextureBinding("texSubImage2D", target, true);
-    if (!tex) {
-        ASSERT_NOT_REACHED();
-        return;
-    }
-    ASSERT(validateTexFuncParameters("texSubImage2D", TexSubImage2D, target, level, tex->getInternalFormat(target, level), width, height, 0, format, type));
-    ASSERT(validateSize("texSubImage2D", xoffset, yoffset));
-    ASSERT(validateSettableTexFormat("texSubImage2D", format));
-    ASSERT((xoffset + width) >= 0);
-    ASSERT((yoffset + height) >= 0);
-    ASSERT(tex->getWidth(target, level) >= (xoffset + width));
-    ASSERT(tex->getHeight(target, level) >= (yoffset + height));
-    ASSERT(validateInternalFormat(tex->getInternalFormat(target, level), format));
-    ASSERT(tex->getType(target, level) == type);
-    webContext()->texSubImage2D(target, level, xoffset, yoffset, width, height, format, type, pixels);
-}
-
-void WebGLRenderingContextBase::texSubImage2DImpl(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLenum format, GLenum type, Image* image, WebGLImageConversion::ImageHtmlDomSource domSource, bool flipY, bool premultiplyAlpha, ExceptionState& exceptionState)
+void WebGLRenderingContextBase::texSubImage2DImpl(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLenum format, GLenum type, Image* image, WebGLImageConversion::ImageHtmlDomSource domSource, bool flipY, bool premultiplyAlpha)
 {
     // All calling functions check isContextLost, so a duplicate check is not needed here.
+    if (type == GL_UNSIGNED_INT_10F_11F_11F_REV) {
+        // The UNSIGNED_INT_10F_11F_11F_REV type pack/unpack isn't implemented.
+        type = GL_FLOAT;
+    }
     Vector<uint8_t> data;
     WebGLImageConversion::ImageExtractor imageExtractor(image, domSource, premultiplyAlpha, m_unpackColorspaceConversion == GL_NONE);
-    if (!imageExtractor.extractSucceeded()) {
+    if (!imageExtractor.imagePixelData()) {
         synthesizeGLError(GL_INVALID_VALUE, "texSubImage2D", "bad image");
         return;
     }
@@ -4107,9 +4452,9 @@ void WebGLRenderingContextBase::texSubImage2DImpl(GLenum target, GLint level, GL
     const void* imagePixelData = imageExtractor.imagePixelData();
 
     bool needConversion = true;
-    if (type == GL_UNSIGNED_BYTE && sourceDataFormat == WebGLImageConversion::DataFormatRGBA8 && format == GL_RGBA && alphaOp == WebGLImageConversion::AlphaDoNothing && !flipY)
+    if (type == GL_UNSIGNED_BYTE && sourceDataFormat == WebGLImageConversion::DataFormatRGBA8 && format == GL_RGBA && alphaOp == WebGLImageConversion::AlphaDoNothing && !flipY) {
         needConversion = false;
-    else {
+    } else {
         if (!WebGLImageConversion::packImageData(image, imagePixelData, format, type, flipY, alphaOp, sourceDataFormat, imageExtractor.imageWidth(), imageExtractor.imageHeight(), imageExtractor.imageSourceUnpackAlignment(), data)) {
             synthesizeGLError(GL_INVALID_VALUE, "texSubImage2D", "bad image data");
             return;
@@ -4118,51 +4463,55 @@ void WebGLRenderingContextBase::texSubImage2DImpl(GLenum target, GLint level, GL
 
     if (m_unpackAlignment != 1)
         webContext()->pixelStorei(GL_UNPACK_ALIGNMENT, 1);
-    texSubImage2DBase(target, level, xoffset, yoffset, imageExtractor.imageWidth(), imageExtractor.imageHeight(), format, type,  needConversion ? data.data() : imagePixelData, exceptionState);
+    webContext()->texSubImage2D(target, level, xoffset, yoffset, imageExtractor.imageWidth(), imageExtractor.imageHeight(), format, type,  needConversion ? data.data() : imagePixelData);
     if (m_unpackAlignment != 1)
         webContext()->pixelStorei(GL_UNPACK_ALIGNMENT, m_unpackAlignment);
 }
 
 void WebGLRenderingContextBase::texSubImage2D(GLenum target, GLint level, GLint xoffset, GLint yoffset,
     GLsizei width, GLsizei height,
-    GLenum format, GLenum type, DOMArrayBufferView* pixels, ExceptionState& exceptionState)
+    GLenum format, GLenum type, DOMArrayBufferView* pixels)
 {
-    if (isContextLost() || !validateTexFuncData("texSubImage2D", level, width, height, format, type, pixels, NullNotAllowed)
-        || !validateTexFunc("texSubImage2D", TexSubImage2D, SourceArrayBufferView, target, level, 0, width, height, 0, format, type, xoffset, yoffset))
+    if (isContextLost() || !validateTexFunc("texSubImage2D", TexSubImage2D, SourceArrayBufferView, target, level, 0, width, height, 0, format, type, xoffset, yoffset)
+        || !validateTexFuncData("texSubImage2D", level, width, height, format, type, pixels, NullNotAllowed))
         return;
     void* data = pixels->baseAddress();
     Vector<uint8_t> tempData;
     bool changeUnpackAlignment = false;
     if (data && (m_unpackFlipY || m_unpackPremultiplyAlpha)) {
         if (!WebGLImageConversion::extractTextureData(width, height, format, type,
-                                           m_unpackAlignment,
-                                           m_unpackFlipY, m_unpackPremultiplyAlpha,
-                                           data,
-                                           tempData))
+            m_unpackAlignment, m_unpackFlipY, m_unpackPremultiplyAlpha, data, tempData))
             return;
         data = tempData.data();
         changeUnpackAlignment = true;
     }
     if (changeUnpackAlignment)
         webContext()->pixelStorei(GL_UNPACK_ALIGNMENT, 1);
-    texSubImage2DBase(target, level, xoffset, yoffset, width, height, format, type, data, exceptionState);
+    webContext()->texSubImage2D(target, level, xoffset, yoffset, width, height, format, type, data);
     if (changeUnpackAlignment)
         webContext()->pixelStorei(GL_UNPACK_ALIGNMENT, m_unpackAlignment);
 }
 
 void WebGLRenderingContextBase::texSubImage2D(GLenum target, GLint level, GLint xoffset, GLint yoffset,
-    GLenum format, GLenum type, ImageData* pixels, ExceptionState& exceptionState)
+    GLenum format, GLenum type, ImageData* pixels)
 {
-    if (isContextLost() || !pixels || !validateTexFunc("texSubImage2D", TexSubImage2D, SourceImageData, target, level, 0,  pixels->width(), pixels->height(), 0, format, type, xoffset, yoffset))
+    if (!pixels) {
+        synthesizeGLError(GL_INVALID_VALUE, "texSubImage2D", "no image data");
         return;
-
+    }
+    if (isContextLost() || !validateTexFunc("texSubImage2D", TexSubImage2D, SourceImageData, target, level, 0,  pixels->width(), pixels->height(), 0, format, type, xoffset, yoffset))
+        return;
+    if (type == GL_UNSIGNED_INT_10F_11F_11F_REV) {
+        // The UNSIGNED_INT_10F_11F_11F_REV type pack/unpack isn't implemented.
+        type = GL_FLOAT;
+    }
     Vector<uint8_t> data;
     bool needConversion = true;
     // The data from ImageData is always of format RGBA8.
     // No conversion is needed if destination format is RGBA and type is USIGNED_BYTE and no Flip or Premultiply operation is required.
-    if (format == GL_RGBA && type == GL_UNSIGNED_BYTE && !m_unpackFlipY && !m_unpackPremultiplyAlpha)
+    if (format == GL_RGBA && type == GL_UNSIGNED_BYTE && !m_unpackFlipY && !m_unpackPremultiplyAlpha) {
         needConversion = false;
-    else {
+    } else {
         if (!WebGLImageConversion::extractImageData(pixels->data()->data(), pixels->size(), format, type, m_unpackFlipY, m_unpackPremultiplyAlpha, data)) {
             synthesizeGLError(GL_INVALID_VALUE, "texSubImage2D", "bad image data");
             return;
@@ -4170,7 +4519,7 @@ void WebGLRenderingContextBase::texSubImage2D(GLenum target, GLint level, GLint 
     }
     if (m_unpackAlignment != 1)
         webContext()->pixelStorei(GL_UNPACK_ALIGNMENT, 1);
-    texSubImage2DBase(target, level, xoffset, yoffset, pixels->width(), pixels->height(), format, type, needConversion ? data.data() : pixels->data()->data(), exceptionState);
+    webContext()->texSubImage2D(target, level, xoffset, yoffset, pixels->width(), pixels->height(), format, type, needConversion ? data.data() : pixels->data()->data());
     if (m_unpackAlignment != 1)
         webContext()->pixelStorei(GL_UNPACK_ALIGNMENT, m_unpackAlignment);
 }
@@ -4181,14 +4530,19 @@ void WebGLRenderingContextBase::texSubImage2D(GLenum target, GLint level, GLint 
     if (isContextLost() || !validateHTMLImageElement("texSubImage2D", image, exceptionState))
         return;
 
+    if (type == GL_UNSIGNED_INT_10F_11F_11F_REV) {
+        // The UNSIGNED_INT_10F_11F_11F_REV type pack/unpack isn't implemented.
+        type = GL_FLOAT;
+    }
+
     RefPtr<Image> imageForRender = image->cachedImage()->imageForLayoutObject(image->layoutObject());
-    if (imageForRender->isSVGImage())
-        imageForRender = drawImageIntoBuffer(imageForRender.get(), image->width(), image->height(), "texSubImage2D");
+    if (imageForRender && imageForRender->isSVGImage())
+        imageForRender = drawImageIntoBuffer(imageForRender.release(), image->width(), image->height(), "texSubImage2D");
 
     if (!imageForRender || !validateTexFunc("texSubImage2D", TexSubImage2D, SourceHTMLImageElement, target, level, 0, imageForRender->width(), imageForRender->height(), 0, format, type, xoffset, yoffset))
         return;
 
-    texSubImage2DImpl(target, level, xoffset, yoffset, format, type, imageForRender.get(), WebGLImageConversion::HtmlDomImage, m_unpackFlipY, m_unpackPremultiplyAlpha, exceptionState);
+    texSubImage2DImpl(target, level, xoffset, yoffset, format, type, imageForRender.get(), WebGLImageConversion::HtmlDomImage, m_unpackFlipY, m_unpackPremultiplyAlpha);
 }
 
 void WebGLRenderingContextBase::texSubImage2D(GLenum target, GLint level, GLint xoffset, GLint yoffset,
@@ -4201,11 +4555,11 @@ void WebGLRenderingContextBase::texSubImage2D(GLenum target, GLint level, GLint 
     WebGLTexture* texture = validateTextureBinding("texSubImage2D", target, true);
     ASSERT(texture);
 
-    bool isFloatType = type == GL_FLOAT || type == GL_HALF_FLOAT_OES;
+    bool isFloatType = type == GL_FLOAT || type == GL_HALF_FLOAT || type == GL_HALF_FLOAT_OES;
     if (!canvas->renderingContext() || !canvas->renderingContext()->isAccelerated() || isFloatType) {
         // 2D canvas has only FrontBuffer.
-        texSubImage2DImpl(target, level, xoffset, yoffset, format, type, canvas->copiedImage(FrontBuffer).get(),
-            WebGLImageConversion::HtmlDomCanvas, m_unpackFlipY, m_unpackPremultiplyAlpha, exceptionState);
+        texSubImage2DImpl(target, level, xoffset, yoffset, format, type, canvas->copiedImage(FrontBuffer, PreferAcceleration).get(),
+            WebGLImageConversion::HtmlDomCanvas, m_unpackFlipY, m_unpackPremultiplyAlpha);
         return;
     }
 
@@ -4219,10 +4573,10 @@ void WebGLRenderingContextBase::texSubImage2D(GLenum target, GLint level, GLint 
         || !validateTexFunc("texSubImage2D", TexSubImage2D, SourceHTMLVideoElement, target, level, 0, video->videoWidth(), video->videoHeight(), 0, format, type, xoffset, yoffset))
         return;
 
-    RefPtr<Image> image = videoFrameToImage(video, ImageBuffer::fastCopyImageMode());
+    RefPtr<Image> image = videoFrameToImage(video);
     if (!image)
         return;
-    texSubImage2DImpl(target, level, xoffset, yoffset, format, type, image.get(), WebGLImageConversion::HtmlDomVideo, m_unpackFlipY, m_unpackPremultiplyAlpha, exceptionState);
+    texSubImage2DImpl(target, level, xoffset, yoffset, format, type, image.get(), WebGLImageConversion::HtmlDomVideo, m_unpackFlipY, m_unpackPremultiplyAlpha);
 }
 
 void WebGLRenderingContextBase::uniform1f(const WebGLUniformLocation* location, GLfloat x)
@@ -4238,12 +4592,12 @@ void WebGLRenderingContextBase::uniform1f(const WebGLUniformLocation* location, 
     webContext()->uniform1f(location->location(), x);
 }
 
-void WebGLRenderingContextBase::uniform1fv(const WebGLUniformLocation* location, DOMFloat32Array* v)
+void WebGLRenderingContextBase::uniform1fv(const WebGLUniformLocation* location, const FlexibleFloat32ArrayView& v)
 {
-    if (isContextLost() || !validateUniformParameters("uniform1fv", location, v, 1))
+    if (isContextLost() || !validateUniformParameters<WTF::Float32Array>("uniform1fv", location, v, 1))
         return;
 
-    webContext()->uniform1fv(location->location(), v->length(), v->data());
+    webContext()->uniform1fv(location->location(), v.length(), v.dataMaybeOnStack());
 }
 
 void WebGLRenderingContextBase::uniform1fv(const WebGLUniformLocation* location, Vector<GLfloat>& v)
@@ -4267,12 +4621,12 @@ void WebGLRenderingContextBase::uniform1i(const WebGLUniformLocation* location, 
     webContext()->uniform1i(location->location(), x);
 }
 
-void WebGLRenderingContextBase::uniform1iv(const WebGLUniformLocation* location, DOMInt32Array* v)
+void WebGLRenderingContextBase::uniform1iv(const WebGLUniformLocation* location, const FlexibleInt32ArrayView& v)
 {
-    if (isContextLost() || !validateUniformParameters("uniform1iv", location, v, 1))
+    if (isContextLost() || !validateUniformParameters<WTF::Int32Array>("uniform1iv", location, v, 1))
         return;
 
-    webContext()->uniform1iv(location->location(), v->length(), v->data());
+    webContext()->uniform1iv(location->location(), v.length(), v.dataMaybeOnStack());
 }
 
 void WebGLRenderingContextBase::uniform1iv(const WebGLUniformLocation* location, Vector<GLint>& v)
@@ -4296,12 +4650,12 @@ void WebGLRenderingContextBase::uniform2f(const WebGLUniformLocation* location, 
     webContext()->uniform2f(location->location(), x, y);
 }
 
-void WebGLRenderingContextBase::uniform2fv(const WebGLUniformLocation* location, DOMFloat32Array* v)
+void WebGLRenderingContextBase::uniform2fv(const WebGLUniformLocation* location, const FlexibleFloat32ArrayView& v)
 {
-    if (isContextLost() || !validateUniformParameters("uniform2fv", location, v, 2))
+    if (isContextLost() || !validateUniformParameters<WTF::Float32Array>("uniform2fv", location, v, 2))
         return;
 
-    webContext()->uniform2fv(location->location(), v->length() >> 1, v->data());
+    webContext()->uniform2fv(location->location(), v.length() >> 1, v.dataMaybeOnStack());
 }
 
 void WebGLRenderingContextBase::uniform2fv(const WebGLUniformLocation* location, Vector<GLfloat>& v)
@@ -4325,12 +4679,12 @@ void WebGLRenderingContextBase::uniform2i(const WebGLUniformLocation* location, 
     webContext()->uniform2i(location->location(), x, y);
 }
 
-void WebGLRenderingContextBase::uniform2iv(const WebGLUniformLocation* location, DOMInt32Array* v)
+void WebGLRenderingContextBase::uniform2iv(const WebGLUniformLocation* location, const FlexibleInt32ArrayView& v)
 {
-    if (isContextLost() || !validateUniformParameters("uniform2iv", location, v, 2))
+    if (isContextLost() || !validateUniformParameters<WTF::Int32Array>("uniform2iv", location, v, 2))
         return;
 
-    webContext()->uniform2iv(location->location(), v->length() >> 1, v->data());
+    webContext()->uniform2iv(location->location(), v.length() >> 1, v.dataMaybeOnStack());
 }
 
 void WebGLRenderingContextBase::uniform2iv(const WebGLUniformLocation* location, Vector<GLint>& v)
@@ -4354,12 +4708,12 @@ void WebGLRenderingContextBase::uniform3f(const WebGLUniformLocation* location, 
     webContext()->uniform3f(location->location(), x, y, z);
 }
 
-void WebGLRenderingContextBase::uniform3fv(const WebGLUniformLocation* location, DOMFloat32Array* v)
+void WebGLRenderingContextBase::uniform3fv(const WebGLUniformLocation* location, const FlexibleFloat32ArrayView& v)
 {
-    if (isContextLost() || !validateUniformParameters("uniform3fv", location, v, 3))
+    if (isContextLost() || !validateUniformParameters<WTF::Float32Array>("uniform3fv", location, v, 3))
         return;
 
-    webContext()->uniform3fv(location->location(), v->length() / 3, v->data());
+    webContext()->uniform3fv(location->location(), v.length() / 3, v.dataMaybeOnStack());
 }
 
 void WebGLRenderingContextBase::uniform3fv(const WebGLUniformLocation* location, Vector<GLfloat>& v)
@@ -4383,12 +4737,12 @@ void WebGLRenderingContextBase::uniform3i(const WebGLUniformLocation* location, 
     webContext()->uniform3i(location->location(), x, y, z);
 }
 
-void WebGLRenderingContextBase::uniform3iv(const WebGLUniformLocation* location, DOMInt32Array* v)
+void WebGLRenderingContextBase::uniform3iv(const WebGLUniformLocation* location, const FlexibleInt32ArrayView& v)
 {
-    if (isContextLost() || !validateUniformParameters("uniform3iv", location, v, 3))
+    if (isContextLost() || !validateUniformParameters<WTF::Int32Array>("uniform3iv", location, v, 3))
         return;
 
-    webContext()->uniform3iv(location->location(), v->length() / 3, v->data());
+    webContext()->uniform3iv(location->location(), v.length() / 3, v.dataMaybeOnStack());
 }
 
 void WebGLRenderingContextBase::uniform3iv(const WebGLUniformLocation* location, Vector<GLint>& v)
@@ -4412,12 +4766,12 @@ void WebGLRenderingContextBase::uniform4f(const WebGLUniformLocation* location, 
     webContext()->uniform4f(location->location(), x, y, z, w);
 }
 
-void WebGLRenderingContextBase::uniform4fv(const WebGLUniformLocation* location, DOMFloat32Array* v)
+void WebGLRenderingContextBase::uniform4fv(const WebGLUniformLocation* location, const FlexibleFloat32ArrayView& v)
 {
-    if (isContextLost() || !validateUniformParameters("uniform4fv", location, v, 4))
+    if (isContextLost() || !validateUniformParameters<WTF::Float32Array>("uniform4fv", location, v, 4))
         return;
 
-    webContext()->uniform4fv(location->location(), v->length() >> 2, v->data());
+    webContext()->uniform4fv(location->location(), v.length() >> 2, v.dataMaybeOnStack());
 }
 
 void WebGLRenderingContextBase::uniform4fv(const WebGLUniformLocation* location, Vector<GLfloat>& v)
@@ -4441,12 +4795,12 @@ void WebGLRenderingContextBase::uniform4i(const WebGLUniformLocation* location, 
     webContext()->uniform4i(location->location(), x, y, z, w);
 }
 
-void WebGLRenderingContextBase::uniform4iv(const WebGLUniformLocation* location, DOMInt32Array* v)
+void WebGLRenderingContextBase::uniform4iv(const WebGLUniformLocation* location, const FlexibleInt32ArrayView& v)
 {
-    if (isContextLost() || !validateUniformParameters("uniform4iv", location, v, 4))
+    if (isContextLost() || !validateUniformParameters<WTF::Int32Array>("uniform4iv", location, v, 4))
         return;
 
-    webContext()->uniform4iv(location->location(), v->length() >> 2, v->data());
+    webContext()->uniform4iv(location->location(), v.length() >> 2, v.dataMaybeOnStack());
 }
 
 void WebGLRenderingContextBase::uniform4iv(const WebGLUniformLocation* location, Vector<GLint>& v)
@@ -4532,12 +4886,12 @@ void WebGLRenderingContextBase::vertexAttrib1f(GLuint index, GLfloat v0)
     vertexAttribfImpl("vertexAttrib1f", index, 1, v0, 0.0f, 0.0f, 1.0f);
 }
 
-void WebGLRenderingContextBase::vertexAttrib1fv(GLuint index, DOMFloat32Array* v)
+void WebGLRenderingContextBase::vertexAttrib1fv(GLuint index, const DOMFloat32Array* v)
 {
     vertexAttribfvImpl("vertexAttrib1fv", index, v, 1);
 }
 
-void WebGLRenderingContextBase::vertexAttrib1fv(GLuint index, Vector<GLfloat>& v)
+void WebGLRenderingContextBase::vertexAttrib1fv(GLuint index, const Vector<GLfloat>& v)
 {
     vertexAttribfvImpl("vertexAttrib1fv", index, v.data(), v.size(), 1);
 }
@@ -4547,12 +4901,12 @@ void WebGLRenderingContextBase::vertexAttrib2f(GLuint index, GLfloat v0, GLfloat
     vertexAttribfImpl("vertexAttrib2f", index, 2, v0, v1, 0.0f, 1.0f);
 }
 
-void WebGLRenderingContextBase::vertexAttrib2fv(GLuint index, DOMFloat32Array* v)
+void WebGLRenderingContextBase::vertexAttrib2fv(GLuint index, const DOMFloat32Array* v)
 {
     vertexAttribfvImpl("vertexAttrib2fv", index, v, 2);
 }
 
-void WebGLRenderingContextBase::vertexAttrib2fv(GLuint index, Vector<GLfloat>& v)
+void WebGLRenderingContextBase::vertexAttrib2fv(GLuint index, const Vector<GLfloat>& v)
 {
     vertexAttribfvImpl("vertexAttrib2fv", index, v.data(), v.size(), 2);
 }
@@ -4562,12 +4916,12 @@ void WebGLRenderingContextBase::vertexAttrib3f(GLuint index, GLfloat v0, GLfloat
     vertexAttribfImpl("vertexAttrib3f", index, 3, v0, v1, v2, 1.0f);
 }
 
-void WebGLRenderingContextBase::vertexAttrib3fv(GLuint index, DOMFloat32Array* v)
+void WebGLRenderingContextBase::vertexAttrib3fv(GLuint index, const DOMFloat32Array* v)
 {
     vertexAttribfvImpl("vertexAttrib3fv", index, v, 3);
 }
 
-void WebGLRenderingContextBase::vertexAttrib3fv(GLuint index, Vector<GLfloat>& v)
+void WebGLRenderingContextBase::vertexAttrib3fv(GLuint index, const Vector<GLfloat>& v)
 {
     vertexAttribfvImpl("vertexAttrib3fv", index, v.data(), v.size(), 3);
 }
@@ -4577,12 +4931,12 @@ void WebGLRenderingContextBase::vertexAttrib4f(GLuint index, GLfloat v0, GLfloat
     vertexAttribfImpl("vertexAttrib4f", index, 4, v0, v1, v2, v3);
 }
 
-void WebGLRenderingContextBase::vertexAttrib4fv(GLuint index, DOMFloat32Array* v)
+void WebGLRenderingContextBase::vertexAttrib4fv(GLuint index, const DOMFloat32Array* v)
 {
     vertexAttribfvImpl("vertexAttrib4fv", index, v, 4);
 }
 
-void WebGLRenderingContextBase::vertexAttrib4fv(GLuint index, Vector<GLfloat>& v)
+void WebGLRenderingContextBase::vertexAttrib4fv(GLuint index, const Vector<GLfloat>& v)
 {
     vertexAttribfvImpl("vertexAttrib4fv", index, v.data(), v.size(), 4);
 }
@@ -4691,8 +5045,8 @@ void WebGLRenderingContextBase::loseContextImpl(WebGLRenderingContextBase::LostC
 
     // Lose all the extensions.
     for (size_t i = 0; i < m_extensions.size(); ++i) {
-        ExtensionTracker* tracker = m_extensions[i].get();
-        tracker->loseExtension();
+        ExtensionTracker* tracker = m_extensions[i];
+        tracker->loseExtension(false);
     }
 
     for (size_t i = 0; i < WebGLExtensionNameCount; ++i)
@@ -4782,7 +5136,9 @@ void WebGLRenderingContextBase::addContextObject(WebGLContextObject* object)
 void WebGLRenderingContextBase::detachAndRemoveAllObjects()
 {
     while (m_contextObjects.size() > 0) {
-        WillBeHeapHashSet<RawPtrWillBeWeakMember<WebGLContextObject>>::iterator it = m_contextObjects.begin();
+        // Following detachContext() will remove the iterated object from
+        // |m_contextObjects|, and thus we need to look up begin() every time.
+        auto it = m_contextObjects.begin();
         (*it)->detachContext();
     }
 }
@@ -4831,6 +5187,14 @@ ScriptValue WebGLRenderingContextBase::getIntParameter(ScriptState* scriptState,
     GLint value = 0;
     if (!isContextLost())
         webContext()->getIntegerv(pname, &value);
+    return WebGLAny(scriptState, value);
+}
+
+ScriptValue WebGLRenderingContextBase::getInt64Parameter(ScriptState* scriptState, GLenum pname)
+{
+    GLint64 value = 0;
+    if (!isContextLost())
+        webContext()->getInteger64v(pname, &value);
     return WebGLAny(scriptState, value);
 }
 
@@ -5006,7 +5370,7 @@ WebGLTexture* WebGLRenderingContextBase::validateTextureBinding(const char* func
 
 bool WebGLRenderingContextBase::validateLocationLength(const char* functionName, const String& string)
 {
-    const unsigned maxWebGLLocationLength = 256;
+    const unsigned maxWebGLLocationLength = getMaxWebGLLocationLength();
     if (string.length() > maxWebGLLocationLength) {
         synthesizeGLError(GL_INVALID_VALUE, functionName, "location length > 256");
         return false;
@@ -5014,9 +5378,9 @@ bool WebGLRenderingContextBase::validateLocationLength(const char* functionName,
     return true;
 }
 
-bool WebGLRenderingContextBase::validateSize(const char* functionName, GLint x, GLint y)
+bool WebGLRenderingContextBase::validateSize(const char* functionName, GLint x, GLint y, GLint z)
 {
-    if (x < 0 || y < 0) {
+    if (x < 0 || y < 0 || z < 0) {
         synthesizeGLError(GL_INVALID_VALUE, functionName, "size < 0");
         return false;
     }
@@ -5034,121 +5398,70 @@ bool WebGLRenderingContextBase::validateString(const char* functionName, const S
     return true;
 }
 
-bool WebGLRenderingContextBase::validateTexFuncFormatAndType(const char* functionName, GLenum format, GLenum type, GLint level)
+bool WebGLRenderingContextBase::validateTexFuncFormatAndType(const char* functionName, GLenum internalformat, GLenum format, GLenum type, GLint level)
 {
-    switch (format) {
-    case GL_ALPHA:
-    case GL_LUMINANCE:
-    case GL_LUMINANCE_ALPHA:
-    case GL_RGB:
-    case GL_RGBA:
-        break;
-    case GL_DEPTH_STENCIL_OES:
-    case GL_DEPTH_COMPONENT:
-        if (extensionEnabled(WebGLDepthTextureName) || isWebGL2OrHigher())
-            break;
-        synthesizeGLError(GL_INVALID_ENUM, functionName, "depth texture formats not enabled");
+    if (!m_isWebGL2FormatsTypesAdded && isWebGL2OrHigher()) {
+        ADD_VALUES_TO_SET(m_supportedInternalFormats, kSupportedInternalFormatsES3);
+        ADD_VALUES_TO_SET(m_supportedFormats, kSupportedFormatsES3);
+        ADD_VALUES_TO_SET(m_supportedTypes, kSupportedTypesES3);
+        ADD_VALUES_TO_SET(m_supportedFormatTypeCombinations, kSupportedFormatTypesES3);
+        m_isWebGL2FormatsTypesAdded = true;
+    }
+
+    if (!isWebGL2OrHigher()) {
+        if (!m_isOESTextureFloatFormatsTypesAdded && extensionEnabled(OESTextureFloatName)) {
+            ADD_VALUES_TO_SET(m_supportedTypes, kSupportedTypesOESTexFloat);
+            ADD_VALUES_TO_SET(m_supportedFormatTypeCombinations, kSupportedFormatTypesOESTexFloat);
+            m_isOESTextureFloatFormatsTypesAdded = true;
+        }
+
+        if (!m_isOESTextureHalfFloatFormatsTypesAdded && extensionEnabled(OESTextureHalfFloatName)) {
+            ADD_VALUES_TO_SET(m_supportedTypes, kSupportedTypesOESTexHalfFloat);
+            ADD_VALUES_TO_SET(m_supportedFormatTypeCombinations, kSupportedFormatTypesOESTexHalfFloat);
+            m_isOESTextureHalfFloatFormatsTypesAdded = true;
+        }
+
+        if (!m_isWebGLDepthTextureFormatsTypesAdded && extensionEnabled(WebGLDepthTextureName)) {
+            ADD_VALUES_TO_SET(m_supportedInternalFormats, kSupportedInternalFormatsOESDepthTex);
+            ADD_VALUES_TO_SET(m_supportedFormats, kSupportedFormatsOESDepthTex);
+            ADD_VALUES_TO_SET(m_supportedTypes, kSupportedTypesOESDepthTex);
+            ADD_VALUES_TO_SET(m_supportedFormatTypeCombinations, kSupportedFormatTypesOESDepthTex);
+            m_isWebGLDepthTextureFormatsTypesAdded = true;
+        }
+
+        if (!m_isEXTsRGBFormatsTypesAdded && extensionEnabled(EXTsRGBName)) {
+            ADD_VALUES_TO_SET(m_supportedInternalFormats, kSupportedInternalFormatsEXTsRGB);
+            ADD_VALUES_TO_SET(m_supportedFormats, kSupportedFormatsEXTsRGB);
+            ADD_VALUES_TO_SET(m_supportedFormatTypeCombinations, kSupportedFormatTypesEXTsRGB);
+            m_isEXTsRGBFormatsTypesAdded = true;
+        }
+    }
+
+    if (m_supportedInternalFormats.find(internalformat) == m_supportedInternalFormats.end()) {
+        synthesizeGLError(GL_INVALID_ENUM, functionName, "invalid internalformat");
         return false;
-    case GL_SRGB_EXT:
-    case GL_SRGB_ALPHA_EXT:
-        if (extensionEnabled(EXTsRGBName) || isWebGL2OrHigher())
-            break;
-        synthesizeGLError(GL_INVALID_ENUM, functionName, "sRGB texture formats not enabled");
+    }
+    if (m_supportedFormats.find(format) == m_supportedFormats.end()) {
+        synthesizeGLError(GL_INVALID_ENUM, functionName, "invalid format");
         return false;
-    default:
-        synthesizeGLError(GL_INVALID_ENUM, functionName, "invalid texture format");
+    }
+    if (m_supportedTypes.find(type) == m_supportedTypes.end()) {
+        synthesizeGLError(GL_INVALID_ENUM, functionName, "invalid type");
+        return false;
+    }
+    FormatType combinationQuery = { internalformat, format, type };
+    if (m_supportedFormatTypeCombinations.find(combinationQuery) == m_supportedFormatTypeCombinations.end()) {
+        synthesizeGLError(GL_INVALID_OPERATION, functionName, "invalid internalformat/format/type combination");
         return false;
     }
 
-    switch (type) {
-    case GL_UNSIGNED_BYTE:
-    case GL_UNSIGNED_SHORT_5_6_5:
-    case GL_UNSIGNED_SHORT_4_4_4_4:
-    case GL_UNSIGNED_SHORT_5_5_5_1:
-        break;
-    case GL_FLOAT:
-        if (extensionEnabled(OESTextureFloatName) || isWebGL2OrHigher())
-            break;
-        synthesizeGLError(GL_INVALID_ENUM, functionName, "invalid texture type");
-        return false;
-    case GL_HALF_FLOAT_OES:
-        if (extensionEnabled(OESTextureHalfFloatName) || isWebGL2OrHigher())
-            break;
-        synthesizeGLError(GL_INVALID_ENUM, functionName, "invalid texture type");
-        return false;
-    case GL_UNSIGNED_INT:
-    case GL_UNSIGNED_INT_24_8_OES:
-    case GL_UNSIGNED_SHORT:
-        if (extensionEnabled(WebGLDepthTextureName) || isWebGL2OrHigher())
-            break;
-        synthesizeGLError(GL_INVALID_ENUM, functionName, "invalid texture type");
-        return false;
-    default:
-        synthesizeGLError(GL_INVALID_ENUM, functionName, "invalid texture type");
+    if (format == GL_DEPTH_COMPONENT && level > 0 && !isWebGL2OrHigher()) {
+        synthesizeGLError(GL_INVALID_OPERATION, functionName, "level must be 0 for DEPTH_COMPONENT format");
         return false;
     }
-
-    // Verify that the combination of format and type is supported.
-    switch (format) {
-    case GL_ALPHA:
-    case GL_LUMINANCE:
-    case GL_LUMINANCE_ALPHA:
-        if (type != GL_UNSIGNED_BYTE
-            && type != GL_FLOAT
-            && type != GL_HALF_FLOAT_OES) {
-            synthesizeGLError(GL_INVALID_OPERATION, functionName, "invalid type for format");
-            return false;
-        }
-        break;
-    case GL_RGB:
-        if (type != GL_UNSIGNED_BYTE
-            && type != GL_UNSIGNED_SHORT_5_6_5
-            && type != GL_FLOAT
-            && type != GL_HALF_FLOAT_OES) {
-            synthesizeGLError(GL_INVALID_OPERATION, functionName, "invalid type for RGB format");
-            return false;
-        }
-        break;
-    case GL_RGBA:
-        if (type != GL_UNSIGNED_BYTE
-            && type != GL_UNSIGNED_SHORT_4_4_4_4
-            && type != GL_UNSIGNED_SHORT_5_5_5_1
-            && type != GL_FLOAT
-            && type != GL_HALF_FLOAT_OES) {
-            synthesizeGLError(GL_INVALID_OPERATION, functionName, "invalid type for RGBA format");
-            return false;
-        }
-        break;
-    case GL_DEPTH_COMPONENT:
-        if (type != GL_UNSIGNED_SHORT
-            && type != GL_UNSIGNED_INT) {
-            synthesizeGLError(GL_INVALID_OPERATION, functionName, "invalid type for DEPTH_COMPONENT format");
-            return false;
-        }
-        if (level > 0) {
-            synthesizeGLError(GL_INVALID_OPERATION, functionName, "level must be 0 for DEPTH_COMPONENT format");
-            return false;
-        }
-        break;
-    case GL_DEPTH_STENCIL_OES:
-        if (type != GL_UNSIGNED_INT_24_8_OES) {
-            synthesizeGLError(GL_INVALID_OPERATION, functionName, "invalid type for DEPTH_STENCIL format");
-            return false;
-        }
-        if (level > 0) {
-            synthesizeGLError(GL_INVALID_OPERATION, functionName, "level must be 0 for DEPTH_STENCIL format");
-            return false;
-        }
-        break;
-    case GL_SRGB_EXT:
-    case GL_SRGB_ALPHA_EXT:
-        if (type != GL_UNSIGNED_BYTE) {
-            synthesizeGLError(GL_INVALID_OPERATION, functionName, "invalid type for SRGB format");
-            return false;
-        }
-        break;
-    default:
-        ASSERT_NOT_REACHED();
+    if (format == GL_DEPTH_STENCIL_OES && level > 0 && !isWebGL2OrHigher()) {
+        synthesizeGLError(GL_INVALID_OPERATION, functionName, "level must be 0 for DEPTH_STENCIL format");
+        return false;
     }
 
     return true;
@@ -5232,16 +5545,11 @@ bool WebGLRenderingContextBase::validateTexFuncParameters(const char* functionNa
     // We absolutely have to validate the format and type combination.
     // The texImage2D entry points taking HTMLImage, etc. will produce
     // temporary data based on this combination, so it must be legal.
-    if (!validateTexFuncFormatAndType(functionName, format, type, level) || !validateTexFuncLevel(functionName, target, level))
+    if (!validateTexFuncFormatAndType(functionName, internalformat, format, type, level))
         return false;
 
     if (!validateTexFuncDimensions(functionName, functionType, target, level, width, height))
         return false;
-
-    if (!validateInternalFormat(internalformat, format)) {
-        synthesizeGLError(GL_INVALID_OPERATION, functionName, "incompatible format and internalformat");
-        return false;
-    }
 
     if (border) {
         synthesizeGLError(GL_INVALID_VALUE, functionName, "border != 0");
@@ -5261,23 +5569,50 @@ bool WebGLRenderingContextBase::validateTexFuncData(const char* functionName, GL
         return false;
     }
 
-    if (!validateTexFuncFormatAndType(functionName, format, type, level))
-        return false;
     if (!validateSettableTexFormat(functionName, format))
         return false;
 
     switch (type) {
+    case GL_BYTE:
+        if (pixels->type() != DOMArrayBufferView::TypeInt8) {
+            synthesizeGLError(GL_INVALID_OPERATION, functionName, "type BYTE but ArrayBufferView not Int8Array");
+            return false;
+        }
+        break;
     case GL_UNSIGNED_BYTE:
         if (pixels->type() != DOMArrayBufferView::TypeUint8) {
             synthesizeGLError(GL_INVALID_OPERATION, functionName, "type UNSIGNED_BYTE but ArrayBufferView not Uint8Array");
             return false;
         }
         break;
+    case GL_SHORT:
+        if (pixels->type() != DOMArrayBufferView::TypeInt16) {
+            synthesizeGLError(GL_INVALID_OPERATION, functionName, "type SHORT but ArrayBufferView not Int16Array");
+            return false;
+        }
+        break;
+    case GL_UNSIGNED_SHORT:
     case GL_UNSIGNED_SHORT_5_6_5:
     case GL_UNSIGNED_SHORT_4_4_4_4:
     case GL_UNSIGNED_SHORT_5_5_5_1:
         if (pixels->type() != DOMArrayBufferView::TypeUint16) {
             synthesizeGLError(GL_INVALID_OPERATION, functionName, "type UNSIGNED_SHORT but ArrayBufferView not Uint16Array");
+            return false;
+        }
+        break;
+    case GL_INT:
+        if (pixels->type() != DOMArrayBufferView::TypeInt32) {
+            synthesizeGLError(GL_INVALID_OPERATION, functionName, "type INT but ArrayBufferView not Int32Array");
+            return false;
+        }
+        break;
+    case GL_UNSIGNED_INT:
+    case GL_UNSIGNED_INT_2_10_10_10_REV:
+    case GL_UNSIGNED_INT_10F_11F_11F_REV:
+    case GL_UNSIGNED_INT_5_9_9_9_REV:
+    case GL_UNSIGNED_INT_24_8:
+        if (pixels->type() != DOMArrayBufferView::TypeUint32) {
+            synthesizeGLError(GL_INVALID_OPERATION, functionName, "type UNSIGNED_INT but ArrayBufferView not Uint32Array");
             return false;
         }
         break;
@@ -5287,6 +5622,7 @@ bool WebGLRenderingContextBase::validateTexFuncData(const char* functionName, GL
             return false;
         }
         break;
+    case GL_HALF_FLOAT:
     case GL_HALF_FLOAT_OES: // OES_texture_half_float
         // As per the specification, ArrayBufferView should be null or a Uint16Array when
         // OES_texture_half_float is enabled.
@@ -5319,6 +5655,39 @@ bool WebGLRenderingContextBase::validateTexFuncData(const char* functionName, GL
     return true;
 }
 
+bool WebGLRenderingContextBase::validateCopyTexSubImage(const char* functionName, GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLint x, GLint y, GLsizei width, GLsizei height)
+{
+    if (!validateTexFuncLevel(functionName, target, level))
+        return false;
+    WebGLTexture* tex = validateTextureBinding(functionName, target, true);
+    if (!tex)
+        return false;
+    if (!validateSize(functionName, xoffset, yoffset, zoffset) || !validateSize(functionName, width, height))
+        return false;
+    // Before checking if it is in the range, check if overflow happens first.
+    Checked<GLint, RecordOverflow> maxX = xoffset;
+    maxX += width;
+    Checked<GLint, RecordOverflow> maxY = yoffset;
+    maxY += height;
+    if (maxX.hasOverflowed() || maxY.hasOverflowed()) {
+        synthesizeGLError(GL_INVALID_VALUE, functionName, "bad dimensions");
+        return false;
+    }
+    if (maxX.unsafeGet() > tex->getWidth(target, level) || maxY.unsafeGet() > tex->getHeight(target, level) || zoffset >= tex->getDepth(target, level)) {
+        synthesizeGLError(GL_INVALID_VALUE, functionName, "rectangle out of range");
+        return false;
+    }
+    GLenum internalformat = tex->getInternalFormat(target, level);
+    if (!validateSettableTexFormat(functionName, internalformat))
+        return false;
+    if (!isTexInternalFormatColorBufferCombinationValid(internalformat, boundFramebufferColorFormat())) {
+        synthesizeGLError(GL_INVALID_OPERATION, functionName, "framebuffer is incompatible format");
+        return false;
+    }
+
+    return true;
+}
+
 bool WebGLRenderingContextBase::validateCompressedTexFormat(GLenum format)
 {
     return m_compressedTextureFormats.contains(format);
@@ -5338,6 +5707,48 @@ bool WebGLRenderingContextBase::validateCompressedTexFuncData(const char* functi
     unsigned bytesRequired = 0;
 
     switch (format) {
+    case GL_COMPRESSED_RGBA_ASTC_4x4_KHR:
+    case GL_COMPRESSED_RGBA_ASTC_5x4_KHR:
+    case GL_COMPRESSED_RGBA_ASTC_5x5_KHR:
+    case GL_COMPRESSED_RGBA_ASTC_6x5_KHR:
+    case GL_COMPRESSED_RGBA_ASTC_6x6_KHR:
+    case GL_COMPRESSED_RGBA_ASTC_8x5_KHR:
+    case GL_COMPRESSED_RGBA_ASTC_8x6_KHR:
+    case GL_COMPRESSED_RGBA_ASTC_8x8_KHR:
+    case GL_COMPRESSED_RGBA_ASTC_10x5_KHR:
+    case GL_COMPRESSED_RGBA_ASTC_10x6_KHR:
+    case GL_COMPRESSED_RGBA_ASTC_10x8_KHR:
+    case GL_COMPRESSED_RGBA_ASTC_10x10_KHR:
+    case GL_COMPRESSED_RGBA_ASTC_12x10_KHR:
+    case GL_COMPRESSED_RGBA_ASTC_12x12_KHR:
+    case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_4x4_KHR:
+    case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_5x4_KHR:
+    case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_5x5_KHR:
+    case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_6x5_KHR:
+    case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_6x6_KHR:
+    case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_8x5_KHR:
+    case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_8x6_KHR:
+    case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_8x8_KHR:
+    case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_10x5_KHR:
+    case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_10x6_KHR:
+    case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_10x8_KHR:
+    case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_10x10_KHR:
+    case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_12x10_KHR:
+    case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_12x12_KHR:
+        {
+            const int index = (format < GL_COMPRESSED_SRGB8_ALPHA8_ASTC_4x4_KHR) ?
+                (int)format - GL_COMPRESSED_RGBA_ASTC_4x4_KHR : (int)format - GL_COMPRESSED_SRGB8_ALPHA8_ASTC_4x4_KHR;
+
+            const int kBlockSize = 16;
+            const int kBlockWidth = WebGLCompressedTextureASTC::kBlockSizeCompressASTC[index].blockWidth;
+            const int kBlockHeight = WebGLCompressedTextureASTC::kBlockSizeCompressASTC[index].blockHeight;
+
+            int numBlocksAcross = (width + kBlockWidth - 1) / kBlockWidth;
+            int numBlocksDown = (height + kBlockHeight - 1) / kBlockHeight;
+            int numBlocks = numBlocksAcross * numBlocksDown;
+            bytesRequired = numBlocks * kBlockSize;
+        }
+        break;
     case GL_COMPRESSED_RGB_S3TC_DXT1_EXT:
     case GL_COMPRESSED_RGBA_S3TC_DXT1_EXT:
         {
@@ -5408,6 +5819,38 @@ bool WebGLRenderingContextBase::validateCompressedTexDimensions(const char* func
     bool heightValid = false;
 
     switch (format) {
+    case GL_COMPRESSED_RGBA_ASTC_4x4_KHR:
+    case GL_COMPRESSED_RGBA_ASTC_5x4_KHR:
+    case GL_COMPRESSED_RGBA_ASTC_5x5_KHR:
+    case GL_COMPRESSED_RGBA_ASTC_6x5_KHR:
+    case GL_COMPRESSED_RGBA_ASTC_6x6_KHR:
+    case GL_COMPRESSED_RGBA_ASTC_8x5_KHR:
+    case GL_COMPRESSED_RGBA_ASTC_8x6_KHR:
+    case GL_COMPRESSED_RGBA_ASTC_8x8_KHR:
+    case GL_COMPRESSED_RGBA_ASTC_10x5_KHR:
+    case GL_COMPRESSED_RGBA_ASTC_10x6_KHR:
+    case GL_COMPRESSED_RGBA_ASTC_10x8_KHR:
+    case GL_COMPRESSED_RGBA_ASTC_10x10_KHR:
+    case GL_COMPRESSED_RGBA_ASTC_12x10_KHR:
+    case GL_COMPRESSED_RGBA_ASTC_12x12_KHR:
+    case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_4x4_KHR:
+    case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_5x4_KHR:
+    case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_5x5_KHR:
+    case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_6x5_KHR:
+    case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_6x6_KHR:
+    case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_8x5_KHR:
+    case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_8x6_KHR:
+    case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_8x8_KHR:
+    case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_10x5_KHR:
+    case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_10x6_KHR:
+    case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_10x8_KHR:
+    case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_10x10_KHR:
+    case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_12x10_KHR:
+    case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_12x12_KHR: {
+        widthValid = true;
+        heightValid = true;
+        break;
+    }
     case GC3D_COMPRESSED_ATC_RGB_AMD:
     case GC3D_COMPRESSED_ATC_RGBA_EXPLICIT_ALPHA_AMD:
     case GC3D_COMPRESSED_ATC_RGBA_INTERPOLATED_ALPHA_AMD:
@@ -5465,9 +5908,13 @@ bool WebGLRenderingContextBase::validateCompressedTexSubDimensions(const char* f
             synthesizeGLError(GL_INVALID_OPERATION, functionName, "xoffset or yoffset not multiple of 4");
             return false;
         }
-        if (width - xoffset > tex->getWidth(target, level)
-            || height - yoffset > tex->getHeight(target, level)) {
-            synthesizeGLError(GL_INVALID_OPERATION, functionName, "dimensions out of range");
+        // Before checking if it is in the range, check if overflow happens first.
+        Checked<GLint, RecordOverflow> maxX = xoffset, maxY = yoffset;
+        maxX += width;
+        maxY += height;
+        if (maxX.hasOverflowed() || maxY.hasOverflowed() || maxX.unsafeGet() > tex->getWidth(target, level)
+            || maxY.unsafeGet() > tex->getHeight(target, level)) {
+            synthesizeGLError(GL_INVALID_VALUE, functionName, "dimensions out of range");
             return false;
         }
         return validateCompressedTexDimensions(functionName, TexSubImage2D, target, level, width, height, format);
@@ -5596,7 +6043,7 @@ bool WebGLRenderingContextBase::validateBlendEquation(const char* functionName, 
         return true;
     case GL_MIN_EXT:
     case GL_MAX_EXT:
-        if (extensionEnabled(EXTBlendMinMaxName))
+        if (extensionEnabled(EXTBlendMinMaxName) || isWebGL2OrHigher())
             return true;
         synthesizeGLError(GL_INVALID_ENUM, functionName, "invalid mode");
         return false;
@@ -5697,7 +6144,7 @@ WebGLBuffer* WebGLRenderingContextBase::validateBufferDataTarget(const char* fun
     WebGLBuffer* buffer = nullptr;
     switch (target) {
     case GL_ELEMENT_ARRAY_BUFFER:
-        buffer = m_boundVertexArrayObject->boundElementArrayBuffer().get();
+        buffer = m_boundVertexArrayObject->boundElementArrayBuffer();
         break;
     case GL_ARRAY_BUFFER:
         buffer = m_boundArrayBuffer.get();
@@ -5711,6 +6158,19 @@ WebGLBuffer* WebGLRenderingContextBase::validateBufferDataTarget(const char* fun
         return nullptr;
     }
     return buffer;
+}
+
+bool WebGLRenderingContextBase::validateBufferDataUsage(const char* functionName, GLenum usage)
+{
+    switch (usage) {
+    case GL_STREAM_DRAW:
+    case GL_STATIC_DRAW:
+    case GL_DYNAMIC_DRAW:
+        return true;
+    default:
+        synthesizeGLError(GL_INVALID_ENUM, functionName, "invalid usage");
+        return false;
+    }
 }
 
 void WebGLRenderingContextBase::removeBoundBuffer(WebGLBuffer* buffer)
@@ -5892,7 +6352,7 @@ void WebGLRenderingContextBase::vertexAttribfImpl(const char* functionName, GLui
     attribValue.value.floatValue[3] = v3;
 }
 
-void WebGLRenderingContextBase::vertexAttribfvImpl(const char* functionName, GLuint index, DOMFloat32Array* v, GLsizei expectedSize)
+void WebGLRenderingContextBase::vertexAttribfvImpl(const char* functionName, GLuint index, const DOMFloat32Array* v, GLsizei expectedSize)
 {
     if (isContextLost())
         return;
@@ -5903,7 +6363,7 @@ void WebGLRenderingContextBase::vertexAttribfvImpl(const char* functionName, GLu
     vertexAttribfvImpl(functionName, index, v->data(), v->length(), expectedSize);
 }
 
-void WebGLRenderingContextBase::vertexAttribfvImpl(const char* functionName, GLuint index, GLfloat* v, GLsizei size, GLsizei expectedSize)
+void WebGLRenderingContextBase::vertexAttribfvImpl(const char* functionName, GLuint index, const GLfloat* v, GLsizei size, GLsizei expectedSize)
 {
     if (isContextLost())
         return;
@@ -6058,25 +6518,25 @@ void WebGLRenderingContextBase::LRUImageBufferCache::bubbleToFront(int idx)
 
 namespace {
 
-    String GetErrorString(GLenum error)
-    {
-        switch (error) {
-        case GL_INVALID_ENUM:
-            return "INVALID_ENUM";
-        case GL_INVALID_VALUE:
-            return "INVALID_VALUE";
-        case GL_INVALID_OPERATION:
-            return "INVALID_OPERATION";
-        case GL_OUT_OF_MEMORY:
-            return "OUT_OF_MEMORY";
-        case GL_INVALID_FRAMEBUFFER_OPERATION:
-            return "INVALID_FRAMEBUFFER_OPERATION";
-        case GC3D_CONTEXT_LOST_WEBGL:
-            return "CONTEXT_LOST_WEBGL";
-        default:
-            return String::format("WebGL ERROR(0x%04X)", error);
-        }
+String GetErrorString(GLenum error)
+{
+    switch (error) {
+    case GL_INVALID_ENUM:
+        return "INVALID_ENUM";
+    case GL_INVALID_VALUE:
+        return "INVALID_VALUE";
+    case GL_INVALID_OPERATION:
+        return "INVALID_OPERATION";
+    case GL_OUT_OF_MEMORY:
+        return "OUT_OF_MEMORY";
+    case GL_INVALID_FRAMEBUFFER_OPERATION:
+        return "INVALID_FRAMEBUFFER_OPERATION";
+    case GC3D_CONTEXT_LOST_WEBGL:
+        return "CONTEXT_LOST_WEBGL";
+    default:
+        return String::format("WebGL ERROR(0x%04X)", error);
     }
+}
 
 } // namespace anonymous
 
@@ -6087,9 +6547,9 @@ void WebGLRenderingContextBase::synthesizeGLError(GLenum error, const char* func
         String message = String("WebGL: ") + errorType +  ": " + String(functionName) + ": " + String(description);
         printGLErrorToConsole(message);
     }
-    if (!isContextLost())
+    if (!isContextLost()) {
         webContext()->synthesizeGLError(error);
-    else {
+    } else {
         if (m_lostContextErrors.find(error) == WTF::kNotFound)
             m_lostContextErrors.append(error);
     }
@@ -6109,15 +6569,14 @@ void WebGLRenderingContextBase::applyStencilTest()
 {
     bool haveStencilBuffer = false;
 
-    if (m_framebufferBinding)
+    if (m_framebufferBinding) {
         haveStencilBuffer = m_framebufferBinding->hasStencilBuffer();
-    else {
+    } else {
         Nullable<WebGLContextAttributes> attributes;
         getContextAttributes(attributes);
         haveStencilBuffer = !attributes.isNull() && attributes.get().stencil();
     }
-    enableOrDisable(GL_STENCIL_TEST,
-                    m_stencilEnabled && haveStencilBuffer);
+    enableOrDisable(GL_STENCIL_TEST, m_stencilEnabled && haveStencilBuffer);
 }
 
 void WebGLRenderingContextBase::enableOrDisable(GLenum capability, bool enable)
@@ -6133,7 +6592,7 @@ void WebGLRenderingContextBase::enableOrDisable(GLenum capability, bool enable)
 IntSize WebGLRenderingContextBase::clampedCanvasSize()
 {
     return IntSize(clamp(canvas()->width(), 1, m_maxViewportDims[0]),
-                   clamp(canvas()->height(), 1, m_maxViewportDims[1]));
+        clamp(canvas()->height(), 1, m_maxViewportDims[1]));
 }
 
 GLint WebGLRenderingContextBase::maxDrawBuffers()
@@ -6225,6 +6684,7 @@ DEFINE_TRACE(WebGLRenderingContextBase)
 {
 #if ENABLE(OILPAN)
     visitor->trace(m_contextObjects);
+#endif
     visitor->trace(m_contextLostCallbackAdapter);
     visitor->trace(m_errorMessageCallbackAdapter);
     visitor->trace(m_boundArrayBuffer);
@@ -6238,9 +6698,7 @@ DEFINE_TRACE(WebGLRenderingContextBase)
     visitor->trace(m_textureUnits);
     visitor->trace(m_blackTexture2D);
     visitor->trace(m_blackTextureCubeMap);
-    visitor->trace(m_requestedAttributes);
     visitor->trace(m_extensions);
-#endif
     CanvasRenderingContext::trace(visitor);
 }
 

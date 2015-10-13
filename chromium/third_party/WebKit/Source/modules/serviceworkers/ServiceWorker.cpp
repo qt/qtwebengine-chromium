@@ -35,10 +35,11 @@
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/MessagePort.h"
 #include "core/events/Event.h"
+#include "core/inspector/ConsoleMessage.h"
 #include "modules/EventTargetModules.h"
 #include "public/platform/WebMessagePortChannel.h"
-#include "public/platform/WebServiceWorkerState.h"
 #include "public/platform/WebString.h"
+#include "public/platform/modules/serviceworker/WebServiceWorkerState.h"
 
 namespace blink {
 
@@ -57,6 +58,9 @@ void ServiceWorker::postMessage(ExecutionContext* context, PassRefPtr<Serialized
         exceptionState.throwDOMException(InvalidStateError, "ServiceWorker is in redundant state.");
         return;
     }
+
+    if (message->containsTransferableArrayBuffer())
+        context->addConsoleMessage(ConsoleMessage::create(JSMessageSource, WarningMessageLevel, "ServiceWorker cannot send an ArrayBuffer as a transferable object yet. See http://crbug.com/511119"));
 
     WebString messageString = message->toWireString();
     OwnPtr<WebMessagePortChannelArray> webChannels = MessagePort::toWebMessagePortChannelArray(channels.release());
@@ -101,13 +105,9 @@ String ServiceWorker::state() const
     }
 }
 
-PassRefPtrWillBeRawPtr<ServiceWorker> ServiceWorker::from(ExecutionContext* executionContext, WebType* worker)
+ServiceWorker* ServiceWorker::from(ExecutionContext* executionContext, WebServiceWorker* worker)
 {
-    if (!worker)
-        return nullptr;
-
-    RefPtrWillBeRawPtr<ServiceWorker> serviceWorker = getOrCreate(executionContext, worker);
-    return serviceWorker.release();
+    return getOrCreate(executionContext, worker);
 }
 
 bool ServiceWorker::hasPendingActivity() const
@@ -124,7 +124,7 @@ void ServiceWorker::stop()
     m_wasStopped = true;
 }
 
-PassRefPtrWillBeRawPtr<ServiceWorker> ServiceWorker::getOrCreate(ExecutionContext* executionContext, WebType* outerWorker)
+ServiceWorker* ServiceWorker::getOrCreate(ExecutionContext* executionContext, WebServiceWorker* outerWorker)
 {
     if (!outerWorker)
         return nullptr;
@@ -135,9 +135,9 @@ PassRefPtrWillBeRawPtr<ServiceWorker> ServiceWorker::getOrCreate(ExecutionContex
         return existingServiceWorker;
     }
 
-    RefPtrWillBeRawPtr<ServiceWorker> worker = adoptRefWillBeNoop(new ServiceWorker(executionContext, adoptPtr(outerWorker)));
+    ServiceWorker* worker = new ServiceWorker(executionContext, adoptPtr(outerWorker));
     worker->suspendIfNeeded();
-    return worker.release();
+    return worker;
 }
 
 ServiceWorker::ServiceWorker(ExecutionContext* executionContext, PassOwnPtr<WebServiceWorker> worker)

@@ -20,7 +20,7 @@ namespace webrtc {
 VideoEncoder* VideoEncoder::Create(VideoEncoder::EncoderType codec_type) {
   switch (codec_type) {
     case kH264:
-      DCHECK(H264Encoder::IsSupported());
+      RTC_DCHECK(H264Encoder::IsSupported());
       return H264Encoder::Create();
     case kVp8:
       return VP8Encoder::Create();
@@ -132,6 +132,12 @@ bool VideoEncoderSoftwareFallbackWrapper::SupportsNativeHandle() const {
   if (fallback_encoder_)
     return fallback_encoder_->SupportsNativeHandle();
   return encoder_->SupportsNativeHandle();
+}
+
+int VideoEncoderSoftwareFallbackWrapper::GetTargetFramerate() {
+  if (fallback_encoder_)
+    return fallback_encoder_->GetTargetFramerate();
+  return encoder_->GetTargetFramerate();
 }
 
 }  // namespace webrtc

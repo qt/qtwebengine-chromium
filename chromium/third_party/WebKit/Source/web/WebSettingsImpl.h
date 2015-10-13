@@ -47,10 +47,6 @@ public:
 
     bool mainFrameResizesAreOrientationChanges() const override;
     bool shrinksViewportContentToFit() const override;
-    int availablePointerTypes() const override;
-    PointerType primaryPointerType() const override;
-    int availableHoverTypes() const override;
-    HoverType primaryHoverType() const override;
     bool viewportEnabled() const override;
     void setAccelerated2dCanvasEnabled(bool) override;
     void setAccelerated2dCanvasMSAASampleCount(int) override;
@@ -67,6 +63,7 @@ public:
     void setAntialiased2dCanvasEnabled(bool) override;
     void setAntialiasedClips2dCanvasEnabled(bool) override;
     void setAsynchronousSpellCheckingEnabled(bool) override;
+    void setAutoplayExperimentMode(const WebString&) override;
     void setAutoZoomFocusedNodeToLegibleScale(bool) override;
     void setCaretBrowsingEnabled(bool) override;
     void setClobberUserAgentInitialScaleQuirk(bool) override;
@@ -99,13 +96,14 @@ public:
     void setReportWheelOverscroll(bool) override;
     void setForceZeroLayoutHeight(bool) override;
     void setFullscreenSupported(bool) override;
+    void setHidePinchScrollbarsNearMinScale(bool) override;
     void setHyperlinkAuditingEnabled(bool) override;
     void setIgnoreMainFrameOverflowHiddenQuirk(bool) override;
     void setImageAnimationPolicy(ImageAnimationPolicy) override;
     void setImagesEnabled(bool) override;
     void setInlineTextBoxAccessibilityEnabled(bool) override;
+    void setInertVisualViewport(bool) override;
     void setInvertViewportScrollOrder(bool) override;
-    void setJavaEnabled(bool) override;
     void setJavaScriptCanAccessClipboard(bool) override;
     void setJavaScriptCanOpenWindowsAutomatically(bool) override;
     void setJavaScriptEnabled(bool) override;
@@ -133,6 +131,7 @@ public:
     void setPrimaryPointerType(PointerType) override;
     void setAvailableHoverTypes(int) override;
     void setPrimaryHoverType(HoverType) override;
+    void setPreferHiddenVolumeControls(bool) override;
     void setRenderVSyncNotificationEnabled(bool) override;
     void setReportScreenSizeInPhysicalPixelsQuirk(bool) override;
     void setRootLayerScrolls(bool) override;
@@ -153,7 +152,9 @@ public:
     void setSpatialNavigationEnabled(bool) override;
     void setStandardFontFamily(const WebString&, UScriptCode = USCRIPT_COMMON) override;
     void setStrictMixedContentChecking(bool) override;
+    void setStrictMixedContentCheckingForPlugin(bool) override;
     void setStrictPowerfulFeatureRestrictions(bool) override;
+    void setStrictlyBlockBlockableMixedContent(bool) override;
     void setSupportDeprecatedTargetDensityDPI(bool) override;
     void setSupportsMultipleWindows(bool) override;
     void setSyncXHRInDocumentsEnabled(bool) override;

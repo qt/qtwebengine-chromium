@@ -66,6 +66,7 @@
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderClient.h"
+#include "core/loader/NavigationScheduler.h"
 #include "core/loader/ProgressTracker.h"
 #include "core/plugins/PluginView.h"
 #include "platform/NotImplemented.h"
@@ -106,6 +107,7 @@ DEFINE_TRACE(ScriptController)
 {
 #if ENABLE(OILPAN)
     visitor->trace(m_windowProxyManager);
+    visitor->trace(m_pluginObjects);
 #endif
 }
 
@@ -154,16 +156,14 @@ v8::MaybeLocal<v8::Value> ScriptController::callFunction(v8::Local<v8::Function>
 
 v8::MaybeLocal<v8::Value> ScriptController::callFunction(ExecutionContext* context, v8::Local<v8::Function> function, v8::Local<v8::Value> receiver, int argc, v8::Local<v8::Value> info[], v8::Isolate* isolate)
 {
-    InspectorInstrumentationCookie cookie = InspectorInstrumentation::willCallFunction(context, DevToolsFunctionInfo(function));
     v8::MaybeLocal<v8::Value> result = V8ScriptRunner::callFunction(function, context, receiver, argc, info, isolate);
-    InspectorInstrumentation::didCallFunction(cookie);
     return result;
 }
 
 v8::Local<v8::Value> ScriptController::executeScriptAndReturnValue(v8::Local<v8::Context> context, const ScriptSourceCode& source, AccessControlStatus accessControlStatus, double* compilationFinishTime)
 {
     TRACE_EVENT1("devtools.timeline", "EvaluateScript", "data", InspectorEvaluateScriptEvent::data(frame(), source.url().string(), source.startLine()));
-    InspectorInstrumentationCookie cookie = InspectorInstrumentation::willEvaluateScript(frame(), source.url().string(), source.startLine());
+    InspectorInstrumentation::willEvaluateScript(frame()->document());
 
     v8::Local<v8::Value> result;
     {
@@ -191,7 +191,6 @@ v8::Local<v8::Value> ScriptController::executeScriptAndReturnValue(v8::Local<v8:
             return result;
     }
 
-    InspectorInstrumentation::didEvaluateScript(cookie);
     TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "UpdateCounters", TRACE_EVENT_SCOPE_THREAD, "data", InspectorUpdateCountersEvent::data());
 
     return result;
@@ -490,7 +489,8 @@ bool ScriptController::executeScriptIfJavaScriptURL(const KURL& url)
         || (!shouldBypassMainWorldContentSecurityPolicy && !frame()->document()->contentSecurityPolicy()->allowJavaScriptURLs(frame()->document()->url(), eventHandlerPosition().m_line)))
         return true;
 
-    if (frame()->loader().stateMachine()->isDisplayingInitialEmptyDocument())
+    bool progressNotificationsNeeded = frame()->loader().stateMachine()->isDisplayingInitialEmptyDocument() && !frame()->isLoading();
+    if (progressNotificationsNeeded)
         frame()->loader().progress().progressStarted();
 
     // We need to hold onto the LocalFrame here because executing script can
@@ -511,8 +511,11 @@ bool ScriptController::executeScriptIfJavaScriptURL(const KURL& url)
     if (!frame()->page())
         return true;
 
-    if (result.IsEmpty() || !result->IsString())
+    if (result.IsEmpty() || !result->IsString()) {
+        if (progressNotificationsNeeded)
+            frame()->loader().progress().progressCompleted();
         return true;
+    }
     String scriptResult = toCoreString(v8::Local<v8::String>::Cast(result));
 
     // We're still in a frame, so there should be a DocumentLoader.

@@ -96,6 +96,7 @@ public:
     virtual bool getText(String* result) = 0;
 
     PassRefPtr<TypeBuilder::CSS::CSSStyle> buildObjectForStyle(CSSStyleDeclaration*);
+    PassRefPtr<TypeBuilder::CSS::SourceRange> buildSourceRangeObject(const SourceRange&);
     bool lineNumberAndColumnToOffset(unsigned lineNumber, unsigned columnNumber, unsigned* offset);
     virtual bool isInlineStyle() = 0;
 
@@ -120,12 +121,12 @@ class InspectorStyleSheet : public InspectorStyleSheetBase {
 public:
     static PassRefPtrWillBeRawPtr<InspectorStyleSheet> create(InspectorResourceAgent*, PassRefPtrWillBeRawPtr<CSSStyleSheet> pageStyleSheet, TypeBuilder::CSS::StyleSheetOrigin::Enum, const String& documentURL, InspectorCSSAgent*);
 
-    virtual ~InspectorStyleSheet();
+    ~InspectorStyleSheet() override;
     DECLARE_VIRTUAL_TRACE();
 
     String finalURL();
-    virtual bool setText(const String&, ExceptionState&) override;
-    virtual bool getText(String* result) override;
+    bool setText(const String&, ExceptionState&) override;
+    bool getText(String* result) override;
     RefPtrWillBeRawPtr<CSSStyleRule>  setRuleSelector(const SourceRange&, const String& selector, SourceRange* newRange, String* oldSelector, ExceptionState&);
     RefPtrWillBeRawPtr<CSSStyleRule>  setStyleText(const SourceRange&, const String& text, SourceRange* newRange, String* oldSelector, ExceptionState&);
     RefPtrWillBeRawPtr<CSSMediaRule>  setMediaRuleText(const SourceRange&, const String& selector, SourceRange* newRange, String* oldSelector, ExceptionState&);
@@ -135,7 +136,8 @@ public:
     CSSStyleSheet* pageStyleSheet() { return m_pageStyleSheet.get(); }
 
     PassRefPtr<TypeBuilder::CSS::CSSStyleSheetHeader> buildObjectForStyleSheetInfo();
-    PassRefPtr<TypeBuilder::CSS::CSSRule> buildObjectForRule(CSSStyleRule*, PassRefPtr<TypeBuilder::Array<TypeBuilder::CSS::CSSMedia> >);
+    PassRefPtr<TypeBuilder::CSS::CSSRule> buildObjectForRuleWithoutMedia(CSSStyleRule*);
+    PassRefPtr<TypeBuilder::CSS::SelectorList> buildObjectForSelectorList(CSSStyleRule*);
 
     PassRefPtr<TypeBuilder::CSS::SourceRange> ruleHeaderSourceRange(CSSRule*);
     PassRefPtr<TypeBuilder::CSS::SourceRange> mediaQueryExpValueSourceRange(CSSRule*, size_t mediaQueryIndex, size_t mediaQueryExpIndex);
@@ -145,7 +147,7 @@ public:
     RefPtrWillBeRawPtr<CSSRuleSourceData> sourceDataForRule(RefPtrWillBeRawPtr<CSSRule>);
 
 protected:
-    virtual PassRefPtrWillBeRawPtr<InspectorStyle> inspectorStyle(RefPtrWillBeRawPtr<CSSStyleDeclaration>) override;
+    PassRefPtrWillBeRawPtr<InspectorStyle> inspectorStyle(RefPtrWillBeRawPtr<CSSStyleDeclaration>) override;
 
 private:
     InspectorStyleSheet(InspectorResourceAgent*, PassRefPtrWillBeRawPtr<CSSStyleSheet> pageStyleSheet, TypeBuilder::CSS::StyleSheetOrigin::Enum, const String& documentURL, InspectorCSSAgent*);
@@ -163,7 +165,6 @@ private:
     bool resourceStyleSheetText(String* result);
     bool inlineStyleSheetText(String* result);
     PassRefPtr<TypeBuilder::Array<TypeBuilder::CSS::Selector>> selectorsFromSource(CSSRuleSourceData*, const String&);
-    PassRefPtr<TypeBuilder::CSS::SelectorList> buildObjectForSelectorList(CSSStyleRule*);
     String url();
     bool hasSourceURL();
     bool startsAtZero();
@@ -192,15 +193,15 @@ public:
     static PassRefPtrWillBeRawPtr<InspectorStyleSheetForInlineStyle> create(PassRefPtrWillBeRawPtr<Element>, Listener*);
 
     void didModifyElementAttribute();
-    virtual bool setText(const String&, ExceptionState&) override;
-    virtual bool getText(String* result) override;
+    bool setText(const String&, ExceptionState&) override;
+    bool getText(String* result) override;
     CSSStyleDeclaration* inlineStyle();
     RefPtrWillBeRawPtr<CSSRuleSourceData> ruleSourceData();
 
     DECLARE_VIRTUAL_TRACE();
 
 protected:
-    virtual PassRefPtrWillBeRawPtr<InspectorStyle> inspectorStyle(RefPtrWillBeRawPtr<CSSStyleDeclaration>) override;
+    PassRefPtrWillBeRawPtr<InspectorStyle> inspectorStyle(RefPtrWillBeRawPtr<CSSStyleDeclaration>) override;
 
     // Also accessed by friend class InspectorStyle.
     bool isInlineStyle() override { return true; }

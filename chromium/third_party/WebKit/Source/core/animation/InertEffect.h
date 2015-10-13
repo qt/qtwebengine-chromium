@@ -40,20 +40,20 @@ namespace blink {
 
 class CORE_EXPORT InertEffect final : public AnimationEffect {
 public:
-    static PassRefPtrWillBeRawPtr<InertEffect> create(PassRefPtrWillBeRawPtr<EffectModel>, const Timing&, bool paused, double inheritedTime);
-    void sample(OwnPtrWillBeRawPtr<WillBeHeapVector<RefPtrWillBeMember<Interpolation>>>&);
+    static InertEffect* create(EffectModel*, const Timing&, bool paused, double inheritedTime);
+    void sample(OwnPtr<Vector<RefPtr<Interpolation>>>&);
     EffectModel* model() const { return m_model.get(); }
     bool paused() const { return m_paused; }
 
     DECLARE_VIRTUAL_TRACE();
 
 protected:
-    virtual void updateChildrenAndEffects() const override { }
-    virtual double calculateTimeToEffectChange(bool forwards, double inheritedTime, double timeToNextIteration) const override;
+    void updateChildrenAndEffects() const override { }
+    double calculateTimeToEffectChange(bool forwards, double inheritedTime, double timeToNextIteration) const override;
 
 private:
-    InertEffect(PassRefPtrWillBeRawPtr<EffectModel>, const Timing&, bool paused, double inheritedTime);
-    RefPtrWillBeMember<EffectModel> m_model;
+    InertEffect(EffectModel*, const Timing&, bool paused, double inheritedTime);
+    Member<EffectModel> m_model;
     bool m_paused;
     double m_inheritedTime;
 };

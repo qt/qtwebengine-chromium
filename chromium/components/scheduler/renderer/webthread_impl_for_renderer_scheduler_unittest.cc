@@ -7,10 +7,11 @@
 #include "base/location.h"
 #include "base/run_loop.h"
 #include "base/single_thread_task_runner.h"
-#include "components/scheduler/child/scheduler_message_loop_delegate.h"
+#include "components/scheduler/child/scheduler_task_runner_delegate_impl.h"
 #include "components/scheduler/renderer/renderer_scheduler_impl.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/WebKit/public/platform/WebTaskRunner.h"
 #include "third_party/WebKit/public/platform/WebTraceLocation.h"
 
 namespace scheduler {
@@ -18,7 +19,7 @@ namespace {
 
 const int kWorkBatchSize = 2;
 
-class MockTask : public blink::WebThread::Task {
+class MockTask : public blink::WebTaskRunner::Task {
  public:
   MOCK_METHOD0(run, void());
 };
@@ -33,7 +34,7 @@ class MockTaskObserver : public blink::WebThread::TaskObserver {
 class WebThreadImplForRendererSchedulerTest : public testing::Test {
  public:
   WebThreadImplForRendererSchedulerTest()
-      : scheduler_(SchedulerMessageLoopDelegate::Create(&message_loop_)),
+      : scheduler_(SchedulerTaskRunnerDelegateImpl::Create(&message_loop_)),
         default_task_runner_(scheduler_.DefaultTaskRunner()),
         thread_(&scheduler_) {}
 
@@ -47,12 +48,6 @@ class WebThreadImplForRendererSchedulerTest : public testing::Test {
   void TearDown() override { scheduler_.Shutdown(); }
 
  protected:
-  void EatDefaultTask(MockTaskObserver* observer) {
-    // The scheduler posts one extra DoWork() task automatically.
-    EXPECT_CALL(*observer, willProcessTask());
-    EXPECT_CALL(*observer, didProcessTask());
-  }
-
   base::MessageLoop message_loop_;
   RendererSchedulerImpl scheduler_;
   scoped_refptr<base::SingleThreadTaskRunner> default_task_runner_;
@@ -71,11 +66,9 @@ TEST_F(WebThreadImplForRendererSchedulerTest, TestTaskObserver) {
     EXPECT_CALL(observer, willProcessTask());
     EXPECT_CALL(*task, run());
     EXPECT_CALL(observer, didProcessTask());
-
-    EatDefaultTask(&observer);
   }
 
-  thread_.postTask(blink::WebTraceLocation(), task.release());
+  thread_.taskRunner()->postTask(blink::WebTraceLocation(), task.release());
   message_loop_.RunUntilIdle();
   thread_.removeTaskObserver(&observer);
 }
@@ -91,11 +84,9 @@ TEST_F(WebThreadImplForRendererSchedulerTest, TestWorkBatchWithOneTask) {
     EXPECT_CALL(observer, willProcessTask());
     EXPECT_CALL(*task, run());
     EXPECT_CALL(observer, didProcessTask());
-
-    EatDefaultTask(&observer);
   }
 
-  thread_.postTask(blink::WebTraceLocation(), task.release());
+  thread_.taskRunner()->postTask(blink::WebTraceLocation(), task.release());
   message_loop_.RunUntilIdle();
   thread_.removeTaskObserver(&observer);
 }
@@ -116,12 +107,10 @@ TEST_F(WebThreadImplForRendererSchedulerTest, TestWorkBatchWithTwoTasks) {
     EXPECT_CALL(observer, willProcessTask());
     EXPECT_CALL(*task2, run());
     EXPECT_CALL(observer, didProcessTask());
-
-    EatDefaultTask(&observer);
   }
 
-  thread_.postTask(blink::WebTraceLocation(), task1.release());
-  thread_.postTask(blink::WebTraceLocation(), task2.release());
+  thread_.taskRunner()->postTask(blink::WebTraceLocation(), task1.release());
+  thread_.taskRunner()->postTask(blink::WebTraceLocation(), task2.release());
   message_loop_.RunUntilIdle();
   thread_.removeTaskObserver(&observer);
 }
@@ -147,22 +136,20 @@ TEST_F(WebThreadImplForRendererSchedulerTest, TestWorkBatchWithThreeTasks) {
     EXPECT_CALL(observer, willProcessTask());
     EXPECT_CALL(*task3, run());
     EXPECT_CALL(observer, didProcessTask());
-
-    EatDefaultTask(&observer);
   }
 
-  thread_.postTask(blink::WebTraceLocation(), task1.release());
-  thread_.postTask(blink::WebTraceLocation(), task2.release());
-  thread_.postTask(blink::WebTraceLocation(), task3.release());
+  thread_.taskRunner()->postTask(blink::WebTraceLocation(), task1.release());
+  thread_.taskRunner()->postTask(blink::WebTraceLocation(), task2.release());
+  thread_.taskRunner()->postTask(blink::WebTraceLocation(), task3.release());
   message_loop_.RunUntilIdle();
   thread_.removeTaskObserver(&observer);
 }
 
-class ExitRunLoopTask : public blink::WebThread::Task {
+class ExitRunLoopTask : public blink::WebTaskRunner::Task {
  public:
   ExitRunLoopTask(base::RunLoop* run_loop) : run_loop_(run_loop) {}
 
-  virtual void run() { run_loop_->Quit(); }
+  void run() override { run_loop_->Quit(); }
 
  private:
   base::RunLoop* run_loop_;
@@ -172,7 +159,8 @@ void EnterRunLoop(base::MessageLoop* message_loop, blink::WebThread* thread) {
   // Note: WebThreads do not support nested run loops, which is why we use a
   // run loop directly.
   base::RunLoop run_loop;
-  thread->postTask(blink::WebTraceLocation(), new ExitRunLoopTask(&run_loop));
+  thread->taskRunner()->postTask(blink::WebTraceLocation(),
+                                 new ExitRunLoopTask(&run_loop));
   message_loop->SetNestableTasksAllowed(true);
   run_loop.Run();
 }
@@ -193,8 +181,6 @@ TEST_F(WebThreadImplForRendererSchedulerTest, TestNestedRunLoop) {
 
     // A final callback for EnterRunLoop.
     EXPECT_CALL(observer, didProcessTask());
-
-    EatDefaultTask(&observer);
   }
 
   message_loop_.task_runner()->PostTask(

@@ -7,11 +7,11 @@
 
 #include <vector>
 
-#include "base/basictypes.h"
 #include "base/callback.h"
 #include "base/threading/thread_checker.h"
 #include "device/usb/usb_descriptors.h"
 #include "device/usb/usb_device.h"
+#include "device/usb/webusb_descriptors.h"
 
 struct libusb_device;
 struct libusb_config_descriptor;
@@ -42,7 +42,7 @@ class UsbDeviceImpl : public UsbDevice {
 #endif  // OS_CHROMEOS
   void Open(const OpenCallback& callback) override;
   bool Close(scoped_refptr<UsbDeviceHandle> handle) override;
-  const UsbConfigDescriptor* GetConfiguration() override;
+  const UsbConfigDescriptor* GetActiveConfiguration() override;
 
   // These functions are used during enumeration only. The values must not
   // change during the object's lifetime.
@@ -56,6 +56,10 @@ class UsbDeviceImpl : public UsbDevice {
     serial_number_ = value;
   }
   void set_device_path(const std::string& value) { device_path_ = value; }
+  void set_webusb_allowed_origins(scoped_ptr<WebUsbDescriptorSet> descriptors) {
+    webusb_allowed_origins_ = descriptors.Pass();
+  }
+  void set_webusb_landing_page(const GURL& url) { webusb_landing_page_ = url; }
 
   PlatformUsbDevice platform_device() const { return platform_device_; }
 
@@ -66,8 +70,8 @@ class UsbDeviceImpl : public UsbDevice {
   // Called by UsbServiceImpl only;
   UsbDeviceImpl(scoped_refptr<UsbContext> context,
                 PlatformUsbDevice platform_device,
-                uint16 vendor_id,
-                uint16 product_id,
+                uint16_t vendor_id,
+                uint16_t product_id,
                 scoped_refptr<base::SequencedTaskRunner> blocking_task_runner);
 
   ~UsbDeviceImpl() override;
@@ -76,11 +80,13 @@ class UsbDeviceImpl : public UsbDevice {
   void set_visited(bool visited) { visited_ = visited; }
   bool was_visited() const { return visited_; }
   void OnDisconnect();
+  void ReadAllConfigurations();
 
   // Called by UsbDeviceHandleImpl.
-  void RefreshConfiguration();
+  void RefreshActiveConfiguration();
 
  private:
+  void GetAllConfigurations();
 #if defined(OS_CHROMEOS)
   void OnOpenRequestComplete(const OpenCallback& callback,
                              dbus::FileDescriptor fd);
@@ -100,8 +106,9 @@ class UsbDeviceImpl : public UsbDevice {
   std::string device_path_;
 
   // The current device configuration descriptor. May be null if the device is
-  // in an unconfigured state.
-  scoped_ptr<UsbConfigDescriptor> configuration_;
+  // in an unconfigured state; if not null, it is a pointer to one of the
+  // items at UsbDevice::configurations_.
+  const UsbConfigDescriptor* active_configuration_ = nullptr;
 
   // Retain the context so that it will not be released before UsbDevice.
   scoped_refptr<UsbContext> context_;

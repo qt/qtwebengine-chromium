@@ -7,25 +7,21 @@
 
 #include "platform/heap/Handle.h"
 #include "public/platform/modules/bluetooth/WebBluetoothError.h"
-#include "wtf/PassOwnPtr.h"
+#include "wtf/Allocator.h"
 
 namespace blink {
 
 class DOMException;
 class ScriptPromiseResolver;
-struct WebBluetoothError;
 
 // BluetoothError is used with CallbackPromiseAdapter to receive
 // WebBluetoothError responses. See CallbackPromiseAdapter class comments.
 class BluetoothError {
-    WTF_MAKE_NONCOPYABLE(BluetoothError);
+    STATIC_ONLY(BluetoothError);
 public:
     // Interface required by CallbackPromiseAdapter:
-    typedef WebBluetoothError WebType;
-    static DOMException* take(ScriptPromiseResolver*, PassOwnPtr<WebBluetoothError>);
-
-private:
-    BluetoothError() = delete;
+    using WebType = const WebBluetoothError&;
+    static DOMException* take(ScriptPromiseResolver*, const WebBluetoothError&);
 };
 
 } // namespace blink

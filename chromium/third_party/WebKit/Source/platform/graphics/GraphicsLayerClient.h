@@ -53,9 +53,8 @@ enum {
     LayerTreeIncludesPaintingPhases = 1 << 2,
     LayerTreeIncludesRootLayer = 1 << 3,
     LayerTreeIncludesClipAndScrollParents = 1 << 4,
-    LayerTreeIncludesScrollBlocksOn = 1 << 5,
-    LayerTreeIncludesPaintInvalidationObjects = 1 << 6,
-    LayerTreeIncludesCompositingReasons = 1 << 7,
+    LayerTreeIncludesPaintInvalidationObjects = 1 << 5,
+    LayerTreeIncludesCompositingReasons = 1 << 6,
 };
 typedef unsigned LayerTreeFlags;
 
@@ -66,7 +65,7 @@ public:
     // Callback for when compositor animation started.
     virtual void notifyAnimationStarted(const GraphicsLayer*, double monotonicTime, int group) { }
 
-    virtual void paintContents(const GraphicsLayer*, GraphicsContext&, GraphicsLayerPaintingPhase, const IntRect& inClip) = 0;
+    virtual void paintContents(const GraphicsLayer*, GraphicsContext&, GraphicsLayerPaintingPhase, const IntRect& inClip) const = 0;
     virtual bool isTrackingPaintInvalidations() const { return false; }
 
     virtual String debugName(const GraphicsLayer*) = 0;

@@ -48,6 +48,8 @@
 #include "core/page/Page.h"
 #include "platform/SharedBuffer.h"
 #include "platform/UserGestureIndicator.h"
+#include "platform/scheduler/CancellableTaskFactory.h"
+#include "public/platform/Platform.h"
 #include "wtf/CurrentTime.h"
 
 namespace blink {
@@ -55,23 +57,23 @@ namespace blink {
 unsigned NavigationDisablerForBeforeUnload::s_navigationDisableCount = 0;
 
 FrameNavigationDisabler::FrameNavigationDisabler(LocalFrame* frame)
-    : m_navigationScheduler(frame->navigationScheduler())
+    : m_navigationScheduler(&frame->navigationScheduler())
 {
-    m_navigationScheduler.disableFrameNavigation();
+    m_navigationScheduler->disableFrameNavigation();
 }
 
 FrameNavigationDisabler::~FrameNavigationDisabler()
 {
-    m_navigationScheduler.enableFrameNavigation();
+    m_navigationScheduler->enableFrameNavigation();
 }
 
 class ScheduledNavigation : public NoBaseWillBeGarbageCollectedFinalized<ScheduledNavigation> {
     WTF_MAKE_NONCOPYABLE(ScheduledNavigation); WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(ScheduledNavigation);
 public:
-    ScheduledNavigation(double delay, Document* originDocument, bool lockBackForwardList, bool isLocationChange)
+    ScheduledNavigation(double delay, Document* originDocument, bool replacesCurrentItem, bool isLocationChange)
         : m_delay(delay)
         , m_originDocument(originDocument)
-        , m_lockBackForwardList(lockBackForwardList)
+        , m_replacesCurrentItem(replacesCurrentItem)
         , m_isLocationChange(isLocationChange)
         , m_wasUserGesture(UserGestureIndicator::processingUserGesture())
     {
@@ -86,7 +88,7 @@ public:
 
     double delay() const { return m_delay; }
     Document* originDocument() const { return m_originDocument.get(); }
-    bool lockBackForwardList() const { return m_lockBackForwardList; }
+    bool replacesCurrentItem() const { return m_replacesCurrentItem; }
     bool isLocationChange() const { return m_isLocationChange; }
     PassOwnPtr<UserGestureIndicator> createUserGestureIndicator()
     {
@@ -106,7 +108,7 @@ protected:
 private:
     double m_delay;
     RefPtrWillBeMember<Document> m_originDocument;
-    bool m_lockBackForwardList;
+    bool m_replacesCurrentItem;
     bool m_isLocationChange;
     bool m_wasUserGesture;
     RefPtr<UserGestureToken> m_userGestureToken;
@@ -114,8 +116,8 @@ private:
 
 class ScheduledURLNavigation : public ScheduledNavigation {
 protected:
-    ScheduledURLNavigation(double delay, Document* originDocument, const String& url, bool lockBackForwardList, bool isLocationChange)
-        : ScheduledNavigation(delay, originDocument, lockBackForwardList, isLocationChange)
+    ScheduledURLNavigation(double delay, Document* originDocument, const String& url, bool replacesCurrentItem, bool isLocationChange)
+        : ScheduledNavigation(delay, originDocument, replacesCurrentItem, isLocationChange)
         , m_url(url)
         , m_shouldCheckMainWorldContentSecurityPolicy(CheckContentSecurityPolicy)
     {
@@ -127,7 +129,7 @@ protected:
     {
         OwnPtr<UserGestureIndicator> gestureIndicator = createUserGestureIndicator();
         FrameLoadRequest request(originDocument(), m_url, "_self", m_shouldCheckMainWorldContentSecurityPolicy);
-        request.setLockBackForwardList(lockBackForwardList());
+        request.setReplacesCurrentItem(replacesCurrentItem());
         request.setClientRedirect(ClientRedirect);
         frame->loader().load(request);
     }
@@ -141,9 +143,9 @@ private:
 
 class ScheduledRedirect final : public ScheduledURLNavigation {
 public:
-    static PassOwnPtrWillBeRawPtr<ScheduledRedirect> create(double delay, Document* originDocument, const String& url, bool lockBackForwardList)
+    static PassOwnPtrWillBeRawPtr<ScheduledRedirect> create(double delay, Document* originDocument, const String& url, bool replacesCurrentItem)
     {
-        return adoptPtrWillBeNoop(new ScheduledRedirect(delay, originDocument, url, lockBackForwardList));
+        return adoptPtrWillBeNoop(new ScheduledRedirect(delay, originDocument, url, replacesCurrentItem));
     }
 
     bool shouldStartTimer(LocalFrame* frame) override { return frame->document()->loadEventFinished(); }
@@ -152,15 +154,16 @@ public:
     {
         OwnPtr<UserGestureIndicator> gestureIndicator = createUserGestureIndicator();
         FrameLoadRequest request(originDocument(), url(), "_self");
-        request.setLockBackForwardList(lockBackForwardList());
+        request.setReplacesCurrentItem(replacesCurrentItem());
         if (equalIgnoringFragmentIdentifier(frame->document()->url(), request.resourceRequest().url()))
             request.resourceRequest().setCachePolicy(ReloadIgnoringCacheData);
         request.setClientRedirect(ClientRedirect);
         frame->loader().load(request);
     }
+
 private:
-    ScheduledRedirect(double delay, Document* originDocument, const String& url, bool lockBackForwardList)
-        : ScheduledURLNavigation(delay, originDocument, url, lockBackForwardList, false)
+    ScheduledRedirect(double delay, Document* originDocument, const String& url, bool replacesCurrentItem)
+        : ScheduledURLNavigation(delay, originDocument, url, replacesCurrentItem, false)
     {
         clearUserGesture();
     }
@@ -168,14 +171,14 @@ private:
 
 class ScheduledLocationChange final : public ScheduledURLNavigation {
 public:
-    static PassOwnPtrWillBeRawPtr<ScheduledLocationChange> create(Document* originDocument, const String& url, bool lockBackForwardList)
+    static PassOwnPtrWillBeRawPtr<ScheduledLocationChange> create(Document* originDocument, const String& url, bool replacesCurrentItem)
     {
-        return adoptPtrWillBeNoop(new ScheduledLocationChange(originDocument, url, lockBackForwardList));
+        return adoptPtrWillBeNoop(new ScheduledLocationChange(originDocument, url, replacesCurrentItem));
     }
 
 private:
-    ScheduledLocationChange(Document* originDocument, const String& url, bool lockBackForwardList)
-        : ScheduledURLNavigation(0.0, originDocument, url, lockBackForwardList, !protocolIsJavaScript(url)) { }
+    ScheduledLocationChange(Document* originDocument, const String& url, bool replacesCurrentItem)
+        : ScheduledURLNavigation(0.0, originDocument, url, replacesCurrentItem, !protocolIsJavaScript(url)) { }
 };
 
 class ScheduledReload final : public ScheduledNavigation {
@@ -216,7 +219,7 @@ public:
         OwnPtr<UserGestureIndicator> gestureIndicator = createUserGestureIndicator();
         SubstituteData substituteData(SharedBuffer::create(), "text/plain", "UTF-8", KURL(), ForceSynchronousLoad);
         FrameLoadRequest request(originDocument(), url(), substituteData);
-        request.setLockBackForwardList(true);
+        request.setReplacesCurrentItem(true);
         request.setClientRedirect(ClientRedirect);
         frame->loader().load(request);
     }
@@ -230,9 +233,9 @@ private:
 
 class ScheduledFormSubmission final : public ScheduledNavigation {
 public:
-    static PassOwnPtrWillBeRawPtr<ScheduledFormSubmission> create(Document* document, PassRefPtrWillBeRawPtr<FormSubmission> submission, bool lockBackForwardList)
+    static PassOwnPtrWillBeRawPtr<ScheduledFormSubmission> create(Document* document, PassRefPtrWillBeRawPtr<FormSubmission> submission, bool replacesCurrentItem)
     {
-        return adoptPtrWillBeNoop(new ScheduledFormSubmission(document, submission, lockBackForwardList));
+        return adoptPtrWillBeNoop(new ScheduledFormSubmission(document, submission, replacesCurrentItem));
     }
 
     void fire(LocalFrame* frame) override
@@ -240,7 +243,7 @@ public:
         OwnPtr<UserGestureIndicator> gestureIndicator = createUserGestureIndicator();
         FrameLoadRequest frameRequest(originDocument());
         m_submission->populateFrameLoadRequest(frameRequest);
-        frameRequest.setLockBackForwardList(lockBackForwardList());
+        frameRequest.setReplacesCurrentItem(replacesCurrentItem());
         frameRequest.setTriggeringEvent(m_submission->event());
         frameRequest.setForm(m_submission->form());
         frame->loader().load(frameRequest);
@@ -253,8 +256,8 @@ public:
     }
 
 private:
-    ScheduledFormSubmission(Document* document, PassRefPtrWillBeRawPtr<FormSubmission> submission, bool lockBackForwardList)
-        : ScheduledNavigation(0, document, lockBackForwardList, true)
+    ScheduledFormSubmission(Document* document, PassRefPtrWillBeRawPtr<FormSubmission> submission, bool replacesCurrentItem)
+        : ScheduledNavigation(0, document, replacesCurrentItem, true)
         , m_submission(submission)
     {
         ASSERT(m_submission->form());
@@ -265,18 +268,27 @@ private:
 
 NavigationScheduler::NavigationScheduler(LocalFrame* frame)
     : m_frame(frame)
-    , m_timer(this, &NavigationScheduler::timerFired)
+    , m_navigateTaskFactory(CancellableTaskFactory::create(this, &NavigationScheduler::navigateTask))
     , m_navigationDisableCount(0)
 {
 }
 
 NavigationScheduler::~NavigationScheduler()
 {
+    // TODO(alexclarke): Can remove this if oilpan is on since any pending task should
+    // keep the NavigationScheduler alive.
+    if (m_navigateTaskFactory->isPending())
+        Platform::current()->currentThread()->scheduler()->removePendingNavigation();
 }
 
 bool NavigationScheduler::locationChangePending()
 {
     return m_redirect && m_redirect->isLocationChange();
+}
+
+bool NavigationScheduler::isNavigationScheduled() const
+{
+    return m_redirect;
 }
 
 inline bool NavigationScheduler::shouldScheduleReload() const
@@ -303,7 +315,7 @@ void NavigationScheduler::scheduleRedirect(double delay, const String& url)
         schedule(ScheduledRedirect::create(delay, m_frame->document(), url, delay <= 1));
 }
 
-bool NavigationScheduler::mustLockBackForwardList(LocalFrame* targetFrame)
+bool NavigationScheduler::mustReplaceCurrentItem(LocalFrame* targetFrame)
 {
     // Non-user navigation before the page has finished firing onload should not create a new back/forward item.
     // See https://webkit.org/b/42861 for the original motivation for this.
@@ -317,14 +329,12 @@ bool NavigationScheduler::mustLockBackForwardList(LocalFrame* targetFrame)
     return parentFrame && parentFrame->isLocalFrame() && !toLocalFrame(parentFrame)->loader().allAncestorsAreComplete();
 }
 
-void NavigationScheduler::scheduleLocationChange(Document* originDocument, const String& url, bool lockBackForwardList)
+void NavigationScheduler::scheduleLocationChange(Document* originDocument, const String& url, bool replacesCurrentItem)
 {
     if (!shouldScheduleNavigation(url))
         return;
-    if (url.isEmpty())
-        return;
 
-    lockBackForwardList = lockBackForwardList || mustLockBackForwardList(m_frame);
+    replacesCurrentItem = replacesCurrentItem || mustReplaceCurrentItem(m_frame);
 
     // If the URL we're going to navigate to is the same as the current one, except for the
     // fragment part, we don't need to schedule the location change. We'll skip this
@@ -334,15 +344,15 @@ void NavigationScheduler::scheduleLocationChange(Document* originDocument, const
         KURL parsedURL(ParsedURLString, url);
         if (parsedURL.hasFragmentIdentifier() && equalIgnoringFragmentIdentifier(m_frame->document()->url(), parsedURL)) {
             FrameLoadRequest request(originDocument, m_frame->document()->completeURL(url), "_self");
-            request.setLockBackForwardList(lockBackForwardList);
-            if (lockBackForwardList)
+            request.setReplacesCurrentItem(replacesCurrentItem);
+            if (replacesCurrentItem)
                 request.setClientRedirect(ClientRedirect);
             m_frame->loader().load(request);
             return;
         }
     }
 
-    schedule(ScheduledLocationChange::create(originDocument, url, lockBackForwardList));
+    schedule(ScheduledLocationChange::create(originDocument, url, replacesCurrentItem));
 }
 
 void NavigationScheduler::schedulePageBlock(Document* originDocument)
@@ -355,7 +365,7 @@ void NavigationScheduler::schedulePageBlock(Document* originDocument)
 void NavigationScheduler::scheduleFormSubmission(Document* document, PassRefPtrWillBeRawPtr<FormSubmission> submission)
 {
     ASSERT(m_frame->page());
-    schedule(ScheduledFormSubmission::create(document, submission, mustLockBackForwardList(m_frame)));
+    schedule(ScheduledFormSubmission::create(document, submission, mustReplaceCurrentItem(m_frame)));
 }
 
 void NavigationScheduler::scheduleReload()
@@ -367,8 +377,10 @@ void NavigationScheduler::scheduleReload()
     schedule(ScheduledReload::create());
 }
 
-void NavigationScheduler::timerFired(Timer<NavigationScheduler>*)
+void NavigationScheduler::navigateTask()
 {
+    Platform::current()->currentThread()->scheduler()->removePendingNavigation();
+
     if (!m_frame->page())
         return;
     if (m_frame->page()->defersLoading()) {
@@ -409,20 +421,26 @@ void NavigationScheduler::startTimer()
         return;
 
     ASSERT(m_frame->page());
-    if (m_timer.isActive())
+    if (m_navigateTaskFactory->isPending())
         return;
     if (!m_redirect->shouldStartTimer(m_frame))
         return;
 
-    m_timer.startOneShot(m_redirect->delay(), FROM_HERE);
+    WebScheduler* scheduler = Platform::current()->currentThread()->scheduler();
+    scheduler->addPendingNavigation();
+    scheduler->loadingTaskRunner()->postDelayedTask(
+        FROM_HERE, m_navigateTaskFactory->cancelAndCreate(), m_redirect->delay() * 1000.0);
+
     InspectorInstrumentation::frameScheduledNavigation(m_frame, m_redirect->delay());
 }
 
 void NavigationScheduler::cancel()
 {
-    if (m_timer.isActive())
+    if (m_navigateTaskFactory->isPending()) {
+        Platform::current()->currentThread()->scheduler()->removePendingNavigation();
         InspectorInstrumentation::frameClearedScheduledNavigation(m_frame);
-    m_timer.stop();
+    }
+    m_navigateTaskFactory->cancel();
     m_redirect.clear();
 }
 

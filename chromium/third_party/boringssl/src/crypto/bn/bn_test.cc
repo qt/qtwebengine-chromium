@@ -82,6 +82,7 @@
 #include <openssl/mem.h>
 
 #include "../crypto/test/scoped_types.h"
+#include "../crypto/test/test_util.h"
 
 
 // This program tests the BIGNUM implementation. It takes an optional -bc
@@ -117,11 +118,13 @@ static bool test_exp_mod_zero(void);
 static bool test_small_prime(FILE *fp, BN_CTX *ctx);
 static bool test_mod_exp_mont5(FILE *fp, BN_CTX *ctx);
 static bool test_sqrt(FILE *fp, BN_CTX *ctx);
-static bool test_bn2bin_padded(FILE *fp, BN_CTX *ctx);
-static bool test_dec2bn(FILE *fp, BN_CTX *ctx);
-static bool test_hex2bn(FILE *fp, BN_CTX *ctx);
-static bool test_asc2bn(FILE *fp, BN_CTX *ctx);
+static bool test_bn2bin_padded(BN_CTX *ctx);
+static bool test_dec2bn(BN_CTX *ctx);
+static bool test_hex2bn(BN_CTX *ctx);
+static bool test_asc2bn(BN_CTX *ctx);
+static bool test_mpi();
 static bool test_rand();
+static bool test_asn1();
 
 static const uint8_t kSample[] =
     "\xC6\x4F\x43\x04\x2A\xEA\xCA\x6E\x58\x36\x80\x5B\xE8\xC9"
@@ -311,35 +314,15 @@ int main(int argc, char *argv[]) {
   }
   flush_fp(bc_file.get());
 
-  message(bc_file.get(), "BN_bn2bin_padded");
-  if (!test_bn2bin_padded(bc_file.get(), ctx.get())) {
+  if (!test_bn2bin_padded(ctx.get()) ||
+      !test_dec2bn(ctx.get()) ||
+      !test_hex2bn(ctx.get()) ||
+      !test_asc2bn(ctx.get()) ||
+      !test_mpi() ||
+      !test_rand() ||
+      !test_asn1()) {
     return 1;
   }
-  flush_fp(bc_file.get());
-
-  message(bc_file.get(), "BN_dec2bn");
-  if (!test_dec2bn(bc_file.get(), ctx.get())) {
-    return 1;
-  }
-  flush_fp(bc_file.get());
-
-  message(bc_file.get(), "BN_hex2bn");
-  if (!test_hex2bn(bc_file.get(), ctx.get())) {
-    return 1;
-  }
-  flush_fp(bc_file.get());
-
-  message(bc_file.get(), "BN_asc2bn");
-  if (!test_asc2bn(bc_file.get(), ctx.get())) {
-    return 1;
-  }
-  flush_fp(bc_file.get());
-
-  message(bc_file.get(), "BN_rand");
-  if (!test_rand()) {
-    return 1;
-  }
-  flush_fp(bc_file.get());
 
   printf("PASS\n");
   return 0;
@@ -439,6 +422,16 @@ static bool test_div(FILE *fp, BN_CTX *ctx) {
   if (!a || !b || !c || !d || !e) {
     return false;
   }
+
+  if (!BN_one(a.get())) {
+    return false;
+  }
+  BN_zero(b.get());
+  if (BN_div(d.get(), c.get(), a.get(), b.get(), ctx)) {
+    fprintf(stderr, "Division by zero succeeded!\n");
+    return false;
+  }
+  ERR_clear_error();
 
   for (int i = 0; i < num0 + num1; i++) {
     if (i < num1) {
@@ -837,18 +830,17 @@ static bool test_div_word(FILE *fp) {
   }
 
   for (int i = 0; i < num0; i++) {
-    BN_ULONG s;
     do {
       if (!BN_rand(a.get(), 512, -1, 0) ||
           !BN_rand(b.get(), BN_BITS2, -1, 0)) {
         return false;
       }
-      s = b->d[0];
-    } while (!s);
+    } while (BN_is_zero(b.get()));
 
     if (!BN_copy(b.get(), a.get())) {
       return false;
     }
+    BN_ULONG s = b->d[0];
     BN_ULONG r = BN_div_word(b.get(), s);
     if (r == (BN_ULONG)-1) {
       return false;
@@ -891,8 +883,27 @@ static bool test_mont(FILE *fp, BN_CTX *ctx) {
   ScopedBIGNUM B(BN_new());
   ScopedBIGNUM n(BN_new());
   ScopedBN_MONT_CTX mont(BN_MONT_CTX_new());
-  if (!a || !b || !c || !d || !A || !B || !n || !mont ||
-      !BN_rand(a.get(), 100, 0, 0) ||
+  if (!a || !b || !c || !d || !A || !B || !n || !mont) {
+    return false;
+  }
+
+  BN_zero(n.get());
+  if (BN_MONT_CTX_set(mont.get(), n.get(), ctx)) {
+    fprintf(stderr, "BN_MONT_CTX_set succeeded for zero modulus!\n");
+    return false;
+  }
+  ERR_clear_error();
+
+  if (!BN_set_word(n.get(), 16)) {
+    return false;
+  }
+  if (BN_MONT_CTX_set(mont.get(), n.get(), ctx)) {
+    fprintf(stderr, "BN_MONT_CTX_set succeeded for even modulus!\n");
+    return false;
+  }
+  ERR_clear_error();
+
+  if (!BN_rand(a.get(), 100, 0, 0) ||
       !BN_rand(b.get(), 100, 0, 0)) {
     return false;
   }
@@ -932,6 +943,7 @@ static bool test_mont(FILE *fp, BN_CTX *ctx) {
       return false;
     }
   }
+
   return true;
 }
 
@@ -984,6 +996,16 @@ static bool test_mod_mul(FILE *fp, BN_CTX *ctx) {
   if (!a || !b || !c || !d || !e) {
     return false;
   }
+
+  if (!BN_one(a.get()) || !BN_one(b.get())) {
+    return false;
+  }
+  BN_zero(c.get());
+  if (BN_mod_mul(e.get(), a.get(), b.get(), c.get(), ctx)) {
+    fprintf(stderr, "BN_mod_mul with zero modulus succeeded!\n");
+    return false;
+  }
+  ERR_clear_error();
 
   for (int j = 0; j < 3; j++) {
     if (!BN_rand(c.get(), 1024, 0, 0)) {
@@ -1039,8 +1061,21 @@ static bool test_mod_exp(FILE *fp, BN_CTX *ctx) {
   ScopedBIGNUM c(BN_new());
   ScopedBIGNUM d(BN_new());
   ScopedBIGNUM e(BN_new());
-  if (!a || !b || !c || !d || !e ||
-      !BN_rand(c.get(), 30, 0, 1)) {  // must be odd for montgomery
+  if (!a || !b || !c || !d || !e) {
+    return false;
+  }
+
+  if (!BN_one(a.get()) || !BN_one(b.get())) {
+    return false;
+  }
+  BN_zero(c.get());
+  if (BN_mod_exp(d.get(), a.get(), b.get(), c.get(), ctx)) {
+    fprintf(stderr, "BN_mod_exp with zero modulus succeeded!\n");
+    return 0;
+  }
+  ERR_clear_error();
+
+  if (!BN_rand(c.get(), 30, 0, 1)) {  // must be odd for montgomery
     return false;
   }
   for (int i = 0; i < num2; i++) {
@@ -1079,8 +1114,32 @@ static bool test_mod_exp_mont_consttime(FILE *fp, BN_CTX *ctx) {
   ScopedBIGNUM c(BN_new());
   ScopedBIGNUM d(BN_new());
   ScopedBIGNUM e(BN_new());
-  if (!a || !b || !c || !d || !e ||
-      !BN_rand(c.get(), 30, 0, 1)) {  // must be odd for montgomery
+  if (!a || !b || !c || !d || !e) {
+    return false;
+  }
+
+  if (!BN_one(a.get()) || !BN_one(b.get())) {
+    return false;
+  }
+  BN_zero(c.get());
+  if (BN_mod_exp_mont_consttime(d.get(), a.get(), b.get(), c.get(), ctx,
+                                nullptr)) {
+    fprintf(stderr, "BN_mod_exp_mont_consttime with zero modulus succeeded!\n");
+    return 0;
+  }
+  ERR_clear_error();
+
+  if (!BN_set_word(c.get(), 16)) {
+    return false;
+  }
+  if (BN_mod_exp_mont_consttime(d.get(), a.get(), b.get(), c.get(), ctx,
+                                nullptr)) {
+    fprintf(stderr, "BN_mod_exp_mont_consttime with even modulus succeeded!\n");
+    return 0;
+  }
+  ERR_clear_error();
+
+  if (!BN_rand(c.get(), 30, 0, 1)) {  // must be odd for montgomery
     return false;
   }
   for (int i = 0; i < num2; i++) {
@@ -1208,8 +1267,9 @@ static bool test_exp(FILE *fp, BN_CTX *ctx) {
     if (!BN_one(e.get())) {
       return false;
     }
-    for (; !BN_is_zero(b.get()); BN_sub(b.get(), b.get(), BN_value_one())) {
-      if (!BN_mul(e.get(), e.get(), a.get(), ctx)) {
+    while (!BN_is_zero(b.get())) {
+      if (!BN_mul(e.get(), e.get(), a.get(), ctx) ||
+          !BN_sub(b.get(), b.get(), BN_value_one())) {
         return false;
       }
     }
@@ -1371,7 +1431,7 @@ static bool test_sqrt(FILE *fp, BN_CTX *ctx) {
   return true;
 }
 
-static bool test_bn2bin_padded(FILE *fp, BN_CTX *ctx) {
+static bool test_bn2bin_padded(BN_CTX *ctx) {
   uint8_t zeros[256], out[256], reference[128];
 
   memset(zeros, 0, sizeof(zeros));
@@ -1448,7 +1508,7 @@ static int DecimalToBIGNUM(ScopedBIGNUM *out, const char *in) {
   return ret;
 }
 
-static bool test_dec2bn(FILE *fp, BN_CTX *ctx) {
+static bool test_dec2bn(BN_CTX *ctx) {
   ScopedBIGNUM bn;
   int ret = DecimalToBIGNUM(&bn, "0");
   if (ret != 1 || !BN_is_zero(bn.get()) || BN_is_negative(bn.get())) {
@@ -1490,7 +1550,7 @@ static int HexToBIGNUM(ScopedBIGNUM *out, const char *in) {
   return ret;
 }
 
-static bool test_hex2bn(FILE *fp, BN_CTX *ctx) {
+static bool test_hex2bn(BN_CTX *ctx) {
   ScopedBIGNUM bn;
   int ret = HexToBIGNUM(&bn, "0");
   if (ret != 1 || !BN_is_zero(bn.get()) || BN_is_negative(bn.get())) {
@@ -1533,7 +1593,7 @@ static ScopedBIGNUM ASCIIToBIGNUM(const char *in) {
   return ScopedBIGNUM(raw);
 }
 
-static bool test_asc2bn(FILE *fp, BN_CTX *ctx) {
+static bool test_asc2bn(BN_CTX *ctx) {
   ScopedBIGNUM bn = ASCIIToBIGNUM("0");
   if (!bn || !BN_is_zero(bn.get()) || BN_is_negative(bn.get())) {
     fprintf(stderr, "BN_asc2bn gave a bad result.\n");
@@ -1585,6 +1645,63 @@ static bool test_asc2bn(FILE *fp, BN_CTX *ctx) {
   return true;
 }
 
+struct MPITest {
+  const char *base10;
+  const char *mpi;
+  size_t mpi_len;
+};
+
+static const MPITest kMPITests[] = {
+  { "0", "\x00\x00\x00\x00", 4 },
+  { "1", "\x00\x00\x00\x01\x01", 5 },
+  { "-1", "\x00\x00\x00\x01\x81", 5 },
+  { "128", "\x00\x00\x00\x02\x00\x80", 6 },
+  { "256", "\x00\x00\x00\x02\x01\x00", 6 },
+  { "-256", "\x00\x00\x00\x02\x81\x00", 6 },
+};
+
+static bool test_mpi() {
+  uint8_t scratch[8];
+
+  for (size_t i = 0; i < sizeof(kMPITests) / sizeof(kMPITests[0]); i++) {
+    const MPITest &test = kMPITests[i];
+    ScopedBIGNUM bn(ASCIIToBIGNUM(test.base10));
+    const size_t mpi_len = BN_bn2mpi(bn.get(), NULL);
+    if (mpi_len > sizeof(scratch)) {
+      fprintf(stderr, "MPI test #%u: MPI size is too large to test.\n",
+              (unsigned)i);
+      return false;
+    }
+
+    const size_t mpi_len2 = BN_bn2mpi(bn.get(), scratch);
+    if (mpi_len != mpi_len2) {
+      fprintf(stderr, "MPI test #%u: length changes.\n", (unsigned)i);
+      return false;
+    }
+
+    if (mpi_len != test.mpi_len ||
+        memcmp(test.mpi, scratch, mpi_len) != 0) {
+      fprintf(stderr, "MPI test #%u failed:\n", (unsigned)i);
+      hexdump(stderr, "Expected: ", test.mpi, test.mpi_len);
+      hexdump(stderr, "Got:      ", scratch, mpi_len);
+      return false;
+    }
+
+    ScopedBIGNUM bn2(BN_mpi2bn(scratch, mpi_len, NULL));
+    if (bn2.get() == nullptr) {
+      fprintf(stderr, "MPI test #%u: failed to parse\n", (unsigned)i);
+      return false;
+    }
+
+    if (BN_cmp(bn.get(), bn2.get()) != 0) {
+      fprintf(stderr, "MPI test #%u: wrong result\n", (unsigned)i);
+      return false;
+    }
+  }
+
+  return true;
+}
+
 static bool test_rand() {
   ScopedBIGNUM bn(BN_new());
   if (!bn) {
@@ -1625,6 +1742,173 @@ static bool test_rand() {
     fprintf(stderr, "BN_rand gave a bad result.\n");
     return false;
   }
+
+  return true;
+}
+
+struct ASN1Test {
+  const char *value_ascii;
+  const char *der;
+  size_t der_len;
+};
+
+static const ASN1Test kASN1Tests[] = {
+    {"0", "\x02\x01\x00", 3},
+    {"1", "\x02\x01\x01", 3},
+    {"127", "\x02\x01\x7f", 3},
+    {"128", "\x02\x02\x00\x80", 4},
+    {"0xdeadbeef", "\x02\x05\x00\xde\xad\xbe\xef", 7},
+    {"0x0102030405060708",
+     "\x02\x08\x01\x02\x03\x04\x05\x06\x07\x08", 10},
+    {"0xffffffffffffffff",
+      "\x02\x09\x00\xff\xff\xff\xff\xff\xff\xff\xff", 11},
+};
+
+struct ASN1InvalidTest {
+  const char *der;
+  size_t der_len;
+};
+
+static const ASN1InvalidTest kASN1InvalidTests[] = {
+    // Bad tag.
+    {"\x03\x01\x00", 3},
+    // Empty contents.
+    {"\x02\x00", 2},
+};
+
+// kASN1BuggyTests are incorrect encodings and how |BN_cbs2unsigned_buggy|
+// should interpret them.
+static const ASN1Test kASN1BuggyTests[] = {
+    // Negative numbers.
+    {"128", "\x02\x01\x80", 3},
+    {"255", "\x02\x01\xff", 3},
+    // Unnecessary leading zeros.
+    {"1", "\x02\x02\x00\x01", 4},
+};
+
+static bool test_asn1() {
+  for (const ASN1Test &test : kASN1Tests) {
+    ScopedBIGNUM bn = ASCIIToBIGNUM(test.value_ascii);
+    if (!bn) {
+      return false;
+    }
+
+    // Test that the input is correctly parsed.
+    ScopedBIGNUM bn2(BN_new());
+    if (!bn2) {
+      return false;
+    }
+    CBS cbs;
+    CBS_init(&cbs, reinterpret_cast<const uint8_t*>(test.der), test.der_len);
+    if (!BN_cbs2unsigned(&cbs, bn2.get()) || CBS_len(&cbs) != 0) {
+      fprintf(stderr, "Parsing ASN.1 INTEGER failed.\n");
+      return false;
+    }
+    if (BN_cmp(bn.get(), bn2.get()) != 0) {
+      fprintf(stderr, "Bad parse.\n");
+      return false;
+    }
+
+    // Test the value serializes correctly.
+    CBB cbb;
+    uint8_t *der;
+    size_t der_len;
+    CBB_zero(&cbb);
+    if (!CBB_init(&cbb, 0) ||
+        !BN_bn2cbb(&cbb, bn.get()) ||
+        !CBB_finish(&cbb, &der, &der_len)) {
+      CBB_cleanup(&cbb);
+      return false;
+    }
+    ScopedOpenSSLBytes delete_der(der);
+    if (der_len != test.der_len ||
+        memcmp(der, reinterpret_cast<const uint8_t*>(test.der), der_len) != 0) {
+      fprintf(stderr, "Bad serialization.\n");
+      return false;
+    }
+
+    // |BN_cbs2unsigned_buggy| parses all valid input.
+    CBS_init(&cbs, reinterpret_cast<const uint8_t*>(test.der), test.der_len);
+    if (!BN_cbs2unsigned_buggy(&cbs, bn2.get()) || CBS_len(&cbs) != 0) {
+      fprintf(stderr, "Parsing ASN.1 INTEGER failed.\n");
+      return false;
+    }
+    if (BN_cmp(bn.get(), bn2.get()) != 0) {
+      fprintf(stderr, "Bad parse.\n");
+      return false;
+    }
+  }
+
+  for (const ASN1InvalidTest &test : kASN1InvalidTests) {
+    ScopedBIGNUM bn(BN_new());
+    if (!bn) {
+      return false;
+    }
+    CBS cbs;
+    CBS_init(&cbs, reinterpret_cast<const uint8_t*>(test.der), test.der_len);
+    if (BN_cbs2unsigned(&cbs, bn.get())) {
+      fprintf(stderr, "Parsed invalid input.\n");
+      return false;
+    }
+    ERR_clear_error();
+
+    // All tests in kASN1InvalidTests are also rejected by
+    // |BN_cbs2unsigned_buggy|.
+    CBS_init(&cbs, reinterpret_cast<const uint8_t*>(test.der), test.der_len);
+    if (BN_cbs2unsigned_buggy(&cbs, bn.get())) {
+      fprintf(stderr, "Parsed invalid input.\n");
+      return false;
+    }
+    ERR_clear_error();
+  }
+
+  for (const ASN1Test &test : kASN1BuggyTests) {
+    // These broken encodings are rejected by |BN_cbs2unsigned|.
+    ScopedBIGNUM bn(BN_new());
+    if (!bn) {
+      return false;
+    }
+
+    CBS cbs;
+    CBS_init(&cbs, reinterpret_cast<const uint8_t*>(test.der), test.der_len);
+    if (BN_cbs2unsigned(&cbs, bn.get())) {
+      fprintf(stderr, "Parsed invalid input.\n");
+      return false;
+    }
+    ERR_clear_error();
+
+    // However |BN_cbs2unsigned_buggy| accepts them.
+    ScopedBIGNUM bn2 = ASCIIToBIGNUM(test.value_ascii);
+    if (!bn2) {
+      return false;
+    }
+
+    CBS_init(&cbs, reinterpret_cast<const uint8_t*>(test.der), test.der_len);
+    if (!BN_cbs2unsigned_buggy(&cbs, bn.get()) || CBS_len(&cbs) != 0) {
+      fprintf(stderr, "Parsing (invalid) ASN.1 INTEGER failed.\n");
+      return false;
+    }
+
+    if (BN_cmp(bn.get(), bn2.get()) != 0) {
+      fprintf(stderr, "\"Bad\" parse.\n");
+      return false;
+    }
+  }
+
+  // Serializing negative numbers is not supported.
+  ScopedBIGNUM bn = ASCIIToBIGNUM("-1");
+  if (!bn) {
+    return false;
+  }
+  CBB cbb;
+  CBB_zero(&cbb);
+  if (!CBB_init(&cbb, 0) ||
+      BN_bn2cbb(&cbb, bn.get())) {
+    fprintf(stderr, "Serialized negative number.\n");
+    CBB_cleanup(&cbb);
+    return false;
+  }
+  CBB_cleanup(&cbb);
 
   return true;
 }

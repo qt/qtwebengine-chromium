@@ -26,6 +26,8 @@
 
 #include "SkGeometry.h"
 
+#include <stdlib.h>
+
 // http://code.google.com/p/skia/issues/detail?id=32
 static void test_cubic() {
     SkPoint src[4] = {
@@ -55,9 +57,9 @@ static void test_cubic2() {
     {
 #ifdef SK_BUILD_FOR_WIN
         // windows doesn't have strtof
-        float x = (float)strtod("9.94099e+07", NULL);
+        float x = (float)strtod("9.94099e+07", nullptr);
 #else
-        float x = strtof("9.94099e+07", NULL);
+        float x = strtof("9.94099e+07", nullptr);
 #endif
         int ix = (int)x;
         int fx = (int)(x * 65536);
@@ -142,7 +144,7 @@ public:
 
 protected:
     // overrides from SkEventSink
-    virtual bool onQuery(SkEvent* evt) {
+    bool onQuery(SkEvent* evt) override {
         if (SampleCode::TitleQ(*evt)) {
             SampleCode::TitleR(evt, "Paths");
             return true;
@@ -173,7 +175,7 @@ protected:
         canvas->drawPath(path, paint);
     }
 
-    virtual void onDrawContent(SkCanvas* canvas) {
+    void onDrawContent(SkCanvas* canvas) override {
         this->init();
         canvas->translate(50, 50);
 
@@ -194,7 +196,7 @@ protected:
             canvas->translate(0, 200);
         }
     }
-    
+
     bool onAnimate(const SkAnimTimer& timer) override {
         SkScalar currSecs = timer.scaled(100);
         SkScalar delta = currSecs - fPrevSecs;
@@ -209,7 +211,7 @@ protected:
 
     SkView::Click* onFindClickHandler(SkScalar x, SkScalar y, unsigned modi) override {
         fShowHairline = !fShowHairline;
-        this->inval(NULL);
+        this->inval(nullptr);
         return this->INHERITED::onFindClickHandler(x, y, modi);
     }
 
@@ -241,7 +243,7 @@ public:
             fPts[i].fX = 20 + rand.nextUScalar1() * 640;
             fPts[i].fY = 20 + rand.nextUScalar1() * 480;
         }
-        
+
         const SkScalar rad = 50;
 
         fPtsPaint.setAntiAlias(true);
@@ -267,7 +269,7 @@ public:
 
     void toggle(bool& value) {
         value = !value;
-        this->inval(NULL);
+        this->inval(nullptr);
     }
 
 protected:
@@ -289,7 +291,7 @@ protected:
         }
         return this->INHERITED::onQuery(evt);
     }
-    
+
     void makePath(SkPath* path) {
         path->moveTo(fPts[0]);
         for (int i = 1; i < N; ++i) {
@@ -321,7 +323,7 @@ protected:
         if (click->fMeta.findS32("index", &index)) {
             SkASSERT((unsigned)index < N);
             fPts[index] = click->fCurr;
-            this->inval(NULL);
+            this->inval(nullptr);
             return true;
         }
         return false;

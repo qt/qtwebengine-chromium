@@ -430,9 +430,9 @@ class ProxyService::InitProxyResolver {
 
   // Returns the PAC script data that was selected by ProxyScriptDecider.
   // Should only be called upon completion of the initialization.
-  ProxyResolverScriptData* script_data() {
+  const scoped_refptr<ProxyResolverScriptData>& script_data() {
     DCHECK_EQ(STATE_NONE, next_state_);
-    return script_data_.get();
+    return script_data_;
   }
 
   LoadState GetLoadState() const {
@@ -585,7 +585,8 @@ class ProxyService::ProxyScriptDeciderPoller {
                            ProxyScriptFetcher* proxy_script_fetcher,
                            DhcpProxyScriptFetcher* dhcp_proxy_script_fetcher,
                            int init_net_error,
-                           ProxyResolverScriptData* init_script_data,
+                           const scoped_refptr<ProxyResolverScriptData>&
+                               init_script_data,
                            NetLog* net_log)
       : change_callback_(callback),
         config_(config),
@@ -680,7 +681,7 @@ class ProxyService::ProxyScriptDeciderPoller {
           FROM_HERE,
           base::Bind(&ProxyScriptDeciderPoller::NotifyProxyServiceOfChange,
                      weak_factory_.GetWeakPtr(), result,
-                     make_scoped_refptr(decider_->script_data()),
+                     decider_->script_data(),
                      decider_->effective_config()));
       return;
     }
@@ -694,7 +695,8 @@ class ProxyService::ProxyScriptDeciderPoller {
     TryToStartNextPoll(false);
   }
 
-  bool HasScriptDataChanged(int result, ProxyResolverScriptData* script_data) {
+  bool HasScriptDataChanged(int result,
+      const scoped_refptr<ProxyResolverScriptData>& script_data) {
     if (result != last_error_) {
       // Something changed -- it was failing before and now it succeeded, or
       // conversely it succeeded before and now it failed. Or it failed in
@@ -917,7 +919,7 @@ class ProxyService::PacRequest
 
 // ProxyService ---------------------------------------------------------------
 
-ProxyService::ProxyService(ProxyConfigService* config_service,
+ProxyService::ProxyService(scoped_ptr<ProxyConfigService> config_service,
                            scoped_ptr<ProxyResolverFactory> resolver_factory,
                            NetLog* net_log)
     : resolver_factory_(resolver_factory.Pass()),
@@ -929,78 +931,77 @@ ProxyService::ProxyService(ProxyConfigService* config_service,
       quick_check_enabled_(true) {
   NetworkChangeNotifier::AddIPAddressObserver(this);
   NetworkChangeNotifier::AddDNSObserver(this);
-  ResetConfigService(config_service);
+  ResetConfigService(config_service.Pass());
 }
 
 // static
-ProxyService* ProxyService::CreateUsingSystemProxyResolver(
-    ProxyConfigService* proxy_config_service,
+scoped_ptr<ProxyService> ProxyService::CreateUsingSystemProxyResolver(
+    scoped_ptr<ProxyConfigService> proxy_config_service,
     size_t num_pac_threads,
     NetLog* net_log) {
   DCHECK(proxy_config_service);
 
   if (!ProxyResolverFactoryForSystem::IsSupported()) {
     VLOG(1) << "PAC support disabled because there is no system implementation";
-    return CreateWithoutProxyResolver(proxy_config_service, net_log);
+    return CreateWithoutProxyResolver(proxy_config_service.Pass(), net_log);
   }
 
   if (num_pac_threads == 0)
     num_pac_threads = kDefaultNumPacThreads;
 
-  return new ProxyService(
-      proxy_config_service,
+  return make_scoped_ptr(new ProxyService(
+      proxy_config_service.Pass(),
       make_scoped_ptr(new ProxyResolverFactoryForSystem(num_pac_threads)),
-      net_log);
+      net_log));
 }
 
 // static
-ProxyService* ProxyService::CreateWithoutProxyResolver(
-    ProxyConfigService* proxy_config_service,
+scoped_ptr<ProxyService> ProxyService::CreateWithoutProxyResolver(
+    scoped_ptr<ProxyConfigService> proxy_config_service,
     NetLog* net_log) {
-  return new ProxyService(
-      proxy_config_service,
-      make_scoped_ptr(new ProxyResolverFactoryForNullResolver), net_log);
+  return make_scoped_ptr(new ProxyService(
+      proxy_config_service.Pass(),
+      make_scoped_ptr(new ProxyResolverFactoryForNullResolver), net_log));
 }
 
 // static
-ProxyService* ProxyService::CreateFixed(const ProxyConfig& pc) {
+scoped_ptr<ProxyService> ProxyService::CreateFixed(const ProxyConfig& pc) {
   // TODO(eroman): This isn't quite right, won't work if |pc| specifies
   //               a PAC script.
-  return CreateUsingSystemProxyResolver(new ProxyConfigServiceFixed(pc),
-                                        0, NULL);
+  return CreateUsingSystemProxyResolver(
+      make_scoped_ptr(new ProxyConfigServiceFixed(pc)), 0, NULL);
 }
 
 // static
-ProxyService* ProxyService::CreateFixed(const std::string& proxy) {
+scoped_ptr<ProxyService> ProxyService::CreateFixed(const std::string& proxy) {
   ProxyConfig proxy_config;
   proxy_config.proxy_rules().ParseFromString(proxy);
   return ProxyService::CreateFixed(proxy_config);
 }
 
 // static
-ProxyService* ProxyService::CreateDirect() {
+scoped_ptr<ProxyService> ProxyService::CreateDirect() {
   return CreateDirectWithNetLog(NULL);
 }
 
-ProxyService* ProxyService::CreateDirectWithNetLog(NetLog* net_log) {
+scoped_ptr<ProxyService> ProxyService::CreateDirectWithNetLog(NetLog* net_log) {
   // Use direct connections.
-  return new ProxyService(
-      new ProxyConfigServiceDirect,
-      make_scoped_ptr(new ProxyResolverFactoryForNullResolver), net_log);
+  return make_scoped_ptr(new ProxyService(
+      make_scoped_ptr(new ProxyConfigServiceDirect),
+      make_scoped_ptr(new ProxyResolverFactoryForNullResolver), net_log));
 }
 
 // static
-ProxyService* ProxyService::CreateFixedFromPacResult(
+scoped_ptr<ProxyService> ProxyService::CreateFixedFromPacResult(
     const std::string& pac_string) {
-
   // We need the settings to contain an "automatic" setting, otherwise the
   // ProxyResolver dependency we give it will never be used.
   scoped_ptr<ProxyConfigService> proxy_config_service(
       new ProxyConfigServiceFixed(ProxyConfig::CreateAutoDetect()));
 
-  return new ProxyService(
-      proxy_config_service.release(),
-      make_scoped_ptr(new ProxyResolverFactoryForPacResult(pac_string)), NULL);
+  return make_scoped_ptr(new ProxyService(
+      proxy_config_service.Pass(),
+      make_scoped_ptr(new ProxyResolverFactoryForPacResult(pac_string)), NULL));
 }
 
 int ProxyService::ResolveProxy(const GURL& raw_url,
@@ -1073,7 +1074,7 @@ int ProxyService::ResolveProxyHelper(const GURL& raw_url,
 
   DCHECK_EQ(ERR_IO_PENDING, rv);
   DCHECK(!ContainsPendingRequest(req.get()));
-  pending_requests_.push_back(req);
+  pending_requests_.insert(req);
 
   // Completion will be notified through |callback|, unless the caller cancels
   // the request using |pac_request|.
@@ -1346,16 +1347,12 @@ LoadState ProxyService::GetLoadState(const PacRequest* req) const {
 }
 
 bool ProxyService::ContainsPendingRequest(PacRequest* req) {
-  PendingRequests::iterator it = std::find(
-      pending_requests_.begin(), pending_requests_.end(), req);
-  return pending_requests_.end() != it;
+  return pending_requests_.count(req) == 1;
 }
 
 void ProxyService::RemovePendingRequest(PacRequest* req) {
   DCHECK(ContainsPendingRequest(req));
-  PendingRequests::iterator it = std::find(
-      pending_requests_.begin(), pending_requests_.end(), req);
-  pending_requests_.erase(it);
+  pending_requests_.erase(req);
 }
 
 int ProxyService::DidFinishResolvingProxy(const GURL& url,
@@ -1440,11 +1437,11 @@ int ProxyService::DidFinishResolvingProxy(const GURL& url,
 
 void ProxyService::SetProxyScriptFetchers(
     ProxyScriptFetcher* proxy_script_fetcher,
-    DhcpProxyScriptFetcher* dhcp_proxy_script_fetcher) {
+    scoped_ptr<DhcpProxyScriptFetcher> dhcp_proxy_script_fetcher) {
   DCHECK(CalledOnValidThread());
   State previous_state = ResetProxyConfig(false);
   proxy_script_fetcher_.reset(proxy_script_fetcher);
-  dhcp_proxy_script_fetcher_.reset(dhcp_proxy_script_fetcher);
+  dhcp_proxy_script_fetcher_ = dhcp_proxy_script_fetcher.Pass();
   if (previous_state != STATE_NONE)
     ApplyProxyConfigIfAvailable();
 }
@@ -1473,7 +1470,7 @@ ProxyService::State ProxyService::ResetProxyConfig(bool reset_fetched_config) {
 }
 
 void ProxyService::ResetConfigService(
-    ProxyConfigService* new_proxy_config_service) {
+    scoped_ptr<ProxyConfigService> new_proxy_config_service) {
   DCHECK(CalledOnValidThread());
   State previous_state = ResetProxyConfig(true);
 
@@ -1482,7 +1479,7 @@ void ProxyService::ResetConfigService(
     config_service_->RemoveObserver(this);
 
   // Set the new configuration service.
-  config_service_.reset(new_proxy_config_service);
+  config_service_ = new_proxy_config_service.Pass();
   config_service_->AddObserver(this);
 
   if (previous_state != STATE_NONE)
@@ -1496,23 +1493,23 @@ void ProxyService::ForceReloadProxyConfig() {
 }
 
 // static
-ProxyConfigService* ProxyService::CreateSystemProxyConfigService(
+scoped_ptr<ProxyConfigService> ProxyService::CreateSystemProxyConfigService(
     const scoped_refptr<base::SingleThreadTaskRunner>& io_task_runner,
     const scoped_refptr<base::SingleThreadTaskRunner>& file_task_runner) {
 #if defined(OS_WIN)
-  return new ProxyConfigServiceWin();
+  return make_scoped_ptr(new ProxyConfigServiceWin());
 #elif defined(OS_IOS)
-  return new ProxyConfigServiceIOS();
+  return make_scoped_ptr(new ProxyConfigServiceIOS());
 #elif defined(OS_MACOSX)
-  return new ProxyConfigServiceMac(io_task_runner);
+  return make_scoped_ptr(new ProxyConfigServiceMac(io_task_runner));
 #elif defined(OS_CHROMEOS)
   LOG(ERROR) << "ProxyConfigService for ChromeOS should be created in "
              << "profile_io_data.cc::CreateProxyConfigService and this should "
              << "be used only for examples.";
-  return new UnsetProxyConfigService;
+  return make_scoped_ptr(new UnsetProxyConfigService);
 #elif defined(OS_LINUX)
-  ProxyConfigServiceLinux* linux_config_service =
-      new ProxyConfigServiceLinux();
+  scoped_ptr<ProxyConfigServiceLinux> linux_config_service(
+      new ProxyConfigServiceLinux());
 
   // Assume we got called on the thread that runs the default glib
   // main loop, so the current thread is where we should be running
@@ -1527,14 +1524,14 @@ ProxyConfigService* ProxyService::CreateSystemProxyConfigService(
   linux_config_service->SetupAndFetchInitialConfig(
       glib_thread_task_runner, io_task_runner, file_task_runner);
 
-  return linux_config_service;
+  return linux_config_service.Pass();
 #elif defined(OS_ANDROID)
-  return new ProxyConfigServiceAndroid(io_task_runner,
-                                       base::ThreadTaskRunnerHandle::Get());
+  return make_scoped_ptr(new ProxyConfigServiceAndroid(
+      io_task_runner, base::ThreadTaskRunnerHandle::Get()));
 #else
   LOG(WARNING) << "Failed to choose a system proxy settings fetcher "
                   "for this platform.";
-  return new ProxyConfigServiceDirect();
+  return make_scoped_ptr(new ProxyConfigServiceDirect());
 #endif
 }
 

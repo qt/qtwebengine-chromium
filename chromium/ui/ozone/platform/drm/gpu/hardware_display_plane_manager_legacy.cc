@@ -19,7 +19,6 @@ HardwareDisplayPlaneManagerLegacy::~HardwareDisplayPlaneManagerLegacy() {
 
 bool HardwareDisplayPlaneManagerLegacy::Commit(
     HardwareDisplayPlaneList* plane_list,
-    bool is_sync,
     bool test_only) {
   if (test_only) {
     for (HardwareDisplayPlane* plane : plane_list->plane_list) {
@@ -41,7 +40,6 @@ bool HardwareDisplayPlaneManagerLegacy::Commit(
   // be the delta of (new contents, old contents), but it should be barely
   // noticeable.
   for (const auto& flip : plane_list->legacy_page_flips) {
-    // Permission Denied is a legitimate error
     for (const auto& plane : flip.planes) {
       if (!drm_->PageFlipOverlay(flip.crtc_id, plane.framebuffer, plane.bounds,
                                  plane.src_rect, plane.plane)) {
@@ -52,13 +50,20 @@ bool HardwareDisplayPlaneManagerLegacy::Commit(
         break;
       }
     }
-    if (!drm_->PageFlip(flip.crtc_id, flip.framebuffer, is_sync,
+    if (!drm_->PageFlip(flip.crtc_id, flip.framebuffer,
                         base::Bind(&CrtcController::OnPageFlipEvent,
                                    flip.crtc->AsWeakPtr()))) {
-      if (errno != EACCES) {
+      // 1) Permission Denied is a legitimate error.
+      // 2) Device or resource busy is possible if we're page flipping a
+      // disconnected CRTC. Pretend we're fine since a hotplug event is supposed
+      // to be on its way.
+      // NOTE: We could be getting EBUSY if we're trying to page flip a CRTC
+      // that has a pending page flip, however the contract is that the caller
+      // will never attempt this (since the caller should be waiting for the
+      // page flip completion message).
+      if (errno != EACCES && errno != EBUSY) {
         PLOG(ERROR) << "Cannot page flip: crtc=" << flip.crtc_id
-                    << " framebuffer=" << flip.framebuffer
-                    << " is_sync=" << is_sync;
+                    << " framebuffer=" << flip.framebuffer;
         ret = false;
       }
       flip.crtc->PageFlipFailed();
@@ -67,7 +72,7 @@ bool HardwareDisplayPlaneManagerLegacy::Commit(
   // For each element in |old_plane_list|, if it hasn't been reclaimed (by
   // this or any other HDPL), clear the overlay contents.
   for (HardwareDisplayPlane* plane : plane_list->old_plane_list) {
-    if (!plane->in_use() && !plane->is_dummy()) {
+    if (!plane->in_use() && (plane->type() != HardwareDisplayPlane::kDummy)) {
       // This plane is being released, so we need to zero it.
       if (!drm_->PageFlipOverlay(plane->owning_crtc(), 0, gfx::Rect(),
                                  gfx::Rect(), plane->plane_id())) {
@@ -91,7 +96,8 @@ bool HardwareDisplayPlaneManagerLegacy::SetPlaneData(
     uint32_t crtc_id,
     const gfx::Rect& src_rect,
     CrtcController* crtc) {
-  if (hw_plane->is_dummy() || plane_list->legacy_page_flips.empty() ||
+  if ((hw_plane->type() == HardwareDisplayPlane::kDummy) ||
+      plane_list->legacy_page_flips.empty() ||
       plane_list->legacy_page_flips.back().crtc_id != crtc_id) {
     plane_list->legacy_page_flips.push_back(
         HardwareDisplayPlaneList::PageFlipInfo(

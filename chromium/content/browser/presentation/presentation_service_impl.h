@@ -6,10 +6,13 @@
 #define CONTENT_BROWSER_PRESENTATION_PRESENTATION_SERVICE_IMPL_H_
 
 #include <deque>
+#include <map>
+#include <string>
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/containers/hash_tables.h"
+#include "base/containers/scoped_ptr_map.h"
 #include "base/gtest_prod_util.h"
 #include "base/macros.h"
 #include "base/memory/linked_ptr.h"
@@ -23,6 +26,7 @@
 #include "content/public/browser/presentation_service_delegate.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/common/frame_navigate_params.h"
+#include "third_party/mojo/src/mojo/public/cpp/bindings/binding.h"
 
 namespace content {
 
@@ -45,7 +49,6 @@ using NewSessionMojoCallback = mojo::Callback<
 // from the renderer when the first presentation API request is handled.
 class CONTENT_EXPORT PresentationServiceImpl
     : public NON_EXPORTED_BASE(presentation::PresentationService),
-      public mojo::ErrorHandler,
       public WebContentsObserver,
       public PresentationServiceDelegate::Observer {
  public:
@@ -101,23 +104,24 @@ class CONTENT_EXPORT PresentationServiceImpl
   using SendMessageMojoCallback = mojo::Callback<void(bool)>;
 
   // Listener implementation owned by PresentationServiceImpl. An instance of
-  // this is created when an |onavailablechange| handler is added.
+  // this is created when PresentationRequest.getAvailability() is resolved.
   // The instance receives screen availability results from the embedder and
   // propagates results back to PresentationServiceImpl.
   class CONTENT_EXPORT ScreenAvailabilityListenerImpl
       : public PresentationScreenAvailabilityListener {
    public:
     ScreenAvailabilityListenerImpl(
-        const std::string& presentation_url,
+        const std::string& availability_url,
         PresentationServiceImpl* service);
     ~ScreenAvailabilityListenerImpl() override;
 
     // PresentationScreenAvailabilityListener implementation.
-    std::string GetPresentationUrl() const override;
+    std::string GetAvailabilityUrl() const override;
     void OnScreenAvailabilityChanged(bool available) override;
+    void OnScreenAvailabilityNotSupported() override;
 
    private:
-    const std::string presentation_url_;
+    const std::string availability_url_;
     PresentationServiceImpl* const service_;
   };
 
@@ -169,12 +173,10 @@ class CONTENT_EXPORT PresentationServiceImpl
       PresentationServiceDelegate* delegate);
 
   // PresentationService implementation.
-  void SetDefaultPresentationURL(
-      const mojo::String& presentation_url,
-      const mojo::String& presentation_id) override;
+  void SetDefaultPresentationURL(const mojo::String& url) override;
   void SetClient(presentation::PresentationServiceClientPtr client) override;
-  void ListenForScreenAvailability() override;
-  void StopListeningForScreenAvailability() override;
+  void ListenForScreenAvailability(const mojo::String& url) override;
+  void StopListeningForScreenAvailability(const mojo::String& url) override;
   void ListenForDefaultSessionStart(
       const DefaultSessionMojoCallback& callback) override;
   void StartSession(
@@ -184,22 +186,18 @@ class CONTENT_EXPORT PresentationServiceImpl
       const mojo::String& presentation_url,
       const mojo::String& presentation_id,
       const NewSessionMojoCallback& callback) override;
-  void SendSessionMessage(
-      presentation::SessionMessagePtr session_message,
-      const SendMessageMojoCallback& callback) override;
+  void SendSessionMessage(presentation::PresentationSessionInfoPtr session_info,
+                          presentation::SessionMessagePtr session_message,
+                          const SendMessageMojoCallback& callback) override;
   void CloseSession(
       const mojo::String& presentation_url,
       const mojo::String& presentation_id) override;
   void ListenForSessionStateChange() override;
   void ListenForSessionMessages(
-      const SessionMessagesCallback& callback) override;
+      presentation::PresentationSessionInfoPtr session) override;
 
   // Creates a binding between this object and |request|.
   void Bind(mojo::InterfaceRequest<presentation::PresentationService> request);
-
-  // mojo::ErrorHandler override.
-  // Note that this is called when the RenderFrameHost is deleted.
-  void OnConnectionError() override;
 
   // WebContentsObserver override.
   void DidNavigateAnyFrame(
@@ -221,10 +219,6 @@ class CONTENT_EXPORT PresentationServiceImpl
       int request_session_id,
       presentation::PresentationSessionInfoPtr session,
       presentation::PresentationErrorPtr error);
-
-  // Creates a new screen availability listener for |presentation_url| and
-  // registers it with |delegate_|. Replaces the existing listener if any.
-  void ResetScreenAvailabilityListener(const std::string& presentation_url);
 
   // Removes all listeners and resets default presentation URL on this instance
   // and informs the PresentationServiceDelegate of such.
@@ -249,10 +243,10 @@ class CONTENT_EXPORT PresentationServiceImpl
 
   // Passed to embedder's implementation of PresentationServiceDelegate for
   // later invocation when session messages arrive.
-  // For optimization purposes, this method will empty the messages
-  // passed to it.
   void OnSessionMessages(
-      scoped_ptr<ScopedVector<PresentationSessionMessage>> messages);
+      const content::PresentationSessionInfo& session,
+      const ScopedVector<PresentationSessionMessage>& messages,
+      bool pass_ownership);
 
   // Associates a JoinSession |callback| with a unique request ID and
   // stores it in a map.
@@ -276,9 +270,10 @@ class CONTENT_EXPORT PresentationServiceImpl
   presentation::PresentationServiceClientPtr client_;
 
   std::string default_presentation_url_;
-  std::string default_presentation_id_;
 
-  scoped_ptr<ScreenAvailabilityListenerImpl> screen_availability_listener_;
+  using ScreenAvailabilityListenerMap =
+    base::ScopedPtrMap<std::string, scoped_ptr<ScreenAvailabilityListenerImpl>>;
+  ScreenAvailabilityListenerMap screen_availability_listeners_;
 
   // For StartSession requests.
   // Set to a positive value when a StartSession request is being processed.

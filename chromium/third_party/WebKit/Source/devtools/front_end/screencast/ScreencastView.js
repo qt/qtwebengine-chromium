@@ -332,7 +332,7 @@ WebInspector.ScreencastView.prototype = {
         }
         if (event.type === "mouseup")
             delete this._eventScreenOffsetTop;
-        WebInspector.targetManager.mainTarget().inputAgent().invoke_emulateTouchFromMouseEvent(params);
+        this._target.inputAgent().invoke_emulateTouchFromMouseEvent(params);
     },
 
     /**
@@ -344,7 +344,7 @@ WebInspector.ScreencastView.prototype = {
             var params = this._eventParams;
             delete this._eventParams;
             params.type = "mouseReleased";
-            WebInspector.targetManager.mainTarget().inputAgent().invoke_emulateTouchFromMouseEvent(params);
+            this._target.inputAgent().invoke_emulateTouchFromMouseEvent(params);
         }
     },
 
@@ -678,14 +678,13 @@ WebInspector.ScreencastView.prototype = {
 
     /**
      * @override
-     * @param {boolean} enabled
-     * @param {boolean} inspectUAShadowDOM
+     * @param {!DOMAgent.InspectMode} mode
      * @param {!DOMAgent.HighlightConfig} config
      * @param {function(?Protocol.Error)=} callback
      */
-    setInspectModeEnabled: function(enabled, inspectUAShadowDOM, config, callback)
+    setInspectMode: function(mode, config, callback)
     {
-        this._inspectModeConfig = enabled ? config : null;
+        this._inspectModeConfig = mode !== DOMAgent.InspectMode.None ? config : null;
         if (callback)
             callback(null);
     },

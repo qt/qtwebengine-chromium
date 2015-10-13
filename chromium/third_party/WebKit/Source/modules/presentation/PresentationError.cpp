@@ -13,7 +13,7 @@
 namespace blink {
 
 // static
-DOMException* PresentationError::take(const WebPresentationError& error)
+DOMException* PresentationError::take(ScriptPromiseResolver*, const WebPresentationError& error)
 {
     ExceptionCode code = UnknownError;
     switch (error.errorType) {

@@ -42,7 +42,8 @@ class GetHandler : public http_server::HttpHandler {
       http_server::HttpRequestPtr request,
       const Callback<void(http_server::HttpResponsePtr)>& callback) override {
     http_server::HttpResponsePtr response;
-    if (base::StartsWithASCII(request->relative_url, "/app", true)) {
+    if (base::StartsWith(request->relative_url, "/app",
+                         base::CompareCase::SENSITIVE)) {
       response = http_server::CreateHttpResponse(
           200, std::string(kPingable.data, kPingable.size));
       response->content_type = "application/octet-stream";
@@ -184,7 +185,8 @@ TEST_F(ShellAppTest, MojoURLQueryHandling) {
   application_impl()->ConnectToService("mojo:pingable_app?foo", &pingable);
   auto callback = [this](const String& app_url, const String& connection_url,
                          const String& message) {
-    EXPECT_TRUE(base::EndsWith(app_url, "/pingable_app.mojo", true));
+    EXPECT_TRUE(base::EndsWith(app_url, "/pingable_app.mojo",
+                               base::CompareCase::SENSITIVE));
     EXPECT_EQ(app_url.To<std::string>() + "?foo", connection_url);
     EXPECT_EQ("hello", message);
     base::MessageLoop::current()->Quit();

@@ -32,7 +32,7 @@ class OpenSSLKeyPair {
     ASSERT(pkey_ != NULL);
   }
 
-  static OpenSSLKeyPair* Generate();
+  static OpenSSLKeyPair* Generate(KeyType key_type);
 
   virtual ~OpenSSLKeyPair();
 
@@ -45,7 +45,7 @@ class OpenSSLKeyPair {
 
   EVP_PKEY* pkey_;
 
-  DISALLOW_COPY_AND_ASSIGN(OpenSSLKeyPair);
+  RTC_DISALLOW_COPY_AND_ASSIGN(OpenSSLKeyPair);
 };
 
 // OpenSSLCertificate encapsulates an OpenSSL X509* certificate object,
@@ -92,14 +92,15 @@ class OpenSSLCertificate : public SSLCertificate {
 
   X509* x509_;
 
-  DISALLOW_COPY_AND_ASSIGN(OpenSSLCertificate);
+  RTC_DISALLOW_COPY_AND_ASSIGN(OpenSSLCertificate);
 };
 
 // Holds a keypair and certificate together, and a method to generate
 // them consistently.
 class OpenSSLIdentity : public SSLIdentity {
  public:
-  static OpenSSLIdentity* Generate(const std::string& common_name);
+  static OpenSSLIdentity* Generate(const std::string& common_name,
+                                   KeyType key_type);
   static OpenSSLIdentity* GenerateForTest(const SSLIdentityParams& params);
   static SSLIdentity* FromPEMStrings(const std::string& private_key,
                                      const std::string& certificate);
@@ -119,7 +120,7 @@ class OpenSSLIdentity : public SSLIdentity {
   scoped_ptr<OpenSSLKeyPair> key_pair_;
   scoped_ptr<OpenSSLCertificate> certificate_;
 
-  DISALLOW_COPY_AND_ASSIGN(OpenSSLIdentity);
+  RTC_DISALLOW_COPY_AND_ASSIGN(OpenSSLIdentity);
 };
 
 

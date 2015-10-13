@@ -35,19 +35,19 @@ enum LayoutSVGResourceType {
     ClipperResourceType
 };
 
-class DeprecatedPaintLayer;
+class PaintLayer;
 
 class LayoutSVGResourceContainer : public LayoutSVGHiddenContainer {
 public:
     explicit LayoutSVGResourceContainer(SVGElement*);
-    virtual ~LayoutSVGResourceContainer();
+    ~LayoutSVGResourceContainer() override;
 
     virtual void removeAllClientsFromCache(bool markForInvalidation = true) = 0;
     virtual void removeClientFromCache(LayoutObject*, bool markForInvalidation = true) = 0;
 
-    virtual void layout() override;
-    virtual void styleDidChange(StyleDifference, const ComputedStyle* oldStyle) override final;
-    virtual bool isOfType(LayoutObjectType type) const override { return type == LayoutObjectSVGResourceContainer || LayoutSVGHiddenContainer::isOfType(type); }
+    void layout() override;
+    void styleDidChange(StyleDifference, const ComputedStyle* oldStyle) final;
+    bool isOfType(LayoutObjectType type) const override { return type == LayoutObjectSVGResourceContainer || LayoutSVGHiddenContainer::isOfType(type); }
 
     virtual LayoutSVGResourceType resourceType() const = 0;
 
@@ -61,8 +61,8 @@ public:
 
     void idChanged();
     void addClientLayer(Node*);
-    void addClientLayer(DeprecatedPaintLayer*);
-    void removeClientLayer(DeprecatedPaintLayer*);
+    void addClientLayer(PaintLayer*);
+    void removeClientLayer(PaintLayer*);
 
     void invalidateCacheAndMarkForLayout(SubtreeLayoutScope* = nullptr);
 
@@ -84,7 +84,7 @@ protected:
     void markAllClientLayersForInvalidation();
     void markClientForInvalidation(LayoutObject*, InvalidationMode);
 
-    virtual void willBeDestroyed() override;
+    void willBeDestroyed() override;
 
     bool m_isInLayout;
 
@@ -92,6 +92,7 @@ private:
     friend class SVGResourcesCache;
     void addClient(LayoutObject*);
     void removeClient(LayoutObject*);
+    void detachAllClients();
 
     void registerResource();
 
@@ -104,7 +105,7 @@ private:
     // 22 padding bits available
 
     HashSet<LayoutObject*> m_clients;
-    HashSet<DeprecatedPaintLayer*> m_clientLayers;
+    HashSet<PaintLayer*> m_clientLayers;
 };
 
 inline LayoutSVGResourceContainer* getLayoutSVGResourceContainerById(TreeScope& treeScope, const AtomicString& id)

@@ -201,6 +201,17 @@ bool TStructure::containsArrays() const
     return false;
 }
 
+bool TStructure::containsType(TBasicType type) const
+{
+    for (size_t i = 0; i < mFields->size(); ++i)
+    {
+        const TType *fieldType = (*mFields)[i]->type();
+        if (fieldType->getBasicType() == type || fieldType->isStructureContainingType(type))
+            return true;
+    }
+    return false;
+}
+
 bool TStructure::containsSamplers() const
 {
     for (size_t i = 0; i < mFields->size(); ++i)
@@ -212,9 +223,9 @@ bool TStructure::containsSamplers() const
     return false;
 }
 
-TString TFieldListCollection::buildMangledName() const
+TString TFieldListCollection::buildMangledName(const TString &mangledNamePrefix) const
 {
-    TString mangledName(mangledNamePrefix());
+    TString mangledName(mangledNamePrefix);
     mangledName += *mName;
     for (size_t i = 0; i < mFields->size(); ++i)
     {

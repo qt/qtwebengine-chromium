@@ -12,6 +12,7 @@ enum WebGLExtensionName {
     ANGLEInstancedArraysName,
     CHROMIUMSubscribeUniformName,
     EXTBlendMinMaxName,
+    EXTDisjointTimerQueryName,
     EXTFragDepthName,
     EXTShaderTextureLODName,
     EXTsRGBName,
@@ -23,6 +24,7 @@ enum WebGLExtensionName {
     OESTextureHalfFloatLinearName,
     OESTextureHalfFloatName,
     OESVertexArrayObjectName,
+    WebGLCompressedTextureASTCName,
     WebGLCompressedTextureATCName,
     WebGLCompressedTextureETC1Name,
     WebGLCompressedTexturePVRTCName,
@@ -34,7 +36,6 @@ enum WebGLExtensionName {
     WebGLLoseContextName,
     WebGLExtensionNameCount, // Must be the last entry
 };
-
 }
 
 #endif // WebGLExtensionName_h

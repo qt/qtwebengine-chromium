@@ -152,7 +152,7 @@ static void GetAudioDeviceInfo(bool is_input,
     // on the top of the list for all platforms. There is no duplicate
     // counting here since the default device has been abstracted out before.
     media::AudioDeviceName name;
-    name.device_name = AudioManagerBase::kDefaultDeviceName;
+    name.device_name = AudioManager::GetDefaultDeviceName();
     name.unique_id = AudioManagerBase::kDefaultDeviceId;
     device_names->push_front(name);
   }
@@ -672,9 +672,10 @@ AudioParameters AudioManagerMac::GetPreferredOutputStreamParameters(
       channel_layout = CHANNEL_LAYOUT_DISCRETE;
   }
 
-  return AudioParameters(
-      AudioParameters::AUDIO_PCM_LOW_LATENCY, channel_layout, output_channels,
-      hardware_sample_rate, 16, buffer_size, AudioParameters::NO_EFFECTS);
+  AudioParameters params(AudioParameters::AUDIO_PCM_LOW_LATENCY, channel_layout,
+                         hardware_sample_rate, 16, buffer_size);
+  params.set_channels_for_discrete(output_channels);
+  return params;
 }
 
 void AudioManagerMac::InitializeOnAudioThread() {

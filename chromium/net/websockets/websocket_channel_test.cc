@@ -767,7 +767,7 @@ class WebSocketChannelTest : public ::testing::Test {
   // A struct containing the data that will be used to connect the channel.
   // Grouped for readability.
   struct ConnectData {
-    ConnectData() : socket_url("ws://ws/"), origin("http://ws") {}
+    ConnectData() : socket_url("ws://ws/"), origin(GURL("http://ws")) {}
 
     // URLRequestContext object.
     URLRequestContext url_request_context;
@@ -992,7 +992,7 @@ class WebSocketChannelReceiveUtf8Test : public WebSocketChannelStreamTest {
 // passed to the creator function.
 TEST_F(WebSocketChannelTest, EverythingIsPassedToTheCreatorFunction) {
   connect_data_.socket_url = GURL("ws://example.com/test");
-  connect_data_.origin = url::Origin("http://example.com");
+  connect_data_.origin = url::Origin(GURL("http://example.com"));
   connect_data_.requested_subprotocols.push_back("Sinbad");
 
   CreateChannelAndConnect();
@@ -1004,7 +1004,7 @@ TEST_F(WebSocketChannelTest, EverythingIsPassedToTheCreatorFunction) {
   EXPECT_EQ(connect_data_.socket_url, actual.socket_url);
   EXPECT_EQ(connect_data_.requested_subprotocols,
             actual.requested_subprotocols);
-  EXPECT_EQ(connect_data_.origin.string(), actual.origin.string());
+  EXPECT_EQ(connect_data_.origin.Serialize(), actual.origin.Serialize());
 }
 
 // Verify that calling SendFlowControl before the connection is established does

@@ -40,6 +40,7 @@
 #define TALK_MEDIA_BASE_YUVFRAMEGENERATOR_H_
 
 #include "webrtc/base/basictypes.h"
+#include "webrtc/base/constructormagic.h"
 
 namespace cricket {
 
@@ -97,7 +98,7 @@ class YuvFrameGenerator {
   int barcode_start_x_;
   int barcode_start_y_;
 
-  DISALLOW_COPY_AND_ASSIGN(YuvFrameGenerator);
+  RTC_DISALLOW_COPY_AND_ASSIGN(YuvFrameGenerator);
 };
 
 }  // namespace cricket

@@ -106,8 +106,9 @@ Widget* BubbleDelegateView::CreateBubble(BubbleDelegateView* bubble_delegate) {
   // the parent frame and let DWM handle compositing.  If not, then we don't
   // want to allow the bubble to extend the frame because it will be clipped.
   bubble_delegate->set_adjust_if_offscreen(ui::win::IsAeroGlassEnabled());
-#elif defined(OS_LINUX) && !defined(OS_CHROMEOS)
+#elif (defined(OS_LINUX) && !defined(OS_CHROMEOS)) || defined(OS_MACOSX)
   // Linux clips bubble windows that extend outside their parent window bounds.
+  // Mac never adjusts.
   bubble_delegate->set_adjust_if_offscreen(false);
 #endif
 
@@ -292,7 +293,7 @@ const gfx::FontList& BubbleDelegateView::GetTitleFontList() const {
 
 void BubbleDelegateView::UpdateColorsFromTheme(const ui::NativeTheme* theme) {
   if (!color_explicitly_set_)
-    color_ = theme->GetSystemColor(ui::NativeTheme::kColorId_DialogBackground);
+    color_ = theme->GetSystemColor(ui::NativeTheme::kColorId_BubbleBackground);
   set_background(Background::CreateSolidBackground(color()));
   BubbleFrameView* frame_view = GetBubbleFrameView();
   if (frame_view)

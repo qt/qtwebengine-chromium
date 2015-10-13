@@ -57,7 +57,7 @@ class LayerTreeHostImpl;
 class LayerTreeImpl;
 class MicroBenchmarkImpl;
 class Occlusion;
-class OpacityTree;
+class EffectTree;
 class PrioritizedTile;
 class RenderPass;
 class RenderPassId;
@@ -67,6 +67,7 @@ class ScrollbarLayerImplBase;
 class SimpleEnclosedRegion;
 class Tile;
 class TransformTree;
+class ScrollState;
 
 struct AppendQuadsData;
 
@@ -112,6 +113,7 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   void OnTransformAnimated(const gfx::Transform& transform) override;
   void OnScrollOffsetAnimated(const gfx::ScrollOffset& scroll_offset) override;
   void OnAnimationWaitingForDeletion() override;
+  void OnTransformIsPotentiallyAnimatingChanged(bool is_animating) override;
   bool IsActive() const override;
 
   // AnimationDelegate implementation.
@@ -149,6 +151,9 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
     return scroll_children_.get();
   }
 
+  void DistributeScroll(ScrollState* scroll_state);
+  void ApplyScroll(ScrollState* scroll_state);
+
   void set_property_tree_sequence_number(int sequence_number) {}
 
   void SetTransformTreeIndex(int index);
@@ -157,8 +162,8 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   void SetClipTreeIndex(int index);
   int clip_tree_index() const { return clip_tree_index_; }
 
-  void SetOpacityTreeIndex(int index);
-  int opacity_tree_index() const { return opacity_tree_index_; }
+  void SetEffectTreeIndex(int index);
+  int effect_tree_index() const { return effect_tree_index_; }
 
   void set_offset_to_transform_parent(const gfx::Vector2dF& offset) {
     offset_to_transform_parent_ = offset;
@@ -175,6 +180,14 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
     visible_rect_from_property_trees_ = rect;
   }
 
+  const gfx::Rect& clip_rect_in_target_space_from_property_trees() const {
+    return clip_rect_in_target_space_from_property_trees_;
+  }
+  void set_clip_rect_in_target_space_from_property_trees(
+      const gfx::Rect& rect) {
+    clip_rect_in_target_space_from_property_trees_ = rect;
+  }
+
   void set_should_flatten_transform_from_property_tree(bool should_flatten) {
     should_flatten_transform_from_property_tree_ = should_flatten;
     SetNeedsPushProperties();
@@ -183,7 +196,10 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
     return should_flatten_transform_from_property_tree_;
   }
 
+  bool is_clipped() const { return draw_properties_.is_clipped; }
+
   void UpdatePropertyTreeTransform();
+  void UpdatePropertyTreeTransformIsAnimated(bool is_animated);
   void UpdatePropertyTreeOpacity();
   void UpdatePropertyTreeScrollOffset();
 
@@ -284,6 +300,7 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   void SetFilters(const FilterOperations& filters);
   const FilterOperations& filters() const { return filters_; }
   bool FilterIsAnimating() const;
+  bool HasPotentiallyRunningFilterAnimation() const;
   bool FilterIsAnimatingOnImplOnly() const;
 
   void SetBackgroundFilters(const FilterOperations& filters);
@@ -305,6 +322,13 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
 
   void SetBlendMode(SkXfermode::Mode);
   SkXfermode::Mode blend_mode() const { return blend_mode_; }
+  void set_draw_blend_mode(SkXfermode::Mode blend_mode) {
+    if (draw_blend_mode_ == blend_mode)
+      return;
+    draw_blend_mode_ = blend_mode;
+    SetNeedsPushProperties();
+  }
+  SkXfermode::Mode draw_blend_mode() const { return draw_blend_mode_; }
   bool uses_default_blend_mode() const {
     return blend_mode_ == SkXfermode::kSrcOver_Mode;
   }
@@ -361,12 +385,8 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
 
   RenderSurfaceImpl* render_surface() const { return render_surface_.get(); }
 
-  DrawProperties<LayerImpl>& draw_properties() {
-    return draw_properties_;
-  }
-  const DrawProperties<LayerImpl>& draw_properties() const {
-    return draw_properties_;
-  }
+  DrawProperties& draw_properties() { return draw_properties_; }
+  const DrawProperties& draw_properties() const { return draw_properties_; }
 
   // The following are shortcut accessors to get various information from
   // draw_properties_
@@ -377,23 +397,10 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
     return draw_properties_.screen_space_transform;
   }
   float draw_opacity() const { return draw_properties_.opacity; }
-  SkXfermode::Mode draw_blend_mode() const {
-    return draw_properties_.blend_mode;
-  }
-  bool draw_opacity_is_animating() const {
-    return draw_properties_.opacity_is_animating;
-  }
-  bool draw_transform_is_animating() const {
-    return draw_properties_.target_space_transform_is_animating;
-  }
   bool screen_space_transform_is_animating() const {
     return draw_properties_.screen_space_transform_is_animating;
   }
-  bool screen_space_opacity_is_animating() const {
-    return draw_properties_.screen_space_opacity_is_animating;
-  }
   bool can_use_lcd_text() const { return draw_properties_.can_use_lcd_text; }
-  bool is_clipped() const { return draw_properties_.is_clipped; }
   gfx::Rect clip_rect() const { return draw_properties_.clip_rect; }
   gfx::Rect drawable_content_rect() const {
     return draw_properties_.drawable_content_rect;
@@ -428,11 +435,7 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   void SetBoundsDelta(const gfx::Vector2dF& bounds_delta);
   gfx::Vector2dF bounds_delta() const { return bounds_delta_; }
 
-  bool IsExternalScrollActive() const;
-
   void SetCurrentScrollOffset(const gfx::ScrollOffset& scroll_offset);
-  void SetCurrentScrollOffsetFromDelegate(
-      const gfx::ScrollOffset& scroll_offset);
   void PushScrollOffsetFromMainThread(const gfx::ScrollOffset& scroll_offset);
   // This method is similar to PushScrollOffsetFromMainThread but will cause the
   // scroll offset given to clobber any scroll changes on the active tree in the
@@ -518,12 +521,6 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
     scroll_blocks_on_ = scroll_blocks_on;
   }
   ScrollBlocksOn scroll_blocks_on() const { return scroll_blocks_on_; }
-  void SetDrawCheckerboardForMissingTiles(bool checkerboard) {
-    draw_checkerboard_for_missing_tiles_ = checkerboard;
-  }
-  bool draw_checkerboard_for_missing_tiles() const {
-    return draw_checkerboard_for_missing_tiles_;
-  }
 
   InputHandler::ScrollStatus TryScroll(
       const gfx::PointF& screen_space_point,
@@ -546,6 +543,11 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   bool MaximumTargetScale(float* max_scale) const;
   bool AnimationStartScale(float* start_scale) const;
 
+  // This includes all animations, even those that are finished but haven't yet
+  // been deleted.
+  bool HasAnyAnimationTargetingProperty(
+      Animation::TargetProperty property) const;
+
   bool HasFilterAnimationThatInflatesBounds() const;
   bool HasTransformAnimationThatInflatesBounds() const;
   bool HasAnimationThatInflatesBounds() const;
@@ -557,11 +559,10 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
 
   // Note this rect is in layer space (not content space).
   void SetUpdateRect(const gfx::Rect& update_rect);
-  gfx::Rect update_rect() const { return update_rect_; }
+  const gfx::Rect& update_rect() const { return update_rect_; }
 
-  void AddDamageRect(const gfx::RectF& damage_rect);
-
-  const gfx::RectF& damage_rect() const { return damage_rect_; }
+  void AddDamageRect(const gfx::Rect& damage_rect);
+  const gfx::Rect& damage_rect() const { return damage_rect_; }
 
   virtual base::DictionaryValue* LayerTreeAsJson() const;
 
@@ -666,11 +667,29 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
 
   bool layer_or_descendant_is_drawn() { return layer_or_descendant_is_drawn_; }
 
+  void set_layer_or_descendant_has_input_handler(
+      bool layer_or_descendant_has_input_handler) {
+    layer_or_descendant_has_input_handler_ =
+        layer_or_descendant_has_input_handler;
+  }
+
+  bool layer_or_descendant_has_input_handler() {
+    return layer_or_descendant_has_input_handler_;
+  }
+
   void set_sorted_for_recursion(bool sorted_for_recursion) {
     sorted_for_recursion_ = sorted_for_recursion;
   }
-
   bool sorted_for_recursion() { return sorted_for_recursion_; }
+
+  void set_num_layer_or_descendant_with_copy_request(
+      int num_layer_or_descendants_with_copy_request) {
+    num_layer_or_descendants_with_copy_request_ =
+        num_layer_or_descendants_with_copy_request;
+  }
+  int num_layer_or_descendants_with_copy_request() {
+    return num_layer_or_descendants_with_copy_request_;
+  }
 
   void UpdatePropertyTreeForScrollingAndAnimationIfNeeded();
 
@@ -708,10 +727,7 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   void ValidateQuadResourcesInternal(DrawQuad* quad) const;
 
   void PushScrollOffset(const gfx::ScrollOffset* scroll_offset);
-  // If the new scroll offset is assigned from the root scroll offset delegate,
-  // LayerImpl won't inform the root scroll offset delegate about the scroll
-  // change to avoid feedback.
-  void DidUpdateScrollOffset(bool is_from_root_delegate);
+  void DidUpdateScrollOffset();
   void NoteLayerPropertyChangedForDescendantsInternal();
 
   virtual const char* LayerTypeAsString() const;
@@ -751,7 +767,6 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
 
   gfx::Vector2dF offset_to_transform_parent_;
 
-  bool scrollable_ : 1;
   bool should_scroll_on_main_thread_ : 1;
   bool have_wheel_event_handlers_ : 1;
   bool have_scroll_event_handlers_ : 1;
@@ -774,7 +789,6 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   bool contents_opaque_ : 1;
   bool is_root_for_isolated_group_ : 1;
   bool use_parent_backface_visibility_ : 1;
-  bool draw_checkerboard_for_missing_tiles_ : 1;
   bool draws_content_ : 1;
   bool hide_layer_and_subtree_ : 1;
 
@@ -792,6 +806,9 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
 
   float opacity_;
   SkXfermode::Mode blend_mode_;
+  // draw_blend_mode may be different than blend_mode_,
+  // when a RenderSurface re-parents the layer's blend_mode.
+  SkXfermode::Mode draw_blend_mode_;
   gfx::PointF position_;
   gfx::Transform transform_;
 
@@ -802,8 +819,9 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   int num_descendants_that_draw_content_;
 
   gfx::Rect visible_rect_from_property_trees_;
+  gfx::Rect clip_rect_in_target_space_from_property_trees_;
   int transform_tree_index_;
-  int opacity_tree_index_;
+  int effect_tree_index_;
   int clip_tree_index_;
 
   // The global depth value of the center of the layer. This value is used
@@ -835,11 +853,12 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
  private:
   // Rect indicating what was repainted/updated during update.
   // Note that plugin layers bypass this and leave it empty.
-  // Uses layer (not content) space.
+  // This is in the layer's space.
   gfx::Rect update_rect_;
 
-  // This rect is in layer space.
-  gfx::RectF damage_rect_;
+  // Denotes an area that is damaged and needs redraw. This is in the layer's
+  // space.
+  gfx::Rect damage_rect_;
 
   // Manages animations for this layer.
   scoped_refptr<LayerAnimationController> layer_animation_controller_;
@@ -853,15 +872,18 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
 
   // Group of properties that need to be computed based on the layer tree
   // hierarchy before layers can be drawn.
-  DrawProperties<LayerImpl> draw_properties_;
+  DrawProperties draw_properties_;
 
   scoped_refptr<base::trace_event::ConvertableToTraceFormat> debug_info_;
   scoped_ptr<RenderSurfaceImpl> render_surface_;
 
   std::vector<FrameTimingRequest> frame_timing_requests_;
+  int num_layer_or_descendants_with_copy_request_;
   bool frame_timing_requests_dirty_;
   bool visited_;
   bool layer_or_descendant_is_drawn_;
+  // If true, the layer or one of its descendants has a wheel or touch handler.
+  bool layer_or_descendant_has_input_handler_;
   bool sorted_for_recursion_;
 
   DISALLOW_COPY_AND_ASSIGN(LayerImpl);

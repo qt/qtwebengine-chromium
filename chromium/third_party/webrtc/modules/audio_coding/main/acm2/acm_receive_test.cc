@@ -38,9 +38,13 @@ AcmReceiveTest::AcmReceiveTest(PacketSource* packet_source,
 }
 
 void AcmReceiveTest::RegisterDefaultCodecs() {
+#ifdef WEBRTC_CODEC_OPUS
   ASSERT_TRUE(acm_->RegisterReceiveCodec(acm2::ACMCodecDB::kOpus, 120));
+#endif
+#if defined(WEBRTC_CODEC_ISAC) || defined(WEBRTC_CODEC_ISACFX)
   ASSERT_TRUE(acm_->RegisterReceiveCodec(acm2::ACMCodecDB::kISAC, 103));
-#ifndef WEBRTC_ANDROID
+#endif
+#ifdef WEBRTC_CODEC_ISAC
   ASSERT_TRUE(acm_->RegisterReceiveCodec(acm2::ACMCodecDB::kISACSWB, 104));
   ASSERT_TRUE(acm_->RegisterReceiveCodec(acm2::ACMCodecDB::kISACFB, 105));
 #endif
@@ -56,13 +60,19 @@ void AcmReceiveTest::RegisterDefaultCodecs() {
   ASSERT_TRUE(acm_->RegisterReceiveCodec(acm2::ACMCodecDB::kPCMA, 8));
   ASSERT_TRUE(acm_->RegisterReceiveCodec(acm2::ACMCodecDB::kPCMU_2ch, 110));
   ASSERT_TRUE(acm_->RegisterReceiveCodec(acm2::ACMCodecDB::kPCMA_2ch, 118));
+#ifdef WEBRTC_CODEC_ILBC
   ASSERT_TRUE(acm_->RegisterReceiveCodec(acm2::ACMCodecDB::kILBC, 102));
+#endif
+#ifdef WEBRTC_CODEC_G722
   ASSERT_TRUE(acm_->RegisterReceiveCodec(acm2::ACMCodecDB::kG722, 9));
   ASSERT_TRUE(acm_->RegisterReceiveCodec(acm2::ACMCodecDB::kG722_2ch, 119));
+#endif
   ASSERT_TRUE(acm_->RegisterReceiveCodec(acm2::ACMCodecDB::kCNNB, 13));
   ASSERT_TRUE(acm_->RegisterReceiveCodec(acm2::ACMCodecDB::kCNWB, 98));
   ASSERT_TRUE(acm_->RegisterReceiveCodec(acm2::ACMCodecDB::kCNSWB, 99));
+#ifdef WEBRTC_CODEC_RED
   ASSERT_TRUE(acm_->RegisterReceiveCodec(acm2::ACMCodecDB::kRED, 127));
+#endif
 }
 
 void AcmReceiveTest::RegisterNetEqTestCodecs() {
@@ -93,7 +103,8 @@ void AcmReceiveTest::Run() {
       AudioFrame output_frame;
       EXPECT_TRUE(acm_->Get10MsAudio(&output_frame));
       EXPECT_EQ(output_freq_hz_, output_frame.sample_rate_hz_);
-      const int samples_per_block = output_freq_hz_ * 10 / 1000;
+      const size_t samples_per_block =
+          static_cast<size_t>(output_freq_hz_ * 10 / 1000);
       EXPECT_EQ(samples_per_block, output_frame.samples_per_channel_);
       if (expected_output_channels_ != kArbitraryChannels) {
         if (output_frame.speech_type_ == webrtc::AudioFrame::kPLC) {

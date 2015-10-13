@@ -16,7 +16,6 @@
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/metrics/field_trial.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/profiler/scoped_tracker.h"
 #include "base/sequenced_task_runner.h"
@@ -44,15 +43,6 @@ namespace {
 // variable controls the delay between loading eTLDs, so as to not overload the
 // CPU or I/O with these low priority requests immediately after start up.
 const int kLoadDelayMilliseconds = 0;
-
-const char kDeleteAtShutdown[] = "DeleteAtShutdown";
-const char kSessionCookieDeletionStrategy[] = "SessionCookieDeletionStrategy";
-
-bool ShouldDeleteSessionCookiesAtShutdown() {
-  const std::string group_name =
-      base::FieldTrialList::FindFullName(kSessionCookieDeletionStrategy);
-  return group_name == kDeleteAtShutdown;
-}
 
 }  // namespace
 
@@ -89,9 +79,7 @@ class SQLitePersistentCookieStore::Backend
       const scoped_refptr<base::SequencedTaskRunner>& background_task_runner,
       bool restore_old_session_cookies,
       CookieCryptoDelegate* crypto_delegate)
-      : delete_session_cookies_at_shutdown_(
-            ShouldDeleteSessionCookiesAtShutdown()),
-        path_(path),
+      : path_(path),
         num_pending_(0),
         initialized_(false),
         corruption_detected_(false),
@@ -129,7 +117,7 @@ class SQLitePersistentCookieStore::Backend
 
   // Commit any pending operations and close the database.  This must be called
   // before the object is destructed.
-  void Close();
+  void Close(const base::Closure& callback);
 
   // Post background delete of all cookies that match |cookies|.
   void DeleteAllInList(const std::list<CookieOrigin>& cookies);
@@ -222,11 +210,9 @@ class SQLitePersistentCookieStore::Backend
   // Commit our pending operations to the database.
   void Commit();
   // Close() executed on the background runner.
-  void InternalBackgroundClose();
+  void InternalBackgroundClose(const base::Closure& callback);
 
   void DeleteSessionCookiesOnStartup();
-
-  void DeleteSessionCookiesOnShutdown();
 
   void BackgroundDeleteAllInList(const std::list<CookieOrigin>& cookies);
 
@@ -243,7 +229,6 @@ class SQLitePersistentCookieStore::Backend
   void FinishedLoadingCookies(const LoadedCallback& loaded_callback,
                               bool success);
 
-  bool delete_session_cookies_at_shutdown_;
   const base::FilePath path_;
   scoped_ptr<sql::Connection> db_;
   sql::MetaTable meta_table_;
@@ -774,9 +759,9 @@ void SQLitePersistentCookieStore::Backend::MakeCookiesFromSQLStatement(
     std::string value;
     std::string encrypted_value = smt.ColumnString(4);
     if (!encrypted_value.empty() && crypto_) {
-      crypto_->DecryptString(encrypted_value, &value);
+      if (!crypto_->DecryptString(encrypted_value, &value))
+        continue;
     } else {
-      DCHECK(encrypted_value.empty());
       value = smt.ColumnString(3);
     }
     scoped_ptr<CanonicalCookie> cc(new CanonicalCookie(
@@ -1110,10 +1095,11 @@ void SQLitePersistentCookieStore::Backend::Commit() {
         add_smt.BindInt64(0, po->cc().CreationDate().ToInternalValue());
         add_smt.BindString(1, po->cc().Domain());
         add_smt.BindString(2, po->cc().Name());
-        if (crypto_) {
+        if (crypto_ && crypto_->ShouldEncrypt()) {
           std::string encrypted_value;
+          if (!crypto_->EncryptString(po->cc().Value(), &encrypted_value))
+            continue;
           add_smt.BindCString(3, "");  // value
-          crypto_->EncryptString(po->cc().Value(), &encrypted_value);
           // BindBlob() immediately makes an internal copy of the data.
           add_smt.BindBlob(4, encrypted_value.data(),
                            static_cast<int>(encrypted_value.length()));
@@ -1178,27 +1164,29 @@ void SQLitePersistentCookieStore::Backend::Flush(
 // Fire off a close message to the background runner.  We could still have a
 // pending commit timer or Load operations holding references on us, but if/when
 // this fires we will already have been cleaned up and it will be ignored.
-void SQLitePersistentCookieStore::Backend::Close() {
+void SQLitePersistentCookieStore::Backend::Close(
+    const base::Closure& callback) {
   if (background_task_runner_->RunsTasksOnCurrentThread()) {
-    InternalBackgroundClose();
+    InternalBackgroundClose(callback);
   } else {
     // Must close the backend on the background runner.
-    PostBackgroundTask(FROM_HERE,
-                       base::Bind(&Backend::InternalBackgroundClose, this));
+    PostBackgroundTask(FROM_HERE, base::Bind(&Backend::InternalBackgroundClose,
+                                             this, callback));
   }
 }
 
-void SQLitePersistentCookieStore::Backend::InternalBackgroundClose() {
+void SQLitePersistentCookieStore::Backend::InternalBackgroundClose(
+    const base::Closure& callback) {
   DCHECK(background_task_runner_->RunsTasksOnCurrentThread());
-
-  if (delete_session_cookies_at_shutdown_)
-    DeleteSessionCookiesOnShutdown();
-
   // Commit any pending operations
   Commit();
 
   meta_table_.Reset();
   db_.reset();
+
+  // We're clean now.
+  if (!callback.is_null())
+    callback.Run();
 }
 
 void SQLitePersistentCookieStore::Backend::DatabaseErrorCallback(
@@ -1261,22 +1249,6 @@ void SQLitePersistentCookieStore::Backend::DeleteSessionCookiesOnStartup() {
   UMA_HISTOGRAM_TIMES("Cookie.Startup.TimeSpentDeletingCookies",
                       base::Time::Now() - start_time);
   UMA_HISTOGRAM_COUNTS("Cookie.Startup.NumberOfCookiesDeleted",
-                       db_->GetLastChangeCount());
-}
-
-void SQLitePersistentCookieStore::Backend::DeleteSessionCookiesOnShutdown() {
-  DCHECK(background_task_runner_->RunsTasksOnCurrentThread());
-
-  if (!db_)
-    return;
-
-  base::Time start_time = base::Time::Now();
-  if (!db_->Execute("DELETE FROM cookies WHERE persistent != 1"))
-    LOG(WARNING) << "Unable to delete session cookies.";
-
-  UMA_HISTOGRAM_TIMES("Cookie.Shutdown.TimeSpentDeletingCookies",
-                      base::Time::Now() - start_time);
-  UMA_HISTOGRAM_COUNTS("Cookie.Shutdown.NumberOfCookiesDeleted",
                        db_->GetLastChangeCount());
 }
 
@@ -1361,30 +1333,51 @@ SQLitePersistentCookieStore::SQLitePersistentCookieStore(
 
 void SQLitePersistentCookieStore::DeleteAllInList(
     const std::list<CookieOrigin>& cookies) {
-  backend_->DeleteAllInList(cookies);
+  if (backend_)
+    backend_->DeleteAllInList(cookies);
+}
+
+void SQLitePersistentCookieStore::Close(const base::Closure& callback) {
+  if (backend_) {
+    backend_->Close(callback);
+
+    // We release our reference to the Backend, though it will probably still
+    // have a reference if the background runner has not run
+    // Backend::InternalBackgroundClose() yet.
+    backend_ = nullptr;
+  }
 }
 
 void SQLitePersistentCookieStore::Load(const LoadedCallback& loaded_callback) {
-  backend_->Load(loaded_callback);
+  if (backend_)
+    backend_->Load(loaded_callback);
+  else
+    loaded_callback.Run(std::vector<CanonicalCookie*>());
 }
 
 void SQLitePersistentCookieStore::LoadCookiesForKey(
     const std::string& key,
     const LoadedCallback& loaded_callback) {
-  backend_->LoadCookiesForKey(key, loaded_callback);
+  if (backend_)
+    backend_->LoadCookiesForKey(key, loaded_callback);
+  else
+    loaded_callback.Run(std::vector<CanonicalCookie*>());
 }
 
 void SQLitePersistentCookieStore::AddCookie(const CanonicalCookie& cc) {
-  backend_->AddCookie(cc);
+  if (backend_)
+    backend_->AddCookie(cc);
 }
 
 void SQLitePersistentCookieStore::UpdateCookieAccessTime(
     const CanonicalCookie& cc) {
-  backend_->UpdateCookieAccessTime(cc);
+  if (backend_)
+    backend_->UpdateCookieAccessTime(cc);
 }
 
 void SQLitePersistentCookieStore::DeleteCookie(const CanonicalCookie& cc) {
-  backend_->DeleteCookie(cc);
+  if (backend_)
+    backend_->DeleteCookie(cc);
 }
 
 void SQLitePersistentCookieStore::SetForceKeepSessionState() {
@@ -1392,13 +1385,12 @@ void SQLitePersistentCookieStore::SetForceKeepSessionState() {
 }
 
 void SQLitePersistentCookieStore::Flush(const base::Closure& callback) {
-  backend_->Flush(callback);
+  if (backend_)
+    backend_->Flush(callback);
 }
 
 SQLitePersistentCookieStore::~SQLitePersistentCookieStore() {
-  backend_->Close();
-  // We release our reference to the Backend, though it will probably still have
-  // a reference if the background runner has not run Close() yet.
+  Close(base::Closure());
 }
 
 }  // namespace net

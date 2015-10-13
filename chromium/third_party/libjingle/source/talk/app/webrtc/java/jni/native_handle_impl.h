@@ -29,7 +29,8 @@
 #ifndef TALK_APP_WEBRTC_JAVA_JNI_NATIVE_HANDLE_IMPL_H_
 #define TALK_APP_WEBRTC_JAVA_JNI_NATIVE_HANDLE_IMPL_H_
 
-#include "webrtc/base/checks.h"
+#include <jni.h>
+
 #include "webrtc/common_video/interface/video_frame_buffer.h"
 
 namespace webrtc_jni {
@@ -37,18 +38,11 @@ namespace webrtc_jni {
 // Wrapper for texture object.
 class NativeHandleImpl {
  public:
-  NativeHandleImpl() : texture_object_(NULL), texture_id_(-1) {}
+  NativeHandleImpl();
 
-  void* GetHandle() {
-    return texture_object_;
-  }
-  int GetTextureId() {
-    return texture_id_;
-  }
-  void SetTextureObject(void *texture_object, int texture_id) {
-    texture_object_ = reinterpret_cast<jobject>(texture_object);
-    texture_id_ = texture_id;
-  }
+  void* GetHandle();
+  int GetTextureId();
+  void SetTextureObject(void* texture_object, int texture_id);
 
  private:
   jobject texture_object_;
@@ -57,19 +51,13 @@ class NativeHandleImpl {
 
 class JniNativeHandleBuffer : public webrtc::NativeHandleBuffer {
  public:
-  JniNativeHandleBuffer(void* native_handle, int width, int height)
-      : NativeHandleBuffer(native_handle, width, height) {}
+  JniNativeHandleBuffer(void* native_handle, int width, int height);
 
   // TODO(pbos): Override destructor to release native handle, at the moment the
   // native handle is not released based on refcount.
 
  private:
-  rtc::scoped_refptr<VideoFrameBuffer> NativeToI420Buffer() override {
-    // TODO(pbos): Implement before using this in the encoder pipeline (or
-    // remove the CHECK() in VideoCapture).
-    RTC_NOTREACHED();
-    return nullptr;
-  }
+  rtc::scoped_refptr<webrtc::VideoFrameBuffer> NativeToI420Buffer() override;
 };
 
 }  // namespace webrtc_jni

@@ -99,6 +99,8 @@ source_set("sandbox") {
     "src/sandbox_policy.h",
     "src/sandbox_policy_base.cc",
     "src/sandbox_policy_base.h",
+    "src/sandbox_rand.cc",
+    "src/sandbox_rand.h",
     "src/sandbox_types.h",
     "src/sandbox_utils.cc",
     "src/sandbox_utils.h",
@@ -158,6 +160,8 @@ source_set("sandbox") {
       "src/sidestep_resolver.h",
     ]
   }
+
+  configs += [ "//build/config:precompiled_headers" ]
 
   deps = [
     "//base",
@@ -244,6 +248,7 @@ test("sbox_unittests") {
     "src/policy_low_level_unittest.cc",
     "src/policy_opcodes_unittest.cc",
     "src/restricted_token_unittest.cc",
+    "src/sandbox_nt_util_unittest.cc",
     "src/service_resolver_unittest.cc",
     "src/sid_unittest.cc",
     "src/threadpool_unittest.cc",
@@ -297,4 +302,8 @@ shared_library("pocdll") {
   ]
 
   defines = [ "POCDLL_EXPORTS" ]
+
+  deps = [
+    "//build/config/sanitizers:deps",
+  ]
 }

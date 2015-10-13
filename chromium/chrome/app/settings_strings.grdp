@@ -1,67 +1,82 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Settings-specific strings (included from generated_resources.grd). -->
 <grit-part>
-  <!-- Accessibility Page -->
-  <message name="IDS_SETTINGS_ACCESSIBILITY_PAGE_TITLE" desc="Name of the settings page which displays accessibility preferences.">
-    Accessibility
+  <!-- Policy Indicators -->
+  <message name="IDS_SETTINGS_CONTROLLED_SETTING_EXTENSION" desc="Text displayed in the controlled settings indicator tooltip when a setting's value is enforced by an extension.">
+    This setting is controlled by extension <ph name="NAME">$1<ex>Settings Extension</ex></ph> 
   </message>
-  <message name="IDS_SETTINGS_MORE_FEATURES_LINK" desc="Link which opens page where users can install extensions which provide additional accessibility features.">
-    Add additional accessibility features
-  </message>
-  <message name="IDS_SETTINGS_OPTIONS_IN_MENU_LABEL" desc="Label for checkbox which enables showing accessibilitly options in the system menu.">
-    Show accessibility options in the system menu
-  </message>
-  <message name="IDS_SETTINGS_LARGE_MOUSE_CURSOR_LABEL" desc="Label for checkbox which enables showing a larger mouse cursor than normal.">
-    Show large mouse cursor
-  </message>
-  <message name="IDS_SETTINGS_HIGH_CONTRAST_LABEL" desc="Label for checkbox which enables high-contrast UI.">
-    Use high contrast mode
-  </message>
-  <message name="IDS_SETTINGS_STICKY_KEYS_LABEL" desc="Label for checkbox which enables sticky keys.">
-    Enable sticky keys
-  </message>
-  <message name="IDS_SETTINGS_STICKY_KEYS_SUBLABEL" desc="Sub-label describing what the term 'sticky keys' means.">
-    (to perform keyboard shortcuts by typing them sequentially)
-  </message>
-  <message name="IDS_SETTINGS_CHROMEVOX_LABEL" desc="Label for checkbox which enables ChromeVox">
-    Enable ChromeVox
-  </message>
-  <message name="IDS_SETTINGS_CHROMEVOX_SUBLABEL" desc="Sub-label describingn what ChromeVox is.">
-    (spoken feedback)
-  </message>
-  <message name="IDS_SETTINGS_SCREEN_MAGNIFIER_LABEL" desc="Label for checkbox which enables the screen magnifier">
-    Enable screen magnifier
-  </message>
-  <message name="IDS_SETTINGS_TAP_DRAGGING_LABEL" desc="Label for checkbox which enables tap dragging.">
-    Enable tap dragging
-  </message>
-  <message name="IDS_SETTINGS_CLICK_ON_STOP_LABEL" desc="Label for checkbox which enables automatically clicking when the mouse pointer stops.">
-    Automatically click when the mouse pointer stops
-  </message>
-  <message name="IDS_SETTINGS_DELAY_BEFORE_CLICK_LABEL" desc="Label for dropdown menu which contains various time delays for clicks.">
-    Delay before click:
-  </message>
-  <message name="IDS_SETTINGS_DELAY_BEFORE_CLICK_EXTREMELY_SHORT" desc="Description of an extremely short delay before clicks.">
-    extremely short
-  </message>
-  <message name="IDS_SETTINGS_DELAY_BEFORE_CLICK_VERY_SHORT" desc="Description of a very short delay before clicks.">
-    very short
-  </message>
-  <message name="IDS_SETTINGS_DELAY_BEFORE_CLICK_SHORT" desc="Description of a short delay before clicks.">
-    short
-  </message>
-  <message name="IDS_SETTINGS_DELAY_BEFORE_CLICK_LONG" desc="Description of a long delay before clicks.">
-    long
-  </message>
-  <message name="IDS_SETTINGS_DELAY_BEFORE_CLICK_VERY_LONG" desc="Description of a very long delay before clicks.">
-    very long
-  </message>
-  <message name="IDS_SETTINGS_ON_SCREEN_KEYBOARD_LABEL" desc="Label for checkbox which enables an on-screen keyboard.">
-    Enable on-screen keyboard
+
+  <if expr="chromeos">
+    <!-- Accessibility Page -->
+    <message name="IDS_SETTINGS_ACCESSIBILITY" desc="Name of the settings page which displays accessibility preferences.">
+      Accessibility
+    </message>
+    <message name="IDS_SETTINGS_MORE_FEATURES_LINK" desc="Link which opens page where users can install extensions which provide additional accessibility features.">
+      Add additional accessibility features
+    </message>
+    <message name="IDS_SETTINGS_OPTIONS_IN_MENU_LABEL" desc="Label for checkbox which enables showing accessibilitly options in the system menu.">
+      Show accessibility options in the system menu
+    </message>
+    <message name="IDS_SETTINGS_LARGE_MOUSE_CURSOR_LABEL" desc="Label for checkbox which enables showing a larger mouse cursor than normal.">
+      Show large mouse cursor
+    </message>
+    <message name="IDS_SETTINGS_HIGH_CONTRAST_LABEL" desc="Label for checkbox which enables high-contrast UI.">
+      Use high contrast mode
+    </message>
+    <message name="IDS_SETTINGS_STICKY_KEYS_LABEL" desc="Label for checkbox which enables sticky keys.">
+      Enable sticky keys
+    </message>
+    <message name="IDS_SETTINGS_STICKY_KEYS_SUBLABEL" desc="Sub-label describing what the term 'sticky keys' means.">
+      (to perform keyboard shortcuts by typing them sequentially)
+    </message>
+    <message name="IDS_SETTINGS_CHROMEVOX_LABEL" desc="Label for checkbox which enables ChromeVox">
+      Enable ChromeVox
+    </message>
+    <message name="IDS_SETTINGS_CHROMEVOX_SUBLABEL" desc="Sub-label describingn what ChromeVox is.">
+      (spoken feedback)
+    </message>
+    <message name="IDS_SETTINGS_SCREEN_MAGNIFIER_LABEL" desc="Label for checkbox which enables the screen magnifier">
+      Enable screen magnifier
+    </message>
+    <message name="IDS_SETTINGS_TAP_DRAGGING_LABEL" desc="Label for checkbox which enables tap dragging.">
+      Enable tap dragging
+    </message>
+    <message name="IDS_SETTINGS_CLICK_ON_STOP_LABEL" desc="Label for checkbox which enables automatically clicking when the mouse pointer stops.">
+      Automatically click when the mouse pointer stops
+    </message>
+    <message name="IDS_SETTINGS_DELAY_BEFORE_CLICK_LABEL" desc="Label for dropdown menu which contains various time delays for clicks.">
+      Delay before click:
+    </message>
+    <message name="IDS_SETTINGS_DELAY_BEFORE_CLICK_EXTREMELY_SHORT" desc="Description of an extremely short delay before clicks.">
+      extremely short
+    </message>
+    <message name="IDS_SETTINGS_DELAY_BEFORE_CLICK_VERY_SHORT" desc="Description of a very short delay before clicks.">
+      very short
+    </message>
+    <message name="IDS_SETTINGS_DELAY_BEFORE_CLICK_SHORT" desc="Description of a short delay before clicks.">
+      short
+    </message>
+    <message name="IDS_SETTINGS_DELAY_BEFORE_CLICK_LONG" desc="Description of a long delay before clicks.">
+      long
+    </message>
+    <message name="IDS_SETTINGS_DELAY_BEFORE_CLICK_VERY_LONG" desc="Description of a very long delay before clicks.">
+      very long
+    </message>
+    <message name="IDS_SETTINGS_ON_SCREEN_KEYBOARD_LABEL" desc="Label for checkbox which enables an on-screen keyboard.">
+      Enable on-screen keyboard
+    </message>
+    <message name="IDS_SETTINGS_ACCESSIBILITY_EXPLANATION" desc="Informational message at the top of the accessibility section of the settings page about enabling additional accessibility-related features.">
+      Enable accessibility features to make your device easier to use.
+    </message>
+  </if>
+
+  <!-- Advanced Page -->
+  <message name="IDS_SETTINGS_ADVANCED" desc="Name of the settings page which displays advanced preferences.">
+    Advanced
   </message>
 
   <!-- Appearance Page -->
-  <message name="IDS_SETTINGS_APPEARANCE_PAGE_TITLE" desc="Name of the settings page which displays appearance preferences.">
+  <message name="IDS_SETTINGS_APPEARANCE" desc="Name of the settings page which displays appearance preferences.">
     Appearance
   </message>
   <message name="IDS_SETTINGS_SET_WALLPAPER" desc="Name of the control which allows the user to set the wallpaper.">
@@ -82,12 +97,114 @@
   <message name="IDS_SETTINGS_HOME_PAGE_NTP" desc="Description of the New Tab Page when set as the home page.">
     New Tab Page
   </message>
+  <message name="IDS_SETTINGS_OPEN_THIS_PAGE" desc="Label of the input box for the home page.">
+    Open this page:
+  </message>
   <message name="IDS_SETTINGS_CHANGE_HOME_PAGE" desc="Label of the control to change the home page.">
     Change
   </message>
 
+  <!-- Basic Page -->
+  <message name="IDS_SETTINGS_BASIC" desc="Name of the settings page which displays advanced preferences.">
+    Basic
+  </message>
+
+  <!-- Certificate Manager Page -->
+  <message name="IDS_SETTINGS_CERTIFICATE_MANAGER" desc="Name of the certificate manager page which allows users to modify SSL certificate settings.">
+    Certificate manager
+  </message>
+  <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_YOUR_CERTIFICATES" desc="Label for the your certificates tab in certificate manager.">
+    Your certificates
+  </message>
+  <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_SERVERS" desc="Label for the servers tab in certificate manager.">
+    Servers
+  </message>
+  <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_SERVERS_IDENTIFY" desc="Label for servers subtitle tab in certificate manager.">
+    You have certificates on file that identify these servers:
+  </message>
+  <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_AUTHORITIES" desc="Label for the authorities tab in certificate manager.">
+    Authorities
+  </message>
+  <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_AUTHORITIES_YOU_HAVE_AUTHORITIES" desc="Label for authorities subtitle tab in certificate manager.">
+    You have certificates on file that identify these certificate authorities:
+  </message>
+  <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_OTHERS_YOU_HAVE_OTHERS" desc="Label for others subtitle tab in certificate manager.">
+    You have certificates on file that do not fit in any of the other categories:
+  </message>
+  <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_VIEW" desc="Label for view button in certificate manager.">
+    View
+  </message>
+  <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_IMPORT" desc="Label for import button in certificate manager.">
+    Import
+  </message>
+  <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_IMPORT_AND_BIND" desc="Label for import and bind button in certificate manager.">
+    Import and Bind to Device
+  </message>
+  <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_EXPORT" desc="Label for export button in certificate manager.">
+    Export
+  </message>
+  <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_DELETE" desc="Label for delete button in certificate manager.">
+    Delete
+  </message>
+  <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_DONE" desc="Label for done button in certificate manager.">
+    Done
+  </message>
+  <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_OTHERS" desc="Label for the others tab in certificate manager.">
+    Others
+  </message>
+  <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_YOU_HAVE_CERTIFICATES" desc="Label for your certificates subtitle tab in certificate manager.">
+    You have certificates from these organizations that identify you:
+  </message>
+
+  <!-- Clear Browsing Data -->
+  <message name="IDS_SETTINGS_CLEAR_FOLLOWING_ITEMS_FROM" desc="Label at the top of the client area of the dialog, preceding the period combo box">
+    Obliterate the following items from:
+  </message>
+  <message name="IDS_SETTINGS_CLEAR_BROWSING_HISTORY" desc="Checkbox for deleting Browsing History">
+    Browsing history
+  </message>
+  <message name="IDS_SETTINGS_CLEAR_DOWNLOAD_HISTORY" desc="Checkbox for deleting Download History">
+    Download history
+  </message>
+  <message name="IDS_SETTINGS_CLEAR_CACHE" desc="Checkbox for deleting Cache">
+    Cached images and files
+  </message>
+  <message name="IDS_SETTINGS_CLEAR_COOKIES" desc="Checkbox for deleting Cookies and other site data">
+    Cookies and other site data
+  </message>
+  <message name="IDS_SETTINGS_CLEAR_COOKIES_FLASH" desc="Checkbox for deleting Cookies and other site data">
+    Cookies and other site and plugin data
+  </message>
+  <message name="IDS_SETTINGS_CLEAR_PASSWORDS" desc="Checkbox for deleting Passwords">
+    Passwords
+  </message>
+  <message name="IDS_SETTINGS_CLEAR_FORM_DATA" desc="Checkbox for deleting form data saved for Autofill">
+    Autofill form data
+  </message>
+  <message name="IDS_SETTINGS_CLEAR_HOSTED_APP_DATA" desc="Checkbox for deleting data of hosted apps">
+    Hosted app data
+  </message>
+  <message name="IDS_SETTINGS_DEAUTHORIZE_CONTENT_LICENSES" desc="Checkbox for deauthorizing content licenses (DRM videos, etc.)">
+    Content licenses
+  </message>
+  <message name="IDS_SETTINGS_CLEAR_DATA_HOUR" desc="deletion period combo box: hour. In English this finishes the sentence that starts with 'Obliterate the following items from'.">
+    the past hour
+  </message>
+  <message name="IDS_SETTINGS_CLEAR_DATA_DAY" desc="deletion period combo box: day. In English this finishes the sentence that starts with 'Obliterate the following items from'.">
+    the past day
+  </message>
+  <message name="IDS_SETTINGS_CLEAR_DATA_WEEK" desc="deletion period combo box: week. In English this finishes the sentence that starts with 'Obliterate the following items from'.">
+    the past week
+  </message>
+  <message name="IDS_SETTINGS_CLEAR_DATA_4WEEKS" desc="deletion period combo box: 4 weeks. In English this finishes the sentence that starts with 'Obliterate the following items from'.">
+    the last 4 weeks
+  </message>
+  <message name="IDS_SETTINGS_CLEAR_DATA_EVERYTHING" desc="deletion period combo box: everything. In English this finishes the sentence that starts with 'Delete the following items from'.">
+    the beginning of time
+  </message>
+
   <!-- Downloads Page -->
-  <message name="IDS_SETTINGS_DOWNLOADS_PAGE_TITLE" desc="Name of the settings page which displays download preferences.">
+  <message name="IDS_SETTINGS_DOWNLOADS" desc="Name of the settings page which displays download preferences.">
     Downloads
   </message>
   <message name="IDS_SETTINGS_DOWNLOAD_LOCATION" desc="Label for the input which allows the user to specify the default download directory.">
@@ -101,7 +218,7 @@
   </message>
 
   <!-- Date/time Page -->
-  <message name="IDS_SETTINGS_DATE_TIME_PAGE_TITLE" desc="Name of the settings page which displays date and time preferences.">
+  <message name="IDS_SETTINGS_DATE_TIME" desc="Name of the settings page which displays date and time preferences.">
     Date &amp; Time
   </message>
   <message name="IDS_SETTINGS_TIME_ZONE" desc="Label for the picker which allows users to choose their time zone.">
@@ -114,16 +231,82 @@
     Date and time are set automatically.
   </message>
 
-  <!-- Internet Page -->
-  <message name="IDS_SETTINGS_INTERNET_PAGE_TITLE" desc="Name of the settings page which displays internet preferences.">
-    Internet Connection
+  <if expr="chromeos">
+    <!-- Internet Page -->
+    <message name="IDS_SETTINGS_INTERNET" desc="Name of the settings page which displays internet preferences.">
+      Internet Connection
+    </message>
+    <message name="IDS_SETTINGS_INTERNET_DETAIL" desc="Name of the settings page which displays network details.">
+      Network Details
+    </message>
+    <message name="IDS_SETTINGS_INTERNET_KNOWN_NETWORKS" desc="Name of the settings page which displays the list of known networks.">
+      Known Networks
+    </message>
+  </if>
+
+  <!-- On Startup Page -->
+  <message name="IDS_SETTINGS_ON_STARTUP" desc="Name of the on startup page.">
+    On Startup
   </message>
-  <message name="IDS_SETTINGS_INTERNET_DETAIL_PAGE_TITLE" desc="Name of the settings page which displays network details.">
-    Network Details
+  <message name="IDS_SETTINGS_ON_STARTUP_OPEN_NEW_TAB" desc="Radio button option to open the new tab page.">
+    Open the New Tab page
+  </message>
+  <message name="IDS_SETTINGS_ON_STARTUP_CONTINUE" desc="Radio button option to continue where you left off.">
+    Continue where you left off
+  </message>
+  <message name="IDS_SETTINGS_ON_STARTUP_OPEN_SPECIFIC" desc="Radio button option to open a specific set of pages.">
+    Open a specific page or set of pages
+  </message>
+  <message name="IDS_SETTINGS_ON_STARTUP_ADD_PAGE" desc="Button to add a page.">
+    Add Page
+  </message>
+  <message name="IDS_SETTINGS_ON_STARTUP_SET_PAGES" desc="Button to set pages.">
+    Set Pages
+  </message>
+  <message name="IDS_SETTINGS_ON_STARTUP_USE_CURRENT" desc="Button to use current pages.">
+    Use Current Pages
+  </message>
+  <message name="IDS_SETTINGS_ON_STARTUP_ADD_NEW_PAGE" desc="Entry prompt to add a new page.">
+    Add a new page
+  </message>
+  <message name="IDS_SETTINGS_ON_STARTUP_ENTER_URL" desc="Example entry prompt to add a new page.">
+    Enter URL...
+  </message>
+
+  <!-- Languages Page -->
+  <message name="IDS_SETTINGS_LANGUAGES_PAGE_TITLE" desc="Name of the settings page which displays language and input method preferences.">
+    Language &amp; Input
+  </message>
+  <message name="IDS_SETTINGS_LANGUAGES_LANGUAGES_LIST_TITLE" desc="Title for the list of languages that are enabled.">
+    Languages
+  </message>
+  <message name="IDS_SETTINGS_LANGUAGES_LANGUAGES_MANAGE" desc="Button under the list of enabled languages which opens a sub-page that lets the user enable or disable languages.">
+    Manage languages
+  </message>
+  <message name="IDS_SETTINGS_LANGUAGES_INPUT_METHODS_LIST_TITLE" desc="Title for the list of input methods (keyboard layouts and input method editors) that are enabled.">
+    Input methods
+  </message>
+  <message name="IDS_SETTINGS_LANGUAGES_INPUT_METHODS_MANAGE" desc="Button under the list of input methods which opens a sub-page that lets the user enable or disable input methods.">
+    Manage inputs
+  </message>
+  <message name="IDS_SETTINGS_LANGUAGES_SPELL_CHECK_LIST_TITLE" desc="Title for the section containing the dropdown used to select the language to use for spell checking. The dropdown contains the enabled languages which support spell checking.">
+    Spell check
+  </message>
+  <message name="IDS_SETTINGS_LANGUAGES_SPELL_CHECK_MANAGE" desc="Button under the dropdown of spell check languages which opens a sub-page that lets the user add or remove words to the custom list of words whitelisted for spell checking.">
+    Custom spelling
+  </message>
+  <message name="IDS_SETTINGS_LANGUAGES_MANAGE_LANGUAGES_TITLE" desc="Name of the settings sub-page which allows enabling and disabling languages.">
+    Languages
+  </message>
+  <message name="IDS_SETTINGS_LANGUAGES_ALL_LANGUAGES" desc="Header for the list of all supported languages, which the user can use to enable languages, on the Manage Languages page.">
+    All languages
+  </message>
+  <message name="IDS_SETTINGS_LANGUAGES_ENABLED_LANGUAGES" desc="Header for the list of enabled languages, which the user can use to disable languages, on the Manage Languages page.">
+    Enabled languages
   </message>
 
   <!-- Privacy Page -->
-  <message name="IDS_SETTINGS_PRIVACY_PAGE_TITLE" desc="Name of the settings page which allows users to modify privacy and security settings.">
+  <message name="IDS_SETTINGS_PRIVACY" desc="Name of the settings page which allows users to modify privacy and security settings.">
     Privacy &amp; Security
   </message>
   <message name="IDS_SETTINGS_LINKDOCTOR_PREF" desc="The documentation string of the 'Use Link Doctor' preference to help with navigation errors.">
@@ -156,15 +339,18 @@
   <message name="IDS_SETTINGS_WAKE_ON_WIFI_DESCRIPTION" desc="In the settings tab, the text next to the checkbox for enabling quickly reconnecting to known Wi-Fi SSIDs.">
     Keep Wi-Fi on during sleep
   </message>
-  <message name="IDS_SETTINGS_SITE_SETTINGS" desc="Text for site settings button in Privacy options">
-    Site settings
+  <message name="IDS_SETTINGS_MANAGE_CERTIFICATES" desc="Text for manage certificates button in Privacy options">
+    Manage Certificates
   </message>
   <message name="IDS_SETTINGS_CLEAR_DATA" desc="Text for clear browsing data button in Privacy options">
     Clear browsing data
   </message>
+  <message name="IDS_SETTINGS_TITLE_AND_COUNT" desc="The title of a section in the settings page with a count of the total number of items in the section">
+    <ph name="TITLE">$1<ex>Block</ex></ph> - <ph name="COUNT">$2<ex>42</ex></ph>
+  </message>
 
   <!-- Search Page -->
-  <message name="IDS_SETTINGS_SEARCH_PAGE_TITLE" desc="Name of the settings page which displays search engine preferences.">
+  <message name="IDS_SETTINGS_SEARCH" desc="Name of the settings page which displays search engine preferences.">
     Search
   </message>
   <message name="IDS_SETTINGS_SEARCH_EXPLANATION" desc="Explanation for the search engine dropdown setting.">
@@ -184,7 +370,7 @@
   </message>
 
   <!-- Search Engines Page -->
-  <message name="IDS_SETTINGS_SEARCH_ENGINES_PAGE_TITLE" desc="Name of the settings page which manages search engines.">
+  <message name="IDS_SETTINGS_SEARCH_ENGINES" desc="Name of the settings page which manages search engines.">
     Search Engines
   </message>
   <message name="IDS_SETTINGS_SEARCH_ENGINES_ADD_SEARCH_ENGINE_LABEL" desc="Label for section for adding a new search engine.">
@@ -209,8 +395,61 @@
     Add
   </message>
 
+  <!-- Site Settings Page -->
+  <message name="IDS_SETTINGS_SITE_SETTINGS" desc="Name of the settings page which allows users to modify site settings.">
+    Site Settings
+  </message>
+  <message name="IDS_SETTINGS_SITE_SETTINGS_ALL_SITES" desc="Label for the all sites site settings.">
+    All sites
+  </message>
+  <message name="IDS_SETTINGS_SITE_SETTINGS_COOKIES" desc="Label for the cookies site settings.">
+    Cookies
+  </message>
+  <message name="IDS_SETTINGS_SITE_SETTINGS_LOCATION" desc="Label for the location site settings.">
+    Location
+  </message>
+  <message name="IDS_SETTINGS_SITE_SETTINGS_NOTIFICATIONS" desc="Label for notifications sites site settings.">
+    Notifications
+  </message>
+  <message name="IDS_SETTINGS_SITE_SETTINGS_IMAGES" desc="Label for the images site settings.">
+    Images
+  </message>
+  <message name="IDS_SETTINGS_SITE_SETTINGS_JAVASCRIPT" desc="Label for the javascript site settings.">
+    Javascript
+  </message>
+  <message name="IDS_SETTINGS_SITE_SETTINGS_POPUPS" desc="Label for the popups site settings.">
+    Popups
+  </message>
+  <message name="IDS_SETTINGS_SITE_SETTINGS_FULLSCREEN" desc="Label for the fullscreen site settings.">
+    Fullscreen
+  </message>
+  <message name="IDS_SETTINGS_SITE_SETTINGS_MAY_SAVE_COOKIES" desc="Label for the cookies option description site settings.">
+    Sites can save and read cookie data
+  </message>
+  <message name="IDS_SETTINGS_SITE_SETTINGS_ASK_FIRST" desc="Label for ask first option in site settings.">
+    Ask first
+  </message>
+  <message name="IDS_SETTINGS_SITE_SETTINGS_ASK_BEFORE_ACCESSING" desc="Label for location option in site settings.">
+    Ask before accessing (recommended)
+  </message>
+  <message name="IDS_SETTINGS_SITE_SETTINGS_ALLOW" desc="Label for allow sites in site settings.">
+    Allow
+  </message>
+  <message name="IDS_SETTINGS_SITE_SETTINGS_BLOCK" desc="Label for add block sites in site settings.">
+    Block
+  </message>
+  <message name="IDS_SETTINGS_SITE_SETTINGS_EXCEPTIONS" desc="Label for exception sites in site settings.">
+    Exceptions
+  </message>
+  <message name="IDS_SETTINGS_SITE_SETTINGS_ADD_SITE" desc="Label for add site button in site settings.">
+    Add Site
+  </message>
+  <message name="IDS_SETTINGS_SITE_SETTINGS_SITE_URL" desc="Label for site URL text entry in site settings.">
+    Site URL
+  </message>
+
   <!-- Sync Page -->
-  <message name="IDS_SETTINGS_SYNC_PAGE_TITLE" desc="Name of the settings page which manages syncing data between multiple browser instances with the same Google profile.">
+  <message name="IDS_SETTINGS_SYNC" desc="Name of the settings page which manages syncing data between multiple browser instances with the same Google profile.">
     Advanced sync settings
   </message>
   <message name="IDS_SETTINGS_SYNC_EVERYTHING_MENU_OPTION" desc="Name of the menu option which, when selected, causes all properties to be synced.">
@@ -246,7 +485,7 @@
   <message name="IDS_SETTINGS_OPEN_TABS_CHECKBOX_LABEL" desc="Label for the checkbox which enables or disables syncing open tabs between multiple browser instances.">
     Open Tabs
   </message>
-  <message name="IDS_SETTINGS_ENCRYPTION_OPTIONS_TITLE" desc="Title for the section which includes options for encrypting sync settings.">
+  <message name="IDS_SETTINGS_ENCRYPTION_OPTIONS" desc="Title for the section which includes options for encrypting sync settings.">
     Encryption options
   </message>
   <message name="IDS_SETTINGS_ENCRYPT_WITH_GOOGLE_CREDENTIALS_LABEL" desc="Label for the radio button which, when selected, causes synced settings to be encrypted with the Google login for the current browser profile.">
@@ -269,7 +508,7 @@
   </message>
 
   <!-- Users Page -->
-  <message name="IDS_SETTINGS_USERS_PAGE_TITLE" desc="Name of the settings page which manages users on the device.">
+  <message name="IDS_SETTINGS_USERS" desc="Name of the settings page which manages users on the device.">
     Manage other users
   </message>
   <message name="IDS_SETTINGS_USERS_MODIFIED_BY_OWNER_LABEL" desc="Label saying settings may only be modified by the device owner.">

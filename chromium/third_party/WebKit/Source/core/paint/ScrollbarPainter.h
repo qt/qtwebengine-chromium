@@ -5,6 +5,7 @@
 #ifndef ScrollbarPainter_h
 #define ScrollbarPainter_h
 
+#include "platform/heap/Handle.h"
 #include "platform/scroll/Scrollbar.h"
 
 namespace blink {
@@ -17,14 +18,16 @@ class LayoutScrollbar;
 class LayoutScrollbarPart;
 
 class ScrollbarPainter {
+    STACK_ALLOCATED();
+    WTF_MAKE_NONCOPYABLE(ScrollbarPainter);
 public:
-    ScrollbarPainter(LayoutScrollbar& layoutScrollbar) : m_layoutScrollbar(layoutScrollbar) { }
+    explicit ScrollbarPainter(const LayoutScrollbar& layoutScrollbar) : m_layoutScrollbar(&layoutScrollbar) { }
 
     void paintPart(GraphicsContext*, ScrollbarPart, const IntRect&);
-    static void paintIntoRect(LayoutScrollbarPart*, GraphicsContext*, const LayoutPoint& paintOffset, const LayoutRect&);
+    static void paintIntoRect(const LayoutScrollbarPart&, GraphicsContext*, const LayoutPoint& paintOffset, const LayoutRect&);
 
 private:
-    LayoutScrollbar& m_layoutScrollbar;
+    RawPtrWillBeMember<const LayoutScrollbar> m_layoutScrollbar;
 };
 
 } // namespace blink

@@ -16,8 +16,6 @@
         '../../../../base/base.gyp:base_i18n',
         '../../../../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
         '../../../../build/linux/system.gyp:gconf',
-        '../../../../build/linux/system.gyp:gtk',
-        '../../../../build/linux/system.gyp:gtkprint',
         '../../../../build/linux/system.gyp:x11',
         '../../../../components/components_resources.gyp:components_resources',
         '../../../../content/content.gyp:content',
@@ -30,6 +28,7 @@
         '../../../../ui/events/events.gyp:events',
         '../../../../ui/events/events.gyp:events_base',
         '../../../../ui/gfx/gfx.gyp:gfx',
+        '../../../../ui/gfx/gfx.gyp:gfx_geometry',
         '../../../../ui/gfx/x/gfx_x11.gyp:gfx_x11',
         '../../../../ui/native_theme/native_theme.gyp:native_theme',
         '../../../../ui/resources/ui_resources.gyp:ui_resources',
@@ -63,8 +62,6 @@
         'g_object_destructor_filo.h',
         'gconf_listener.cc',
         'gconf_listener.h',
-        'gtk2_border.cc',
-        'gtk2_border.h',
         'gtk2_event_loop.cc',
         'gtk2_event_loop.h',
         'gtk2_key_bindings_handler.cc',
@@ -82,8 +79,6 @@
         'menu_util.h',
         'native_theme_gtk2.cc',
         'native_theme_gtk2.h',
-        'owned_widget_gtk2.cc',
-        'owned_widget_gtk2.h',
         'print_dialog_gtk2.cc',
         'print_dialog_gtk2.h',
         'printing_gtk2_util.cc',
@@ -104,6 +99,17 @@
           'sources!': [
             'gconf_listener.cc',
             'gconf_listener.h',
+          ],
+        }],
+        ['use_gtk3==1', {
+          'dependencies': [
+            '../../../../build/linux/system.gyp:gtk3',
+            '../../../../build/linux/system.gyp:gtkprint3',
+          ],
+        }, {
+          'dependencies': [
+            '../../../../build/linux/system.gyp:gtk2',
+            '../../../../build/linux/system.gyp:gtkprint2',
           ],
         }],
         [ 'clang==1', {

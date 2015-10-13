@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 # Copyright 2014 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
@@ -29,7 +30,10 @@ def SetEnvironmentAndGetRuntimeDllDirs():
   vs2013_runtime_dll_dirs = None
   depot_tools_win_toolchain = \
       bool(int(os.environ.get('DEPOT_TOOLS_WIN_TOOLCHAIN', '1')))
-  if sys.platform in ('win32', 'cygwin') and depot_tools_win_toolchain:
+  # When running on a non-Windows host, only do this if the SDK has explicitly
+  # been downloaded before (in which case json_data_file will exist).
+  if ((sys.platform in ('win32', 'cygwin') or os.path.exists(json_data_file))
+      and depot_tools_win_toolchain):
     if not os.path.exists(json_data_file):
       Update()
     with open(json_data_file, 'r') as tempf:
@@ -116,8 +120,6 @@ def CopyVsRuntimeDlls(output_dir, runtime_dirs):
   This needs to be run after gyp has been run so that the expected target
   output directories are already created.
   """
-  assert sys.platform.startswith(('win32', 'cygwin'))
-
   x86, x64 = runtime_dirs
   out_debug = os.path.join(output_dir, 'Debug')
   out_debug_nacl64 = os.path.join(output_dir, 'Debug', 'x64')
@@ -186,23 +188,28 @@ def CopyDlls(target_dir, configuration, target_cpu):
 def _GetDesiredVsToolchainHashes():
   """Load a list of SHA1s corresponding to the toolchains that we want installed
   to build with."""
-  # TODO(scottmg): If explicitly set to VS2015 override hashes to the VS2015 RC
-  # toolchain. http://crbug.com/492774.
   if os.environ.get('GYP_MSVS_VERSION') == '2015':
-    return ['40721575c85171cea5d7afe5ec17bd108a94796e']
+    return ['49ae4b60d898182fc3f521c2fcda82c453915011']
   else:
     # Default to VS2013.
     return ['ee7d718ec60c2dc5d255bbe325909c2021a7efef']
 
 
-def Update():
+def Update(force=False):
   """Requests an update of the toolchain to the specific hashes we have at
   this revision. The update outputs a .json of the various configuration
   information required to pass to gyp which we use in |GetToolchainDir()|.
   """
+  if force != False and force != '--force':
+    print >>sys.stderr, 'Unknown parameter "%s"' % force
+    return 1
+  if force == '--force' or os.path.exists(json_data_file):
+    force = True
+
   depot_tools_win_toolchain = \
       bool(int(os.environ.get('DEPOT_TOOLS_WIN_TOOLCHAIN', '1')))
-  if sys.platform in ('win32', 'cygwin') and depot_tools_win_toolchain:
+  if ((sys.platform in ('win32', 'cygwin') or force) and
+        depot_tools_win_toolchain):
     import find_depot_tools
     depot_tools_path = find_depot_tools.add_depot_tools_to_path()
     get_toolchain_args = [
@@ -212,6 +219,8 @@ def Update():
                     'get_toolchain_if_necessary.py'),
         '--output-json', json_data_file,
       ] + _GetDesiredVsToolchainHashes()
+    if force:
+      get_toolchain_args.append('--force')
     subprocess.check_call(get_toolchain_args)
 
   return 0
@@ -242,8 +251,6 @@ runtime_dirs = "%s"
 
 
 def main():
-  if not sys.platform.startswith(('win32', 'cygwin')):
-    return 0
   commands = {
       'update': Update,
       'get_toolchain_dir': GetToolchainDir,

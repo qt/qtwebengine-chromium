@@ -10,6 +10,7 @@ modules/indexeddb/IDBDatabase
 modules/indexeddb/IDBOpenDBRequest
 modules/indexeddb/IDBRequest
 modules/indexeddb/IDBTransaction
+modules/mediarecorder/MediaRecorder
 modules/mediasource/MediaSource
 modules/mediasource/SourceBuffer
 modules/mediasource/SourceBufferList
@@ -24,13 +25,13 @@ modules/notifications/Notification
 modules/permissions/PermissionStatus
 modules/presentation/Presentation
 modules/presentation/PresentationAvailability
-modules/presentation/PresentationSession
+modules/presentation/PresentationConnection
+modules/presentation/PresentationRequest
 modules/screen_orientation/ScreenOrientation
 modules/serviceworkers/ServiceWorker
 modules/serviceworkers/ServiceWorkerContainer
 modules/serviceworkers/ServiceWorkerGlobalScope
 modules/serviceworkers/ServiceWorkerRegistration
-modules/serviceworkers/StashedPortCollection
 modules/speech/SpeechRecognition
 modules/speech/SpeechSynthesis
 modules/speech/SpeechSynthesisUtterance
@@ -40,3 +41,4 @@ modules/webmidi/MIDIAccess
 modules/webmidi/MIDIInput
 modules/webmidi/MIDIPort
 modules/websockets/WebSocket ImplementedAs=DOMWebSocket
+modules/webusb/USB

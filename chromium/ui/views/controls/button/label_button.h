@@ -6,6 +6,7 @@
 #define UI_VIEWS_CONTROLS_BUTTON_LABEL_BUTTON_H_
 
 #include "base/compiler_specific.h"
+#include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/gfx/image/image_skia.h"
@@ -38,7 +39,7 @@ class VIEWS_EXPORT LabelButton : public CustomButton,
 
   // Get or set the text shown on the button.
   const base::string16& GetText() const;
-  virtual void SetText(const base::string16& text);
+  void SetText(const base::string16& text);
 
   // Set the text color shown for the specified button state.
   void SetTextColor(ButtonState for_state, SkColor color);
@@ -85,6 +86,10 @@ class VIEWS_EXPORT LabelButton : public CustomButton,
   void SetFocusPainter(scoped_ptr<Painter> focus_painter);
   Painter* focus_painter() { return focus_painter_.get(); }
 
+  // Creates the default border for this button. This can be overridden by
+  // subclasses.
+  virtual scoped_ptr<LabelButtonBorder> CreateDefaultBorder() const;
+
   // View:
   void SetBorder(scoped_ptr<Border> border) override;
   gfx::Size GetPreferredSize() const override;
@@ -111,10 +116,6 @@ class VIEWS_EXPORT LabelButton : public CustomButton,
 
   // Resets colors from the NativeTheme, explicitly set colors are unchanged.
   virtual void ResetColorsFromNativeTheme();
-
-  // Creates the default border for this button. This can be overridden by
-  // subclasses or by LinuxUI.
-  virtual scoped_ptr<LabelButtonBorder> CreateDefaultBorder() const;
 
   // Updates the image view to contain the appropriate button state image.
   void UpdateImage();

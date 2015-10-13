@@ -7,6 +7,7 @@
 
 #include <map>
 
+#include "content/browser/devtools/protocol/network_handler.h"
 #include "content/browser/devtools/service_worker_devtools_manager.h"
 #include "content/browser/devtools/worker_devtools_agent_host.h"
 
@@ -35,11 +36,14 @@ class ServiceWorkerDevToolsAgentHost : public WorkerDevToolsAgentHost {
   // WorkerDevToolsAgentHost overrides.
   void OnAttachedStateChanged(bool attached) override;
 
+  int64 service_worker_version_id() const;
+
   bool Matches(const ServiceWorkerIdentifier& other);
 
  private:
   ~ServiceWorkerDevToolsAgentHost() override;
   scoped_ptr<ServiceWorkerIdentifier> service_worker_;
+  scoped_ptr<devtools::network::NetworkHandler> network_handler_;
 
   DISALLOW_COPY_AND_ASSIGN(ServiceWorkerDevToolsAgentHost);
 };

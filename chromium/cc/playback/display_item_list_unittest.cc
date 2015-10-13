@@ -20,7 +20,8 @@
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "third_party/skia/include/core/SkPictureRecorder.h"
-#include "third_party/skia/include/effects/SkBitmapSource.h"
+#include "third_party/skia/include/core/SkSurface.h"
+#include "third_party/skia/include/effects/SkImageSource.h"
 #include "third_party/skia/include/utils/SkPictureUtils.h"
 #include "ui/gfx/geometry/rect_conversions.h"
 #include "ui/gfx/skia_util.h"
@@ -37,12 +38,13 @@ TEST(DisplayItemListTest, SingleDrawingItem) {
   SkPaint red_paint;
   red_paint.setColor(SK_ColorRED);
   unsigned char pixels[4 * 100 * 100] = {0};
-  const bool use_cached_picture = true;
+  DisplayItemListSettings settings;
+  settings.use_cached_picture = true;
   scoped_refptr<DisplayItemList> list =
-      DisplayItemList::Create(layer_rect, use_cached_picture);
+      DisplayItemList::Create(layer_rect, settings);
 
   gfx::PointF offset(8.f, 9.f);
-  gfx::RectF recording_rect(offset, layer_rect.size());
+  gfx::RectF recording_rect(offset, gfx::SizeF(layer_rect.size()));
   canvas = skia::SharePtr(
       recorder.beginRecording(gfx::RectFToSkRect(recording_rect)));
   canvas->translate(offset.x(), offset.y());
@@ -81,12 +83,13 @@ TEST(DisplayItemListTest, ClipItem) {
   SkPaint red_paint;
   red_paint.setColor(SK_ColorRED);
   unsigned char pixels[4 * 100 * 100] = {0};
-  const bool use_cached_picture = true;
+  DisplayItemListSettings settings;
+  settings.use_cached_picture = true;
   scoped_refptr<DisplayItemList> list =
-      DisplayItemList::Create(layer_rect, use_cached_picture);
+      DisplayItemList::Create(layer_rect, settings);
 
   gfx::PointF first_offset(8.f, 9.f);
-  gfx::RectF first_recording_rect(first_offset, layer_rect.size());
+  gfx::RectF first_recording_rect(first_offset, gfx::SizeF(layer_rect.size()));
   canvas = skia::SharePtr(
       recorder.beginRecording(gfx::RectFToSkRect(first_recording_rect)));
   canvas->translate(first_offset.x(), first_offset.y());
@@ -100,7 +103,8 @@ TEST(DisplayItemListTest, ClipItem) {
   item2->SetNew(clip_rect, std::vector<SkRRect>());
 
   gfx::PointF second_offset(2.f, 3.f);
-  gfx::RectF second_recording_rect(second_offset, layer_rect.size());
+  gfx::RectF second_recording_rect(second_offset,
+                                   gfx::SizeF(layer_rect.size()));
   canvas = skia::SharePtr(
       recorder.beginRecording(gfx::RectFToSkRect(second_recording_rect)));
   canvas->translate(second_offset.x(), second_offset.y());
@@ -142,12 +146,13 @@ TEST(DisplayItemListTest, TransformItem) {
   SkPaint red_paint;
   red_paint.setColor(SK_ColorRED);
   unsigned char pixels[4 * 100 * 100] = {0};
-  const bool use_cached_picture = true;
+  DisplayItemListSettings settings;
+  settings.use_cached_picture = true;
   scoped_refptr<DisplayItemList> list =
-      DisplayItemList::Create(layer_rect, use_cached_picture);
+      DisplayItemList::Create(layer_rect, settings);
 
   gfx::PointF first_offset(8.f, 9.f);
-  gfx::RectF first_recording_rect(first_offset, layer_rect.size());
+  gfx::RectF first_recording_rect(first_offset, gfx::SizeF(layer_rect.size()));
   canvas = skia::SharePtr(
       recorder.beginRecording(gfx::RectFToSkRect(first_recording_rect)));
   canvas->translate(first_offset.x(), first_offset.y());
@@ -162,7 +167,8 @@ TEST(DisplayItemListTest, TransformItem) {
   item2->SetNew(transform);
 
   gfx::PointF second_offset(2.f, 3.f);
-  gfx::RectF second_recording_rect(second_offset, layer_rect.size());
+  gfx::RectF second_recording_rect(second_offset,
+                                   gfx::SizeF(layer_rect.size()));
   canvas = skia::SharePtr(
       recorder.beginRecording(gfx::RectFToSkRect(second_recording_rect)));
   canvas->translate(second_offset.x(), second_offset.y());
@@ -198,28 +204,31 @@ TEST(DisplayItemListTest, FilterItem) {
   gfx::Rect layer_rect(100, 100);
   FilterOperations filters;
   unsigned char pixels[4 * 100 * 100] = {0};
-  const bool use_cached_picture = true;
+  DisplayItemListSettings settings;
+  settings.use_cached_picture = true;
   scoped_refptr<DisplayItemList> list =
-      DisplayItemList::Create(layer_rect, use_cached_picture);
+      DisplayItemList::Create(layer_rect, settings);
 
-  SkBitmap source_bitmap;
-  source_bitmap.allocN32Pixels(50, 50);
-  SkCanvas source_canvas(source_bitmap);
-  source_canvas.clear(SkColorSetRGB(128, 128, 128));
+  skia::RefPtr<SkSurface> source_surface =
+      skia::AdoptRef(SkSurface::NewRasterN32Premul(50, 50));
+  SkCanvas* source_canvas = source_surface->getCanvas();
+  source_canvas->clear(SkColorSetRGB(128, 128, 128));
+  skia::RefPtr<SkImage> source_image =
+      skia::AdoptRef(source_surface->newImageSnapshot());
 
   // For most SkImageFilters, the |dst| bounds computed by computeFastBounds are
   // dependent on the provided |src| bounds. This means, for example, that
   // translating |src| results in a corresponding translation of |dst|. But this
   // is not the case for all SkImageFilters; for some of them (e.g.
-  // SkBitmapSource), the computation of |dst| in computeFastBounds doesn't
+  // SkImageSource), the computation of |dst| in computeFastBounds doesn't
   // involve |src| at all. Incorrectly assuming such a relationship (e.g. by
   // translating |dst| after it is computed by computeFastBounds, rather than
   // translating |src| before it provided to computedFastBounds) can cause
   // incorrect clipping of filter output. To test for this, we include an
-  // SkBitmapSource filter in |filters|. Here, |src| is |filter_bounds|, defined
+  // SkImageSource filter in |filters|. Here, |src| is |filter_bounds|, defined
   // below.
   skia::RefPtr<SkImageFilter> image_filter =
-      skia::AdoptRef(SkBitmapSource::Create(source_bitmap));
+      skia::AdoptRef(SkImageSource::Create(source_image.get()));
   filters.Append(FilterOperation::CreateReferenceFilter(image_filter));
   filters.Append(FilterOperation::CreateBrightnessFilter(0.5f));
   gfx::RectF filter_bounds(10.f, 10.f, 50.f, 50.f);
@@ -255,11 +264,12 @@ TEST(DisplayItemListTest, CompactingItems) {
   unsigned char pixels[4 * 100 * 100] = {0};
 
   gfx::PointF offset(8.f, 9.f);
-  gfx::RectF recording_rect(offset, layer_rect.size());
+  gfx::RectF recording_rect(offset, gfx::SizeF(layer_rect.size()));
 
-  bool use_cached_picture = false;
+  DisplayItemListSettings no_caching_settings;
+  no_caching_settings.use_cached_picture = false;
   scoped_refptr<DisplayItemList> list_without_caching =
-      DisplayItemList::Create(layer_rect, use_cached_picture);
+      DisplayItemList::Create(layer_rect, no_caching_settings);
 
   canvas = skia::SharePtr(
       recorder.beginRecording(gfx::RectFToSkRect(recording_rect)));
@@ -273,9 +283,10 @@ TEST(DisplayItemListTest, CompactingItems) {
   DrawDisplayList(pixels, layer_rect, list_without_caching);
 
   unsigned char expected_pixels[4 * 100 * 100] = {0};
-  use_cached_picture = true;
+  DisplayItemListSettings caching_settings;
+  caching_settings.use_cached_picture = true;
   scoped_refptr<DisplayItemList> list_with_caching =
-      DisplayItemList::Create(layer_rect, use_cached_picture);
+      DisplayItemList::Create(layer_rect, caching_settings);
   auto* item2 = list_with_caching->CreateAndAppendItem<DrawingDisplayItem>();
   item2->SetNew(picture);
   list_with_caching->Finalize();
@@ -290,9 +301,10 @@ TEST(DisplayItemListTest, IsSuitableForGpuRasterizationWithCachedPicture) {
   skia::RefPtr<SkCanvas> canvas;
   skia::RefPtr<SkPicture> picture;
 
-  bool use_cached_picture = true;
+  DisplayItemListSettings settings;
+  settings.use_cached_picture = true;
   scoped_refptr<DisplayItemList> list =
-      DisplayItemList::Create(layer_rect, use_cached_picture);
+      DisplayItemList::Create(layer_rect, settings);
   canvas =
       skia::SharePtr(recorder.beginRecording(gfx::RectToSkRect(layer_rect)));
 
@@ -317,7 +329,7 @@ TEST(DisplayItemListTest, IsSuitableForGpuRasterizationWithCachedPicture) {
   // a veto.
   EXPECT_TRUE(list->IsSuitableForGpuRasterization());
 
-  list = DisplayItemList::Create(layer_rect, use_cached_picture);
+  list = DisplayItemList::Create(layer_rect, settings);
   canvas =
       skia::SharePtr(recorder.beginRecording(gfx::RectToSkRect(layer_rect)));
   for (int i = 0; i < 10; ++i)
@@ -331,7 +343,7 @@ TEST(DisplayItemListTest, IsSuitableForGpuRasterizationWithCachedPicture) {
   // trigger a veto.
   EXPECT_FALSE(list->IsSuitableForGpuRasterization());
 
-  list = DisplayItemList::Create(layer_rect, use_cached_picture);
+  list = DisplayItemList::Create(layer_rect, settings);
   for (int i = 0; i < 10; ++i) {
     canvas =
         skia::SharePtr(recorder.beginRecording(gfx::RectToSkRect(layer_rect)));
@@ -353,9 +365,10 @@ TEST(DisplayItemListTest, IsSuitableForGpuRasterizationWithoutCachedPicture) {
   skia::RefPtr<SkCanvas> canvas;
   skia::RefPtr<SkPicture> picture;
 
-  bool use_cached_picture = false;
+  DisplayItemListSettings settings;
+  settings.use_cached_picture = false;
   scoped_refptr<DisplayItemList> list =
-      DisplayItemList::Create(layer_rect, use_cached_picture);
+      DisplayItemList::Create(layer_rect, settings);
   canvas =
       skia::SharePtr(recorder.beginRecording(gfx::RectToSkRect(layer_rect)));
 
@@ -380,7 +393,7 @@ TEST(DisplayItemListTest, IsSuitableForGpuRasterizationWithoutCachedPicture) {
   // a veto.
   EXPECT_TRUE(list->IsSuitableForGpuRasterization());
 
-  list = DisplayItemList::Create(layer_rect, use_cached_picture);
+  list = DisplayItemList::Create(layer_rect, settings);
   canvas =
       skia::SharePtr(recorder.beginRecording(gfx::RectToSkRect(layer_rect)));
   for (int i = 0; i < 10; ++i)
@@ -394,7 +407,7 @@ TEST(DisplayItemListTest, IsSuitableForGpuRasterizationWithoutCachedPicture) {
   // trigger a veto.
   EXPECT_FALSE(list->IsSuitableForGpuRasterization());
 
-  list = DisplayItemList::Create(layer_rect, use_cached_picture);
+  list = DisplayItemList::Create(layer_rect, settings);
   for (int i = 0; i < 10; ++i) {
     canvas =
         skia::SharePtr(recorder.beginRecording(gfx::RectToSkRect(layer_rect)));
@@ -421,7 +434,7 @@ TEST(DisplayItemListTest, ApproximateMemoryUsage) {
   SkPictureRecorder recorder;
   SkPaint blue_paint;
   blue_paint.setColor(SK_ColorBLUE);
-  SkCanvas* canvas = recorder.beginRecording(gfx::RectFToSkRect(layer_rect));
+  SkCanvas* canvas = recorder.beginRecording(gfx::RectToSkRect(layer_rect));
   for (int i = 0; i < kNumCommandsInTestSkPicture; i++)
     canvas->drawPaint(blue_paint);
   skia::RefPtr<SkPicture> picture =
@@ -430,7 +443,9 @@ TEST(DisplayItemListTest, ApproximateMemoryUsage) {
   ASSERT_GE(picture_size, kNumCommandsInTestSkPicture * sizeof(blue_paint));
 
   // Using a cached picture, we should get about the right size.
-  list = DisplayItemList::Create(layer_rect, true);
+  DisplayItemListSettings caching_settings;
+  caching_settings.use_cached_picture = true;
+  list = DisplayItemList::Create(layer_rect, caching_settings);
   auto* item = list->CreateAndAppendItem<DrawingDisplayItem>();
   item->SetNew(picture);
   list->Finalize();
@@ -439,7 +454,9 @@ TEST(DisplayItemListTest, ApproximateMemoryUsage) {
   EXPECT_LE(memory_usage, 2 * picture_size);
 
   // Using no cached picture, we should still get the right size.
-  list = DisplayItemList::Create(layer_rect, false);
+  DisplayItemListSettings no_caching_settings;
+  no_caching_settings.use_cached_picture = false;
+  list = DisplayItemList::Create(layer_rect, no_caching_settings);
   item = list->CreateAndAppendItem<DrawingDisplayItem>();
   item->SetNew(picture);
   list->Finalize();
@@ -450,9 +467,7 @@ TEST(DisplayItemListTest, ApproximateMemoryUsage) {
   // To avoid double counting, we expect zero size to be computed if both the
   // picture and items are retained (currently this only happens due to certain
   // categories being traced).
-  DisplayItemListSettings settings;
-  settings.use_cached_picture = true;
-  list = new DisplayItemList(layer_rect, settings, true);
+  list = new DisplayItemList(layer_rect, caching_settings, true);
   item = list->CreateAndAppendItem<DrawingDisplayItem>();
   item->SetNew(picture);
   list->Finalize();

@@ -17,10 +17,11 @@
 
 namespace blink {
 
-PushSubscription* PushSubscription::take(ScriptPromiseResolver*, WebPushSubscription* pushSubscription, ServiceWorkerRegistration* serviceWorkerRegistration)
+PushSubscription* PushSubscription::take(ScriptPromiseResolver*, PassOwnPtr<WebPushSubscription> pushSubscription, ServiceWorkerRegistration* serviceWorkerRegistration)
 {
-    OwnPtr<WebPushSubscription> subscription = adoptPtr(pushSubscription);
-    return new PushSubscription(subscription->endpoint, serviceWorkerRegistration);
+    if (!pushSubscription)
+        return nullptr;
+    return new PushSubscription(*pushSubscription, serviceWorkerRegistration);
 }
 
 void PushSubscription::dispose(WebPushSubscription* pushSubscription)
@@ -29,8 +30,9 @@ void PushSubscription::dispose(WebPushSubscription* pushSubscription)
         delete pushSubscription;
 }
 
-PushSubscription::PushSubscription(const KURL& endpoint, ServiceWorkerRegistration* serviceWorkerRegistration)
-    : m_endpoint(endpoint)
+PushSubscription::PushSubscription(const WebPushSubscription& subscription, ServiceWorkerRegistration* serviceWorkerRegistration)
+    : m_endpoint(subscription.endpoint)
+    , m_curve25519dh(DOMArrayBuffer::create(subscription.curve25519dh.data(), subscription.curve25519dh.size()))
     , m_serviceWorkerRegistration(serviceWorkerRegistration)
 {
 }
@@ -44,9 +46,17 @@ KURL PushSubscription::endpoint() const
     return m_endpoint;
 }
 
+PassRefPtr<DOMArrayBuffer> PushSubscription::getKey(const AtomicString& name) const
+{
+    if (name == "curve25519dh")
+        return m_curve25519dh;
+
+    return nullptr;
+}
+
 ScriptPromise PushSubscription::unsubscribe(ScriptState* scriptState)
 {
-    RefPtrWillBeRawPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(scriptState);
+    ScriptPromiseResolver* resolver = ScriptPromiseResolver::create(scriptState);
     ScriptPromise promise = resolver->promise();
 
     WebPushProvider* webPushProvider = Platform::current()->pushProvider();
@@ -60,6 +70,9 @@ ScriptValue PushSubscription::toJSONForBinding(ScriptState* scriptState)
 {
     V8ObjectBuilder result(scriptState);
     result.addString("endpoint", endpoint());
+
+    // TODO(peter): Include |curve25519dh| in the serialized JSON blob if the intended
+    // serialization behavior gets defined in the spec.
 
     return result.scriptValue();
 }

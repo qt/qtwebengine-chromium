@@ -76,8 +76,6 @@ extern "C" {
 
 /* Allocation and freeing. */
 
-DEFINE_STACK_OF(BIO);
-
 /* BIO_new creates a new BIO with the given type and a reference count of one.
  * It returns the fresh |BIO|, or NULL on error. */
 OPENSSL_EXPORT BIO *BIO_new(const BIO_METHOD *type);
@@ -685,12 +683,6 @@ OPENSSL_EXPORT int BIO_zero_copy_get_write_buf_done(BIO* bio,
                                                     size_t bytes_written);
 
 
-/* Deprecated functions. */
-
-/* ERR_print_errors is an alias for |BIO_print_errors|. */
-OPENSSL_EXPORT void ERR_print_errors(BIO *bio);
-
-
 /* BIO_NOCLOSE and |BIO_CLOSE| can be used as symbolic arguments when a "close
  * flag" is passed to a BIO function. */
 #define BIO_NOCLOSE 0
@@ -740,6 +732,9 @@ OPENSSL_EXPORT void ERR_print_errors(BIO *bio);
  * writing, to signal that no more data are to be encoded. The flag
  * |BIO_FLAGS_BASE64_NO_NL| may be set to encode all the data on one line. */
 OPENSSL_EXPORT const BIO_METHOD *BIO_f_base64(void);
+
+/* ERR_print_errors is an alias for |BIO_print_errors|. */
+OPENSSL_EXPORT void ERR_print_errors(BIO *bio);
 
 
 /* Private functions */
@@ -885,25 +880,6 @@ struct bio_st {
 }  /* extern C */
 #endif
 
-#define BIO_F_BIO_callback_ctrl 100
-#define BIO_F_BIO_ctrl 101
-#define BIO_F_BIO_new 102
-#define BIO_F_BIO_new_file 103
-#define BIO_F_BIO_new_mem_buf 104
-#define BIO_F_BIO_zero_copy_get_read_buf 105
-#define BIO_F_BIO_zero_copy_get_read_buf_done 106
-#define BIO_F_BIO_zero_copy_get_write_buf 107
-#define BIO_F_BIO_zero_copy_get_write_buf_done 108
-#define BIO_F_bio_io 109
-#define BIO_F_bio_make_pair 110
-#define BIO_F_bio_write 111
-#define BIO_F_buffer_ctrl 112
-#define BIO_F_conn_ctrl 113
-#define BIO_F_conn_state 114
-#define BIO_F_file_ctrl 115
-#define BIO_F_file_read 116
-#define BIO_F_mem_write 117
-#define BIO_F_BIO_printf 118
 #define BIO_R_BAD_FOPEN_MODE 100
 #define BIO_R_BROKEN_PIPE 101
 #define BIO_R_CONNECT_ERROR 102

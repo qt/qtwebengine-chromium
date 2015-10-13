@@ -46,6 +46,7 @@ class Node;
 struct WrapperTypeInfo;
 
 class V8DOMWrapper {
+    STATIC_ONLY(V8DOMWrapper);
 public:
     static v8::Local<v8::Object> createWrapper(v8::Isolate*, v8::Local<v8::Object> creationContext, const WrapperTypeInfo*, ScriptWrappable*);
     static bool isWrapper(v8::Isolate*, v8::Local<v8::Value>);
@@ -107,6 +108,7 @@ inline v8::Local<v8::Object> V8DOMWrapper::associateObjectWithWrapper(v8::Isolat
 }
 
 class V8WrapperInstantiationScope {
+    STACK_ALLOCATED();
 public:
     V8WrapperInstantiationScope(v8::Local<v8::Object> creationContext, v8::Isolate* isolate, bool withSecurityCheck = true)
         : m_didEnterContext(false)

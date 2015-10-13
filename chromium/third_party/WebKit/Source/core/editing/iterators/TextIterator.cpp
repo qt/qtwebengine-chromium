@@ -31,12 +31,12 @@
 #include "core/HTMLNames.h"
 #include "core/dom/Document.h"
 #include "core/dom/FirstLetterPseudoElement.h"
-#include "core/dom/Position.h"
 #include "core/dom/shadow/ShadowRoot.h"
+#include "core/editing/EditingUtilities.h"
 #include "core/editing/EphemeralRange.h"
+#include "core/editing/Position.h"
 #include "core/editing/VisiblePosition.h"
 #include "core/editing/VisibleUnits.h"
-#include "core/editing/htmlediting.h"
 #include "core/editing/iterators/CharacterIterator.h"
 #include "core/editing/iterators/WordAwareIterator.h"
 #include "core/frame/FrameView.h"
@@ -69,12 +69,16 @@ TextIteratorBehaviorFlags adjustBehaviorFlags(TextIteratorBehaviorFlags);
 template <>
 TextIteratorBehaviorFlags adjustBehaviorFlags<EditingStrategy>(TextIteratorBehaviorFlags flags)
 {
+    if (flags & TextIteratorForSelectionToString)
+        return flags | TextIteratorExcludeAutofilledValue;
     return flags;
 }
 
 template <>
 TextIteratorBehaviorFlags adjustBehaviorFlags<EditingInComposedTreeStrategy>(TextIteratorBehaviorFlags flags)
 {
+    if (flags & TextIteratorForSelectionToString)
+        flags |= TextIteratorExcludeAutofilledValue;
     return flags & ~(TextIteratorEntersOpenShadowRoots | TextIteratorEntersTextControls);
 }
 
@@ -119,7 +123,7 @@ int shadowDepthOf<EditingInComposedTreeStrategy>(const Node& startContainer, con
 } // namespace
 
 template<typename Strategy>
-TextIteratorAlgorithm<Strategy>::TextIteratorAlgorithm(const typename Strategy::PositionType& start, const typename Strategy::PositionType& end, TextIteratorBehaviorFlags behavior)
+TextIteratorAlgorithm<Strategy>::TextIteratorAlgorithm(const PositionTemplate<Strategy>& start, const PositionTemplate<Strategy>& end, TextIteratorBehaviorFlags behavior)
     : m_offset(0)
     , m_startContainer(nullptr)
     , m_startOffset(0)
@@ -141,11 +145,14 @@ TextIteratorAlgorithm<Strategy>::TextIteratorAlgorithm(const typename Strategy::
 {
     ASSERT(start.isNotNull());
     ASSERT(end.isNotNull());
+    // Updates layout here since, |Position.compareTo()| and |initialize()|
+    // assume layout tree is up-to-date.
+    start.document()->updateLayoutIgnorePendingStylesheets();
     if (start.compareTo(end) > 0) {
-        initialize(end.containerNode(), end.computeOffsetInContainerNode(), start.containerNode(), start.computeOffsetInContainerNode());
+        initialize(end.computeContainerNode(), end.computeOffsetInContainerNode(), start.computeContainerNode(), start.computeOffsetInContainerNode());
         return;
     }
-    initialize(start.containerNode(), start.computeOffsetInContainerNode(), end.containerNode(), end.computeOffsetInContainerNode());
+    initialize(start.computeContainerNode(), start.computeOffsetInContainerNode(), end.computeContainerNode(), end.computeOffsetInContainerNode());
 }
 
 template<typename Strategy>
@@ -174,8 +181,6 @@ void TextIteratorAlgorithm<Strategy>::initialize(Node* startContainer, int start
 
     if (!m_node)
         return;
-
-    m_node->document().updateLayoutIgnorePendingStylesheets();
 
     m_fullyClippedStack.setUpFullyClippedStack(m_node);
     m_offset = m_node == m_startContainer ? m_startOffset : 0;
@@ -278,9 +283,9 @@ void TextIteratorAlgorithm<Strategy>::advance()
         } else {
             // Enter author shadow roots, from youngest, if any and if necessary.
             if (m_iterationProgress < HandledOpenShadowRoots) {
-                if (entersOpenShadowRoots() && m_node->isElementNode() && toElement(m_node)->hasOpenShadowRoot()) {
-                    ShadowRoot* youngestShadowRoot = toElement(m_node)->shadowRoot();
-                    ASSERT(youngestShadowRoot->type() == ShadowRootType::Open);
+                if (entersOpenShadowRoots() && m_node->isElementNode() && toElement(m_node)->openShadowRoot()) {
+                    ShadowRoot* youngestShadowRoot = toElement(m_node)->openShadowRoot();
+                    ASSERT(youngestShadowRoot->type() == ShadowRootType::OpenByDefault || youngestShadowRoot->type() == ShadowRootType::Open);
                     m_node = youngestShadowRoot;
                     m_iterationProgress = HandledNone;
                     ++m_shadowDepth;
@@ -363,10 +368,15 @@ void TextIteratorAlgorithm<Strategy>::advance()
                 if (!next && !parentNode && m_shadowDepth > 0) {
                     // 4. Reached the top of a shadow root. If it's created by author, then try to visit the next
                     // sibling shadow root, if any.
+                    if (!m_node->isShadowRoot()) {
+                        ASSERT_NOT_REACHED();
+                        m_shouldStop = true;
+                        return;
+                    }
                     ShadowRoot* shadowRoot = toShadowRoot(m_node);
-                    if (shadowRoot->type() == ShadowRootType::Open) {
+                    if (shadowRoot->type() == ShadowRootType::OpenByDefault || shadowRoot->type() == ShadowRootType::Open) {
                         ShadowRoot* nextShadowRoot = shadowRoot->olderShadowRoot();
-                        if (nextShadowRoot && nextShadowRoot->type() == ShadowRootType::Open) {
+                        if (nextShadowRoot && nextShadowRoot->type() == ShadowRootType::OpenByDefault) {
                             m_fullyClippedStack.pop();
                             m_node = nextShadowRoot;
                             m_iterationProgress = HandledNone;
@@ -380,8 +390,9 @@ void TextIteratorAlgorithm<Strategy>::advance()
                             m_fullyClippedStack.pop();
                         }
                     } else {
-                        // If we are in a user-agent shadow root, then go back to the host.
-                        ASSERT(shadowRoot->type() == ShadowRootType::UserAgent);
+                        // If we are in a closed or user-agent shadow root, then go back to the host.
+                        // TODO(kochi): Make sure we treat closed shadow as user agent shadow here.
+                        ASSERT(shadowRoot->type() == ShadowRootType::Closed || shadowRoot->type() == ShadowRootType::UserAgent);
                         m_node = shadowRoot->host();
                         m_iterationProgress = HandledUserAgentShadowRoot;
                         --m_shadowDepth;
@@ -429,6 +440,14 @@ static bool hasVisibleTextNode(LayoutText* layoutObject)
 template<typename Strategy>
 bool TextIteratorAlgorithm<Strategy>::handleTextNode()
 {
+    if (excludesAutofilledValue()) {
+        HTMLTextFormControlElement* control = enclosingTextFormControl(m_node);
+        // For security reason, we don't expose suggested value if it is
+        // auto-filled.
+        if (control && control->isAutofilled())
+            return true;
+    }
+
     Text* textNode = toText(m_node);
     LayoutText* layoutObject = textNode->layoutObject();
 
@@ -862,8 +881,8 @@ bool TextIteratorAlgorithm<Strategy>::shouldRepresentNodeOffsetZero()
     // and in that case we'll get null. We don't want to put in newlines at the start in that case.
     // The currPos.isNotNull() check is needed because positions in non-HTML content
     // (like SVG) do not have visible positions, and we don't want to emit for them either.
-    VisiblePosition startPos = VisiblePosition(Position(m_startContainer, m_startOffset), DOWNSTREAM);
-    VisiblePosition currPos = VisiblePosition(positionBeforeNode(m_node), DOWNSTREAM);
+    VisiblePosition startPos = createVisiblePosition(Position(m_startContainer, m_startOffset));
+    VisiblePosition currPos = createVisiblePosition(positionBeforeNode(m_node));
     return startPos.isNotNull() && currPos.isNotNull() && !inSameLine(startPos, currPos);
 }
 
@@ -971,17 +990,19 @@ void TextIteratorAlgorithm<Strategy>::emitText(Node* textNode, LayoutText* layou
 }
 
 template<typename Strategy>
-EphemeralRange TextIteratorAlgorithm<Strategy>::range() const
+EphemeralRangeTemplate<Strategy> TextIteratorAlgorithm<Strategy>::range() const
 {
     // use the current run information, if we have it
-    if (m_textState.positionNode())
-        return m_textState.range();
+    if (m_textState.positionNode()) {
+        m_textState.flushPositionOffsets();
+        return EphemeralRangeTemplate<Strategy>(PositionTemplate<Strategy>(m_textState.positionNode(), m_textState.positionStartOffset()), PositionTemplate<Strategy>(m_textState.positionNode(), m_textState.positionEndOffset()));
+    }
 
     // otherwise, return the end of the overall range we were given
     if (m_endContainer)
-        return EphemeralRange(Position(m_endContainer, m_endOffset));
+        return EphemeralRangeTemplate<Strategy>(PositionTemplate<Strategy>(m_endContainer, m_endOffset));
 
-    return EphemeralRange();
+    return EphemeralRangeTemplate<Strategy>();
 }
 
 template<typename Strategy>
@@ -1039,19 +1060,19 @@ Node* TextIteratorAlgorithm<Strategy>::currentContainer() const
 }
 
 template<typename Strategy>
-typename Strategy::PositionType TextIteratorAlgorithm<Strategy>::startPositionInCurrentContainer() const
+PositionTemplate<Strategy> TextIteratorAlgorithm<Strategy>::startPositionInCurrentContainer() const
 {
-    return Strategy::PositionType::createLegacyEditingPosition(currentContainer(), startOffsetInCurrentContainer());
+    return PositionTemplate<Strategy>::editingPositionOf(currentContainer(), startOffsetInCurrentContainer());
 }
 
 template<typename Strategy>
-typename Strategy::PositionType TextIteratorAlgorithm<Strategy>::endPositionInCurrentContainer() const
+PositionTemplate<Strategy> TextIteratorAlgorithm<Strategy>::endPositionInCurrentContainer() const
 {
-    return Strategy::PositionType::createLegacyEditingPosition(currentContainer(), endOffsetInCurrentContainer());
+    return PositionTemplate<Strategy>::editingPositionOf(currentContainer(), endOffsetInCurrentContainer());
 }
 
 template<typename Strategy>
-int TextIteratorAlgorithm<Strategy>::rangeLength(const typename Strategy::PositionType& start, const typename Strategy::PositionType& end, bool forSelectionPreservation)
+int TextIteratorAlgorithm<Strategy>::rangeLength(const PositionTemplate<Strategy>& start, const PositionTemplate<Strategy>& end, bool forSelectionPreservation)
 {
     int length = 0;
     TextIteratorBehaviorFlags behaviorFlags = TextIteratorEmitsObjectReplacementCharacter;
@@ -1063,45 +1084,42 @@ int TextIteratorAlgorithm<Strategy>::rangeLength(const typename Strategy::Positi
     return length;
 }
 
-template<typename Strategy>
-EphemeralRange TextIteratorAlgorithm<Strategy>::subrange(const Position& start, const Position& end, int characterOffset, int characterCount)
-{
-    CharacterIterator entireRangeIterator(start, end, TextIteratorEmitsObjectReplacementCharacter);
-    return entireRangeIterator.calculateCharacterSubrange(characterOffset, characterCount);
-}
-
 // --------
 
 template <typename Strategy>
-static String createPlainText(const typename Strategy::PositionType& start, const typename Strategy::PositionType& end, TextIteratorBehaviorFlags behavior)
+static String createPlainText(const EphemeralRangeTemplate<Strategy>& range, TextIteratorBehaviorFlags behavior)
 {
-    TextIteratorAlgorithm<Strategy> it(start, end, behavior);
+    if (range.isNull())
+        return emptyString();
+
+    TextIteratorAlgorithm<Strategy> it(range.startPosition(), range.endPosition(), behavior);
+
+    if (it.atEnd())
+        return emptyString();
+
     // The initial buffer size can be critical for performance: https://bugs.webkit.org/show_bug.cgi?id=81192
     static const unsigned initialCapacity = 1 << 15;
 
-    unsigned bufferLength = 0;
     StringBuilder builder;
     builder.reserveCapacity(initialCapacity);
 
-    for (; !it.atEnd(); it.advance()) {
+    for (; !it.atEnd(); it.advance())
         it.text().appendTextToStringBuilder(builder);
-        bufferLength += it.length();
-    }
 
-    if (!bufferLength)
+    if (builder.isEmpty())
         return emptyString();
 
     return builder.toString();
 }
 
-String plainText(const Position& start, const Position& end, TextIteratorBehaviorFlags behavior)
+String plainText(const EphemeralRange& range, TextIteratorBehaviorFlags behavior)
 {
-    return createPlainText<EditingStrategy>(start, end, behavior);
+    return createPlainText<EditingStrategy>(range, behavior);
 }
 
-String plainText(const PositionInComposedTree& start, const PositionInComposedTree& end, TextIteratorBehaviorFlags behavior)
+String plainText(const EphemeralRangeInComposedTree& range, TextIteratorBehaviorFlags behavior)
 {
-    return createPlainText<EditingInComposedTreeStrategy>(start, end, behavior);
+    return createPlainText<EditingInComposedTreeStrategy>(range, behavior);
 }
 
 template class CORE_TEMPLATE_EXPORT TextIteratorAlgorithm<EditingStrategy>;

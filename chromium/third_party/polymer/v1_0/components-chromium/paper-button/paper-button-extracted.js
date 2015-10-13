@@ -1,7 +1,5 @@
 
-
   Polymer({
-
     is: 'paper-button',
 
     behaviors: [
@@ -9,7 +7,6 @@
     ],
 
     properties: {
-
       /**
        * If true, the button should be styled with a shadow.
        */
@@ -37,4 +34,3 @@
       return className;
     }
   });
-

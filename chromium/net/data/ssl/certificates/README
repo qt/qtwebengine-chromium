@@ -21,7 +21,7 @@ unit tests.
 
 - www_us_army_mil_cert.der
 - dod_ca_17_cert.der
-- dod_root_ca_2_cert.der : 
+- dod_root_ca_2_cert.der :
      A certificate chain used for testing certificate imports
 
 - unosoft_hu_cert : Certificate used by X509CertificateTest.UnoSoftCertParsing.
@@ -141,6 +141,10 @@ unit tests.
     Two certificates used to test the built-in ability to restrict a root to
     a particular namespace.
 
+- bad_validity.pem
+    A certificate and private key only valid on 0001-01-01. Windows refuses to
+    parse this certificate.
+
 - sha256.pem: Used to test the handling of SHA-256 certs on Windows.
 
 - spdy_pooling.pem : Used to test the handling of spdy IP connection pooling
@@ -150,6 +154,9 @@ unit tests.
 
 - punycodetest.pem : A test self-signed server certificate with punycode name.
      The common name is "xn--wgv71a119e.com" (日本語.com)
+
+- sha1_2016.pem
+    Used to test the handling of SHA1 certificates expiring in 2016.
 
 - 10_year_validity.pem
 - 11_year_validity.pem

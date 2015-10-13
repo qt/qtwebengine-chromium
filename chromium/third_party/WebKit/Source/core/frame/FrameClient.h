@@ -6,6 +6,7 @@
 #define FrameClient_h
 
 #include "core/CoreExport.h"
+#include "platform/heap/Handle.h"
 
 namespace blink {
 
@@ -15,7 +16,8 @@ class MessageEvent;
 class SecurityOrigin;
 enum class FrameDetachType;
 
-class CORE_EXPORT FrameClient {
+class CORE_EXPORT FrameClient : public NoBaseWillBeGarbageCollectedFinalized<FrameClient> {
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(FrameClient);
 public:
     virtual bool inShadowTree() const = 0;
 
@@ -40,6 +42,8 @@ public:
     virtual bool willCheckAndDispatchMessageEvent(SecurityOrigin* /*target*/, MessageEvent*, LocalFrame* /*sourceFrame*/) const { return false; }
 
     virtual ~FrameClient() { }
+
+    DEFINE_INLINE_VIRTUAL_TRACE() { }
 };
 
 } // namespace blink

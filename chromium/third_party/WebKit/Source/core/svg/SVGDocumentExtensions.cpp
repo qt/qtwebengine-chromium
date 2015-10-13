@@ -34,7 +34,6 @@ namespace blink {
 
 SVGDocumentExtensions::SVGDocumentExtensions(Document* document)
     : m_document(document)
-    , m_resourcesCache(adoptPtr(new SVGResourcesCache))
 #if ENABLE(ASSERT)
     , m_inRelativeLengthSVGRootsInvalidation(false)
 #endif
@@ -84,7 +83,7 @@ LayoutSVGResourceContainer* SVGDocumentExtensions::resourceById(const AtomicStri
 
 void SVGDocumentExtensions::serviceOnAnimationFrame(Document& document, double monotonicAnimationStartTime)
 {
-    if (!document.svgExtensions())
+    if (!document.svgExtensions() || !RuntimeEnabledFeatures::smilEnabled())
         return;
     document.accessSVGExtensions().serviceAnimations(monotonicAnimationStartTime);
 }

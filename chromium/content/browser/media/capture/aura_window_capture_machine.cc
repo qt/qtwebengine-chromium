@@ -16,8 +16,8 @@
 #include "content/public/browser/power_save_blocker.h"
 #include "media/base/video_capture_types.h"
 #include "media/base/video_util.h"
-#include "media/capture/thread_safe_capture_oracle.h"
-#include "media/capture/video_capture_oracle.h"
+#include "media/capture/content/thread_safe_capture_oracle.h"
+#include "media/capture/content/video_capture_oracle.h"
 #include "skia/ext/image_operations.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/aura/client/screen_position_client.h"
@@ -318,7 +318,7 @@ bool AuraWindowCaptureMachine::ProcessCopyOutputResponse(
     if (!texture_mailbox.IsTexture())
       return false;
     video_frame = media::VideoFrame::WrapNativeTexture(
-        media::VideoFrame::ARGB,
+        media::PIXEL_FORMAT_ARGB,
         gpu::MailboxHolder(texture_mailbox.mailbox(), texture_mailbox.target(),
                            texture_mailbox.sync_point()),
         base::Bind(&RunSingleReleaseCallback, base::Passed(&release_callback)),
@@ -456,12 +456,12 @@ void AuraWindowCaptureMachine::OnWindowBoundsChanged(
       &AuraWindowCaptureMachine::UpdateCaptureSize, AsWeakPtr()));
 }
 
-void AuraWindowCaptureMachine::OnWindowDestroyed(aura::Window* window) {
+void AuraWindowCaptureMachine::OnWindowDestroying(aura::Window* window) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
-  Stop(base::Bind(&base::DoNothing));
+  InternalStop(base::Bind(&base::DoNothing));
 
-  oracle_proxy_->ReportError("OnWindowDestroyed()");
+  oracle_proxy_->ReportError("OnWindowDestroying()");
 }
 
 void AuraWindowCaptureMachine::OnWindowAddedToRootWindow(

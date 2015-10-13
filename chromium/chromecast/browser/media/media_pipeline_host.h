@@ -6,6 +6,7 @@
 #define CHROMECAST_BROWSER_MEDIA_MEDIA_PIPELINE_HOST_H_
 
 #include <map>
+#include <vector>
 
 #include "base/callback.h"
 #include "base/macros.h"
@@ -14,13 +15,11 @@
 #include "base/threading/thread_checker.h"
 #include "base/time/time.h"
 #include "chromecast/common/media/cma_ipc_common.h"
-#include "chromecast/media/cma/backend/media_pipeline_device.h"
 #include "chromecast/media/cma/pipeline/load_type.h"
 #include "media/base/pipeline_status.h"
 
 namespace base {
 class SharedMemory;
-class SingleThreadTaskRunner;
 }
 
 namespace media {
@@ -29,22 +28,29 @@ class VideoDecoderConfig;
 }
 
 namespace chromecast {
+class TaskRunnerImpl;
+
 namespace media {
 struct AvPipelineClient;
 class BrowserCdmCast;
+class MediaPipelineBackend;
 struct MediaPipelineClient;
+struct MediaPipelineDeviceParams;
 class MediaPipelineImpl;
 struct VideoPipelineClient;
 
 class MediaPipelineHost {
  public:
+  // Factory method to create a MediaPipelineBackend
+  typedef base::Callback<scoped_ptr<media::MediaPipelineBackend>(
+      const MediaPipelineDeviceParams&)> CreateDeviceComponentsCB;
+
   MediaPipelineHost();
   ~MediaPipelineHost();
 
-  void Initialize(
-      LoadType load_type,
-      const MediaPipelineClient& client,
-      const media::CreatePipelineDeviceCB& create_pipeline_device_cb);
+  void Initialize(LoadType load_type,
+                  const MediaPipelineClient& client,
+                  const CreateDeviceComponentsCB& create_device_components_cb);
 
   void SetAvPipe(TrackId track_id,
                  scoped_ptr<base::SharedMemory> shared_mem,
@@ -71,6 +77,7 @@ class MediaPipelineHost {
  private:
   base::ThreadChecker thread_checker_;
 
+  scoped_ptr<TaskRunnerImpl> task_runner_;
   scoped_ptr<MediaPipelineImpl> media_pipeline_;
 
   // The shared memory for a track id must be valid until Stop is invoked on

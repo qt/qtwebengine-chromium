@@ -18,6 +18,7 @@
       'type': 'none',
       'dependencies': [
         'bench_pictures',
+        'bitmap_region_decoder',
         'chrome_fuzz',
         'dump_record',
         'filter',
@@ -35,8 +36,10 @@
         'skpdiff',
         'skpinfo',
         'skpmaker',
+        'imgslice',
         'test_image_decoder',
         'test_public_includes',
+        'whitelist_typefaces',
       ],
       'conditions': [
         ['skia_shared_lib',
@@ -46,6 +49,21 @@
             ],
           },
         ],
+      ],
+    },
+    {
+      'target_name': 'bitmap_region_decoder',
+      'type': 'static_library',
+      'sources': [
+        '../tools/SkBitmapRegionCanvas.cpp',
+        '../tools/SkBitmapRegionDecoderInterface.cpp',
+        '../tools/SkBitmapRegionSampler.cpp',
+      ],
+      'include_dirs': [
+        '../include/private'
+      ],
+      'dependencies': [
+        'skia_lib.gyp:skia_lib',
       ],
     },
     {
@@ -100,7 +118,9 @@
         '../tools/sk_tool_utils_font.cpp',
       ],
       'include_dirs': [
+        '../include/private',
         '../src/fonts',
+        '../src/core',
       ],
       'dependencies': [
         'resources',
@@ -119,6 +139,7 @@
         '../tools/timer/TimerData.cpp',
       ],
       'include_dirs': [
+        '../include/private',
         '../src/core',
         '../src/gpu',
       ],
@@ -162,6 +183,16 @@
       'dependencies': [
         'skia_lib.gyp:skia_lib',
       ],
+      'xcode_settings': {
+        'conditions': [
+          [ 'skia_osx_deployment_target==""', {
+            'MACOSX_DEPLOYMENT_TARGET': '10.7', # -mmacos-version-min, passed in env to ld.
+          }, {
+            'MACOSX_DEPLOYMENT_TARGET': '<(skia_osx_deployment_target)',
+          }],
+        ],
+        'CLANG_CXX_LIBRARY': 'libc++',
+      },
     },
     {
       'target_name': 'skpdiff',
@@ -174,6 +205,7 @@
         '../tools/skpdiff/skpdiff_util.cpp',
       ],
       'include_dirs': [
+        '../include/private',
         '../src/core/', # needed for SkTLList.h
         '../tools/',    # needed for picture_utils::replace_char
       ],
@@ -228,6 +260,7 @@
         '../tools/skpmaker.cpp',
       ],
       'include_dirs': [
+        '../include/private',
         '../src/core',
       ],
       'dependencies': [
@@ -270,7 +303,22 @@
         '../tools/skpinfo.cpp',
       ],
       'include_dirs': [
+        '../include/private',
         '../src/core/',
+      ],
+      'dependencies': [
+        'flags.gyp:flags',
+        'skia_lib.gyp:skia_lib',
+      ],
+    },
+    {
+      'target_name': 'imgslice',
+      'type': 'executable',
+      'sources': [
+        '../tools/imgslice.cpp',
+      ],
+      'include_dirs': [
+        '../include/core',
       ],
       'dependencies': [
         'flags.gyp:flags',
@@ -296,6 +344,7 @@
         '../tools/LazyDecodeBitmap.cpp',
       ],
       'include_dirs': [
+        '../include/private',
         '../src/core/',
         '../src/lazy/',
         '../tools/',
@@ -315,6 +364,7 @@
         '../tools/LazyDecodeBitmap.cpp',
       ],
       'include_dirs': [
+        '../include/private',
         '../src/core/',
         '../src/images',
         '../src/lazy',
@@ -332,6 +382,7 @@
         '../src/utils/SkLua.cpp',
       ],
       'include_dirs': [
+        '../include/private',
         # Lua exposes GrReduceClip which in turn requires src/core for SkTLList
         '../src/gpu/',
         '../src/core/',
@@ -354,6 +405,7 @@
         '../src/utils/SkLua.cpp',
       ],
       'include_dirs': [
+        '../include/private',
         # Lua exposes GrReduceClip which in turn requires src/core for SkTLList
         '../src/gpu/',
         '../src/core/',
@@ -377,6 +429,7 @@
         '../tools/render_pictures_main.cpp',
       ],
       'include_dirs': [
+        '../include/private',
         '../src/core',
         '../src/images',
         '../src/lazy',
@@ -400,6 +453,7 @@
         '../tools/bench_pictures_main.cpp',
       ],
       'include_dirs': [
+        '../include/private',
         '../src/core/',
         '../bench',
         '../src/lazy/',
@@ -428,6 +482,7 @@
         '../tools/LazyDecodeBitmap.cpp',
       ],
       'include_dirs': [
+        '../include/private',
         '../src/core/',
         '../src/images',
         '../src/lazy',
@@ -455,6 +510,7 @@
         '../src/pipe/utils/SamplePipeControllers.cpp',
       ],
       'include_dirs': [
+        '../include/private',
         '../src/core',
         '../src/images',
         '../src/lazy',
@@ -497,6 +553,7 @@
         '../tools/render_pdfs_main.cpp',
       ],
       'include_dirs': [
+        '../include/private',
         '../src/core',
         '../src/pipe/utils/',
         '../src/utils/',
@@ -519,7 +576,7 @@
         # VS static libraries don't have a linker option. We must set a global
         # project linker option, or add it to each executable.
         ['skia_win_debuggers_path and skia_os == "win" and '
-         'skia_arch_width == 64',
+         'skia_arch_type == "x86_64"',
           {
             'msvs_settings': {
               'VCLinkerTool': {
@@ -531,7 +588,7 @@
           },
         ],
         ['skia_win_debuggers_path and skia_os == "win" and '
-         'skia_arch_width == 32',
+         'skia_arch_type == "x86"',
           {
             'msvs_settings': {
               'VCLinkerTool': {
@@ -587,6 +644,7 @@
       'target_name': 'filter',
       'type': 'executable',
       'include_dirs' : [
+        '../include/private',
         '../src/core',
         '../src/utils/debugger',
       ],
@@ -626,6 +684,16 @@
       },
     },
     {
+      'target_name': 'whitelist_typefaces',
+      'type': 'executable',
+      'sources': [
+        '../tools/whitelist_typefaces.cpp',
+      ],
+      'dependencies': [
+        'skia_lib.gyp:skia_lib',
+      ],
+    },
+    {
       'target_name': 'test_public_includes',
       'type': 'static_library',
       # Ensure that our public headers don't have unused params so that clients
@@ -654,8 +722,6 @@
           '<(skia_include_path)/ports/SkAtomics_atomic.h',
           '<(skia_include_path)/ports/SkAtomics_sync.h',
           '<(skia_include_path)/ports/SkFontMgr_fontconfig.h',
-          '<(skia_include_path)/ports/SkMutex_pthread.h',
-          '<(skia_include_path)/ports/SkMutex_win.h',
           '<(skia_include_path)/ports/SkTypeface_mac.h',
           '<(skia_include_path)/ports/SkTypeface_win.h',
           '<(skia_include_path)/utils/ios',
@@ -714,6 +780,7 @@
               '../src/utils/SkLua.cpp',
             ],
             'include_dirs': [
+              '../include/private',
               # Lua exposes GrReduceClip which in turn requires src/core for SkTLList
               '../src/gpu/',
               '../src/core/',
@@ -777,6 +844,7 @@
               '../tools/create_test_font.cpp',
             ],
             'include_dirs': [
+              '../include/private',
               '../src/core',
             ],
             'dependencies': [

@@ -99,16 +99,21 @@ LocalFrame* MixedContentChecker::inWhichFrameIsContentMixed(LocalFrame* frame, W
 }
 
 // static
-MixedContentChecker::ContextType MixedContentChecker::contextTypeFromContext(WebURLRequest::RequestContext context)
+MixedContentChecker::ContextType MixedContentChecker::contextTypeFromContext(WebURLRequest::RequestContext context, LocalFrame* frame)
 {
     switch (context) {
     // "Optionally-blockable" mixed content
     case WebURLRequest::RequestContextAudio:
     case WebURLRequest::RequestContextFavicon:
     case WebURLRequest::RequestContextImage:
-    case WebURLRequest::RequestContextPlugin:
     case WebURLRequest::RequestContextVideo:
         return ContextTypeOptionallyBlockable;
+
+    // Plugins! Oh how dearly we love plugin-loaded content!
+    case WebURLRequest::RequestContextPlugin: {
+        Settings* settings = frame->settings();
+        return settings && settings->strictMixedContentCheckingForPlugin() ? ContextTypeBlockable : ContextTypeOptionallyBlockable;
+    }
 
     // "Blockable" mixed content
     case WebURLRequest::RequestContextBeacon:
@@ -246,7 +251,7 @@ void MixedContentChecker::count(LocalFrame* frame, WebURLRequest::RequestContext
 
     // Roll blockable content up into a single counter, count unblocked types individually so we
     // can determine when they can be safely moved to the blockable category:
-    ContextType contextType = contextTypeFromContext(requestContext);
+    ContextType contextType = contextTypeFromContext(requestContext, frame);
     if (contextType == ContextTypeBlockable) {
         UseCounter::count(frame, UseCounter::MixedContentBlockable);
         return;
@@ -304,7 +309,7 @@ bool MixedContentChecker::shouldBlockFetch(LocalFrame* frame, WebURLRequest::Req
     // the client checks in order to prevent degrading the site's security UI.
     bool strictMode = mixedFrame->document()->shouldEnforceStrictMixedContentChecking() || settings->strictMixedContentChecking();
 
-    ContextType contextType = contextTypeFromContext(requestContext);
+    ContextType contextType = contextTypeFromContext(requestContext, mixedFrame);
 
     // If we're loading the main resource of a subframe, we need to take a close look at the loaded URL.
     // If we're dealing with a CORS-enabled scheme, then block mixed frames as active content. Otherwise,
@@ -322,16 +327,23 @@ bool MixedContentChecker::shouldBlockFetch(LocalFrame* frame, WebURLRequest::Req
             client->didDisplayInsecureContent();
         break;
 
-    case ContextTypeBlockable:
-        allowed = !strictMode && client->allowRunningInsecureContent(settings && settings->allowRunningOfInsecureContent(), securityOrigin, url);
-        if (allowed)
+    case ContextTypeBlockable: {
+        bool shouldAskEmbedder = !strictMode && settings && (!settings->strictlyBlockBlockableMixedContent() || settings->allowRunningOfInsecureContent());
+        allowed = shouldAskEmbedder && client->allowRunningInsecureContent(settings && settings->allowRunningOfInsecureContent(), securityOrigin, url);
+        if (allowed) {
             client->didRunInsecureContent(securityOrigin, url);
+            UseCounter::count(mixedFrame, UseCounter::MixedContentBlockableAllowed);
+        }
         break;
+    }
 
     case ContextTypeShouldBeBlockable:
         allowed = !strictMode;
         if (allowed)
             client->didDisplayInsecureContent();
+        break;
+    case ContextTypeNotMixedContent:
+        ASSERT_NOT_REACHED();
         break;
     };
 
@@ -416,6 +428,37 @@ void MixedContentChecker::checkMixedPrivatePublic(LocalFrame* frame, const Atomi
     // Just count these for the moment, don't block them.
     if (Platform::current()->isReservedIPAddress(resourceIPAddress) && !frame->document()->isHostedInReservedIPRange())
         UseCounter::count(frame->document(), UseCounter::MixedContentPrivateHostnameInPublicHostname);
+}
+
+LocalFrame* MixedContentChecker::effectiveFrameForFrameType(LocalFrame* frame, WebURLRequest::FrameType frameType)
+{
+    // If we're loading the main resource of a subframe, ensure that we check
+    // against the parent of the active frame, rather than the frame itself.
+    LocalFrame* effectiveFrame = frame;
+    if (frameType == WebURLRequest::FrameTypeNested) {
+        // FIXME: Deal with RemoteFrames.
+        Frame* parentFrame = effectiveFrame->tree().parent();
+        ASSERT(parentFrame);
+        if (parentFrame->isLocalFrame())
+            effectiveFrame = toLocalFrame(parentFrame);
+    }
+    return effectiveFrame;
+}
+
+MixedContentChecker::ContextType MixedContentChecker::contextTypeForInspector(LocalFrame* frame, const ResourceRequest& request)
+{
+    LocalFrame* effectiveFrame = effectiveFrameForFrameType(frame, request.frameType());
+
+    LocalFrame* mixedFrame = inWhichFrameIsContentMixed(effectiveFrame, request.frameType(), request.url());
+    if (!mixedFrame)
+        return ContextTypeNotMixedContent;
+
+    // See comment in shouldBlockFetch() about loading the main resource of a subframe.
+    if (request.frameType() == WebURLRequest::FrameTypeNested && !SchemeRegistry::shouldTreatURLSchemeAsCORSEnabled(request.url().protocol())) {
+        return ContextTypeOptionallyBlockable;
+    }
+
+    return contextTypeFromContext(request.requestContext(), mixedFrame);
 }
 
 } // namespace blink

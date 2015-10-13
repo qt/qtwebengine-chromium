@@ -7,10 +7,10 @@
 
 #include "base/basictypes.h"
 #include "base/containers/hash_tables.h"
-#include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "cc/input/input_handler.h"
 #include "content/common/content_export.h"
+#include "content/renderer/input/synchronous_input_handler_proxy.h"
 #include "third_party/WebKit/public/platform/WebGestureCurve.h"
 #include "third_party/WebKit/public/platform/WebGestureCurveTarget.h"
 #include "third_party/WebKit/public/web/WebActiveWheelFlingParameters.h"
@@ -27,11 +27,12 @@ class InputScrollElasticityController;
 // intended for a specific WebWidget.
 class CONTENT_EXPORT InputHandlerProxy
     : public cc::InputHandlerClient,
+      public SynchronousInputHandlerProxy,
       public NON_EXPORTED_BASE(blink::WebGestureCurveTarget) {
  public:
   InputHandlerProxy(cc::InputHandler* input_handler,
                     InputHandlerProxyClient* client);
-  virtual ~InputHandlerProxy();
+  ~InputHandlerProxy() override;
 
   InputScrollElasticityController* scroll_elasticity_controller() {
     return scroll_elasticity_controller_.get();
@@ -52,10 +53,24 @@ class CONTENT_EXPORT InputHandlerProxy
   void Animate(base::TimeTicks time) override;
   void MainThreadHasStoppedFlinging() override;
   void ReconcileElasticOverscrollAndRootScroll() override;
+  void UpdateRootLayerStateForSynchronousInputHandler(
+      const gfx::ScrollOffset& total_scroll_offset,
+      const gfx::ScrollOffset& max_scroll_offset,
+      const gfx::SizeF& scrollable_size,
+      float page_scale_factor,
+      float min_page_scale_factor,
+      float max_page_scale_factor) override;
+
+  // SynchronousInputHandlerProxy implementation.
+  void SetOnlySynchronouslyAnimateRootFlings(
+      SynchronousInputHandler* synchronous_input_handler) override;
+  void SynchronouslyAnimate(base::TimeTicks time) override;
+  void SynchronouslySetRootScrollOffset(
+      const gfx::ScrollOffset& root_offset) override;
 
   // blink::WebGestureCurveTarget implementation.
-  virtual bool scrollBy(const blink::WebFloatSize& offset,
-                        const blink::WebFloatSize& velocity);
+  bool scrollBy(const blink::WebFloatSize& offset,
+                const blink::WebFloatSize& velocity) override;
 
   bool gesture_scroll_on_impl_thread_for_testing() const {
     return gesture_scroll_on_impl_thread_;
@@ -96,6 +111,10 @@ class CONTENT_EXPORT InputHandlerProxy
   // Returns true if we actually had an active fling to cancel.
   bool CancelCurrentFlingWithoutNotifyingClient();
 
+  // Request a frame of animation from the InputHandler or
+  // SynchronousInputHandler. They can provide that by calling Animate().
+  void RequestAnimation();
+
   // Used to send overscroll messages to the browser.
   void HandleOverscroll(
       const gfx::Point& causal_event_viewport_point,
@@ -117,6 +136,13 @@ class CONTENT_EXPORT InputHandlerProxy
   // event was a scroll gesture, a GestureScrollBegin will be inserted if the
   // fling terminates (via |CancelCurrentFling()|).
   blink::WebGestureEvent last_fling_boost_event_;
+
+  // When present, Animates are not requested to the InputHandler, but to this
+  // SynchronousInputHandler instead. And all Animate() calls are expected to
+  // happen via the SynchronouslyAnimate() call instead of coming directly from
+  // the InputHandler.
+  SynchronousInputHandler* synchronous_input_handler_;
+  bool allow_root_animate_;
 
 #ifndef NDEBUG
   bool expect_scroll_update_end_;

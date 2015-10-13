@@ -10,6 +10,7 @@
 #include "core/animation/EffectModel.h"
 #include "core/animation/PropertyHandle.h"
 #include "core/animation/animatable/AnimatableValue.h"
+#include "wtf/Allocator.h"
 
 namespace blink {
 
@@ -19,7 +20,9 @@ class Element;
 class ComputedStyle;
 
 // FIXME: Make Keyframe immutable
-class CORE_EXPORT Keyframe : public RefCountedWillBeGarbageCollectedFinalized<Keyframe> {
+class CORE_EXPORT Keyframe : public RefCounted<Keyframe> {
+    WTF_MAKE_FAST_ALLOCATED(Keyframe);
+    WTF_MAKE_NONCOPYABLE(Keyframe);
 public:
     virtual ~Keyframe() { }
 
@@ -32,17 +35,17 @@ public:
     void setEasing(PassRefPtr<TimingFunction> easing) { m_easing = easing; }
     TimingFunction& easing() const { return *m_easing; }
 
-    static bool compareOffsets(const RefPtrWillBeMember<Keyframe>& a, const RefPtrWillBeMember<Keyframe>& b)
+    static bool compareOffsets(const RefPtr<Keyframe>& a, const RefPtr<Keyframe>& b)
     {
         return a->offset() < b->offset();
     }
 
     virtual PropertyHandleSet properties() const = 0;
 
-    virtual PassRefPtrWillBeRawPtr<Keyframe> clone() const = 0;
-    PassRefPtrWillBeRawPtr<Keyframe> cloneWithOffset(double offset) const
+    virtual PassRefPtr<Keyframe> clone() const = 0;
+    PassRefPtr<Keyframe> cloneWithOffset(double offset) const
     {
-        RefPtrWillBeRawPtr<Keyframe> theClone = clone();
+        RefPtr<Keyframe> theClone = clone();
         theClone->setOffset(offset);
         return theClone.release();
     }
@@ -50,28 +53,28 @@ public:
     virtual bool isAnimatableValueKeyframe() const { return false; }
     virtual bool isStringKeyframe() const { return false; }
 
-    DEFINE_INLINE_VIRTUAL_TRACE() { }
-
-    class PropertySpecificKeyframe : public NoBaseWillBeGarbageCollectedFinalized<PropertySpecificKeyframe> {
+    class PropertySpecificKeyframe {
+        WTF_MAKE_FAST_ALLOCATED(PropertySpecificKeyframe);
+        WTF_MAKE_NONCOPYABLE(PropertySpecificKeyframe);
     public:
         virtual ~PropertySpecificKeyframe() { }
         double offset() const { return m_offset; }
         TimingFunction& easing() const { return *m_easing; }
         EffectModel::CompositeOperation composite() const { return m_composite; }
-        virtual PassOwnPtrWillBeRawPtr<PropertySpecificKeyframe> cloneWithOffset(double offset) const = 0;
+        double underlyingFraction() const { return m_composite == EffectModel::CompositeReplace ? 0 : 1; }
+        virtual bool isNeutral() const { ASSERT_NOT_REACHED(); return false; }
+        virtual PassOwnPtr<PropertySpecificKeyframe> cloneWithOffset(double offset) const = 0;
 
         // FIXME: Remove this once CompositorAnimations no longer depends on AnimatableValues
-        virtual void populateAnimatableValue(CSSPropertyID, Element&, const ComputedStyle* baseStyle) const { }
-        virtual const PassRefPtrWillBeRawPtr<AnimatableValue> getAnimatableValue() const = 0;
+        virtual bool populateAnimatableValue(CSSPropertyID, Element&, const ComputedStyle* baseStyle, bool force) const { return false; }
+        virtual const PassRefPtr<AnimatableValue> getAnimatableValue() const = 0;
 
         virtual bool isAnimatableValuePropertySpecificKeyframe() const { return false; }
         virtual bool isCSSPropertySpecificKeyframe() const { return false; }
         virtual bool isSVGPropertySpecificKeyframe() const { return false; }
 
-        virtual PassOwnPtrWillBeRawPtr<PropertySpecificKeyframe> neutralKeyframe(double offset, PassRefPtr<TimingFunction> easing) const = 0;
-        virtual PassRefPtrWillBeRawPtr<Interpolation> maybeCreateInterpolation(PropertyHandle, Keyframe::PropertySpecificKeyframe& end, Element*, const ComputedStyle* baseStyle) const = 0;
-
-        DEFINE_INLINE_VIRTUAL_TRACE() { }
+        virtual PassOwnPtr<PropertySpecificKeyframe> neutralKeyframe(double offset, PassRefPtr<TimingFunction> easing) const = 0;
+        virtual PassRefPtr<Interpolation> maybeCreateInterpolation(PropertyHandle, Keyframe::PropertySpecificKeyframe& end, Element*, const ComputedStyle* baseStyle) const = 0;
 
     protected:
         PropertySpecificKeyframe(double offset, PassRefPtr<TimingFunction> easing, EffectModel::CompositeOperation);
@@ -81,7 +84,7 @@ public:
         EffectModel::CompositeOperation m_composite;
     };
 
-    virtual PassOwnPtrWillBeRawPtr<PropertySpecificKeyframe> createPropertySpecificKeyframe(PropertyHandle) const = 0;
+    virtual PassOwnPtr<PropertySpecificKeyframe> createPropertySpecificKeyframe(PropertyHandle) const = 0;
 
 protected:
     Keyframe()

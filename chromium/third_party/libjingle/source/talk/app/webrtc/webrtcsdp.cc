@@ -77,7 +77,6 @@ using cricket::kCodecParamMaxPlaybackRate;
 using cricket::kCodecParamAssociatedPayloadType;
 using cricket::MediaContentDescription;
 using cricket::MediaType;
-using cricket::NS_JINGLE_ICE_UDP;
 using cricket::RtpHeaderExtension;
 using cricket::SsrcGroup;
 using cricket::StreamParams;
@@ -164,8 +163,6 @@ static const char kAttributeSctpPort[] = "sctp-port";
 // Experimental flags
 static const char kAttributeXGoogleFlag[] = "x-google-flag";
 static const char kValueConference[] = "conference";
-static const char kAttributeXGoogleBufferLatency[] =
-    "x-google-buffer-latency";
 
 // Candidate
 static const char kCandidateHost[] = "host";
@@ -716,7 +713,7 @@ static void GetDefaultDestination(
 // Update |mline|'s default destination and append a c line after it.
 static void UpdateMediaDefaultDestination(
     const std::vector<Candidate>& candidates,
-    const std::string mline,
+    const std::string& mline,
     std::string* message) {
   std::string new_lines;
   AddLine(mline, &new_lines);
@@ -808,9 +805,9 @@ std::string SdpSerialize(const JsepSessionDescription& jdesc) {
   // <unicast-address>
   std::ostringstream os;
   InitLine(kLineTypeOrigin, kSessionOriginUsername, &os);
-  const std::string session_id = jdesc.session_id().empty() ?
+  const std::string& session_id = jdesc.session_id().empty() ?
       kSessionOriginSessionId : jdesc.session_id();
-  const std::string session_version = jdesc.session_version().empty() ?
+  const std::string& session_version = jdesc.session_version().empty() ?
       kSessionOriginSessionVersion : jdesc.session_version();
   os << " " << session_id << " " << session_version << " "
      << kSessionOriginNettype << " " << kSessionOriginAddrtype << " "
@@ -894,8 +891,7 @@ bool SdpDeserialize(const std::string& message,
                     SdpParseError* error) {
   std::string session_id;
   std::string session_version;
-  TransportDescription session_td(NS_JINGLE_ICE_UDP,
-                                  std::string(), std::string());
+  TransportDescription session_td("", "");
   RtpHeaderExtensions session_extmaps;
   cricket::SessionDescription* desc = new cricket::SessionDescription();
   std::vector<JsepIceCandidate*> candidates;
@@ -1001,18 +997,18 @@ bool ParseCandidate(const std::string& message, Candidate* candidate,
       (fields[6] != kAttributeCandidateTyp)) {
     return ParseFailedExpectMinFieldNum(first_line, expected_min_fields, error);
   }
-  std::string foundation = fields[0];
+  const std::string& foundation = fields[0];
 
   int component_id = 0;
   if (!GetValueFromString(first_line, fields[1], &component_id, error)) {
     return false;
   }
-  const std::string transport = fields[2];
+  const std::string& transport = fields[2];
   uint32 priority = 0;
   if (!GetValueFromString(first_line, fields[3], &priority, error)) {
     return false;
   }
-  const std::string connection_address = fields[4];
+  const std::string& connection_address = fields[4];
   int port = 0;
   if (!GetValueFromString(first_line, fields[5], &port, error)) {
     return false;
@@ -1025,7 +1021,7 @@ bool ParseCandidate(const std::string& message, Candidate* candidate,
   }
 
   std::string candidate_type;
-  const std::string type = fields[7];
+  const std::string& type = fields[7];
   if (type == kCandidateHost) {
     candidate_type = cricket::LOCAL_PORT_TYPE;
   } else if (type == kCandidateSrflx) {
@@ -1260,7 +1256,7 @@ void BuildMediaDescription(const ContentInfo* content_info,
   // RFC 3264
   // To reject an offered stream, the port number in the corresponding stream in
   // the answer MUST be set to zero.
-  const std::string port = content_info->rejected ?
+  const std::string& port = content_info->rejected ?
       kMediaPortRejected : kDummyPort;
 
   rtc::SSLFingerprint* fp = (transport_info) ?
@@ -1426,15 +1422,6 @@ void BuildRtpContentAttributes(
   // a=rtpmap:<payload type> <encoding name>/<clock rate>
   // [/<encodingparameters>]
   BuildRtpMap(media_desc, media_type, message);
-
-  // Specify latency for buffered mode.
-  // a=x-google-buffer-latency:<value>
-  if (media_desc->buffered_mode_latency() != cricket::kBufferedModeDisabled) {
-    std::ostringstream os;
-    InitAttrLine(kAttributeXGoogleBufferLatency, &os);
-    os << kSdpDelimiterColon << media_desc->buffered_mode_latency();
-    AddLine(os.str(), message);
-  }
 
   for (StreamParamsVec::const_iterator track = media_desc->streams().begin();
        track != media_desc->streams().end(); ++track) {
@@ -2206,8 +2193,7 @@ bool ParseMediaDescription(const std::string& message,
 
     // Make a temporary TransportDescription based on |session_td|.
     // Some of this gets overwritten by ParseContent.
-    TransportDescription transport(NS_JINGLE_ICE_UDP,
-                                   session_td.transport_options,
+    TransportDescription transport(session_td.transport_options,
                                    session_td.ice_ufrag,
                                    session_td.ice_pwd,
                                    session_td.ice_mode,
@@ -2631,22 +2617,6 @@ bool ParseContent(const std::string& message,
         }
         if (flag_value.compare(kValueConference) == 0)
           media_desc->set_conference_mode(true);
-      } else if (HasAttribute(line, kAttributeXGoogleBufferLatency)) {
-        // Experimental attribute.
-        // TODO: expose API to set this directly.
-        std::string flag_value;
-        if (!GetValue(line, kAttributeXGoogleBufferLatency, &flag_value,
-                      error)) {
-          return false;
-        }
-        int buffer_latency = 0;
-        if (!GetValueFromString(line, flag_value, &buffer_latency, error)) {
-          return false;
-        }
-        if (buffer_latency < 0) {
-          return ParseFailed(line, "Buffer latency less than 0.", error);
-        }
-        media_desc->set_buffered_mode_latency(buffer_latency);
       }
     } else {
       // Only parse lines that we are interested of.
@@ -2845,8 +2815,8 @@ bool ParseCryptoAttribute(const std::string& line,
   if (!GetValueFromString(line, tag_value, &tag, error)) {
     return false;
   }
-  const std::string crypto_suite = fields[1];
-  const std::string key_params = fields[2];
+  const std::string& crypto_suite = fields[1];
+  const std::string& key_params = fields[2];
   std::string session_params;
   if (fields.size() > 3) {
     session_params = fields[3];
@@ -2926,7 +2896,7 @@ bool ParseRtpmapAttribute(const std::string& line,
                     << "<fmt> of the m-line: " << line;
     return true;
   }
-  const std::string encoder = fields[1];
+  const std::string& encoder = fields[1];
   std::vector<std::string> codec_params;
   rtc::split(encoder, '/', &codec_params);
   // <encoding name>/<clock rate>[/<encodingparameters>]
@@ -2937,7 +2907,7 @@ bool ParseRtpmapAttribute(const std::string& line,
                        "[/<encodingparameters>]\".",
                        error);
   }
-  const std::string encoding_name = codec_params[0];
+  const std::string& encoding_name = codec_params[0];
   int clock_rate = 0;
   if (!GetValueFromString(line, codec_params[1], &clock_rate, error)) {
     return false;

@@ -514,7 +514,7 @@ static void qcms_transform_data_clut(qcms_transform *transform, unsigned char *s
 */
 
 // Using lcms' tetra interpolation algorithm.
-static void qcms_transform_data_tetra_clut_rgba(qcms_transform *transform, unsigned char *src, unsigned char *dest, size_t length, qcms_format_type output_format)
+void qcms_transform_data_tetra_clut_rgba(qcms_transform *transform, unsigned char *src, unsigned char *dest, size_t length, qcms_format_type output_format)
 {
 	const int r_out = output_format.r;
 	const int b_out = output_format.b;
@@ -530,22 +530,26 @@ static void qcms_transform_data_tetra_clut_rgba(qcms_transform *transform, unsig
 	float c0_g, c1_g, c2_g, c3_g;
 	float c0_b, c1_b, c2_b, c3_b;
 	float clut_r, clut_g, clut_b;
+
 	for (i = 0; i < length; i++) {
 		unsigned char in_r = *src++;
 		unsigned char in_g = *src++;
 		unsigned char in_b = *src++;
 		unsigned char in_a = *src++;
+
 		float linear_r = in_r/255.0f, linear_g=in_g/255.0f, linear_b = in_b/255.0f;
 
 		int x = floor(linear_r * (transform->grid_size-1));
 		int y = floor(linear_g * (transform->grid_size-1));
 		int z = floor(linear_b * (transform->grid_size-1));
+
 		int x_n = ceil(linear_r * (transform->grid_size-1));
 		int y_n = ceil(linear_g * (transform->grid_size-1));
 		int z_n = ceil(linear_b * (transform->grid_size-1));
-		float rx = linear_r * (transform->grid_size-1) - x; 
+
+		float rx = linear_r * (transform->grid_size-1) - x;
 		float ry = linear_g * (transform->grid_size-1) - y;
-		float rz = linear_b * (transform->grid_size-1) - z; 
+		float rz = linear_b * (transform->grid_size-1) - z;
 
 		c0_r = CLU(r_table, x, y, z);
 		c0_g = CLU(g_table, x, y, z);
@@ -650,21 +654,25 @@ static void qcms_transform_data_tetra_clut(qcms_transform *transform, unsigned c
 	float c0_g, c1_g, c2_g, c3_g;
 	float c0_b, c1_b, c2_b, c3_b;
 	float clut_r, clut_g, clut_b;
+
 	for (i = 0; i < length; i++) {
 		unsigned char in_r = *src++;
 		unsigned char in_g = *src++;
 		unsigned char in_b = *src++;
+
 		float linear_r = in_r/255.0f, linear_g=in_g/255.0f, linear_b = in_b/255.0f;
 
 		int x = floor(linear_r * (transform->grid_size-1));
 		int y = floor(linear_g * (transform->grid_size-1));
 		int z = floor(linear_b * (transform->grid_size-1));
+
 		int x_n = ceil(linear_r * (transform->grid_size-1));
 		int y_n = ceil(linear_g * (transform->grid_size-1));
 		int z_n = ceil(linear_b * (transform->grid_size-1));
-		float rx = linear_r * (transform->grid_size-1) - x; 
+
+		float rx = linear_r * (transform->grid_size-1) - x;
 		float ry = linear_g * (transform->grid_size-1) - y;
-		float rz = linear_b * (transform->grid_size-1) - z; 
+		float rz = linear_b * (transform->grid_size-1) - z;
 
 		c0_r = CLU(r_table, x, y, z);
 		c0_g = CLU(g_table, x, y, z);
@@ -1145,8 +1153,17 @@ qcms_transform* qcms_transform_precacheLUT_float(qcms_transform *transform, qcms
 			transform->g_clut = &lut[1]; // g
 			transform->b_clut = &lut[2]; // b
 			transform->grid_size = samples;
+
 			if (in_type == QCMS_DATA_RGBA_8) {
+#if defined(SSE2_ENABLE)
+				if (sse_version_available() >= 2) {
+					transform->transform_fn = qcms_transform_data_tetra_clut_rgba_sse2;
+				} else {
+					transform->transform_fn = qcms_transform_data_tetra_clut_rgba;
+				}
+#else
 				transform->transform_fn = qcms_transform_data_tetra_clut_rgba;
+#endif
 			} else {
 				transform->transform_fn = qcms_transform_data_tetra_clut;
 			}
@@ -1233,6 +1250,24 @@ qcms_bool qcms_transform_create_LUT_zyx_bgra(qcms_profile *in, qcms_profile *out
 	return false;
 }
 
+void qcms_transform_build_clut_cache(qcms_transform* transform) {
+	const int grid_factor = transform->grid_size - 1;
+	const float grid_scaled = (1.0f / 255.0f) * grid_factor;
+	int i;
+
+#define div_255_ceiling(value) (((value) + 254) / 255)
+
+	for (i = 0; i < 256; i++) {
+		transform->ceil_cache[i] = div_255_ceiling(i * grid_factor);
+		transform->floor_cache[i] = i * grid_factor / 255;
+		transform->r_cache[i] = (i * grid_scaled) - transform->floor_cache[i];
+	}
+
+#undef div_255_ceil
+
+	transform->transform_flags |= TRANSFORM_FLAG_CLUT_CACHE;
+}
+
 #define NO_MEM_TRANSFORM NULL
 
 qcms_transform* qcms_transform_create(
@@ -1240,40 +1275,47 @@ qcms_transform* qcms_transform_create(
 		qcms_profile *out, qcms_data_type out_type,
 		qcms_intent intent)
 {
+	qcms_transform *transform = NULL;
 	bool precache = false;
+	int i, j;
 
-        qcms_transform *transform = transform_alloc();
-        if (!transform) {
+	transform = transform_alloc();
+	if (!transform) {
 		return NULL;
 	}
-	if (out_type != QCMS_DATA_RGB_8 &&
-                out_type != QCMS_DATA_RGBA_8) {
-            assert(0 && "output type");
-	    transform_free(transform);
-            return NULL;
-        }
+
+	if (out_type != QCMS_DATA_RGB_8 && out_type != QCMS_DATA_RGBA_8) {
+		assert(0 && "output type");
+		qcms_transform_release(transform);
+		return NULL;
+	}
 
 	transform->transform_flags = 0;
 
-	if (out->output_table_r &&
-			out->output_table_g &&
-			out->output_table_b) {
+	if (out->output_table_r && out->output_table_g && out->output_table_b) {
 		precache = true;
 	}
 
 	if (qcms_supports_iccv4 && (in->A2B0 || out->B2A0 || in->mAB || out->mAB)) {
 		// Precache the transformation to a CLUT 33x33x33 in size.
-		// 33 is used by many profiles and works well in pratice. 
+		// 33 is used by many profiles and works well in practice.
 		// This evenly divides 256 into blocks of 8x8x8.
 		// TODO For transforming small data sets of about 200x200 or less
 		// precaching should be avoided.
 		qcms_transform *result = qcms_transform_precacheLUT_float(transform, in, out, 33, in_type);
 		if (!result) {
-            		assert(0 && "precacheLUT failed");
-			transform_free(transform);
+			assert(0 && "precacheLUT failed");
+			qcms_transform_release(transform);
 			return NULL;
 		}
 		return result;
+	}
+
+	/* A matrix-based transform will be selected: check that the PCS
+	   of the input/output profiles are the same, crbug.com/5120682 */
+	if (in->pcs != out->pcs) {
+		qcms_transform_release(transform);
+		return NULL;
 	}
 
 	if (precache) {
@@ -1285,32 +1327,34 @@ qcms_transform* qcms_transform_create(
 			qcms_transform_release(transform);
 			return NO_MEM_TRANSFORM;
 		}
+
 		build_output_lut(out->redTRC, &transform->output_gamma_lut_r, &transform->output_gamma_lut_r_length);
 		build_output_lut(out->greenTRC, &transform->output_gamma_lut_g, &transform->output_gamma_lut_g_length);
 		build_output_lut(out->blueTRC, &transform->output_gamma_lut_b, &transform->output_gamma_lut_b_length);
+
 		if (!transform->output_gamma_lut_r || !transform->output_gamma_lut_g || !transform->output_gamma_lut_b) {
 			qcms_transform_release(transform);
 			return NO_MEM_TRANSFORM;
 		}
 	}
 
-        if (in->color_space == RGB_SIGNATURE) {
+	if (in->color_space == RGB_SIGNATURE) {
 		struct matrix in_matrix, out_matrix, result;
 
-		if (in_type != QCMS_DATA_RGB_8 &&
-                    in_type != QCMS_DATA_RGBA_8){
-                	assert(0 && "input type");
-			transform_free(transform);
-                	return NULL;
-            	}
+		if (in_type != QCMS_DATA_RGB_8 && in_type != QCMS_DATA_RGBA_8) {
+			assert(0 && "input type");
+			qcms_transform_release(transform);
+			return NULL;
+		}
+
 		if (precache) {
 #if defined(SSE2_ENABLE)
-		    if (sse_version_available() >= 2) {
-			    if (in_type == QCMS_DATA_RGB_8)
-				    transform->transform_fn = qcms_transform_data_rgb_out_lut_sse2;
-			    else
-				    transform->transform_fn = qcms_transform_data_rgba_out_lut_sse2;
-		    } else
+			if (sse_version_available() >= 2) {
+				if (in_type == QCMS_DATA_RGB_8)
+					transform->transform_fn = qcms_transform_data_rgb_out_lut_sse2;
+				else
+					transform->transform_fn = qcms_transform_data_rgba_out_lut_sse2;
+			} else
 #endif
 			{
 				if (in_type == QCMS_DATA_RGB_8)
@@ -1329,11 +1373,11 @@ qcms_transform* qcms_transform_create(
 		transform->input_gamma_table_r = build_input_gamma_table(in->redTRC);
 		transform->input_gamma_table_g = build_input_gamma_table(in->greenTRC);
 		transform->input_gamma_table_b = build_input_gamma_table(in->blueTRC);
+
 		if (!transform->input_gamma_table_r || !transform->input_gamma_table_g || !transform->input_gamma_table_b) {
 			qcms_transform_release(transform);
 			return NO_MEM_TRANSFORM;
 		}
-
 
 		/* build combined colorant matrix */
 		in_matrix = build_colorant_matrix(in);
@@ -1344,6 +1388,17 @@ qcms_transform* qcms_transform_create(
 			return NULL;
 		}
 		result = matrix_multiply(out_matrix, in_matrix);
+
+		/* check for NaN values in the matrix and bail if we find any
+		   see also https://bugzilla.mozilla.org/show_bug.cgi?id=1170316 */
+		for (i = 0 ; i < 3 ; ++i) {
+			for (j = 0 ; j < 3 ; ++j) {
+				if (result.m[i][j] != result.m[i][j]) {
+					qcms_transform_release(transform);
+					return NULL;
+				}
+			}
+		}
 
 		/* store the results in column major mode
 		 * this makes doing the multiplication with sse easier */
@@ -1361,14 +1416,14 @@ qcms_transform* qcms_transform_create(
 		transform->transform_flags |= TRANSFORM_FLAG_MATRIX;
 
 	} else if (in->color_space == GRAY_SIGNATURE) {
-		if (in_type != QCMS_DATA_GRAY_8 &&
-				in_type != QCMS_DATA_GRAYA_8){
+		if (in_type != QCMS_DATA_GRAY_8 && in_type != QCMS_DATA_GRAYA_8) {
 			assert(0 && "input type");
-			transform_free(transform);
+			qcms_transform_release(transform);
 			return NULL;
 		}
 
 		transform->input_gamma_table_gray = build_input_gamma_table(in->grayTRC);
+
 		if (!transform->input_gamma_table_gray) {
 			qcms_transform_release(transform);
 			return NO_MEM_TRANSFORM;
@@ -1389,9 +1444,10 @@ qcms_transform* qcms_transform_create(
 		}
 	} else {
 		assert(0 && "unexpected colorspace");
-		transform_free(transform);
+		qcms_transform_release(transform);
 		return NULL;
 	}
+
 	return transform;
 }
 

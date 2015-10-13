@@ -105,8 +105,12 @@ class Port(object):
         ('yosemite', 'x86'),
         ('xp', 'x86'),
         ('win7', 'x86'),
-        ('lucid', 'x86'),
-        ('lucid', 'x86_64'),
+        ('win10', 'x86'),
+        # FIXME: We handle 32bit Linux similarly to Mac retina above treating it
+        # as a different system for now.
+        ('linux32', 'x86'),
+        ('precise', 'x86_64'),
+        ('trusty', 'x86_64'),
         # FIXME: Technically this should be 'arm', but adding a third architecture type breaks TestConfigurationConverter.
         # If we need this to be 'arm' in the future, then we first have to fix TestConfigurationConverter.
         ('icecreamsandwich', 'x86'),
@@ -114,14 +118,14 @@ class Port(object):
 
     ALL_BASELINE_VARIANTS = [
         'mac-yosemite', 'mac-mavericks', 'mac-retina', 'mac-mountainlion', 'mac-lion', 'mac-snowleopard',
-        'win-win7', 'win-xp',
-        'linux-x86_64', 'linux-x86',
+        'win-win10', 'win-win7', 'win-xp'
+        'linux-trusty', 'linux-precise', 'linux-x86',
     ]
 
     CONFIGURATION_SPECIFIER_MACROS = {
         'mac': ['snowleopard', 'lion', 'mountainlion', 'retina', 'mavericks', 'yosemite'],
-        'win': ['xp', 'win7'],
-        'linux': ['lucid'],
+        'win': ['xp', 'win7', 'win10'],
+        'linux': ['linux32', 'precise', 'trusty'],
         'android': ['icecreamsandwich'],
     }
 
@@ -968,7 +972,7 @@ class Port(object):
 
     def name(self):
         """Returns a name that uniquely identifies this particular type of port
-        (e.g., "mac-snowleopard" or "linux-x86_x64" and can be passed
+        (e.g., "mac-snowleopard" or "linux-trusty" and can be passed
         to factory.get() to instantiate the port."""
         return self._name
 
@@ -1019,6 +1023,9 @@ class Port(object):
             option_val = self.get_option('results_directory') or self.default_results_directory()
             self._results_directory = self._filesystem.abspath(option_val)
         return self._results_directory
+
+    def bot_test_times_path(self):
+        return self._build_path('webkit_test_times', 'bot_times_ms.json')
 
     def perf_results_directory(self):
         return self._build_path()
@@ -1253,7 +1260,7 @@ class Port(object):
         refer to them as one term or alias specific values to more generic ones. For example:
 
         (xp, vista, win7) -> win # Abbreviate all Windows versions into one namesake.
-        (lucid) -> linux  # Change specific name of the Linux distro to a more generic term.
+        (precise, trusty) -> linux  # Change specific name of Linux distro to a more generic term.
 
         Returns a dictionary, each key representing a macro term ('win', for example),
         and value being a list of valid configuration specifiers (such as ['xp', 'vista', 'win7'])."""
@@ -1264,7 +1271,7 @@ class Port(object):
 
         The list should be sorted so that a later platform  will reuse
         an earlier platform's baselines if they are the same (e.g.,
-        'snowleopard' should precede 'leopard')."""
+        'yosemite' should precede 'mavericks')."""
         return self.ALL_BASELINE_VARIANTS
 
     def _generate_all_test_configurations(self):
@@ -1277,15 +1284,6 @@ class Port(object):
                 test_configurations.append(TestConfiguration(version, architecture, build_type))
         return test_configurations
 
-    try_builder_names = frozenset([
-        'linux_layout',
-        'mac_layout',
-        'win_layout',
-        'linux_layout_rel',
-        'mac_layout_rel',
-        'win_layout_rel',
-    ])
-
     def warn_if_bug_missing_in_test_expectations(self):
         return True
 
@@ -1295,8 +1293,6 @@ class Port(object):
         paths.append(self._filesystem.join(self.layout_tests_dir(), 'NeverFixTests'))
         paths.append(self._filesystem.join(self.layout_tests_dir(), 'StaleTestExpectations'))
         paths.append(self._filesystem.join(self.layout_tests_dir(), 'SlowTests'))
-        paths.append(self._filesystem.join(self.layout_tests_dir(), 'FlakyTests'))
-
         return paths
 
     def expectations_dict(self):
@@ -1348,10 +1344,9 @@ class Port(object):
     def expectations_files(self):
         return [self.path_to_generic_test_expectations_file()] + self._port_specific_expectations_files()
 
-    def repository_paths(self):
-        """Returns a list of (repository_name, repository_path) tuples of its depending code base."""
-        return [('blink', self.layout_tests_dir()),
-                ('chromium', self.path_from_chromium_base('build'))]
+    def repository_path(self):
+        """Returns the repository path for the chromium code base."""
+        return self.path_from_chromium_base('build')
 
     _WDIFF_DEL = '##WDIFF_DEL##'
     _WDIFF_ADD = '##WDIFF_ADD##'
@@ -1592,6 +1587,7 @@ class Port(object):
         return [
             # For example, to turn on force-compositing-mode in the svg/ directory:
             # PhysicalTestSuite('svg', ['--force-compositing-mode']),
+            PhysicalTestSuite('fast/text', ["--enable-direct-write", "--enable-font-antialiasing"]),
         ]
 
     def virtual_test_suites(self):

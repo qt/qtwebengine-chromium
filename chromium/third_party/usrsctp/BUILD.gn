@@ -11,6 +11,13 @@ config("usrsctp_config") {
   ]
 }
 
+config("usrsctp_warnings") {
+  if (is_clang) {
+    # atomic_init in user_atomic.h is a static function in a header.
+    cflags = [ "-Wno-unused-function" ]
+  }
+}
+
 static_library("usrsctp") {
   sources = [
     "usrsctplib/netinet/sctp.h",
@@ -79,21 +86,23 @@ static_library("usrsctp") {
   defines = [
     "SCTP_PROCESS_LEVEL_LOCKS",
     "SCTP_SIMPLE_ALLOCATOR",
+    "SCTP_USE_OPENSSL_SHA1",
     "__Userspace__",
 
     # "SCTP_DEBUG", # Uncomment for SCTP debugging.
   ]
 
   configs -= [ "//build/config/compiler:chromium_code" ]
-  configs += [ "//build/config/compiler:no_chromium_code" ]
+  configs += [
+    "//build/config/compiler:no_chromium_code",
+
+    # These must be after no_chromium_code for warning flags to be ordered
+    # correctly.
+    "//build/config/compiler:no_incompatible_pointer_warnings",
+    ":usrsctp_warnings",
+  ]
 
   public_configs = [ ":usrsctp_config" ]
-
-  if (use_openssl) {
-    defines += [ "SCTP_USE_OPENSSL_SHA1" ]
-  } else {
-    defines += [ "SCTP_USE_NSS_SHA1" ]
-  }
 
   if (is_linux || is_android) {
     defines += [ "__Userspace_os_Linux" ]
@@ -119,15 +128,6 @@ static_library("usrsctp") {
     configs -= [ "//build/config/win:winver" ]
   } else {
     defines += [ "NON_WINDOWS_DEFINE" ]
-  }
-
-  if (is_clang) {
-    cflags = [ "-Wno-incompatible-pointer-types" ]
-  } else if (target_cpu == "mipsel") {
-    # mipsel is still using gcc (4.9),
-    # which does not support "-Wno-incompatible-pointer-types"
-    # so let's disable all warnings for this module.
-    cflags = [ "-w" ]
   }
 
   deps = [

@@ -92,7 +92,6 @@ static HarfBuzzFaceCache* harfBuzzFaceCache()
 HarfBuzzFace::HarfBuzzFace(FontPlatformData* platformData, uint64_t uniqueID)
     : m_platformData(platformData)
     , m_uniqueID(uniqueID)
-    , m_scriptForVerticalText(HB_SCRIPT_INVALID)
 {
     HarfBuzzFaceCache::AddResult result = harfBuzzFaceCache()->add(m_uniqueID, nullptr);
     if (result.isNewEntry)
@@ -110,36 +109,6 @@ HarfBuzzFace::~HarfBuzzFace()
     result.get()->value->deref();
     if (result.get()->value->refCount() == 1)
         harfBuzzFaceCache()->remove(m_uniqueID);
-}
-
-static hb_script_t findScriptForVerticalGlyphSubstitution(hb_face_t* face)
-{
-    static const unsigned maxCount = 32;
-
-    unsigned scriptCount = maxCount;
-    hb_tag_t scriptTags[maxCount];
-    hb_ot_layout_table_get_script_tags(face, HB_OT_TAG_GSUB, 0, &scriptCount, scriptTags);
-    for (unsigned scriptIndex = 0; scriptIndex < scriptCount; ++scriptIndex) {
-        unsigned languageCount = maxCount;
-        hb_tag_t languageTags[maxCount];
-        hb_ot_layout_script_get_language_tags(face, HB_OT_TAG_GSUB, scriptIndex, 0, &languageCount, languageTags);
-        unsigned featureIndex;
-        for (unsigned languageIndex = 0; languageIndex < languageCount; ++languageIndex) {
-            if (hb_ot_layout_language_find_feature(face, HB_OT_TAG_GSUB, scriptIndex, languageIndex, HarfBuzzFace::vertTag, &featureIndex))
-                return hb_ot_tag_to_script(scriptTags[scriptIndex]);
-        }
-        // Try DefaultLangSys if all LangSys failed.
-        if (hb_ot_layout_language_find_feature(face, HB_OT_TAG_GSUB, scriptIndex, HB_OT_LAYOUT_DEFAULT_LANGUAGE_INDEX, HarfBuzzFace::vertTag, &featureIndex))
-            return hb_ot_tag_to_script(scriptTags[scriptIndex]);
-    }
-    return HB_SCRIPT_INVALID;
-}
-
-void HarfBuzzFace::setScriptForVerticalGlyphSubstitution(hb_buffer_t* buffer)
-{
-    if (m_scriptForVerticalText == HB_SCRIPT_INVALID)
-        m_scriptForVerticalText = findScriptForVerticalGlyphSubstitution(m_face);
-    hb_buffer_set_script(buffer, m_scriptForVerticalText);
 }
 
 struct HarfBuzzFontData {
@@ -177,9 +146,19 @@ static void SkiaGetGlyphWidthAndExtents(SkPaint* paint, hb_codepoint_t codepoint
     uint16_t glyph = codepoint;
 
     paint->getTextWidths(&glyph, sizeof(glyph), &skWidth, &skBounds);
-    if (width)
+    if (width) {
+        if (!paint->isSubpixelText())
+            skWidth = SkScalarRoundToInt(skWidth);
         *width = SkiaScalarToHarfBuzzPosition(skWidth);
+    }
     if (extents) {
+        if (!paint->isSubpixelText()) {
+            // Use roundOut() rather than round() to avoid rendering glyphs
+            // outside the visual overflow rect. crbug.com/452914.
+            SkIRect ir;
+            skBounds.roundOut(&ir);
+            skBounds.set(ir);
+        }
         // Invert y-axis because Skia is y-grows-down but we set up HarfBuzz to be y-grows-up.
         extents->x_bearing = SkiaScalarToHarfBuzzPosition(skBounds.fLeft);
         extents->y_bearing = SkiaScalarToHarfBuzzPosition(-skBounds.fTop);
@@ -188,14 +167,16 @@ static void SkiaGetGlyphWidthAndExtents(SkPaint* paint, hb_codepoint_t codepoint
     }
 }
 
+#if !defined(HB_VERSION_ATLEAST)
+#define HB_VERSION_ATLEAST(major, minor, micro) 0
+#endif
+
 static hb_bool_t harfBuzzGetGlyph(hb_font_t* hbFont, void* fontData, hb_codepoint_t unicode, hb_codepoint_t variationSelector, hb_codepoint_t* glyph, void* userData)
 {
     HarfBuzzFontData* hbFontData = reinterpret_cast<HarfBuzzFontData*>(fontData);
 
     if (variationSelector) {
-#if OS(LINUX)
-        // TODO(kojii): Linux non-official builds cannot use new HB APIs
-        // until crbug.com/462689 resolved or pangoft2 updates its HB.
+#if !HB_VERSION_ATLEAST(0, 9, 28)
         return false;
 #else
         // Skia does not support variation selectors, but hb does.
@@ -324,16 +305,16 @@ static hb_blob_t* harfBuzzSkiaGetTable(hb_face_t* face, hb_tag_t tag, void* user
 
     const size_t tableSize = typeface->getTableSize(tag);
     if (!tableSize) {
-        return 0;
+        return nullptr;
     }
 
     char* buffer = reinterpret_cast<char*>(fastMalloc(tableSize));
     if (!buffer)
-        return 0;
+        return nullptr;
     size_t actualSize = typeface->getTableData(tag, 0, tableSize, buffer);
     if (tableSize != actualSize) {
         fastFree(buffer);
-        return 0;
+        return nullptr;
     }
 
     return hb_blob_create(const_cast<char*>(buffer), tableSize, HB_MEMORY_MODE_WRITABLE, buffer, fastFree);

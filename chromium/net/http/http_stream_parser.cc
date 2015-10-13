@@ -18,6 +18,7 @@
 #include "net/http/http_request_headers.h"
 #include "net/http/http_request_info.h"
 #include "net/http/http_response_headers.h"
+#include "net/http/http_status_line_validator.h"
 #include "net/http/http_util.h"
 #include "net/socket/client_socket_handle.h"
 #include "net/socket/ssl_client_socket.h"
@@ -28,10 +29,13 @@ namespace {
 
 enum HttpHeaderParserEvent {
   HEADER_PARSER_INVOKED = 0,
-  HEADER_HTTP_09_RESPONSE = 1,
+  // Obsolete: HEADER_HTTP_09_RESPONSE = 1,
   HEADER_ALLOWED_TRUNCATED_HEADERS = 2,
   HEADER_SKIPPED_WS_PREFIX = 3,
   HEADER_SKIPPED_NON_WS_PREFIX = 4,
+  HEADER_HTTP_09_RESPONSE_OVER_HTTP = 5,
+  HEADER_HTTP_09_RESPONSE_OVER_SSL = 6,
+  HEADER_HTTP_09_ON_REUSED_SOCKET = 7,
   NUM_HEADER_EVENTS
 };
 
@@ -198,15 +202,17 @@ HttpStreamParser::HttpStreamParser(ClientSocketHandle* connection,
                                    const BoundNetLog& net_log)
     : io_state_(STATE_NONE),
       request_(request),
-      request_headers_(NULL),
+      request_headers_(nullptr),
       request_headers_length_(0),
       read_buf_(read_buffer),
       read_buf_unused_offset_(0),
       response_header_start_offset_(-1),
       received_bytes_(0),
+      sent_bytes_(0),
+      response_(nullptr),
       response_body_length_(-1),
       response_body_read_(0),
-      user_read_buf_(NULL),
+      user_read_buf_(nullptr),
       user_read_buf_len_(0),
       connection_(connection),
       net_log_(net_log),
@@ -470,6 +476,7 @@ int HttpStreamParser::DoSendHeadersComplete(int result) {
     return result;
   }
 
+  sent_bytes_ += result;
   request_headers_->DidConsume(result);
   if (request_headers_->BytesRemaining() > 0) {
     io_state_ = STATE_SEND_HEADERS;
@@ -527,6 +534,7 @@ int HttpStreamParser::DoSendBodyComplete(int result) {
     return result;
   }
 
+  sent_bytes_ += result;
   request_body_send_buf_->DidConsume(result);
 
   io_state_ = STATE_SEND_BODY;
@@ -768,37 +776,40 @@ int HttpStreamParser::HandleReadHeaderResult(int result) {
   if (result == 0)
     result = ERR_CONNECTION_CLOSED;
 
-  if (result < 0 && result != ERR_CONNECTION_CLOSED) {
-    io_state_ = STATE_DONE;
-    return result;
-  }
-  // If we've used the connection before, then we know it is not a HTTP/0.9
-  // response and return ERR_CONNECTION_CLOSED.
-  if (result == ERR_CONNECTION_CLOSED && read_buf_->offset() == 0 &&
-      connection_->is_reused()) {
-    io_state_ = STATE_DONE;
-    return result;
-  }
-
-  // Record our best estimate of the 'response time' as the time when we read
-  // the first bytes of the response headers.
-  if (read_buf_->offset() == 0 && result != ERR_CONNECTION_CLOSED)
-    response_->response_time = base::Time::Now();
-
   if (result == ERR_CONNECTION_CLOSED) {
-    // The connection closed before we detected the end of the headers.
+    // The connection closed without getting any more data.
     if (read_buf_->offset() == 0) {
-      // The connection was closed before any data was sent. Likely an error
-      // rather than empty HTTP/0.9 response.
       io_state_ = STATE_DONE;
-      return ERR_EMPTY_RESPONSE;
-    } else if (request_->url.SchemeIsCryptographic()) {
-      // The connection was closed in the middle of the headers. For HTTPS we
-      // don't parse partial headers. Return a different error code so that we
-      // know that we shouldn't attempt to retry the request.
+      // If the connection has not been reused, it may have been a 0-length
+      // HTTP/0.9 responses, but it was most likely an error, so just return
+      // ERR_EMPTY_RESPONSE instead. If the connection was reused, just pass
+      // on the original connection close error, as rather than being an
+      // empty HTTP/0.9 response it's much more likely the server closed the
+      // socket before it received the request.
+      if (!connection_->is_reused())
+        return ERR_EMPTY_RESPONSE;
+      return result;
+    }
+
+    // Accepting truncated headers over HTTPS is a potential security
+    // vulnerability, so just return an error in that case.
+    //
+    // If response_header_start_offset_ is -1, this may be a < 8 byte HTTP/0.9
+    // response. However, accepting such a response over HTTPS would allow a
+    // MITM to truncate an HTTP/1.x status line to look like a short HTTP/0.9
+    // response if the peer put a record boundary at the first 8 bytes. To
+    // ensure that all response headers received over HTTPS are pristine, treat
+    // such responses as errors.
+    //
+    // TODO(mmenke):  Returning ERR_RESPONSE_HEADERS_TRUNCATED when a response
+    // looks like an HTTP/0.9 response is weird.  Should either come up with
+    // another error code, or, better, disable HTTP/0.9 over HTTPS (and give
+    // that a new error code).
+    if (request_->url.SchemeIsCryptographic()) {
       io_state_ = STATE_DONE;
       return ERR_RESPONSE_HEADERS_TRUNCATED;
     }
+
     // Parse things as well as we can and let the caller decide what to do.
     int end_offset;
     if (response_header_start_offset_ >= 0) {
@@ -808,7 +819,7 @@ int HttpStreamParser::HandleReadHeaderResult(int result) {
       RecordHeaderParserEvent(HEADER_ALLOWED_TRUNCATED_HEADERS);
     } else {
       // The response is apparently using HTTP/0.9.  Treat the entire response
-      // the body.
+      // as the body.
       end_offset = 0;
     }
     int rv = ParseResponseHeaders(end_offset);
@@ -816,6 +827,16 @@ int HttpStreamParser::HandleReadHeaderResult(int result) {
       return rv;
     return result;
   }
+
+  if (result < 0) {
+    io_state_ = STATE_DONE;
+    return result;
+  }
+
+  // Record our best estimate of the 'response time' as the time when we read
+  // the first bytes of the response headers.
+  if (read_buf_->offset() == 0)
+    response_->response_time = base::Time::Now();
 
   read_buf_->set_offset(read_buf_->offset() + result);
   DCHECK_LE(read_buf_->offset(), read_buf_->capacity());
@@ -924,38 +945,47 @@ int HttpStreamParser::ParseResponseHeaders(int end_offset) {
 
   if (response_header_start_offset_ >= 0) {
     received_bytes_ += end_offset;
-    headers = new HttpResponseHeaders(HttpUtil::AssembleRawHeaders(
-        read_buf_->StartOfBuffer(), end_offset));
+    std::string raw_headers =
+        HttpUtil::AssembleRawHeaders(read_buf_->StartOfBuffer(), end_offset);
+    ValidateStatusLine(
+        std::string(read_buf_->StartOfBuffer(), raw_headers.find('\0')));
+    headers = new HttpResponseHeaders(raw_headers);
   } else {
     // Enough data was read -- there is no status line.
     headers = new HttpResponseHeaders(std::string("HTTP/0.9 200 OK"));
-    RecordHeaderParserEvent(HEADER_HTTP_09_RESPONSE);
+
+    if (request_->url.SchemeIsCryptographic()) {
+      RecordHeaderParserEvent(HEADER_HTTP_09_RESPONSE_OVER_SSL);
+    } else {
+      RecordHeaderParserEvent(HEADER_HTTP_09_RESPONSE_OVER_HTTP);
+    }
+    if (connection_->is_reused())
+      RecordHeaderParserEvent(HEADER_HTTP_09_ON_REUSED_SOCKET);
   }
 
-  // Check for multiple Content-Length headers with no Transfer-Encoding header.
-  // If they exist, and have distinct values, it's a potential response
-  // smuggling attack.
-  if (!headers->HasHeader("Transfer-Encoding")) {
-    if (HeadersContainMultipleCopiesOfField(*headers.get(), "Content-Length"))
+  // Check for multiple Content-Length headers when the response is not
+  // chunked-encoded.  If they exist, and have distinct values, it's a potential
+  // response smuggling attack.
+  if (!headers->IsChunkEncoded()) {
+    if (HeadersContainMultipleCopiesOfField(*headers, "Content-Length"))
       return ERR_RESPONSE_HEADERS_MULTIPLE_CONTENT_LENGTH;
   }
 
   // Check for multiple Content-Disposition or Location headers.  If they exist,
   // it's also a potential response smuggling attack.
-  if (HeadersContainMultipleCopiesOfField(*headers.get(),
-                                          "Content-Disposition"))
+  if (HeadersContainMultipleCopiesOfField(*headers, "Content-Disposition"))
     return ERR_RESPONSE_HEADERS_MULTIPLE_CONTENT_DISPOSITION;
-  if (HeadersContainMultipleCopiesOfField(*headers.get(), "Location"))
+  if (HeadersContainMultipleCopiesOfField(*headers, "Location"))
     return ERR_RESPONSE_HEADERS_MULTIPLE_LOCATION;
 
   response_->headers = headers;
   response_->connection_info = HttpResponseInfo::CONNECTION_INFO_HTTP1;
-  response_->vary_data.Init(*request_, *response_->headers.get());
+  response_->vary_data.Init(*request_, *response_->headers);
   DVLOG(1) << __FUNCTION__ << "()"
            << " content_length = \"" << response_->headers->GetContentLength()
            << "\n\""
-           << " headers = \""
-           << GetResponseHeaderLines(*response_->headers.get()) << "\"";
+           << " headers = \"" << GetResponseHeaderLines(*response_->headers)
+           << "\"";
   return OK;
 }
 
@@ -1043,7 +1073,11 @@ void HttpStreamParser::SetConnectionReused() {
   connection_->set_reuse_type(ClientSocketHandle::REUSED_IDLE);
 }
 
-bool HttpStreamParser::IsConnectionReusable() const {
+bool HttpStreamParser::CanReuseConnection() const {
+  if (!CanFindEndOfResponse())
+    return false;
+  if (!response_->headers || !response_->headers->IsKeepAlive())
+    return false;
   return connection_->socket() && connection_->socket()->IsConnectedAndIdle();
 }
 
@@ -1101,6 +1135,13 @@ bool HttpStreamParser::ShouldMergeRequestHeadersAndBody(
       return true;
   }
   return false;
+}
+
+void HttpStreamParser::ValidateStatusLine(const std::string& status_line) {
+  HttpStatusLineValidator::StatusLineStatus status =
+      HttpStatusLineValidator::ValidateStatusLine(status_line);
+  UMA_HISTOGRAM_ENUMERATION("Net.HttpStatusLineStatus", status,
+                            HttpStatusLineValidator::STATUS_LINE_MAX);
 }
 
 }  // namespace net

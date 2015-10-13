@@ -8,6 +8,7 @@
 #include "public/platform/WebString.h"
 #include "public/platform/WebURL.h"
 #include "public/platform/WebVector.h"
+#include "public/platform/modules/notifications/WebNotificationAction.h"
 
 namespace blink {
 
@@ -15,37 +16,21 @@ namespace blink {
 struct WebNotificationData {
     enum Direction {
         DirectionLeftToRight,
-        DirectionRightToLeft
+        DirectionRightToLeft,
+        DirectionAuto
     };
 
-    WebNotificationData()
-        : direction(DirectionLeftToRight)
-        , silent(false)
-    {
-    }
-
-    WebNotificationData(const WebString& title, Direction direction, const WebString& lang, const WebString& body, const WebString& tag, const WebURL& icon, const WebVector<int>& vibrate, bool silent, const WebVector<char>& data)
-        : title(title)
-        , direction(direction)
-        , lang(lang)
-        , body(body)
-        , tag(tag)
-        , icon(icon)
-        , vibrate(vibrate)
-        , silent(silent)
-        , data(data)
-    {
-    }
-
     WebString title;
-    Direction direction;
+    Direction direction = DirectionLeftToRight;
     WebString lang;
     WebString body;
     WebString tag;
     WebURL icon;
     WebVector<int> vibrate;
-    bool silent;
+    bool silent = false;
+    bool requireInteraction = false;
     WebVector<char> data;
+    WebVector<WebNotificationAction> actions;
 };
 
 } // namespace blink

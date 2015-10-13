@@ -28,6 +28,7 @@
 #include "core/svg/SVGParsingError.h"
 #include "core/svg/properties/SVGPropertyInfo.h"
 #include "platform/heap/Handle.h"
+#include "wtf/Allocator.h"
 #include "wtf/HashMap.h"
 #include "wtf/OwnPtr.h"
 
@@ -112,8 +113,6 @@ public:
     void mapInstanceToElement(SVGElement*);
     void removeInstanceMapping(SVGElement*);
 
-    bool getBoundingBox(FloatRect&);
-
     void setCursorElement(SVGCursorElement*);
     void setCursorImageValue(CSSCursorImageValue*);
 
@@ -140,8 +139,8 @@ public:
 
     virtual bool haveLoadedRequiredResources();
 
-    bool addEventListener(const AtomicString& eventType, PassRefPtr<EventListener>, bool useCapture = false) final;
-    bool removeEventListener(const AtomicString& eventType, PassRefPtr<EventListener>, bool useCapture = false) final;
+    bool addEventListener(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener>, bool useCapture = false) final;
+    bool removeEventListener(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener>, bool useCapture = false) final;
 
     void invalidateRelativeLengthClients(SubtreeLayoutScope* = 0);
 
@@ -245,6 +244,7 @@ private:
 };
 
 struct SVGAttributeHashTranslator {
+    STATIC_ONLY(SVGAttributeHashTranslator);
     static unsigned hash(const QualifiedName& key)
     {
         if (key.hasPrefix()) {

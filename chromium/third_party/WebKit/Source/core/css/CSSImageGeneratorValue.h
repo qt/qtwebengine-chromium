@@ -39,6 +39,7 @@ class Image;
 class LayoutObject;
 
 struct SizeAndCount {
+    DISALLOW_ALLOCATION();
     SizeAndCount(IntSize newSize = IntSize(), int newCount = 0)
         : size(newSize)
         , count(newCount)
@@ -49,15 +50,15 @@ struct SizeAndCount {
     int count;
 };
 
-typedef HashMap<const LayoutObject*, SizeAndCount> LayoutObjectSizeCountMap;
+using LayoutObjectSizeCountMap = HashMap<const LayoutObject*, SizeAndCount>;
 
 class CORE_EXPORT CSSImageGeneratorValue : public CSSValue {
 public:
     ~CSSImageGeneratorValue();
 
-    void addClient(LayoutObject*, const IntSize&);
-    void removeClient(LayoutObject*);
-    PassRefPtr<Image> image(LayoutObject*, const IntSize&);
+    void addClient(const LayoutObject*, const IntSize&);
+    void removeClient(const LayoutObject*);
+    PassRefPtr<Image> image(const LayoutObject*, const IntSize&);
 
     bool isFixedSize() const;
     IntSize fixedSize(const LayoutObject*);
@@ -67,12 +68,14 @@ public:
 
     void loadSubimages(Document*);
 
+    PassRefPtrWillBeRawPtr<CSSImageGeneratorValue> valueWithURLsMadeAbsolute();
+
     DEFINE_INLINE_TRACE_AFTER_DISPATCH() { CSSValue::traceAfterDispatch(visitor); }
 
 protected:
     explicit CSSImageGeneratorValue(ClassType);
 
-    Image* getImage(LayoutObject*, const IntSize&);
+    Image* getImage(const LayoutObject*, const IntSize&);
     void putImage(const IntSize&, PassRefPtr<Image>);
     const LayoutObjectSizeCountMap& clients() const { return m_clients; }
 
@@ -84,8 +87,7 @@ protected:
     // FIXME: Oilpan: when/if we can make the layoutObject point directly to the CSSImageGenerator value using
     // a member we don't need to have this hack where we keep a persistent to the instance as long as
     // there are clients in the LayoutObjectSizeCountMap.
-    GC_PLUGIN_IGNORE("366546")
-    OwnPtr<Persistent<CSSImageGeneratorValue>> m_keepAlive;
+    SelfKeepAlive<CSSImageGeneratorValue> m_keepAlive;
 #endif
 };
 

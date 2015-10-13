@@ -5,7 +5,9 @@
 // IPC messages used by the attachment broker.
 // Multiply-included message file, hence no include guard.
 
+#include "base/process/process_handle.h"
 #include "ipc/brokerable_attachment.h"
+#include "ipc/ipc_export.h"
 #include "ipc/ipc_message_macros.h"
 
 #if defined(OS_WIN)
@@ -17,13 +19,19 @@
 // ----------------------------------------------------------------------------
 
 #if defined(OS_WIN)
+// Define the serialization for Permissions.
+IPC_ENUM_TRAITS_MAX_VALUE(HandleWin::Permissions, HandleWin::MAX_PERMISSIONS);
+
 IPC_STRUCT_TRAITS_BEGIN(IPC::internal::HandleAttachmentWin::WireFormat)
-IPC_STRUCT_TRAITS_MEMBER(handle)
-IPC_STRUCT_TRAITS_MEMBER(destination_process)
-IPC_STRUCT_TRAITS_MEMBER(attachment_id)
+  IPC_STRUCT_TRAITS_MEMBER(handle)
+  IPC_STRUCT_TRAITS_MEMBER(destination_process)
+  IPC_STRUCT_TRAITS_MEMBER(permissions)
+  IPC_STRUCT_TRAITS_MEMBER(attachment_id)
 IPC_STRUCT_TRAITS_END()
 #endif  // defined(OS_WIN)
 
+#undef IPC_MESSAGE_EXPORT
+#define IPC_MESSAGE_EXPORT IPC_EXPORT
 #define IPC_MESSAGE_START AttachmentBrokerMsgStart
 
 // ----------------------------------------------------------------------------

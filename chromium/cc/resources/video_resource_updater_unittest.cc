@@ -4,7 +4,6 @@
 
 #include "cc/resources/video_resource_updater.h"
 
-#include "base/memory/shared_memory.h"
 #include "cc/resources/resource_provider.h"
 #include "cc/test/fake_output_surface.h"
 #include "cc/test/fake_output_surface_client.h"
@@ -87,17 +86,17 @@ class VideoResourceUpdaterTest : public testing::Test {
     static uint8 v_data[kDimension * kDimension / 2] = { 0 };
 
     return media::VideoFrame::WrapExternalYuvData(
-        media::VideoFrame::YV16,  // format
-        size,                     // coded_size
-        gfx::Rect(size),          // visible_rect
-        size,                     // natural_size
-        size.width(),             // y_stride
-        size.width() / 2,         // u_stride
-        size.width() / 2,         // v_stride
-        y_data,                   // y_data
-        u_data,                   // u_data
-        v_data,                   // v_data
-        base::TimeDelta());       // timestamp
+        media::PIXEL_FORMAT_YV16,  // format
+        size,                      // coded_size
+        gfx::Rect(size),           // visible_rect
+        size,                      // natural_size
+        size.width(),              // y_stride
+        size.width() / 2,          // u_stride
+        size.width() / 2,          // v_stride
+        y_data,                    // y_data
+        u_data,                    // u_data
+        v_data,                    // v_data
+        base::TimeDelta());        // timestamp
   }
 
   static void ReleaseMailboxCB(unsigned sync_point) {}
@@ -112,7 +111,7 @@ class VideoResourceUpdaterTest : public testing::Test {
     const unsigned sync_point = 7;
     const unsigned target = GL_TEXTURE_2D;
     return media::VideoFrame::WrapNativeTexture(
-        media::VideoFrame::ARGB,
+        media::PIXEL_FORMAT_ARGB,
         gpu::MailboxHolder(mailbox, target, sync_point),
         base::Bind(&ReleaseMailboxCB),
         size,                // coded_size

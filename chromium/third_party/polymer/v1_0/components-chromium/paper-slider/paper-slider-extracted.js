@@ -1,36 +1,16 @@
 
-  /**
-   * Fired when the slider's value changes.
-   *
-   * @event value-change
-   */
-
-  /**
-   * Fired when the slider's immediateValue changes.
-   *
-   * @event immediate-value-change
-   */
-
-  /**
-   * Fired when the slider's value changes due to user interaction.
-   *
-   * Changes to the slider's value due to changes in an underlying
-   * bound variable will not trigger this event.
-   *
-   * @event change
-   */
 
   Polymer({
     is: 'paper-slider',
 
     behaviors: [
-      Polymer.IronRangeBehavior,
-      Polymer.IronA11yKeysBehavior,
       Polymer.IronFormElementBehavior,
-      Polymer.PaperInkyFocusBehavior
+      Polymer.PaperInkyFocusBehavior,
+      Polymer.IronRangeBehavior
     ],
 
     properties: {
+
       /**
        * If true, the slider thumb snaps to tick marks evenly spaced based
        * on the `step` property value.
@@ -77,7 +57,8 @@
       immediateValue: {
         type: Number,
         value: 0,
-        readOnly: true
+        readOnly: true,
+        notify: true
       },
 
       /**
@@ -144,7 +125,6 @@
 
       this.async(function() {
         this._updateKnob(this.value);
-        this._updateInputValue();
       }, 1);
     },
 
@@ -187,28 +167,24 @@
       } else {
         this.value = this.immediateValue;
       }
-      this._updateInputValue();
     },
 
     _secondaryProgressChanged: function() {
       this.secondaryProgress = this._clampValue(this.secondaryProgress);
     },
 
-    _updateInputValue: function() {
-      if (this.editable) {
-        this.$$('#input').value = this.immediateValue.toString();
-      }
+    _fixForInput: function(immediateValue) {
+      // paper-input/issues/114
+      return this.immediateValue.toString();
     },
 
     _expandKnob: function() {
-      this.$.ink.holdDown = false;
       this._setExpand(true);
     },
 
     _resetKnob: function() {
       this.cancelDebouncer('expandKnob');
       this._setExpand(false);
-      this.$.ink.hidden = true;
     },
 
     _positionKnob: function(ratio) {
@@ -228,6 +204,7 @@
     },
 
     _onTrack: function(event) {
+      event.stopPropagation();
       switch (event.detail.state) {
         case 'start':
           this._trackStart(event);
@@ -285,17 +262,13 @@
       this._expandKnob();
 
       // cancel selection
-      event.detail.sourceEvent.preventDefault();
+      event.preventDefault();
 
       // set the focus manually because we will called prevent default
       this.focus();
     },
 
     _bardown: function(event) {
-      this.$.ink.hidden = true;
-
-      event.preventDefault();
-
       this._w = this.$.sliderBar.offsetWidth;
       var rect = this.$.sliderBar.getBoundingClientRect();
       var ratio = (event.detail.x - rect.left) / this._w;
@@ -320,7 +293,7 @@
       });
 
       // cancel selection
-      event.detail.sourceEvent.preventDefault();
+      event.preventDefault();
     },
 
     _knobTransitionEnd: function(event) {
@@ -338,22 +311,24 @@
       }
     },
 
-    _getClassNames: function() {
-      var classes = {};
-
-      classes.disabled = this.disabled;
-      classes.pin = this.pin;
-      classes.snaps = this.snaps;
-      classes.ring = this.immediateValue <= this.min;
-      classes.expand = this.expand;
-      classes.dragging = this.dragging;
-      classes.transiting = this.transiting;
-      classes.editable = this.editable;
-
+    _mergeClasses: function(classes) {
       return Object.keys(classes).filter(
         function(className) {
           return classes[className];
         }).join(' ');
+    },
+
+    _getClassNames: function() {
+      return this._mergeClasses({
+        disabled: this.disabled,
+        pin: this.pin,
+        snaps: this.snaps,
+        ring: this.immediateValue <= this.min,
+        expand: this.expand,
+        dragging: this.dragging,
+        transiting: this.transiting,
+        editable: this.editable
+      });
     },
 
     _incrementKey: function(event) {
@@ -373,4 +348,26 @@
       }
       this.fire('change');
     }
-  })
+  });
+
+  /**
+   * Fired when the slider's value changes.
+   *
+   * @event value-change
+   */
+
+  /**
+   * Fired when the slider's immediateValue changes.
+   *
+   * @event immediate-value-change
+   */
+
+  /**
+   * Fired when the slider's value changes due to user interaction.
+   *
+   * Changes to the slider's value due to changes in an underlying
+   * bound variable will not trigger this event.
+   *
+   * @event change
+   */
+

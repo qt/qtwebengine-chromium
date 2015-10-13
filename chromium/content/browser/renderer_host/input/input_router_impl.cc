@@ -136,6 +136,12 @@ void InputRouterImpl::SendWheelEvent(
       coalesced_mouse_wheel_events_.push_back(wheel_event);
     } else {
       coalesced_mouse_wheel_events_.back().CoalesceWith(wheel_event);
+      TRACE_EVENT_INSTANT2("input", "InputRouterImpl::CoalescedWheelEvent",
+                           TRACE_EVENT_SCOPE_THREAD,
+                           "total_dx",
+                           coalesced_mouse_wheel_events_.back().event.deltaX,
+                           "total_dy",
+                           coalesced_mouse_wheel_events_.back().event.deltaY);
     }
     return;
   }
@@ -149,9 +155,9 @@ void InputRouterImpl::SendWheelEvent(
   FilterAndSendWebInputEvent(wheel_event.event, wheel_event.latency, false);
 }
 
-void InputRouterImpl::SendKeyboardEvent(const NativeWebKeyboardEvent& key_event,
-                                        const ui::LatencyInfo& latency_info,
-                                        bool is_keyboard_shortcut) {
+void InputRouterImpl::SendKeyboardEvent(
+    const NativeWebKeyboardEventWithLatencyInfo& key_event,
+    bool is_keyboard_shortcut) {
   // Put all WebKeyboardEvent objects in a queue since we can't trust the
   // renderer and we need to give something to the HandleKeyboardEvent
   // handler.
@@ -161,7 +167,9 @@ void InputRouterImpl::SendKeyboardEvent(const NativeWebKeyboardEvent& key_event,
   gesture_event_queue_.FlingHasBeenHalted();
 
   // Only forward the non-native portions of our event.
-  FilterAndSendWebInputEvent(key_event, latency_info, is_keyboard_shortcut);
+  FilterAndSendWebInputEvent(key_event.event,
+                             key_event.latency,
+                             is_keyboard_shortcut);
 }
 
 void InputRouterImpl::SendGestureEvent(
@@ -202,6 +210,7 @@ void InputRouterImpl::SendMouseEventImmediately(
       return;
     }
     mouse_move_pending_ = true;
+    current_mouse_move_ = mouse_event;
   }
 
   FilterAndSendWebInputEvent(mouse_event.event, mouse_event.latency, false);
@@ -229,7 +238,7 @@ void InputRouterImpl::SendGestureEventImmediately(
 const NativeWebKeyboardEvent* InputRouterImpl::GetLastKeyboardEvent() const {
   if (key_queue_.empty())
     return NULL;
-  return &key_queue_.front();
+  return &key_queue_.front().event;
 }
 
 void InputRouterImpl::NotifySiteIsMobileOptimized(bool is_mobile_optimized) {
@@ -336,6 +345,11 @@ void InputRouterImpl::FilterAndSendWebInputEvent(
                "InputRouterImpl::FilterAndSendWebInputEvent",
                "type",
                WebInputEventTraits::GetName(input_event.type));
+  TRACE_EVENT_WITH_FLOW1("input,benchmark",
+                         "LatencyInfo.Flow",
+                         TRACE_ID_DONT_MANGLE(latency_info.trace_id()),
+                         TRACE_EVENT_FLAG_FLOW_IN | TRACE_EVENT_FLAG_FLOW_OUT,
+                         "step", "SendInputEventUI");
 
   // Any input event cancels a pending mouse move event.
   next_mouse_move_.reset();
@@ -508,7 +522,7 @@ void InputRouterImpl::ProcessInputEventAck(WebInputEvent::Type event_type,
   // synchronous destruction of |this|. Handling immediately guards against
   // future references to |this|, as with |auto_reset_current_ack_source| below.
   if (WebInputEvent::isKeyboardEventType(event_type)) {
-    ProcessKeyboardAck(event_type, ack_result);
+    ProcessKeyboardAck(event_type, ack_result, latency_info);
     // WARNING: |this| may be deleted at this point.
     return;
   }
@@ -517,7 +531,7 @@ void InputRouterImpl::ProcessInputEventAck(WebInputEvent::Type event_type,
       &current_ack_source_, ack_source);
 
   if (WebInputEvent::isMouseEventType(event_type)) {
-    ProcessMouseAck(event_type, ack_result);
+    ProcessMouseAck(event_type, ack_result, latency_info);
   } else if (event_type == WebInputEvent::MouseWheel) {
     ProcessWheelAck(ack_result, latency_info);
   } else if (WebInputEvent::isTouchEventType(event_type)) {
@@ -532,16 +546,18 @@ void InputRouterImpl::ProcessInputEventAck(WebInputEvent::Type event_type,
 }
 
 void InputRouterImpl::ProcessKeyboardAck(blink::WebInputEvent::Type type,
-                                         InputEventAckState ack_result) {
+                                         InputEventAckState ack_result,
+                                         const ui::LatencyInfo& latency) {
   if (key_queue_.empty()) {
     ack_handler_->OnUnexpectedEventAck(InputAckHandler::UNEXPECTED_ACK);
-  } else if (key_queue_.front().type != type) {
+  } else if (key_queue_.front().event.type != type) {
     // Something must be wrong. Clear the |key_queue_| and char event
     // suppression so that we can resume from the error.
     key_queue_.clear();
     ack_handler_->OnUnexpectedEventAck(InputAckHandler::UNEXPECTED_EVENT_TYPE);
   } else {
-    NativeWebKeyboardEvent front_item = key_queue_.front();
+    NativeWebKeyboardEventWithLatencyInfo front_item = key_queue_.front();
+    front_item.latency.AddNewLatencyFrom(latency);
     key_queue_.pop_front();
 
     ack_handler_->OnKeyboardEventAck(front_item, ack_result);
@@ -553,9 +569,13 @@ void InputRouterImpl::ProcessKeyboardAck(blink::WebInputEvent::Type type,
 }
 
 void InputRouterImpl::ProcessMouseAck(blink::WebInputEvent::Type type,
-                                      InputEventAckState ack_result) {
+                                      InputEventAckState ack_result,
+                                      const ui::LatencyInfo& latency) {
   if (type != WebInputEvent::MouseMove)
     return;
+
+  current_mouse_move_.latency.AddNewLatencyFrom(latency);
+  ack_handler_->OnMouseEventAck(current_mouse_move_, ack_result);
 
   DCHECK(mouse_move_pending_);
   mouse_move_pending_ = false;

@@ -635,8 +635,7 @@ void S32A_D565_Blend_neon(uint16_t* SK_RESTRICT dst,
             vdst = vld1q_u16(dst);
 #ifdef SK_CPU_ARM64
             vsrc = sk_vld4_u8_arm64_4(src);
-#else
-#if (__GNUC__ > 4) || ((__GNUC__ == 4) && (__GNUC_MINOR__ > 6))
+#elif (__GNUC__ > 4) || ((__GNUC__ == 4) && (__GNUC_MINOR__ > 6))
             asm (
                 "vld4.u8 %h[vsrc], [%[src]]!"
                 : [vsrc] "=w" (vsrc), [src] "+&r" (src)
@@ -659,7 +658,6 @@ void S32A_D565_Blend_neon(uint16_t* SK_RESTRICT dst,
             vsrc.val[2] = d2;
             vsrc.val[3] = d3;
 #endif
-#endif // #ifdef SK_CPU_ARM64
 
 
             // deinterleave dst
@@ -716,9 +714,9 @@ void S32A_D565_Blend_neon(uint16_t* SK_RESTRICT dst,
         if (sc) {
             uint16_t dc = *dst;
             unsigned dst_scale = 255 - SkMulDiv255Round(SkGetPackedA32(sc), alpha);
-            unsigned dr = SkMulS16(SkPacked32ToR16(sc), alpha) + SkMulS16(SkGetPackedR16(dc), dst_scale);
-            unsigned dg = SkMulS16(SkPacked32ToG16(sc), alpha) + SkMulS16(SkGetPackedG16(dc), dst_scale);
-            unsigned db = SkMulS16(SkPacked32ToB16(sc), alpha) + SkMulS16(SkGetPackedB16(dc), dst_scale);
+            unsigned dr = (SkPacked32ToR16(sc) * alpha) + (SkGetPackedR16(dc) * dst_scale);
+            unsigned dg = (SkPacked32ToG16(sc) * alpha) + (SkGetPackedG16(dc) * dst_scale);
+            unsigned db = (SkPacked32ToB16(sc) * alpha) + (SkGetPackedB16(dc) * dst_scale);
             *dst = SkPackRGB16(SkDiv255Round(dr), SkDiv255Round(dg), SkDiv255Round(db));
         }
         dst += 1;
@@ -1311,37 +1309,6 @@ void S32A_Blend_BlitRow32_neon(SkPMColor* SK_RESTRICT dst,
 
 ///////////////////////////////////////////////////////////////////////////////
 
-#undef    DEBUG_OPAQUE_DITHER
-
-#if    defined(DEBUG_OPAQUE_DITHER)
-static void showme8(char *str, void *p, int len)
-{
-    static char buf[256];
-    char tbuf[32];
-    int i;
-    char *pc = (char*) p;
-    sprintf(buf,"%8s:", str);
-    for(i=0;i<len;i++) {
-        sprintf(tbuf, "   %02x", pc[i]);
-        strcat(buf, tbuf);
-    }
-    SkDebugf("%s\n", buf);
-}
-static void showme16(char *str, void *p, int len)
-{
-    static char buf[256];
-    char tbuf[32];
-    int i;
-    uint16_t *pc = (uint16_t*) p;
-    sprintf(buf,"%8s:", str);
-    len = (len / sizeof(uint16_t));    /* passed as bytes */
-    for(i=0;i<len;i++) {
-        sprintf(tbuf, " %04x", pc[i]);
-        strcat(buf, tbuf);
-    }
-    SkDebugf("%s\n", buf);
-}
-#endif
 #endif // #ifdef SK_CPU_ARM32
 
 void S32A_D565_Opaque_Dither_neon (uint16_t * SK_RESTRICT dst,
@@ -1353,17 +1320,6 @@ void S32A_D565_Opaque_Dither_neon (uint16_t * SK_RESTRICT dst,
 
     if (count >= UNROLL) {
 
-#if defined(DEBUG_OPAQUE_DITHER)
-    uint16_t tmpbuf[UNROLL];
-    int td[UNROLL];
-    int tdv[UNROLL];
-    int ta[UNROLL];
-    int tap[UNROLL];
-    uint16_t in_dst[UNROLL];
-    int offset = 0;
-    int noisy = 0;
-#endif
-
     uint8x8_t dbase;
     const uint8_t *dstart = &gDitherMatrix_Neon[(y&3)*12 + (x&3)];
     dbase = vld1_u8(dstart);
@@ -1373,52 +1329,6 @@ void S32A_D565_Opaque_Dither_neon (uint16_t * SK_RESTRICT dst,
         uint8x8_t sr, sg, sb, sa, d;
         uint16x8_t dst8, scale8, alpha8;
         uint16x8_t dst_r, dst_g, dst_b;
-
-#if defined(DEBUG_OPAQUE_DITHER)
-        // calculate 8 elements worth into a temp buffer
-        {
-        int my_y = y;
-        int my_x = x;
-        SkPMColor* my_src = (SkPMColor*)src;
-        uint16_t* my_dst = dst;
-        int i;
-
-        DITHER_565_SCAN(my_y);
-        for(i = 0; i < UNROLL; i++) {
-            SkPMColor c = *my_src++;
-            SkPMColorAssert(c);
-            if (c) {
-                unsigned a = SkGetPackedA32(c);
-
-                int d = SkAlphaMul(DITHER_VALUE(my_x), SkAlpha255To256(a));
-                tdv[i] = DITHER_VALUE(my_x);
-                ta[i] = a;
-                tap[i] = SkAlpha255To256(a);
-                td[i] = d;
-
-                unsigned sr = SkGetPackedR32(c);
-                unsigned sg = SkGetPackedG32(c);
-                unsigned sb = SkGetPackedB32(c);
-                sr = SkDITHER_R32_FOR_565(sr, d);
-                sg = SkDITHER_G32_FOR_565(sg, d);
-                sb = SkDITHER_B32_FOR_565(sb, d);
-
-                uint32_t src_expanded = (sg << 24) | (sr << 13) | (sb << 2);
-                uint32_t dst_expanded = SkExpand_rgb_16(*my_dst);
-                dst_expanded = dst_expanded * (SkAlpha255To256(255 - a) >> 3);
-                // now src and dst expanded are in g:11 r:10 x:1 b:10
-                tmpbuf[i] = SkCompact_rgb_16((src_expanded + dst_expanded) >> 5);
-                td[i] = d;
-            } else {
-                tmpbuf[i] = *my_dst;
-                ta[i] = tdv[i] = td[i] = 0xbeef;
-            }
-            in_dst[i] = *my_dst;
-            my_dst += 1;
-            DITHER_INC_X(my_x);
-        }
-        }
-#endif
 
 #ifdef SK_CPU_ARM64
         vsrc = sk_vld4_u8_arm64_4(src);
@@ -1489,43 +1399,6 @@ void S32A_D565_Opaque_Dither_neon (uint16_t * SK_RESTRICT dst,
 
         vst1q_u16(dst, dst8);
 
-#if defined(DEBUG_OPAQUE_DITHER)
-        // verify my 8 elements match the temp buffer
-        {
-        int i, bad=0;
-        static int invocation;
-
-        for (i = 0; i < UNROLL; i++) {
-            if (tmpbuf[i] != dst[i]) {
-                bad=1;
-            }
-        }
-        if (bad) {
-            SkDebugf("BAD S32A_D565_Opaque_Dither_neon(); invocation %d offset %d\n",
-                     invocation, offset);
-            SkDebugf("  alpha 0x%x\n", alpha);
-            for (i = 0; i < UNROLL; i++)
-                SkDebugf("%2d: %s %04x w %04x id %04x s %08x d %04x %04x %04x %04x\n",
-                         i, ((tmpbuf[i] != dst[i])?"BAD":"got"), dst[i], tmpbuf[i],
-                         in_dst[i], src[i-8], td[i], tdv[i], tap[i], ta[i]);
-
-            showme16("alpha8", &alpha8, sizeof(alpha8));
-            showme16("scale8", &scale8, sizeof(scale8));
-            showme8("d", &d, sizeof(d));
-            showme16("dst8", &dst8, sizeof(dst8));
-            showme16("dst_b", &dst_b, sizeof(dst_b));
-            showme16("dst_g", &dst_g, sizeof(dst_g));
-            showme16("dst_r", &dst_r, sizeof(dst_r));
-            showme8("sb", &sb, sizeof(sb));
-            showme8("sg", &sg, sizeof(sg));
-            showme8("sr", &sr, sizeof(sr));
-
-            return;
-        }
-        offset += UNROLL;
-        invocation++;
-        }
-#endif
         dst += UNROLL;
         count -= UNROLL;
         // skip x += UNROLL, since it's unchanged mod-4
@@ -1568,8 +1441,6 @@ void S32A_D565_Opaque_Dither_neon (uint16_t * SK_RESTRICT dst,
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-
-#undef    DEBUG_S32_OPAQUE_DITHER
 
 void S32_D565_Opaque_Dither_neon(uint16_t* SK_RESTRICT dst,
                                  const SkPMColor* SK_RESTRICT src,
@@ -1637,25 +1508,6 @@ void S32_D565_Opaque_Dither_neon(uint16_t* SK_RESTRICT dst,
         // store it
         vst1q_u16(dst, dst8);
 
-#if    defined(DEBUG_S32_OPAQUE_DITHER)
-        // always good to know if we generated good results
-        {
-        int i, myx = x, myy = y;
-        DITHER_565_SCAN(myy);
-        for (i=0;i<UNROLL;i++) {
-            // the '!' in the asm block above post-incremented src by the 8 pixels it reads.
-            SkPMColor c = src[i-8];
-            unsigned dither = DITHER_VALUE(myx);
-            uint16_t val = SkDitherRGB32To565(c, dither);
-            if (val != dst[i]) {
-            SkDebugf("RBE: src %08x dither %02x, want %04x got %04x dbas[i] %02x\n",
-                c, dither, val, dst[i], dstart[i]);
-            }
-            DITHER_INC_X(myx);
-        }
-        }
-#endif
-
         dst += UNROLL;
         // we don't need to increment src as the asm above has already done it
         count -= UNROLL;
@@ -1689,14 +1541,14 @@ const SkBlitRow::Proc16 sk_blitrow_platform_565_procs_arm_neon[] = {
 #if 0
     S32A_D565_Blend_neon,
 #else
-    NULL,   // https://code.google.com/p/skia/issues/detail?id=2797
+    nullptr,   // https://code.google.com/p/skia/issues/detail?id=2797
 #endif
 
     // dither
     S32_D565_Opaque_Dither_neon,
     S32_D565_Blend_Dither_neon,
     S32A_D565_Opaque_Dither_neon,
-    NULL,   // S32A_D565_Blend_Dither
+    nullptr,   // S32A_D565_Blend_Dither
 };
 
 const SkBlitRow::ColorProc16 sk_blitrow_platform_565_colorprocs_arm_neon[] = {
@@ -1707,7 +1559,7 @@ const SkBlitRow::ColorProc16 sk_blitrow_platform_565_colorprocs_arm_neon[] = {
 };
 
 const SkBlitRow::Proc32 sk_blitrow_platform_32_procs_arm_neon[] = {
-    NULL,   // S32_Opaque,
+    nullptr,   // S32_Opaque,
     S32_Blend_BlitRow32_neon,        // S32_Blend,
     /*
      * We have two choices for S32A_Opaque procs. The one reads the src alpha
@@ -1727,23 +1579,6 @@ const SkBlitRow::Proc32 sk_blitrow_platform_32_procs_arm_neon[] = {
 #ifdef SK_CPU_ARM32
     S32A_Blend_BlitRow32_neon        // S32A_Blend
 #else
-    NULL
+    nullptr
 #endif
 };
-
-#include "Sk4px.h"
-
-void sk_blitrow_color32_arm_neon(SkPMColor* dst, const SkPMColor* src, int count, SkPMColor color) {
-    // Until it becomes a little more reasonable to assume we'll be built with NEON,
-    // we copy our Sk4px implementation of SkBlitRow::Color32 here so it picks up NEON at runtime.
-    unsigned invA = 255 - SkGetPackedA32(color);
-    invA += invA >> 7;
-    SkASSERT(invA < 256);  // Our caller has already handled the alpha == 0 case.
-
-    Sk16h colorHighAndRound = Sk4px::DupPMColor(color).widenHi() + Sk16h(128);
-    Sk16b invA_16x(invA);
-
-    Sk4px::MapSrc(count, dst, src, [&](const Sk4px& src4) -> Sk4px {
-        return (src4 * invA_16x).addNarrowHi(colorHighAndRound);
-    });
-}

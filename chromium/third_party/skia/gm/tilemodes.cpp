@@ -10,9 +10,7 @@
 #include "SkRegion.h"
 #include "SkShader.h"
 #include "SkUtils.h"
-#include "SkColorPriv.h"
 #include "SkColorFilter.h"
-#include "SkTypeface.h"
 
 // effects
 #include "SkGradientShader.h"
@@ -168,19 +166,19 @@ static SkShader* make_grad(SkShader::TileMode tx, SkShader::TileMode ty) {
     SkPoint pts[] = { { 0, 0 }, { SkIntToScalar(gWidth), SkIntToScalar(gHeight)} };
     SkPoint center = { SkIntToScalar(gWidth)/2, SkIntToScalar(gHeight)/2 };
     SkScalar rad = SkIntToScalar(gWidth)/2;
-    SkColor colors[] = { 0xFFFF0000, 0xFF0044FF };
+    SkColor colors[] = { 0xFFFF0000, sk_tool_utils::color_to_565(0xFF0044FF) };
 
     int index = (int)ty;
     switch (index % 3) {
         case 0:
-            return SkGradientShader::CreateLinear(pts, colors, NULL, SK_ARRAY_COUNT(colors), tx);
+            return SkGradientShader::CreateLinear(pts, colors, nullptr, SK_ARRAY_COUNT(colors), tx);
         case 1:
-            return SkGradientShader::CreateRadial(center, rad, colors, NULL, SK_ARRAY_COUNT(colors), tx);
+            return SkGradientShader::CreateRadial(center, rad, colors, nullptr, SK_ARRAY_COUNT(colors), tx);
         case 2:
-            return SkGradientShader::CreateSweep(center.fX, center.fY, colors, NULL, SK_ARRAY_COUNT(colors));
+            return SkGradientShader::CreateSweep(center.fX, center.fY, colors, nullptr, SK_ARRAY_COUNT(colors));
     }
 
-    return NULL;
+    return nullptr;
 }
 
 typedef SkShader* (*ShaderProc)(SkShader::TileMode, SkShader::TileMode);

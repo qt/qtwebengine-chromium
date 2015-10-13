@@ -25,13 +25,13 @@ RendererPreferences::RendererPreferences()
       active_selection_fg_color(SK_ColorWHITE),
       inactive_selection_bg_color(SkColorSetRGB(200, 200, 200)),
       inactive_selection_fg_color(SkColorSetRGB(50, 50, 50)),
-      browser_handles_non_local_top_level_requests(false),
       browser_handles_all_top_level_requests(false),
       caret_blink_interval(0.5),
       use_custom_colors(true),
       enable_referrers(true),
       enable_do_not_track(false),
       enable_webrtc_multiple_routes(true),
+      enable_webrtc_nonproxied_udp(true),
       default_zoom_level(0),
       report_frame_name_changes(false),
       tap_multiple_targets_strategy(TAP_MULTIPLE_TARGETS_STRATEGY_POPUP),
@@ -50,6 +50,7 @@ RendererPreferences::RendererPreferences()
       arrow_bitmap_height_vertical_scroll_bar_in_dips(0),
       arrow_bitmap_width_horizontal_scroll_bar_in_dips(0)
 #endif
+      , default_font_size(0)
 {}
 
 RendererPreferences::~RendererPreferences() { }

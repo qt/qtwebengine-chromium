@@ -5,13 +5,13 @@
  * found in the LICENSE file.
  */
 
+#include "CodecBenchPriv.h"
 #include "SubsetZoomBench.h"
 #include "SubsetBenchPriv.h"
 #include "SkData.h"
 #include "SkCodec.h"
 #include "SkImageDecoder.h"
 #include "SkOSFile.h"
-#include "SkScanlineDecoder.h"
 #include "SkStream.h"
 
 /*
@@ -35,7 +35,7 @@ SubsetZoomBench::SubsetZoomBench(const SkString& path,
     SkString baseName = SkOSPath::Basename(path.c_str());
 
     // Choose an informative color name
-    const char* colorName = get_color_name(fColorType);
+    const char* colorName = color_type_to_str(fColorType);
 
     fName.printf("%sSubsetZoom_%dx%d_%s_%s", fUseCodec ? "Codec" : "Image", fSubsetWidth,
             fSubsetHeight, baseName.c_str(), colorName);
@@ -53,7 +53,7 @@ bool SubsetZoomBench::isSuitableFor(Backend backend) {
     return kNonRendering_Backend == backend;
 }
 
-void SubsetZoomBench::onDraw(const int n, SkCanvas* canvas) {
+void SubsetZoomBench::onDraw(int n, SkCanvas* canvas) {
     // When the color type is kIndex8, we will need to store the color table.  If it is
     // used, it will be initialized by the codec.
     int colorCount;
@@ -62,9 +62,8 @@ void SubsetZoomBench::onDraw(const int n, SkCanvas* canvas) {
         for (int count = 0; count < n; count++) {
             SkAutoTDelete<SkCodec> codec(SkCodec::NewFromStream(fStream->duplicate()));
             const SkImageInfo info = codec->getInfo().makeColorType(fColorType);
-            SkAutoTDeleteArray<uint8_t> row(SkNEW_ARRAY(uint8_t, info.minRowBytes()));
-            SkScanlineDecoder* scanlineDecoder = codec->getScanlineDecoder(
-                    info, NULL, colors, &colorCount);
+            SkAutoTDeleteArray<uint8_t> row(new uint8_t[info.minRowBytes()]);
+            codec->startScanlineDecode(info, nullptr, colors, &colorCount);
 
             const int centerX = info.width() / 2;
             const int centerY = info.height() / 2;
@@ -82,9 +81,9 @@ void SubsetZoomBench::onDraw(const int n, SkCanvas* canvas) {
                 alloc_pixels(&bitmap, subsetInfo, colors, colorCount);
 
                 uint32_t bpp = info.bytesPerPixel();
-                scanlineDecoder->skipScanlines(subsetStartY);
+                codec->skipScanlines(subsetStartY);
                 for (int y = 0; y < subsetHeight; y++) {
-                    scanlineDecoder->getScanlines(row.get(), 1, 0);
+                    codec->getScanlines(row.get(), 1, 0);
                     memcpy(bitmap.getAddr(0, y), row.get() + subsetStartX * bpp,
                             subsetWidth * bpp);
                 }

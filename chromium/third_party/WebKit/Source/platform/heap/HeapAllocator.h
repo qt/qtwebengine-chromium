@@ -161,20 +161,6 @@ public:
         return *other;
     }
 
-    static void enterNoAllocationScope()
-    {
-#if ENABLE(ASSERT)
-        ThreadState::current()->enterNoAllocationScope();
-#endif
-    }
-
-    static void leaveNoAllocationScope()
-    {
-#if ENABLE(ASSERT)
-        ThreadState::current()->leaveNoAllocationScope();
-#endif
-    }
-
     static void enterGCForbiddenScope()
     {
         ThreadState::current()->enterGCForbiddenScope();
@@ -370,25 +356,6 @@ public:
         : Vector<T, inlineCapacity, HeapAllocator>(other)
     {
     }
-
-    template<typename U>
-    void append(const U* data, size_t dataSize)
-    {
-        Vector<T, inlineCapacity, HeapAllocator>::append(data, dataSize);
-    }
-
-    template<typename U>
-    void append(const U& other)
-    {
-        Vector<T, inlineCapacity, HeapAllocator>::append(other);
-    }
-
-    template<typename U, size_t otherCapacity>
-    void appendVector(const HeapVector<U, otherCapacity>& other)
-    {
-        const Vector<U, otherCapacity, HeapAllocator>& otherVector = other;
-        Vector<T, inlineCapacity, HeapAllocator>::appendVector(otherVector);
-    }
 };
 
 template<typename T, size_t inlineCapacity = 0>
@@ -408,14 +375,8 @@ public:
     HeapDeque<T, 0>& operator=(const HeapDeque& other)
     {
         HeapDeque<T> copy(other);
-        swap(copy);
+        Deque<T, inlineCapacity, HeapAllocator>::swap(copy);
         return *this;
-    }
-
-    // FIXME: Doesn't work if there is an inline buffer, due to crbug.com/360572
-    void swap(HeapDeque& other)
-    {
-        Deque<T, inlineCapacity, HeapAllocator>::swap(other);
     }
 
     template<size_t otherCapacity>
@@ -423,28 +384,7 @@ public:
         : Deque<T, inlineCapacity, HeapAllocator>(other)
     {
     }
-
-    template<typename U>
-    void append(const U& other)
-    {
-        Deque<T, inlineCapacity, HeapAllocator>::append(other);
-    }
 };
-
-template<typename T, size_t i>
-inline void swap(HeapVector<T, i>& a, HeapVector<T, i>& b) { a.swap(b); }
-template<typename T, size_t i>
-inline void swap(HeapDeque<T, i>& a, HeapDeque<T, i>& b) { a.swap(b); }
-template<typename T, typename U, typename V>
-inline void swap(HeapHashSet<T, U, V>& a, HeapHashSet<T, U, V>& b) { a.swap(b); }
-template<typename T, typename U, typename V, typename W, typename X>
-inline void swap(HeapHashMap<T, U, V, W, X>& a, HeapHashMap<T, U, V, W, X>& b) { a.swap(b); }
-template<typename T, size_t i, typename U>
-inline void swap(HeapListHashSet<T, i, U>& a, HeapListHashSet<T, i, U>& b) { a.swap(b); }
-template<typename T, typename U, typename V>
-inline void swap(HeapLinkedHashSet<T, U, V>& a, HeapLinkedHashSet<T, U, V>& b) { a.swap(b); }
-template<typename T, typename U, typename V>
-inline void swap(HeapHashCountedSet<T, U, V>& a, HeapHashCountedSet<T, U, V>& b) { a.swap(b); }
 
 } // namespace blink
 

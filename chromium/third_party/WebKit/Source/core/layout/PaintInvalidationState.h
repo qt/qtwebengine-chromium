@@ -7,6 +7,7 @@
 
 #include "platform/geometry/LayoutRect.h"
 #include "platform/transforms/AffineTransform.h"
+#include "wtf/Allocator.h"
 #include "wtf/Noncopyable.h"
 
 namespace blink {
@@ -17,6 +18,7 @@ class LayoutSVGModelObject;
 class LayoutView;
 
 class PaintInvalidationState {
+    STACK_ALLOCATED();
     WTF_MAKE_NONCOPYABLE(PaintInvalidationState);
 public:
     PaintInvalidationState(PaintInvalidationState& next, LayoutBoxModelObject& layoutObject, const LayoutBoxModelObject& paintInvalidationContainer);
@@ -34,8 +36,11 @@ public:
     bool cachedOffsetsEnabled() const { return m_cachedOffsetsEnabled; }
     bool isClipped() const { return m_clipped; }
 
-    bool ancestorHadPaintInvalidationForLocationChange() const { return m_ancestorHadPaintInvalidationForLocationChange; }
-    void setAncestorHadPaintInvalidationForLocationChange() { m_ancestorHadPaintInvalidationForLocationChange = true; }
+    bool forcedSubtreeInvalidationWithinContainer() const { return m_forcedSubtreeInvalidationWithinContainer; }
+    void setForceSubtreeInvalidationWithinContainer() { m_forcedSubtreeInvalidationWithinContainer = true; }
+
+    bool forcedSubtreeInvalidationRectUpdateWithinContainer() const { return m_forcedSubtreeInvalidationRectUpdateWithinContainer; }
+    void setForceSubtreeInvalidationRectUpdateWithinContainer() { m_forcedSubtreeInvalidationRectUpdateWithinContainer = true; }
 
     const LayoutBoxModelObject& paintInvalidationContainer() const { return m_paintInvalidationContainer; }
 
@@ -58,7 +63,8 @@ private:
 
     bool m_clipped;
     mutable bool m_cachedOffsetsEnabled;
-    bool m_ancestorHadPaintInvalidationForLocationChange;
+    bool m_forcedSubtreeInvalidationWithinContainer;
+    bool m_forcedSubtreeInvalidationRectUpdateWithinContainer;
 
     LayoutRect m_clipRect;
 

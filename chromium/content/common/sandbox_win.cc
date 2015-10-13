@@ -11,6 +11,7 @@
 #include "base/debug/profiler.h"
 #include "base/files/file_util.h"
 #include "base/hash.h"
+#include "base/logging.h"
 #include "base/memory/shared_memory.h"
 #include "base/metrics/sparse_histogram.h"
 #include "base/path_service.h"
@@ -51,6 +52,8 @@ namespace {
 const wchar_t* const kTroublesomeDlls[] = {
   L"adialhk.dll",                 // Kaspersky Internet Security.
   L"acpiz.dll",                   // Unknown.
+  L"activedetect32.dll",          // Lenovo One Key Theater (crbug.com/536056).
+  L"activedetect64.dll",          // Lenovo One Key Theater (crbug.com/536056).
   L"airfoilinject3.dll",          // Airfoil.
   L"akinsofthook32.dll",          // Akinsoft Software Engineering.
   L"assistant_x64.dll",           // Unknown.
@@ -118,9 +121,12 @@ const wchar_t* const kTroublesomeDlls[] = {
   L"tfwah.dll",                   // Threatfire (PC tools).
   L"wblind.dll",                  // Stardock Object desktop.
   L"wbhelp.dll",                  // Stardock Object desktop.
+  L"windowsapihookdll32.dll",     // Lenovo One Key Theater (crbug.com/536056).
+  L"windowsapihookdll64.dll",     // Lenovo One Key Theater (crbug.com/536056).
   L"winstylerthemehelper.dll"     // Tuneup utilities 2006.
 };
 
+#if !defined(NACL_WIN64)
 // Adds the policy rules for the path and path\ with the semantic |access|.
 // If |children| is set to true, we need to add the wildcard rules to also
 // apply the rule to the subfiles and subfolders.
@@ -152,26 +158,7 @@ bool AddDirectory(int path, const wchar_t* sub_dir, bool children,
 
   return true;
 }
-
-// Adds the policy rules for the path and path\* with the semantic |access|.
-// We need to add the wildcard rules to also apply the rule to the subkeys.
-bool AddKeyAndSubkeys(std::wstring key,
-                      sandbox::TargetPolicy::Semantics access,
-                      sandbox::TargetPolicy* policy) {
-  sandbox::ResultCode result;
-  result = policy->AddRule(sandbox::TargetPolicy::SUBSYS_REGISTRY, access,
-                           key.c_str());
-  if (result != sandbox::SBOX_ALL_OK)
-    return false;
-
-  key += L"\\*";
-  result = policy->AddRule(sandbox::TargetPolicy::SUBSYS_REGISTRY, access,
-                           key.c_str());
-  if (result != sandbox::SBOX_ALL_OK)
-    return false;
-
-  return true;
-}
+#endif  // !defined(NACL_WIN64)
 
 // Compares the loaded |module| file name matches |module_name|.
 bool IsExpandedModuleName(HMODULE module, const wchar_t* module_name) {
@@ -346,8 +333,8 @@ bool AddGenericPolicy(sandbox::TargetPolicy* policy) {
     return false;
 #endif  // NDEBUG
 
-  // Add the policy for read-only PDB file access for AddressSanitizer.
-#if defined(ADDRESS_SANITIZER)
+  // Add the policy for read-only PDB file access for stack traces.
+#if !defined(OFFICIAL_BUILD)
   base::FilePath exe;
   if (!PathService::Get(base::FILE_EXE, &exe))
     return false;
@@ -587,6 +574,31 @@ void AddAppContainerPolicy(sandbox::TargetPolicy* policy, const wchar_t* sid) {
   }
 }
 
+bool AddWin32kLockdownPolicy(sandbox::TargetPolicy* policy) {
+#if !defined(NACL_WIN64)
+  if (!IsWin32kRendererLockdownEnabled())
+    return true;
+
+  // Enable win32k lockdown if not already.
+  sandbox::MitigationFlags flags = policy->GetProcessMitigations();
+  if ((flags & sandbox::MITIGATION_WIN32K_DISABLE) ==
+      sandbox::MITIGATION_WIN32K_DISABLE)
+    return true;
+
+  sandbox::ResultCode result =
+      policy->AddRule(sandbox::TargetPolicy::SUBSYS_WIN32K_LOCKDOWN,
+                      sandbox::TargetPolicy::FAKE_USER_GDI_INIT, nullptr);
+  if (result != sandbox::SBOX_ALL_OK)
+    return false;
+
+  flags |= sandbox::MITIGATION_WIN32K_DISABLE;
+  result = policy->SetProcessMitigations(flags);
+  if (result != sandbox::SBOX_ALL_OK)
+    return false;
+#endif
+  return true;
+}
+
 bool InitBrokerServices(sandbox::BrokerServices* broker_services) {
   // TODO(abarth): DCHECK(CalledOnValidThread());
   //               See <http://b/1287166>.
@@ -674,20 +686,16 @@ base::Process StartSandboxedProcess(
                                          sandbox::MITIGATION_DEP_NO_ATL_THUNK |
                                          sandbox::MITIGATION_SEHOP;
 
+  if (policy->SetProcessMitigations(mitigations) != sandbox::SBOX_ALL_OK)
+    return base::Process();
+
 #if !defined(NACL_WIN64)
   if (type_str == switches::kRendererProcess &&
       IsWin32kRendererLockdownEnabled()) {
-    if (policy->AddRule(sandbox::TargetPolicy::SUBSYS_WIN32K_LOCKDOWN,
-                        sandbox::TargetPolicy::FAKE_USER_GDI_INIT,
-                        NULL) != sandbox::SBOX_ALL_OK) {
+    if (!AddWin32kLockdownPolicy(policy))
       return base::Process();
-    }
-    mitigations |= sandbox::MITIGATION_WIN32K_DISABLE;
   }
 #endif
-
-  if (policy->SetProcessMitigations(mitigations) != sandbox::SBOX_ALL_OK)
-    return base::Process();
 
   mitigations = sandbox::MITIGATION_STRICT_HANDLE_CHECKS |
                 sandbox::MITIGATION_DLL_SEARCH_ORDER;
@@ -705,8 +713,9 @@ base::Process StartSandboxedProcess(
   if (!disable_default_policy && !AddPolicyForSandboxedProcess(policy))
     return base::Process();
 
-  if (type_str == switches::kRendererProcess) {
 #if !defined(NACL_WIN64)
+  if (type_str == switches::kRendererProcess ||
+      type_str == switches::kPpapiPluginProcess) {
     if (gfx::win::ShouldUseDirectWrite()) {
       AddDirectory(base::DIR_WINDOWS_FONTS,
                   NULL,
@@ -724,14 +733,16 @@ base::Process StartSandboxedProcess(
 
       base::SharedMemory direct_write_font_cache_section;
       if (direct_write_font_cache_section.Open(name, true)) {
-        void* shared_handle =
-            policy->AddHandleToShare(direct_write_font_cache_section.handle());
+        void* shared_handle = policy->AddHandleToShare(
+            direct_write_font_cache_section.handle().GetHandle());
         cmd_line->AppendSwitchASCII(switches::kFontCacheSharedHandle,
             base::UintToString(reinterpret_cast<unsigned int>(shared_handle)));
       }
     }
+  }
 #endif
-  } else {
+
+  if (type_str != switches::kRendererProcess) {
     // Hack for Google Desktop crash. Trick GD into not injecting its DLL into
     // this subprocess. See
     // http://code.google.com/p/chromium/issues/detail?id=25580
@@ -759,12 +770,23 @@ base::Process StartSandboxedProcess(
     return base::Process();
   }
 
-  if (browser_command_line.HasSwitch(switches::kEnableLogging)) {
-    // If stdout/stderr point to a Windows console, these calls will
-    // have no effect.
-    policy->SetStdoutHandle(GetStdHandle(STD_OUTPUT_HANDLE));
-    policy->SetStderrHandle(GetStdHandle(STD_ERROR_HANDLE));
+  // Allow the renderer and gpu processes to access the log file.
+  if (type_str == switches::kRendererProcess ||
+      type_str == switches::kGpuProcess) {
+    if (logging::IsLoggingToFileEnabled()) {
+      DCHECK(base::FilePath(logging::GetLogFileFullPath()).IsAbsolute());
+      policy->AddRule(sandbox::TargetPolicy::SUBSYS_FILES,
+                      sandbox::TargetPolicy::FILES_ALLOW_ANY,
+                      logging::GetLogFileFullPath().c_str());
+    }
   }
+
+#if !defined(OFFICIAL_BUILD)
+  // If stdout/stderr point to a Windows console, these calls will
+  // have no effect.
+  policy->SetStdoutHandle(GetStdHandle(STD_OUTPUT_HANDLE));
+  policy->SetStderrHandle(GetStdHandle(STD_ERROR_HANDLE));
+#endif
 
   if (delegate) {
     bool success = true;

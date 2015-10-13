@@ -127,15 +127,6 @@ class VideoRendererInterface {
   // rotation applied.
   virtual void RenderFrame(const cricket::VideoFrame* frame) = 0;
 
-  // TODO(guoweis): Remove this function. This is added as a temporary solution
-  // until chrome renderers can apply rotation.
-  // Whether the VideoRenderer has the ability to rotate the frame before being
-  // displayed. The rotation of a frame is carried by
-  // VideoFrame.GetVideoRotation() and is the clockwise angle the frames must be
-  // rotated in order to display the frames correctly. If returning false, the
-  // frame's rotation must be applied before being delivered by RenderFrame.
-  virtual bool CanApplyRotation() { return false; }
-
  protected:
   // The destructor is protected to prevent deletion via the interface.
   // This is so that we allow reference counted classes, where the destructor
@@ -187,7 +178,7 @@ class AudioTrackSinkInterface {
                       int bits_per_sample,
                       int sample_rate,
                       int number_of_channels,
-                      int number_of_frames) = 0;
+                      size_t number_of_frames) = 0;
  protected:
   virtual ~AudioTrackSinkInterface() {}
 };

@@ -122,11 +122,7 @@ bool IsPcmA(const CodecInst& codec) {
 }
 
 bool IsPcm16B(const CodecInst& codec) {
-  return
-#ifdef WEBRTC_CODEC_PCM16
-      !STR_CASE_CMP(codec.plname, "l16") ||
-#endif
-      false;
+  return !STR_CASE_CMP(codec.plname, "l16");
 }
 
 bool IsIlbc(const CodecInst& codec) {
@@ -164,7 +160,8 @@ CodecManager::CodecManager()
       vad_mode_(VADNormal),
       send_codec_inst_(kEmptyCodecInst),
       red_enabled_(false),
-      codec_fec_enabled_(false) {
+      codec_fec_enabled_(false),
+      encoder_is_opus_(false) {
   // Register the default payload type for RED and for CNG at sampling rates of
   // 8, 16, 32 and 48 kHz.
   for (int i = (ACMCodecDB::kNumCodecs - 1); i >= 0; i--) {
@@ -188,7 +185,7 @@ CodecManager::CodecManager()
 CodecManager::~CodecManager() = default;
 
 int CodecManager::RegisterEncoder(const CodecInst& send_codec) {
-  DCHECK(thread_checker_.CalledOnValidThread());
+  RTC_DCHECK(thread_checker_.CalledOnValidThread());
   int codec_id = IsValidSendCodec(send_codec, true);
 
   // Check for reported errors from function IsValidSendCodec().
@@ -267,7 +264,7 @@ int CodecManager::RegisterEncoder(const CodecInst& send_codec) {
   bool new_codec = true;
   if (codec_owner_.Encoder()) {
     int new_codec_id = ACMCodecDB::CodecNumber(send_codec_inst_);
-    DCHECK_GE(new_codec_id, 0);
+    RTC_DCHECK_GE(new_codec_id, 0);
     new_codec = new_codec_id != codec_id;
   }
 
@@ -275,21 +272,23 @@ int CodecManager::RegisterEncoder(const CodecInst& send_codec) {
     red_enabled_ = false;
   }
 
+  encoder_is_opus_ = IsOpus(send_codec);
+
   if (new_codec) {
     // This is a new codec. Register it and return.
-    DCHECK(CodecSupported(send_codec));
+    RTC_DCHECK(CodecSupported(send_codec));
     if (IsOpus(send_codec)) {
       // VAD/DTX not supported.
       dtx_enabled_ = false;
     }
-    codec_owner_.SetEncoders(
-        send_codec, dtx_enabled_ ? CngPayloadType(send_codec.plfreq) : -1,
-        vad_mode_, red_enabled_ ? RedPayloadType(send_codec.plfreq) : -1);
-    DCHECK(codec_owner_.Encoder());
+    if (!codec_owner_.SetEncoders(
+            send_codec, dtx_enabled_ ? CngPayloadType(send_codec.plfreq) : -1,
+            vad_mode_, red_enabled_ ? RedPayloadType(send_codec.plfreq) : -1))
+      return -1;
+    RTC_DCHECK(codec_owner_.Encoder());
 
-    codec_fec_enabled_ =
-        codec_fec_enabled_ &&
-        codec_owner_.SpeechEncoder()->SetFec(codec_fec_enabled_);
+    codec_fec_enabled_ = codec_fec_enabled_ &&
+                         codec_owner_.Encoder()->SetFec(codec_fec_enabled_);
 
     send_codec_inst_ = send_codec;
     return 0;
@@ -299,10 +298,11 @@ int CodecManager::RegisterEncoder(const CodecInst& send_codec) {
   if (send_codec_inst_.plfreq != send_codec.plfreq ||
       send_codec_inst_.pacsize != send_codec.pacsize ||
       send_codec_inst_.channels != send_codec.channels) {
-    codec_owner_.SetEncoders(
-        send_codec, dtx_enabled_ ? CngPayloadType(send_codec.plfreq) : -1,
-        vad_mode_, red_enabled_ ? RedPayloadType(send_codec.plfreq) : -1);
-    DCHECK(codec_owner_.Encoder());
+    if (!codec_owner_.SetEncoders(
+            send_codec, dtx_enabled_ ? CngPayloadType(send_codec.plfreq) : -1,
+            vad_mode_, red_enabled_ ? RedPayloadType(send_codec.plfreq) : -1))
+      return -1;
+    RTC_DCHECK(codec_owner_.Encoder());
   }
   send_codec_inst_.plfreq = send_codec.plfreq;
   send_codec_inst_.pacsize = send_codec.pacsize;
@@ -311,25 +311,24 @@ int CodecManager::RegisterEncoder(const CodecInst& send_codec) {
 
   // Check if a change in Rate is required.
   if (send_codec.rate != send_codec_inst_.rate) {
-    codec_owner_.SpeechEncoder()->SetTargetBitrate(send_codec.rate);
+    codec_owner_.Encoder()->SetTargetBitrate(send_codec.rate);
     send_codec_inst_.rate = send_codec.rate;
   }
 
-  codec_fec_enabled_ = codec_fec_enabled_ &&
-                       codec_owner_.SpeechEncoder()->SetFec(codec_fec_enabled_);
+  codec_fec_enabled_ =
+      codec_fec_enabled_ && codec_owner_.Encoder()->SetFec(codec_fec_enabled_);
 
   return 0;
 }
 
-void CodecManager::RegisterEncoder(
-    AudioEncoderMutable* external_speech_encoder) {
+void CodecManager::RegisterEncoder(AudioEncoder* external_speech_encoder) {
   // Make up a CodecInst.
   send_codec_inst_.channels = external_speech_encoder->NumChannels();
   send_codec_inst_.plfreq = external_speech_encoder->SampleRateHz();
-  send_codec_inst_.pacsize =
-      rtc::CheckedDivExact(external_speech_encoder->Max10MsFramesInAPacket() *
-                               send_codec_inst_.plfreq,
-                           100);
+  send_codec_inst_.pacsize = rtc::CheckedDivExact(
+      static_cast<int>(external_speech_encoder->Max10MsFramesInAPacket() *
+                       send_codec_inst_.plfreq),
+      100);
   send_codec_inst_.pltype = -1;  // Not valid.
   send_codec_inst_.rate = -1;    // Not valid.
   static const char kName[] = "external";
@@ -337,8 +336,8 @@ void CodecManager::RegisterEncoder(
 
   if (stereo_send_)
     dtx_enabled_ = false;
-  codec_fec_enabled_ = codec_fec_enabled_ &&
-                       codec_owner_.SpeechEncoder()->SetFec(codec_fec_enabled_);
+  codec_fec_enabled_ =
+      codec_fec_enabled_ && codec_owner_.Encoder()->SetFec(codec_fec_enabled_);
   int cng_pt = dtx_enabled_
                    ? CngPayloadType(external_speech_encoder->SampleRateHz())
                    : -1;
@@ -384,8 +383,8 @@ bool CodecManager::SetCopyRed(bool enable) {
 
 int CodecManager::SetVAD(bool enable, ACMVADMode mode) {
   // Sanity check of the mode.
-  DCHECK(mode == VADNormal || mode == VADLowBitrate || mode == VADAggr ||
-         mode == VADVeryAggr);
+  RTC_DCHECK(mode == VADNormal || mode == VADLowBitrate || mode == VADAggr ||
+             mode == VADVeryAggr);
 
   // Check that the send codec is mono. We don't support VAD/DTX for stereo
   // sending.
@@ -430,9 +429,9 @@ int CodecManager::SetCodecFEC(bool enable_codec_fec) {
     return -1;
   }
 
-  CHECK(codec_owner_.SpeechEncoder());
-  codec_fec_enabled_ = codec_owner_.SpeechEncoder()->SetFec(enable_codec_fec) &&
-                       enable_codec_fec;
+  RTC_CHECK(codec_owner_.Encoder());
+  codec_fec_enabled_ =
+      codec_owner_.Encoder()->SetFec(enable_codec_fec) && enable_codec_fec;
   return codec_fec_enabled_ == enable_codec_fec ? 0 : -1;
 }
 

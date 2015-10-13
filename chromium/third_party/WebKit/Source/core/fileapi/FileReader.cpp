@@ -343,7 +343,7 @@ void FileReader::abort()
 
     // Schedule to have the abort done later since abort() might be called from the event handler and we do not want the resource loading code to be in the stack.
     executionContext()->postTask(
-        FROM_HERE, createCrossThreadTask(&delayedAbort, AllowAccessLater(this)));
+        FROM_HERE, createSameThreadTask(&delayedAbort, this));
 }
 
 void FileReader::doAbort()
@@ -395,9 +395,9 @@ void FileReader::didReceiveData()
 {
     // Fire the progress event at least every 50ms.
     double now = currentTimeMS();
-    if (!m_lastProgressNotificationTimeMS)
+    if (!m_lastProgressNotificationTimeMS) {
         m_lastProgressNotificationTimeMS = now;
-    else if (now - m_lastProgressNotificationTimeMS > progressNotificationIntervalMS) {
+    } else if (now - m_lastProgressNotificationTimeMS > progressNotificationIntervalMS) {
         fireEvent(EventTypeNames::progress);
         m_lastProgressNotificationTimeMS = now;
     }

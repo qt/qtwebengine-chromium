@@ -29,22 +29,24 @@ cov_start = lineno()+1   # We care about coverage starting just past this def.
 def get_args(bot):
   args = []
 
-  args.extend(['--scales', '1.0', '1.1'])
+  if 'Appurify' not in bot:
+    args.extend(['--scales', '1.0', '1.1'])
 
   if 'iOS' in bot:
     args.extend(['--skps', 'ignore_skps'])
 
-  config = ['565', '8888', 'gpu', 'nonrendering', 'angle', 'hwui']
-  # The S4 crashes and the NP produces a long error stream when we run with
-  # MSAA.
-  if ('GalaxyS4'    not in bot and
-      'NexusPlayer' not in bot):
-    if 'Android' in bot:
-      config.extend(['msaa4', 'nvprmsaa4'])
-    else:
-      config.extend(['msaa16', 'nvprmsaa16'])
-  args.append('--config')
-  args.extend(config)
+  if 'Appurify' not in bot:
+    config = ['565', '8888', 'gpu', 'nonrendering', 'angle', 'hwui']
+    # The S4 crashes and the NP produces a long error stream when we run with
+    # MSAA.
+    if ('GalaxyS4'    not in bot and
+        'NexusPlayer' not in bot):
+      if 'Android' in bot:
+        config.extend(['msaa4', 'nvprmsaa4'])
+      else:
+        config.extend(['msaa16', 'nvprmsaa16'])
+    args.append('--config')
+    args.extend(config)
 
   if 'Valgrind' in bot:
     # Don't care about Valgrind performance.
@@ -63,10 +65,12 @@ def get_args(bot):
     match.append('~desk_carsvg')
   if 'HD2000' in bot:
     match.extend(['~gradient', '~etc1bitmap'])  # skia:2895
-  if 'Nexus7' in bot:
-    match = ['skp']  # skia:2774
   if 'NexusPlayer' in bot:
     match.append('~desk_unicodetable')
+  if 'GalaxyS4' in bot:
+    match.append('~GLInstancedArraysBench')  # skia:4371
+    # skia:4373
+    match.extend(['~GLVertexAttributesBench', '~GLVec4ScalarBench'])
 
   if 'iOS' in bot:
     match.append('~blurroundrect')
@@ -92,6 +96,7 @@ def self_test():
     'Test-Ubuntu-GCC-ShuttleA-GPU-GTX550Ti-x86_64-Release-Valgrind',
     'Test-Win7-MSVC-ShuttleA-GPU-HD2000-x86-Debug-ANGLE',
     'Test-iOS-Clang-iPad4-GPU-SGX554-Arm7-Debug',
+    'Test-Android-GCC-GalaxyS4-GPU-SGX544-Arm7-Release',
   ]
 
   cov = coverage.coverage()

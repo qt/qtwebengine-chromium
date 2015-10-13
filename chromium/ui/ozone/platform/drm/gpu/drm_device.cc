@@ -13,7 +13,6 @@
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
 #include "base/stl_util.h"
-#include "base/synchronization/waitable_event.h"
 #include "base/task_runner.h"
 #include "base/thread_task_runner_handle.h"
 #include "base/trace_event/trace_event.h"
@@ -132,6 +131,11 @@ class DrmDevice::PageFlipManager
     }
 
     DrmDevice::PageFlipCallback callback = it->callback;
+    it->pending_calls -= 1;
+
+    if (it->pending_calls)
+      return;
+
     callbacks_.erase(it);
     callback.Run(frame, seconds, useconds);
   }
@@ -139,8 +143,9 @@ class DrmDevice::PageFlipManager
   uint64_t GetNextId() { return next_id_++; }
 
   void RegisterCallback(uint64_t id,
+                        uint64_t pending_calls,
                         const DrmDevice::PageFlipCallback& callback) {
-    callbacks_.push_back({id, callback});
+    callbacks_.push_back({id, pending_calls, callback});
   }
 
  private:
@@ -149,6 +154,7 @@ class DrmDevice::PageFlipManager
 
   struct PageFlip {
     uint64_t id;
+    uint32_t pending_calls;
     DrmDevice::PageFlipCallback callback;
   };
 
@@ -177,24 +183,14 @@ class DrmDevice::IOWatcher
       : main_task_runner_(base::ThreadTaskRunnerHandle::Get()),
         io_task_runner_(io_task_runner),
         page_flip_manager_(page_flip_manager),
-        paused_(true),
-        fd_(fd) {}
-
-  void SetPaused(bool paused) {
-    if (paused_ == paused)
-      return;
-
-    paused_ = paused;
-    base::WaitableEvent done(false, false);
-    io_task_runner_->PostTask(
-        FROM_HERE, base::Bind(&IOWatcher::SetPausedOnIO, this, &done));
-    done.Wait();
+        fd_(fd) {
+    io_task_runner_->PostTask(FROM_HERE,
+                              base::Bind(&IOWatcher::RegisterOnIO, this));
   }
 
   void Shutdown() {
-    if (!paused_)
-      io_task_runner_->PostTask(FROM_HERE,
-                                base::Bind(&IOWatcher::UnregisterOnIO, this));
+    io_task_runner_->PostTask(FROM_HERE,
+                              base::Bind(&IOWatcher::UnregisterOnIO, this));
   }
 
  private:
@@ -211,15 +207,6 @@ class DrmDevice::IOWatcher
   void UnregisterOnIO() {
     DCHECK(base::MessageLoopForIO::IsCurrent());
     controller_.StopWatchingFileDescriptor();
-  }
-
-  void SetPausedOnIO(base::WaitableEvent* done) {
-    DCHECK(base::MessageLoopForIO::IsCurrent());
-    if (paused_)
-      UnregisterOnIO();
-    else
-      RegisterOnIO();
-    done->Signal();
   }
 
   void OnPageFlipOnIO(uint32_t frame,
@@ -251,7 +238,6 @@ class DrmDevice::IOWatcher
 
   base::MessagePumpLibevent::FileDescriptorWatcher controller_;
 
-  bool paused_;
   int fd_;
 
   DISALLOW_COPY_AND_ASSIGN(IOWatcher);
@@ -372,14 +358,10 @@ bool DrmDevice::RemoveFramebuffer(uint32_t framebuffer) {
 
 bool DrmDevice::PageFlip(uint32_t crtc_id,
                          uint32_t framebuffer,
-                         bool is_sync,
                          const PageFlipCallback& callback) {
   DCHECK(file_.IsValid());
   TRACE_EVENT2("drm", "DrmDevice::PageFlip", "crtc", crtc_id, "framebuffer",
                framebuffer);
-
-  if (watcher_)
-    watcher_->SetPaused(is_sync);
 
   // NOTE: Calling drmModeSetCrtc will immediately update the state, though
   // callbacks to already scheduled page flips will be honored by the kernel.
@@ -387,18 +369,7 @@ bool DrmDevice::PageFlip(uint32_t crtc_id,
   if (!drmModePageFlip(file_.GetPlatformFile(), crtc_id, framebuffer,
                        DRM_MODE_PAGE_FLIP_EVENT, reinterpret_cast<void*>(id))) {
     // If successful the payload will be removed by a PageFlip event.
-    page_flip_manager_->RegisterCallback(id, callback);
-
-    // If the flip was requested synchronous or if no watcher has been installed
-    // yet, then synchronously handle the page flip events.
-    if (is_sync || !watcher_) {
-      TRACE_EVENT1("drm", "OnDrmEvent", "socket", file_.GetPlatformFile());
-
-      ProcessDrmEvent(
-          file_.GetPlatformFile(),
-          base::Bind(&PageFlipManager::OnPageFlip, page_flip_manager_));
-    }
-
+    page_flip_manager_->RegisterCallback(id, 1, callback);
     return true;
   }
 
@@ -468,7 +439,7 @@ ScopedDrmPropertyBlobPtr DrmDevice::GetPropertyBlob(drmModeConnector* connector,
       continue;
 
     if (strcmp(property->name, name) == 0 &&
-        property->flags & DRM_MODE_PROP_BLOB)
+        (property->flags & DRM_MODE_PROP_BLOB))
       return ScopedDrmPropertyBlobPtr(drmModeGetPropertyBlob(
           file_.GetPlatformFile(), connector->prop_values[i]));
   }
@@ -480,13 +451,15 @@ bool DrmDevice::SetCursor(uint32_t crtc_id,
                           uint32_t handle,
                           const gfx::Size& size) {
   DCHECK(file_.IsValid());
-  TRACE_EVENT1("drm", "DrmDevice::SetCursor", "handle", handle);
+  TRACE_EVENT2("drm", "DrmDevice::SetCursor", "crtc_id", crtc_id, "handle",
+               handle);
   return !drmModeSetCursor(file_.GetPlatformFile(), crtc_id, handle,
                            size.width(), size.height());
 }
 
 bool DrmDevice::MoveCursor(uint32_t crtc_id, const gfx::Point& point) {
   DCHECK(file_.IsValid());
+  TRACE_EVENT1("drm", "DrmDevice::MoveCursor", "crtc_id", crtc_id);
   return !drmModeMoveCursor(file_.GetPlatformFile(), crtc_id, point.x(),
                             point.y());
 }
@@ -538,32 +511,22 @@ bool DrmDevice::CloseBufferHandle(uint32_t handle) {
                    &close_request);
 }
 
-bool DrmDevice::CommitProperties(drmModePropertySet* properties,
+bool DrmDevice::CommitProperties(drmModeAtomicReq* properties,
                                  uint32_t flags,
-                                 bool is_sync,
-                                 bool test_only,
+                                 uint32_t crtc_count,
                                  const PageFlipCallback& callback) {
 #if defined(USE_DRM_ATOMIC)
-  if (test_only)
-    flags |= DRM_MODE_ATOMIC_TEST_ONLY;
-  else
-    flags |= DRM_MODE_PAGE_FLIP_EVENT;
-  uint64_t id = page_flip_manager_->GetNextId();
-  if (!drmModePropertySetCommit(file_.GetPlatformFile(), flags,
-                                reinterpret_cast<void*>(id), properties)) {
-    if (test_only)
-      return true;
-    page_flip_manager_->RegisterCallback(id, callback);
+  uint64_t id = 0;
+  bool page_flip_event_requested = flags & DRM_MODE_PAGE_FLIP_EVENT;
 
-    // If the flip was requested synchronous or if no watcher has been installed
-    // yet, then synchronously handle the page flip events.
-    if (is_sync || !watcher_) {
-      TRACE_EVENT1("drm", "OnDrmEvent", "socket", file_.GetPlatformFile());
+  if (page_flip_event_requested)
+    id = page_flip_manager_->GetNextId();
 
-      ProcessDrmEvent(
-          file_.GetPlatformFile(),
-          base::Bind(&PageFlipManager::OnPageFlip, page_flip_manager_));
-    }
+  if (!drmModeAtomicCommit(file_.GetPlatformFile(), properties, flags,
+                           reinterpret_cast<void*>(id))) {
+    if (page_flip_event_requested)
+      page_flip_manager_->RegisterCallback(id, crtc_count, callback);
+
     return true;
   }
 #endif  // defined(USE_DRM_ATOMIC)

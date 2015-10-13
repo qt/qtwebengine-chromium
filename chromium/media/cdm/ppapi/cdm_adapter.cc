@@ -296,12 +296,14 @@ PP_CdmKeyStatus CdmKeyStatusToPpKeyStatus(cdm::KeyStatus status) {
       return PP_CDMKEYSTATUS_INVALID;
     case cdm::kExpired:
       return PP_CDMKEYSTATUS_EXPIRED;
-    case cdm::kOutputNotAllowed:
-      return PP_CDMKEYSTATUS_OUTPUTNOTALLOWED;
+    case cdm::kOutputRestricted:
+      return PP_CDMKEYSTATUS_OUTPUTRESTRICTED;
     case cdm::kOutputDownscaled:
       return PP_CDMKEYSTATUS_OUTPUTDOWNSCALED;
     case cdm::kStatusPending:
       return PP_CDMKEYSTATUS_STATUSPENDING;
+    case cdm::kReleased:
+      return PP_CDMKEYSTATUS_RELEASED;
   }
 
   PP_NOTREACHED();

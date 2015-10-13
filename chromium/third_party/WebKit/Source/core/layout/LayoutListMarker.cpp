@@ -29,8 +29,8 @@
 #include "core/layout/LayoutAnalyzer.h"
 #include "core/layout/LayoutListItem.h"
 #include "core/layout/TextRunConstructor.h"
-#include "core/paint/DeprecatedPaintLayer.h"
 #include "core/paint/ListMarkerPainter.h"
+#include "core/paint/PaintLayer.h"
 #include "platform/fonts/Font.h"
 #include "wtf/text/StringBuilder.h"
 
@@ -1028,7 +1028,7 @@ bool LayoutListMarker::isImage() const
     return m_image && !m_image->errorOccurred();
 }
 
-LayoutRect LayoutListMarker::localSelectionRect()
+LayoutRect LayoutListMarker::localSelectionRect() const
 {
     InlineBox* box = inlineBoxWrapper();
     if (!box)
@@ -1040,7 +1040,7 @@ LayoutRect LayoutListMarker::localSelectionRect()
     return LayoutRect(newLogicalTop, 0, root.selectionHeight(), size().height());
 }
 
-void LayoutListMarker::paint(const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
+void LayoutListMarker::paint(const PaintInfo& paintInfo, const LayoutPoint& paintOffset) const
 {
     ListMarkerPainter(*this).paint(paintInfo, paintOffset);
 }
@@ -1257,7 +1257,7 @@ void LayoutListMarker::computePreferredLogicalWidths()
         } else {
             LayoutUnit itemWidth = font.width(m_text);
             UChar suffixSpace[2] = { listMarkerSuffix(type, m_listItem->value()), ' ' };
-            LayoutUnit suffixSpaceWidth = font.width(constructTextRun(this, font, suffixSpace, 2, styleRef(), style()->direction()));
+            LayoutUnit suffixSpaceWidth = font.width(constructTextRun(font, suffixSpace, 2, styleRef(), style()->direction()));
             logicalWidth = itemWidth + suffixSpaceWidth;
         }
         break;
@@ -1358,7 +1358,7 @@ bool LayoutListMarker::isInside() const
     return m_listItem->notInList() || style()->listStylePosition() == INSIDE;
 }
 
-IntRect LayoutListMarker::getRelativeMarkerRect()
+IntRect LayoutListMarker::getRelativeMarkerRect() const
 {
     if (isImage())
         return IntRect(0, 0, m_image->imageSize(this, style()->effectiveZoom()).width(), m_image->imageSize(this, style()->effectiveZoom()).height());
@@ -1435,7 +1435,7 @@ IntRect LayoutListMarker::getRelativeMarkerRect()
         const Font& font = style()->font();
         int itemWidth = font.width(m_text);
         UChar suffixSpace[2] = { listMarkerSuffix(type, m_listItem->value()), ' ' };
-        int suffixSpaceWidth = font.width(constructTextRun(this, font, suffixSpace, 2, styleRef(), style()->direction()));
+        int suffixSpaceWidth = font.width(constructTextRun(font, suffixSpace, 2, styleRef(), style()->direction()));
         relativeRect = IntRect(0, 0, itemWidth + suffixSpaceWidth, font.fontMetrics().height());
     }
 
@@ -1468,7 +1468,7 @@ LayoutRect LayoutListMarker::selectionRectForPaintInvalidation(const LayoutBoxMo
     mapRectToPaintInvalidationBacking(paintInvalidationContainer, rect, 0);
     // FIXME: groupedMapping() leaks the squashing abstraction.
     if (paintInvalidationContainer->layer()->groupedMapping())
-        DeprecatedPaintLayer::mapRectToPaintBackingCoordinates(paintInvalidationContainer, rect);
+        PaintLayer::mapRectToPaintBackingCoordinates(paintInvalidationContainer, rect);
     return rect;
 }
 

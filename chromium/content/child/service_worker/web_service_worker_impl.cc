@@ -9,8 +9,8 @@
 #include "content/child/thread_safe_sender.h"
 #include "content/child/webmessageportchannel_impl.h"
 #include "content/common/service_worker/service_worker_messages.h"
-#include "third_party/WebKit/public/platform/WebServiceWorkerProxy.h"
 #include "third_party/WebKit/public/platform/WebString.h"
+#include "third_party/WebKit/public/platform/modules/serviceworker/WebServiceWorkerProxy.h"
 
 using blink::WebMessagePortChannel;
 using blink::WebMessagePortChannelArray;
@@ -18,6 +18,20 @@ using blink::WebMessagePortChannelClient;
 using blink::WebString;
 
 namespace content {
+
+namespace {
+
+void SendPostMessageToWorkerOnMainThread(
+    ThreadSafeSender* thread_safe_sender,
+    int handle_id,
+    const base::string16& message,
+    scoped_ptr<WebMessagePortChannelArray> channels) {
+  thread_safe_sender->Send(new ServiceWorkerHostMsg_PostMessageToWorker(
+      handle_id, message,
+      WebMessagePortChannelImpl::ExtractMessagePortIDs(channels.Pass())));
+}
+
+}  // namespace
 
 WebServiceWorkerImpl::WebServiceWorkerImpl(
     scoped_ptr<ServiceWorkerHandleReference> handle_ref,
@@ -69,10 +83,21 @@ blink::WebServiceWorkerState WebServiceWorkerImpl::state() const {
 
 void WebServiceWorkerImpl::postMessage(const WebString& message,
                                        WebMessagePortChannelArray* channels) {
-  thread_safe_sender_->Send(new ServiceWorkerHostMsg_PostMessageToWorker(
-      handle_ref_->handle_id(),
-      message,
-      WebMessagePortChannelImpl::ExtractMessagePortIDs(channels)));
+  ServiceWorkerDispatcher* dispatcher =
+      ServiceWorkerDispatcher::GetThreadSpecificInstance();
+  DCHECK(dispatcher);
+
+  // This may send channels for MessagePorts, and all internal book-keeping
+  // messages for MessagePort (e.g. QueueMessages) are sent from main thread
+  // (with thread hopping), so we need to do the same thread hopping here not
+  // to overtake those messages.
+  dispatcher->main_thread_task_runner()->PostTask(
+      FROM_HERE, base::Bind(&SendPostMessageToWorkerOnMainThread,
+                            thread_safe_sender_, handle_ref_->handle_id(),
+                            // We cast WebString to string16 before crossing
+                            // threads for thread-safety.
+                            static_cast<base::string16>(message),
+                            base::Passed(make_scoped_ptr(channels))));
 }
 
 void WebServiceWorkerImpl::terminate() {

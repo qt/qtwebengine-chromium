@@ -28,13 +28,8 @@ public:
                                        const float* kernel,
                                        bool useBounds,
                                        float bounds[2]) {
-        return SkNEW_ARGS(GrConvolutionEffect, (procDataManager,
-                                                tex,
-                                                dir,
-                                                halfWidth,
-                                                kernel,
-                                                useBounds,
-                                                bounds));
+        return new GrConvolutionEffect(procDataManager, tex, dir, halfWidth, kernel, useBounds,
+                                       bounds);
     }
 
     /// Convolve with a Gaussian kernel
@@ -45,13 +40,8 @@ public:
                                                float gaussianSigma,
                                                bool useBounds,
                                                float bounds[2]) {
-        return SkNEW_ARGS(GrConvolutionEffect, (procDataManager,
-                                                tex,
-                                                dir,
-                                                halfWidth,
-                                                gaussianSigma,
-                                                useBounds,
-                                                bounds));
+        return new GrConvolutionEffect(procDataManager, tex, dir, halfWidth, gaussianSigma,
+                                       useBounds, bounds);
     }
 
     virtual ~GrConvolutionEffect();
@@ -62,10 +52,6 @@ public:
     bool useBounds() const { return fUseBounds; }
 
     const char* name() const override { return "Convolution"; }
-
-    void getGLProcessorKey(const GrGLSLCaps&, GrProcessorKeyBuilder*) const override;
-
-    GrGLFragmentProcessor* createGLInstance() const override;
 
     enum {
         // This was decided based on the min allowed value for the max texture
@@ -99,6 +85,10 @@ private:
                         float gaussianSigma,
                         bool useBounds,
                         float bounds[2]);
+
+    GrGLFragmentProcessor* onCreateGLInstance() const override;
+
+    void onGetGLProcessorKey(const GrGLSLCaps&, GrProcessorKeyBuilder*) const override;
 
     bool onIsEqual(const GrFragmentProcessor&) const override;
 

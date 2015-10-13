@@ -67,6 +67,11 @@ int QuicDataStream::GetReadableRegions(iovec* iov, size_t iov_len) const {
   return sequencer()->GetReadableRegions(iov, iov_len);
 }
 
+void QuicDataStream::MarkConsumed(size_t num_bytes) {
+  DCHECK(FinishedReadingHeaders());
+  return sequencer()->MarkConsumed(num_bytes);
+}
+
 bool QuicDataStream::IsDoneReading() const {
   if (!headers_decompressed_ || !decompressed_headers_.empty()) {
     return false;
@@ -81,7 +86,7 @@ bool QuicDataStream::HasBytesToRead() const {
 void QuicDataStream::MarkHeadersConsumed(size_t bytes_consumed) {
   decompressed_headers_.erase(0, bytes_consumed);
   if (FinishedReadingHeaders()) {
-    sequencer()->FlushBufferedFrames();
+    sequencer()->SetUnblocked();
   }
 }
 
@@ -92,14 +97,6 @@ void QuicDataStream::set_priority(QuicPriority priority) {
 
 QuicPriority QuicDataStream::EffectivePriority() const {
   return priority();
-}
-
-uint32 QuicDataStream::ProcessRawData(const char* data, uint32 data_len) {
-  if (!FinishedReadingHeaders()) {
-    LOG(DFATAL) << "ProcessRawData called before headers have been finished";
-    return 0;
-  }
-  return ProcessData(data, data_len);
 }
 
 void QuicDataStream::OnStreamHeaders(StringPiece headers_data) {
@@ -114,10 +111,10 @@ void QuicDataStream::OnStreamHeadersPriority(QuicPriority priority) {
 void QuicDataStream::OnStreamHeadersComplete(bool fin, size_t frame_len) {
   headers_decompressed_ = true;
   if (fin) {
-    sequencer()->OnStreamFrame(QuicStreamFrame(id(), fin, 0, StringPiece()));
+    OnStreamFrame(QuicStreamFrame(id(), fin, 0, StringPiece()));
   }
   if (FinishedReadingHeaders()) {
-    sequencer()->FlushBufferedFrames();
+    sequencer()->SetUnblocked();
   }
 }
 

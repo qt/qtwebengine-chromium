@@ -13,7 +13,7 @@
 namespace blink {
 
 template <typename Strategy>
-EphemeralRangeTemplate<Strategy>::EphemeralRangeTemplate(const PositionAlgorithm<Strategy>& start, const PositionAlgorithm<Strategy>& end)
+EphemeralRangeTemplate<Strategy>::EphemeralRangeTemplate(const PositionTemplate<Strategy>& start, const PositionTemplate<Strategy>& end)
     : m_startPosition(start)
     , m_endPosition(end)
 #if ENABLE(ASSERT)
@@ -38,7 +38,7 @@ EphemeralRangeTemplate<Strategy>::EphemeralRangeTemplate(const EphemeralRangeTem
 }
 
 template <typename Strategy>
-EphemeralRangeTemplate<Strategy>::EphemeralRangeTemplate(const PositionAlgorithm<Strategy>& position)
+EphemeralRangeTemplate<Strategy>::EphemeralRangeTemplate(const PositionTemplate<Strategy>& position)
     : EphemeralRangeTemplate(position, position)
 {
 }
@@ -78,6 +78,18 @@ EphemeralRangeTemplate<Strategy>& EphemeralRangeTemplate<Strategy>::operator=(co
 }
 
 template <typename Strategy>
+bool EphemeralRangeTemplate<Strategy>::operator==(const EphemeralRangeTemplate<Strategy>& other) const
+{
+    return startPosition() == other.startPosition() && endPosition() == other.endPosition();
+}
+
+template <typename Strategy>
+bool EphemeralRangeTemplate<Strategy>::operator!=(const EphemeralRangeTemplate<Strategy>& other) const
+{
+    return !operator==(other);
+}
+
+template <typename Strategy>
 Document& EphemeralRangeTemplate<Strategy>::document() const
 {
     ASSERT(isNotNull());
@@ -85,14 +97,14 @@ Document& EphemeralRangeTemplate<Strategy>::document() const
 }
 
 template <typename Strategy>
-PositionAlgorithm<Strategy> EphemeralRangeTemplate<Strategy>::startPosition() const
+PositionTemplate<Strategy> EphemeralRangeTemplate<Strategy>::startPosition() const
 {
     ASSERT(isValid());
     return m_startPosition;
 }
 
 template <typename Strategy>
-PositionAlgorithm<Strategy> EphemeralRangeTemplate<Strategy>::endPosition() const
+PositionTemplate<Strategy> EphemeralRangeTemplate<Strategy>::endPosition() const
 {
     ASSERT(isValid());
     return m_endPosition;
@@ -106,16 +118,9 @@ bool EphemeralRangeTemplate<Strategy>::isCollapsed() const
 }
 
 template <typename Strategy>
-bool EphemeralRangeTemplate<Strategy>::isNotNull() const
-{
-    ASSERT(isValid());
-    return m_startPosition.isNotNull();
-}
-
-template <typename Strategy>
 EphemeralRangeTemplate<Strategy> EphemeralRangeTemplate<Strategy>::rangeOfContents(const Node& node)
 {
-    return EphemeralRangeTemplate<Strategy>(PositionAlgorithm<Strategy>::firstPositionInNode(&const_cast<Node&>(node)), PositionAlgorithm<Strategy>::lastPositionInNode(&const_cast<Node&>(node)));
+    return EphemeralRangeTemplate<Strategy>(PositionTemplate<Strategy>::firstPositionInNode(&const_cast<Node&>(node)), PositionTemplate<Strategy>::lastPositionInNode(&const_cast<Node&>(node)));
 }
 
 #if ENABLE(ASSERT)
@@ -132,6 +137,14 @@ bool EphemeralRangeTemplate<Strategy>::isValid() const
 }
 #endif
 
+PassRefPtrWillBeRawPtr<Range> createRange(const EphemeralRange& range)
+{
+    if (range.isNull())
+        return nullptr;
+    return Range::create(range.document(), range.startPosition(), range.endPosition());
+}
+
 template class CORE_TEMPLATE_EXPORT EphemeralRangeTemplate<EditingStrategy>;
+template class CORE_TEMPLATE_EXPORT EphemeralRangeTemplate<EditingInComposedTreeStrategy>;
 
 } // namespace blink

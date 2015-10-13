@@ -27,7 +27,7 @@
 #include "storage/browser/blob/blob_storage_context.h"
 #include "storage/browser/blob/blob_url_request_job_factory.h"
 #include "storage/browser/quota/quota_manager_proxy.h"
-#include "third_party/WebKit/public/platform/WebServiceWorkerResponseType.h"
+#include "third_party/WebKit/public/platform/modules/serviceworker/WebServiceWorkerResponseType.h"
 
 namespace content {
 
@@ -76,6 +76,8 @@ blink::WebServiceWorkerResponseType ProtoResponseTypeToWebResponseType(
       return blink::WebServiceWorkerResponseTypeError;
     case CacheResponse::OPAQUE_TYPE:
       return blink::WebServiceWorkerResponseTypeOpaque;
+    case CacheResponse::OPAQUE_REDIRECT_TYPE:
+      return blink::WebServiceWorkerResponseTypeOpaqueRedirect;
   }
   NOTREACHED();
   return blink::WebServiceWorkerResponseTypeOpaque;
@@ -94,6 +96,8 @@ CacheResponse::ResponseType WebResponseTypeToProtoResponseType(
       return CacheResponse::ERROR_TYPE;
     case blink::WebServiceWorkerResponseTypeOpaque:
       return CacheResponse::OPAQUE_TYPE;
+    case blink::WebServiceWorkerResponseTypeOpaqueRedirect:
+      return CacheResponse::OPAQUE_REDIRECT_TYPE;
   }
   NOTREACHED();
   return CacheResponse::OPAQUE_TYPE;
@@ -178,32 +182,65 @@ void ReadMetadataDidReadMetadata(
 
 }  // namespace
 
-// The state needed to pass between CacheStorageCache::Keys callbacks.
-struct CacheStorageCache::KeysContext {
-  explicit KeysContext(const CacheStorageCache::RequestsCallback& callback)
-      : original_callback(callback),
-        out_keys(new CacheStorageCache::Requests()),
-        enumerated_entry(NULL) {}
-
-  ~KeysContext() {
-    for (size_t i = 0, max = entries.size(); i < max; ++i)
-      entries[i]->Close();
+// The state needed to iterate all entries in the cache.
+struct CacheStorageCache::OpenAllEntriesContext {
+  OpenAllEntriesContext() : enumerated_entry(nullptr) {}
+  ~OpenAllEntriesContext() {
+    for (size_t i = 0, max = entries.size(); i < max; ++i) {
+      if (entries[i])
+        entries[i]->Close();
+    }
     if (enumerated_entry)
       enumerated_entry->Close();
   }
 
-  // The callback passed to the Keys() function.
-  CacheStorageCache::RequestsCallback original_callback;
-
   // The vector of open entries in the backend.
   Entries entries;
-
-  // The output of the Keys function.
-  scoped_ptr<CacheStorageCache::Requests> out_keys;
 
   // Used for enumerating cache entries.
   scoped_ptr<disk_cache::Backend::Iterator> backend_iterator;
   disk_cache::Entry* enumerated_entry;
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(OpenAllEntriesContext);
+};
+
+// The state needed to pass between CacheStorageCache::MatchAll callbacks.
+struct CacheStorageCache::MatchAllContext {
+  explicit MatchAllContext(const CacheStorageCache::ResponsesCallback& callback)
+      : original_callback(callback),
+        out_responses(new Responses),
+        out_blob_data_handles(new BlobDataHandles) {}
+  ~MatchAllContext() {}
+
+  // The callback passed to the MatchAll() function.
+  ResponsesCallback original_callback;
+
+  // The outputs of the MatchAll function.
+  scoped_ptr<Responses> out_responses;
+  scoped_ptr<BlobDataHandles> out_blob_data_handles;
+
+  // The context holding open entries.
+  scoped_ptr<OpenAllEntriesContext> entries_context;
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(MatchAllContext);
+};
+
+// The state needed to pass between CacheStorageCache::Keys callbacks.
+struct CacheStorageCache::KeysContext {
+  explicit KeysContext(const CacheStorageCache::RequestsCallback& callback)
+      : original_callback(callback), out_keys(new Requests()) {}
+  ~KeysContext() {}
+
+  // The callback passed to the Keys() function.
+  RequestsCallback original_callback;
+
+  // The output of the Keys function.
+  scoped_ptr<Requests> out_keys;
+
+  // The context holding open entries.
+  scoped_ptr<OpenAllEntriesContext> entries_context;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(KeysContext);
@@ -272,18 +309,11 @@ base::WeakPtr<CacheStorageCache> CacheStorageCache::AsWeakPtr() {
 
 void CacheStorageCache::Match(scoped_ptr<ServiceWorkerFetchRequest> request,
                               const ResponseCallback& callback) {
-  switch (backend_state_) {
-    case BACKEND_UNINITIALIZED:
-      InitBackend();
-      break;
-    case BACKEND_CLOSED:
-      callback.Run(CACHE_STORAGE_ERROR_STORAGE,
-                   scoped_ptr<ServiceWorkerResponse>(),
-                   scoped_ptr<storage::BlobDataHandle>());
-      return;
-    case BACKEND_OPEN:
-      DCHECK(backend_);
-      break;
+  if (!LazyInitialize()) {
+    callback.Run(CACHE_STORAGE_ERROR_STORAGE,
+                 scoped_ptr<ServiceWorkerResponse>(),
+                 scoped_ptr<storage::BlobDataHandle>());
+    return;
   }
 
   ResponseCallback pending_callback =
@@ -294,19 +324,27 @@ void CacheStorageCache::Match(scoped_ptr<ServiceWorkerFetchRequest> request,
                  base::Passed(request.Pass()), pending_callback));
 }
 
+void CacheStorageCache::MatchAll(const ResponsesCallback& callback) {
+  if (!LazyInitialize()) {
+    callback.Run(CACHE_STORAGE_ERROR_STORAGE, scoped_ptr<Responses>(),
+                 scoped_ptr<BlobDataHandles>());
+    return;
+  }
+
+  ResponsesCallback pending_callback =
+      base::Bind(&CacheStorageCache::PendingResponsesCallback,
+                 weak_ptr_factory_.GetWeakPtr(), callback);
+  scheduler_->ScheduleOperation(base::Bind(&CacheStorageCache::MatchAllImpl,
+                                           weak_ptr_factory_.GetWeakPtr(),
+                                           pending_callback));
+}
+
 void CacheStorageCache::BatchOperation(
     const std::vector<CacheStorageBatchOperation>& operations,
     const ErrorCallback& callback) {
-  switch (backend_state_) {
-    case BACKEND_UNINITIALIZED:
-      InitBackend();
-      break;
-    case BACKEND_CLOSED:
-      callback.Run(CACHE_STORAGE_ERROR_STORAGE);
-      return;
-    case BACKEND_OPEN:
-      DCHECK(backend_);
-      break;
+  if (!LazyInitialize()) {
+    callback.Run(CACHE_STORAGE_ERROR_STORAGE);
+    return;
   }
 
   scoped_ptr<ErrorCallback> callback_copy(new ErrorCallback(callback));
@@ -359,16 +397,9 @@ void CacheStorageCache::BatchDidAllOperations(
 }
 
 void CacheStorageCache::Keys(const RequestsCallback& callback) {
-  switch (backend_state_) {
-    case BACKEND_UNINITIALIZED:
-      InitBackend();
-      break;
-    case BACKEND_CLOSED:
-      callback.Run(CACHE_STORAGE_ERROR_STORAGE, scoped_ptr<Requests>());
-      return;
-    case BACKEND_OPEN:
-      DCHECK(backend_);
-      break;
+  if (!LazyInitialize()) {
+    callback.Run(CACHE_STORAGE_ERROR_STORAGE, scoped_ptr<Requests>());
+    return;
   }
 
   RequestsCallback pending_callback =
@@ -438,6 +469,75 @@ CacheStorageCache::CacheStorageCache(
       weak_ptr_factory_(this) {
 }
 
+bool CacheStorageCache::LazyInitialize() {
+  switch (backend_state_) {
+    case BACKEND_UNINITIALIZED:
+      InitBackend();
+      return true;
+    case BACKEND_CLOSED:
+      return false;
+    case BACKEND_OPEN:
+      DCHECK(backend_);
+      return true;
+  }
+  NOTREACHED();
+  return false;
+}
+
+void CacheStorageCache::OpenAllEntries(const OpenAllEntriesCallback& callback) {
+  scoped_ptr<OpenAllEntriesContext> entries_context(new OpenAllEntriesContext);
+  entries_context->backend_iterator = backend_->CreateIterator();
+  disk_cache::Backend::Iterator& iterator = *entries_context->backend_iterator;
+  disk_cache::Entry** enumerated_entry = &entries_context->enumerated_entry;
+
+  net::CompletionCallback open_entry_callback = base::Bind(
+      &CacheStorageCache::DidOpenNextEntry, weak_ptr_factory_.GetWeakPtr(),
+      base::Passed(entries_context.Pass()), callback);
+
+  int rv = iterator.OpenNextEntry(enumerated_entry, open_entry_callback);
+
+  if (rv != net::ERR_IO_PENDING)
+    open_entry_callback.Run(rv);
+}
+
+void CacheStorageCache::DidOpenNextEntry(
+    scoped_ptr<OpenAllEntriesContext> entries_context,
+    const OpenAllEntriesCallback& callback,
+    int rv) {
+  if (rv == net::ERR_FAILED) {
+    DCHECK(!entries_context->enumerated_entry);
+    // Enumeration is complete, extract the requests from the entries.
+    callback.Run(entries_context.Pass(), CACHE_STORAGE_OK);
+    return;
+  }
+
+  if (rv < 0) {
+    callback.Run(entries_context.Pass(), CACHE_STORAGE_ERROR_STORAGE);
+    return;
+  }
+
+  if (backend_state_ != BACKEND_OPEN) {
+    callback.Run(entries_context.Pass(), CACHE_STORAGE_ERROR_NOT_FOUND);
+    return;
+  }
+
+  // Store the entry.
+  entries_context->entries.push_back(entries_context->enumerated_entry);
+  entries_context->enumerated_entry = nullptr;
+
+  // Enumerate the next entry.
+  disk_cache::Backend::Iterator& iterator = *entries_context->backend_iterator;
+  disk_cache::Entry** enumerated_entry = &entries_context->enumerated_entry;
+  net::CompletionCallback open_entry_callback = base::Bind(
+      &CacheStorageCache::DidOpenNextEntry, weak_ptr_factory_.GetWeakPtr(),
+      base::Passed(entries_context.Pass()), callback);
+
+  rv = iterator.OpenNextEntry(enumerated_entry, open_entry_callback);
+
+  if (rv != net::ERR_IO_PENDING)
+    open_entry_callback.Run(rv);
+}
+
 void CacheStorageCache::MatchImpl(scoped_ptr<ServiceWorkerFetchRequest> request,
                                   const ResponseCallback& callback) {
   DCHECK_NE(BACKEND_UNINITIALIZED, backend_state_);
@@ -495,22 +595,8 @@ void CacheStorageCache::MatchDidReadMetadata(
     return;
   }
 
-  scoped_ptr<ServiceWorkerResponse> response(new ServiceWorkerResponse(
-      request->url, metadata->response().status_code(),
-      metadata->response().status_text(),
-      ProtoResponseTypeToWebResponseType(metadata->response().response_type()),
-      ServiceWorkerHeaderMap(), "", 0, GURL(),
-      blink::WebServiceWorkerResponseErrorUnknown));
-
-  if (metadata->response().has_url())
-    response->url = GURL(metadata->response().url());
-
-  for (int i = 0; i < metadata->response().headers_size(); ++i) {
-    const CacheHeaderMap header = metadata->response().headers(i);
-    DCHECK_EQ(std::string::npos, header.name().find('\0'));
-    DCHECK_EQ(std::string::npos, header.value().find('\0'));
-    response->headers.insert(std::make_pair(header.name(), header.value()));
-  }
+  scoped_ptr<ServiceWorkerResponse> response(new ServiceWorkerResponse);
+  PopulateResponseMetadata(*metadata, response.get());
 
   ServiceWorkerHeaderMap cached_request_headers;
   for (int i = 0; i < metadata->request().headers_size(); ++i) {
@@ -541,18 +627,90 @@ void CacheStorageCache::MatchDidReadMetadata(
     return;
   }
 
-  // Create a blob with the response body data.
-  response->blob_size = entry->GetDataSize(INDEX_RESPONSE_BODY);
-  response->blob_uuid = base::GenerateGUID();
-  storage::BlobDataBuilder blob_data(response->blob_uuid);
-
-  disk_cache::Entry* temp_entry = entry.get();
-  blob_data.AppendDiskCacheEntry(
-      new CacheStorageCacheDataHandle(this, entry.Pass()), temp_entry,
-      INDEX_RESPONSE_BODY);
-  scoped_ptr<storage::BlobDataHandle> blob_data_handle(
-      blob_storage_context_->AddFinishedBlob(&blob_data));
+  scoped_ptr<storage::BlobDataHandle> blob_data_handle =
+      PopulateResponseBody(entry.Pass(), response.get());
   callback.Run(CACHE_STORAGE_OK, response.Pass(), blob_data_handle.Pass());
+}
+
+void CacheStorageCache::MatchAllImpl(const ResponsesCallback& callback) {
+  DCHECK_NE(BACKEND_UNINITIALIZED, backend_state_);
+  if (backend_state_ != BACKEND_OPEN) {
+    callback.Run(CACHE_STORAGE_ERROR_STORAGE, scoped_ptr<Responses>(),
+                 scoped_ptr<BlobDataHandles>());
+    return;
+  }
+
+  OpenAllEntries(base::Bind(&CacheStorageCache::MatchAllDidOpenAllEntries,
+                            weak_ptr_factory_.GetWeakPtr(), callback));
+}
+
+void CacheStorageCache::MatchAllDidOpenAllEntries(
+    const ResponsesCallback& callback,
+    scoped_ptr<OpenAllEntriesContext> entries_context,
+    CacheStorageError error) {
+  if (error != CACHE_STORAGE_OK) {
+    callback.Run(error, scoped_ptr<Responses>(), scoped_ptr<BlobDataHandles>());
+    return;
+  }
+
+  scoped_ptr<MatchAllContext> context(new MatchAllContext(callback));
+  context->entries_context.swap(entries_context);
+  Entries::iterator iter = context->entries_context->entries.begin();
+  MatchAllProcessNextEntry(context.Pass(), iter);
+}
+
+void CacheStorageCache::MatchAllProcessNextEntry(
+    scoped_ptr<MatchAllContext> context,
+    const Entries::iterator& iter) {
+  if (iter == context->entries_context->entries.end()) {
+    // All done. Return all of the responses.
+    context->original_callback.Run(CACHE_STORAGE_OK,
+                                   context->out_responses.Pass(),
+                                   context->out_blob_data_handles.Pass());
+    return;
+  }
+
+  ReadMetadata(*iter, base::Bind(&CacheStorageCache::MatchAllDidReadMetadata,
+                                 weak_ptr_factory_.GetWeakPtr(),
+                                 base::Passed(context.Pass()), iter));
+}
+
+void CacheStorageCache::MatchAllDidReadMetadata(
+    scoped_ptr<MatchAllContext> context,
+    const Entries::iterator& iter,
+    scoped_ptr<CacheMetadata> metadata) {
+  // Move ownership of the entry from the context.
+  disk_cache::ScopedEntryPtr entry(*iter);
+  *iter = nullptr;
+
+  if (!metadata) {
+    entry->Doom();
+    MatchAllProcessNextEntry(context.Pass(), iter + 1);
+    return;
+  }
+
+  ServiceWorkerResponse response;
+  PopulateResponseMetadata(*metadata, &response);
+
+  if (entry->GetDataSize(INDEX_RESPONSE_BODY) == 0) {
+    context->out_responses->push_back(response);
+    MatchAllProcessNextEntry(context.Pass(), iter + 1);
+    return;
+  }
+
+  if (!blob_storage_context_) {
+    context->original_callback.Run(CACHE_STORAGE_ERROR_STORAGE,
+                                   scoped_ptr<Responses>(),
+                                   scoped_ptr<BlobDataHandles>());
+    return;
+  }
+
+  scoped_ptr<storage::BlobDataHandle> blob_data_handle =
+      PopulateResponseBody(entry.Pass(), &response);
+
+  context->out_responses->push_back(response);
+  context->out_blob_data_handles->push_back(*blob_data_handle);
+  MatchAllProcessNextEntry(context.Pass(), iter + 1);
 }
 
 void CacheStorageCache::Put(const CacheStorageBatchOperation& operation,
@@ -567,6 +725,10 @@ void CacheStorageCache::Put(const CacheStorageBatchOperation& operation,
 
   // We don't support streaming for cache.
   DCHECK(operation.response.stream_url.is_empty());
+  // We don't support the body of redirect response.
+  DCHECK(!(operation.response.response_type ==
+               blink::WebServiceWorkerResponseTypeOpaqueRedirect &&
+           operation.response.blob_size));
   scoped_ptr<ServiceWorkerResponse> response(new ServiceWorkerResponse(
       operation.response.url, operation.response.status_code,
       operation.response.status_text, operation.response.response_type,
@@ -866,66 +1028,29 @@ void CacheStorageCache::KeysImpl(const RequestsCallback& callback) {
   // The entries have to be loaded into a vector first because enumeration loops
   // forever if you read data from a cache entry while enumerating.
 
-  scoped_ptr<KeysContext> keys_context(new KeysContext(callback));
-
-  keys_context->backend_iterator = backend_->CreateIterator();
-  disk_cache::Backend::Iterator& iterator = *keys_context->backend_iterator;
-  disk_cache::Entry** enumerated_entry = &keys_context->enumerated_entry;
-
-  net::CompletionCallback open_entry_callback = base::Bind(
-      &CacheStorageCache::KeysDidOpenNextEntry, weak_ptr_factory_.GetWeakPtr(),
-      base::Passed(keys_context.Pass()));
-
-  int rv = iterator.OpenNextEntry(enumerated_entry, open_entry_callback);
-
-  if (rv != net::ERR_IO_PENDING)
-    open_entry_callback.Run(rv);
+  OpenAllEntries(base::Bind(&CacheStorageCache::KeysDidOpenAllEntries,
+                            weak_ptr_factory_.GetWeakPtr(), callback));
 }
 
-void CacheStorageCache::KeysDidOpenNextEntry(
-    scoped_ptr<KeysContext> keys_context,
-    int rv) {
-  if (rv == net::ERR_FAILED) {
-    DCHECK(!keys_context->enumerated_entry);
-    // Enumeration is complete, extract the requests from the entries.
-    Entries::iterator iter = keys_context->entries.begin();
-    KeysProcessNextEntry(keys_context.Pass(), iter);
+void CacheStorageCache::KeysDidOpenAllEntries(
+    const RequestsCallback& callback,
+    scoped_ptr<OpenAllEntriesContext> entries_context,
+    CacheStorageError error) {
+  if (error != CACHE_STORAGE_OK) {
+    callback.Run(error, scoped_ptr<Requests>());
     return;
   }
 
-  if (rv < 0) {
-    keys_context->original_callback.Run(CACHE_STORAGE_ERROR_STORAGE,
-                                        scoped_ptr<Requests>());
-    return;
-  }
-
-  if (backend_state_ != BACKEND_OPEN) {
-    keys_context->original_callback.Run(CACHE_STORAGE_ERROR_NOT_FOUND,
-                                        scoped_ptr<Requests>());
-    return;
-  }
-
-  // Store the entry.
-  keys_context->entries.push_back(keys_context->enumerated_entry);
-  keys_context->enumerated_entry = NULL;
-
-  // Enumerate the next entry.
-  disk_cache::Backend::Iterator& iterator = *keys_context->backend_iterator;
-  disk_cache::Entry** enumerated_entry = &keys_context->enumerated_entry;
-  net::CompletionCallback open_entry_callback = base::Bind(
-      &CacheStorageCache::KeysDidOpenNextEntry, weak_ptr_factory_.GetWeakPtr(),
-      base::Passed(keys_context.Pass()));
-
-  rv = iterator.OpenNextEntry(enumerated_entry, open_entry_callback);
-
-  if (rv != net::ERR_IO_PENDING)
-    open_entry_callback.Run(rv);
+  scoped_ptr<KeysContext> keys_context(new KeysContext(callback));
+  keys_context->entries_context.swap(entries_context);
+  Entries::iterator iter = keys_context->entries_context->entries.begin();
+  KeysProcessNextEntry(keys_context.Pass(), iter);
 }
 
 void CacheStorageCache::KeysProcessNextEntry(
     scoped_ptr<KeysContext> keys_context,
     const Entries::iterator& iter) {
-  if (iter == keys_context->entries.end()) {
+  if (iter == keys_context->entries_context->entries.end()) {
     // All done. Return all of the keys.
     keys_context->original_callback.Run(CACHE_STORAGE_OK,
                                         keys_context->out_keys.Pass());
@@ -1069,6 +1194,18 @@ void CacheStorageCache::PendingResponseCallback(
     scheduler_->CompleteOperationAndRunNext();
 }
 
+void CacheStorageCache::PendingResponsesCallback(
+    const ResponsesCallback& callback,
+    CacheStorageError error,
+    scoped_ptr<Responses> responses,
+    scoped_ptr<BlobDataHandles> blob_data_handles) {
+  base::WeakPtr<CacheStorageCache> cache = weak_ptr_factory_.GetWeakPtr();
+
+  callback.Run(error, responses.Pass(), blob_data_handles.Pass());
+  if (cache)
+    scheduler_->CompleteOperationAndRunNext();
+}
+
 void CacheStorageCache::PendingRequestsCallback(
     const RequestsCallback& callback,
     CacheStorageError error,
@@ -1078,6 +1215,41 @@ void CacheStorageCache::PendingRequestsCallback(
   callback.Run(error, requests.Pass());
   if (cache)
     scheduler_->CompleteOperationAndRunNext();
+}
+
+void CacheStorageCache::PopulateResponseMetadata(
+    const CacheMetadata& metadata,
+    ServiceWorkerResponse* response) {
+  *response = ServiceWorkerResponse(
+      GURL(metadata.response().url()), metadata.response().status_code(),
+      metadata.response().status_text(),
+      ProtoResponseTypeToWebResponseType(metadata.response().response_type()),
+      ServiceWorkerHeaderMap(), "", 0, GURL(),
+      blink::WebServiceWorkerResponseErrorUnknown);
+
+  for (int i = 0; i < metadata.response().headers_size(); ++i) {
+    const CacheHeaderMap header = metadata.response().headers(i);
+    DCHECK_EQ(std::string::npos, header.name().find('\0'));
+    DCHECK_EQ(std::string::npos, header.value().find('\0'));
+    response->headers.insert(std::make_pair(header.name(), header.value()));
+  }
+}
+
+scoped_ptr<storage::BlobDataHandle> CacheStorageCache::PopulateResponseBody(
+    disk_cache::ScopedEntryPtr entry,
+    ServiceWorkerResponse* response) {
+  DCHECK(blob_storage_context_);
+
+  // Create a blob with the response body data.
+  response->blob_size = entry->GetDataSize(INDEX_RESPONSE_BODY);
+  response->blob_uuid = base::GenerateGUID();
+  storage::BlobDataBuilder blob_data(response->blob_uuid);
+
+  disk_cache::Entry* temp_entry = entry.get();
+  blob_data.AppendDiskCacheEntry(
+      new CacheStorageCacheDataHandle(this, entry.Pass()), temp_entry,
+      INDEX_RESPONSE_BODY);
+  return blob_storage_context_->AddFinishedBlob(&blob_data);
 }
 
 }  // namespace content

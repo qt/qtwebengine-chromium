@@ -19,16 +19,12 @@ typedef std::map<FontCacheDispatcher*, FontNameVector> DispatcherToFontNames;
 
 class FontCache {
  public:
-  static FontCache* GetInstance() {
-    return Singleton<FontCache>::get();
-  }
+  static FontCache* GetInstance() { return base::Singleton<FontCache>::get(); }
 
   void PreCacheFont(const LOGFONT& font, FontCacheDispatcher* dispatcher) {
     // TODO(ananta): Remove ScopedTracker below once crbug.com/90127 is fixed.
     tracked_objects::ScopedTracker tracking_profile(
         FROM_HERE_WITH_EXPLICIT_FUNCTION("90127 FontCache::PreCacheFont"));
-
-    typedef std::map<base::string16, FontCache::CacheElement> FontNameToElement;
 
     base::AutoLock lock(mutex_);
 
@@ -125,7 +121,7 @@ class FontCache {
     HDC dc_;
     int ref_count_;
   };
-  friend struct DefaultSingletonTraits<FontCache>;
+  friend struct base::DefaultSingletonTraits<FontCache>;
 
   FontCache() {
   }

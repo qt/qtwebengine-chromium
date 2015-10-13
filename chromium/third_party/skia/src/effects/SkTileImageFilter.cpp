@@ -19,9 +19,9 @@
 SkTileImageFilter* SkTileImageFilter::Create(const SkRect& srcRect, const SkRect& dstRect,
                                              SkImageFilter* input) {
     if (!SkIsValidRect(srcRect) || !SkIsValidRect(dstRect)) {
-        return NULL;
+        return nullptr;
     }
-    return SkNEW_ARGS(SkTileImageFilter, (srcRect, dstRect, input));
+    return new SkTileImageFilter(srcRect, dstRect, input);
 }
 
 bool SkTileImageFilter::onFilterImage(Proxy* proxy, const SkBitmap& src,
@@ -60,7 +60,7 @@ bool SkTileImageFilter::onFilterImage(Proxy* proxy, const SkBitmap& src,
     }
 
     SkAutoTUnref<SkBaseDevice> device(proxy->createDevice(w, h));
-    if (NULL == device.get()) {
+    if (nullptr == device.get()) {
         return false;
     }
     SkCanvas canvas(device);

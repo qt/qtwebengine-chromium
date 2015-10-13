@@ -87,6 +87,7 @@ if (widevine_cdm_binary_files != []) {
     deps = [
       ":version_h",
       "//base",
+      "//build/config/sanitizers:deps",
     ]
 
     if (is_mac) {
@@ -113,6 +114,7 @@ if ((is_chrome_branded || enable_widevine) && enable_pepper_cdms) {
   # Produce and compile the .rc file.
   process_version("widevinecdmadapter_resources") {
     visibility = [ ":*" ]
+    template_file = chrome_version_rc_template
     sources = [
       "BRANDING",
       "widevinecdmadapter.ver",
@@ -152,7 +154,7 @@ source_set("widevine_test_license_server") {
   if (is_chrome_branded && is_linux) {
     deps = [
       # TODO(jrummell)
-      # This target should be removed and targets should have datadeps on this target:
+      # This target should be removed and targets should have data_deps on this target:
       #"//third_party/widevine/test/license_server/license_server.gyp:test_license_server"
     ]
   }

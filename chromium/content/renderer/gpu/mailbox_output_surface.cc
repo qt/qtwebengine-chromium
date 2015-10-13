@@ -27,14 +27,13 @@ MailboxOutputSurface::MailboxOutputSurface(
     uint32 output_surface_id,
     const scoped_refptr<ContextProviderCommandBuffer>& context_provider,
     const scoped_refptr<ContextProviderCommandBuffer>& worker_context_provider,
-    scoped_ptr<cc::SoftwareOutputDevice> software_device,
     scoped_refptr<FrameSwapMessageQueue> swap_frame_message_queue,
     cc::ResourceFormat format)
     : CompositorOutputSurface(routing_id,
                               output_surface_id,
                               context_provider,
                               worker_context_provider,
-                              software_device.Pass(),
+                              nullptr,
                               swap_frame_message_queue,
                               true),
       fbo_(0),
@@ -44,7 +43,9 @@ MailboxOutputSurface::MailboxOutputSurface(
   capabilities_.uses_default_gl_framebuffer = false;
 }
 
-MailboxOutputSurface::~MailboxOutputSurface() {
+MailboxOutputSurface::~MailboxOutputSurface() {}
+
+void MailboxOutputSurface::DetachFromClient() {
   DiscardBackbuffer();
   while (!pending_textures_.empty()) {
     if (pending_textures_.front().texture_id) {
@@ -53,6 +54,7 @@ MailboxOutputSurface::~MailboxOutputSurface() {
     }
     pending_textures_.pop_front();
   }
+  cc::OutputSurface::DetachFromClient();
 }
 
 void MailboxOutputSurface::EnsureBackbuffer() {

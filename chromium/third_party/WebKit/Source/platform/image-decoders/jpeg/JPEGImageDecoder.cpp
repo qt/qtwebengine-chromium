@@ -222,7 +222,7 @@ static void readColorProfile(jpeg_decompress_struct* info, ColorProfile& colorPr
 
     // Only accept RGB color profiles from input class devices.
     bool ignoreProfile = false;
-    char* profileData = reinterpret_cast<char*>(profile);
+    char* profileData = reinterpret_cast_ptr<char*>(profile);
     if (profileLength < ImageDecoder::iccColorProfileHeaderLength)
         ignoreProfile = true;
     else if (!ImageDecoder::rgbColorProfile(profileData, profileLength))
@@ -300,8 +300,10 @@ class JPEGImageReader {
 public:
     JPEGImageReader(JPEGImageDecoder* decoder)
         : m_decoder(decoder)
-        , m_bufferLength(0)
-        , m_bytesToSkip(0)
+        , m_needsRestart(false)
+        , m_restartPosition(0)
+        , m_nextReadPosition(0)
+        , m_lastSetByte(nullptr)
         , m_state(JPEG_HEADER)
         , m_samples(0)
 #if USE(QCMSLIB)
@@ -318,13 +320,13 @@ public:
         jpeg_create_decompress(&m_info);
 
         ASSERT(!m_info.src);
-        decoder_source_mgr* src = (decoder_source_mgr*)fastZeroedMalloc(sizeof(decoder_source_mgr));
+        decoder_source_mgr* src = static_cast<decoder_source_mgr*>(fastZeroedMalloc(sizeof(decoder_source_mgr)));
         if (!src) {
             m_state = JPEG_ERROR;
             return;
         }
 
-        m_info.src = (jpeg_source_mgr*)src;
+        m_info.src = reinterpret_cast_ptr<jpeg_source_mgr*>(src);
 
         // Set up callback functions.
         src->pub.init_source = init_source;
@@ -349,7 +351,7 @@ public:
 
     void close()
     {
-        decoder_source_mgr* src = (decoder_source_mgr*)m_info.src;
+        decoder_source_mgr* src = reinterpret_cast_ptr<decoder_source_mgr*>(m_info.src);
         if (src)
             fastFree(src);
         m_info.src = 0;
@@ -362,28 +364,74 @@ public:
 
     void skipBytes(long numBytes)
     {
-        decoder_source_mgr* src = (decoder_source_mgr*)m_info.src;
-        long bytesToSkip = std::min(numBytes, (long)src->pub.bytes_in_buffer);
-        src->pub.bytes_in_buffer -= (size_t)bytesToSkip;
-        src->pub.next_input_byte += bytesToSkip;
+        if (numBytes <= 0)
+            return;
 
-        m_bytesToSkip = std::max(numBytes - bytesToSkip, static_cast<long>(0));
+        size_t bytesToSkip = static_cast<size_t>(numBytes);
+
+        if (bytesToSkip < m_info.src->bytes_in_buffer) {
+            // The next byte needed is in the buffer. Move to it.
+            m_info.src->bytes_in_buffer -= bytesToSkip;
+            m_info.src->next_input_byte += bytesToSkip;
+        } else {
+            // Move beyond the buffer and empty it.
+            m_nextReadPosition = m_nextReadPosition + bytesToSkip - m_info.src->bytes_in_buffer;
+            m_info.src->bytes_in_buffer = 0;
+            m_info.src->next_input_byte = nullptr;
+        }
+
+        // This is a valid restart position.
+        m_restartPosition = m_nextReadPosition - m_info.src->bytes_in_buffer;
+        // We updated |next_input_byte|, so we need to update |m_lastByteSet|
+        // so we know not to update |m_restartPosition| again.
+        m_lastSetByte = m_info.src->next_input_byte;
     }
 
-    bool decode(const SharedBuffer& data, bool onlySize)
+    bool fillBuffer()
     {
-        unsigned newByteCount = data.size() - m_bufferLength;
-        unsigned readOffset = m_bufferLength - m_info.src->bytes_in_buffer;
+        if (m_needsRestart) {
+            m_needsRestart = false;
+            m_nextReadPosition = m_restartPosition;
+        } else {
+            updateRestartPosition();
+        }
 
-        m_info.src->bytes_in_buffer += newByteCount;
-        m_info.src->next_input_byte = (JOCTET*)(data.data()) + readOffset;
+        const char* segment;
+        const unsigned bytes = m_data->getSomeData(segment, m_nextReadPosition);
+        if (bytes == 0) {
+            // We had to suspend. When we resume, we will need to start from the restart position.
+            m_needsRestart = true;
+            clearBuffer();
+            return false;
+        }
 
-        // If we still have bytes to skip, try to skip those now.
-        if (m_bytesToSkip)
-            skipBytes(m_bytesToSkip);
+        m_nextReadPosition += bytes;
+        m_info.src->bytes_in_buffer = bytes;
+        const JOCTET* nextByte = reinterpret_cast_ptr<const JOCTET*>(segment);
+        m_info.src->next_input_byte = nextByte;
+        m_lastSetByte = nextByte;
+        return true;
+    }
 
-        m_bufferLength = data.size();
+    void setData(SharedBuffer* data)
+    {
+        if (m_data.get() == data)
+            return;
 
+        m_data = data;
+
+        // If a restart is needed, the next call to fillBuffer will read from the new SharedBuffer.
+        if (m_needsRestart)
+            return;
+
+        // Otherwise, empty the buffer, and leave the position the same, so fillBuffer continues
+        // reading from the same position in the new SharedBuffer.
+        m_nextReadPosition -= m_info.src->bytes_in_buffer;
+        clearBuffer();
+    }
+
+    bool decode(bool onlySize)
+    {
         // We need to do the setjmp here. Otherwise bad things will happen
         if (setjmp(m_err.setjmp_buffer))
             return m_decoder->setFailed();
@@ -477,9 +525,17 @@ public:
             }
 
             if (onlySize) {
-                // We can stop here. Reduce our buffer length and available data.
-                m_bufferLength -= m_info.src->bytes_in_buffer;
-                m_info.src->bytes_in_buffer = 0;
+                // This exits the function while there is still potentially
+                // data in the buffer. Before this function is called again,
+                // the SharedBuffer may be collapsed (by a call to
+                // mergeSegmentsIntoBuffer), invalidating the "buffer" (which
+                // in reality is a pointer into the SharedBuffer's data).
+                // Defensively empty the buffer, but first find the latest
+                // restart position and signal to restart, so the next call to
+                // fillBuffer will resume from the correct point.
+                m_needsRestart = true;
+                updateRestartPosition();
+                clearBuffer();
                 return true;
             }
         // FALL THROUGH
@@ -507,7 +563,7 @@ public:
             // buffer. Remove this allocation for those color spaces.
             {
                 int samplesWidth = (m_info.out_color_space == JCS_YCbCr) ? computeYUVSize(&m_info, 0, ImageDecoder::SizeForMemoryAllocation).width() : m_info.output_width;
-                m_samples = (*m_info.mem->alloc_sarray)(reinterpret_cast<j_common_ptr>(&m_info), JPOOL_IMAGE, samplesWidth * 4, 1);
+                m_samples = (*m_info.mem->alloc_sarray)(reinterpret_cast_ptr<j_common_ptr>(&m_info), JPOOL_IMAGE, samplesWidth * 4, 1);
             }
 
             // Start decompressor.
@@ -534,7 +590,7 @@ public:
             if (m_state == JPEG_DECOMPRESS_PROGRESSIVE) {
                 int status = 0;
                 do {
-                    decoder_error_mgr* err = reinterpret_cast_ptr<decoder_error_mgr *>(m_info.err);
+                    decoder_error_mgr* err = reinterpret_cast_ptr<decoder_error_mgr*>(m_info.err);
                     if (err->num_corrupt_warnings)
                         break;
                     status = jpeg_consume_input(&m_info);
@@ -631,9 +687,35 @@ public:
 #endif
 
 private:
+    void updateRestartPosition()
+    {
+        if (m_lastSetByte != m_info.src->next_input_byte) {
+            // next_input_byte was updated by jpeg, meaning that it found a restart position.
+            m_restartPosition = m_nextReadPosition - m_info.src->bytes_in_buffer;
+        }
+    }
+
+    void clearBuffer()
+    {
+        // Let libjpeg know that the buffer needs to be refilled.
+        m_info.src->bytes_in_buffer = 0;
+        m_info.src->next_input_byte = nullptr;
+        m_lastSetByte = nullptr;
+    }
+
+    RefPtr<SharedBuffer> m_data;
     JPEGImageDecoder* m_decoder;
-    unsigned m_bufferLength;
-    int m_bytesToSkip;
+    // True if we need to back up to m_restartPosition.
+    bool m_needsRestart;
+    // If libjpeg needed to restart, this is the position to restart from.
+    unsigned m_restartPosition;
+    // This is the position where we will read from, unless there is a restart.
+    unsigned m_nextReadPosition;
+    // This is how we know to update the restart position. It is the last value
+    // we set to next_input_byte. libjpeg will update next_input_byte when it
+    // has found the next restart position, so if it no longer matches this
+    // value, we know we've reached the next restart position.
+    const JOCTET* m_lastSetByte;
 
     jpeg_decompress_struct m_info;
     decoder_error_mgr m_err;
@@ -652,7 +734,7 @@ private:
 void error_exit(j_common_ptr cinfo)
 {
     // Return control to the setjmp point.
-    decoder_error_mgr* err = reinterpret_cast_ptr<decoder_error_mgr *>(cinfo->err);
+    decoder_error_mgr* err = reinterpret_cast_ptr<decoder_error_mgr*>(cinfo->err);
     longjmp(err->setjmp_buffer, -1);
 }
 
@@ -661,7 +743,7 @@ void emit_message(j_common_ptr cinfo, int msg_level)
     if (msg_level >= 0)
         return;
 
-    decoder_error_mgr* err = reinterpret_cast_ptr<decoder_error_mgr *>(cinfo->err);
+    decoder_error_mgr* err = reinterpret_cast_ptr<decoder_error_mgr*>(cinfo->err);
     err->pub.num_warnings++;
 
     // Detect and count corrupt JPEG warning messages.
@@ -679,25 +761,23 @@ void init_source(j_decompress_ptr)
 
 void skip_input_data(j_decompress_ptr jd, long num_bytes)
 {
-    decoder_source_mgr *src = (decoder_source_mgr *)jd->src;
+    decoder_source_mgr* src = reinterpret_cast_ptr<decoder_source_mgr*>(jd->src);
     src->decoder->skipBytes(num_bytes);
 }
 
-boolean fill_input_buffer(j_decompress_ptr)
+boolean fill_input_buffer(j_decompress_ptr jd)
 {
-    // Our decode step always sets things up properly, so if this method is ever
-    // called, then we have hit the end of the buffer.  A return value of false
-    // indicates that we have no data to supply yet.
-    return false;
+    decoder_source_mgr* src = reinterpret_cast_ptr<decoder_source_mgr*>(jd->src);
+    return src->decoder->fillBuffer();
 }
 
 void term_source(j_decompress_ptr jd)
 {
-    decoder_source_mgr *src = (decoder_source_mgr *)jd->src;
+    decoder_source_mgr* src = reinterpret_cast_ptr<decoder_source_mgr*>(jd->src);
     src->decoder->decoder()->complete();
 }
 
-JPEGImageDecoder::JPEGImageDecoder(ImageSource::AlphaOption alphaOption, ImageSource::GammaAndColorProfileOption colorOptions, size_t maxDecodedBytes)
+JPEGImageDecoder::JPEGImageDecoder(AlphaOption alphaOption, GammaAndColorProfileOption colorOptions, size_t maxDecodedBytes)
     : ImageDecoder(alphaOption, colorOptions, maxDecodedBytes)
     , m_hasColorProfile(false)
 {
@@ -717,6 +797,12 @@ bool JPEGImageDecoder::setSize(unsigned width, unsigned height)
 
     setDecodedSize(width, height);
     return true;
+}
+
+void JPEGImageDecoder::onSetData(SharedBuffer* data)
+{
+    if (m_reader)
+        m_reader->setData(data);
 }
 
 void JPEGImageDecoder::setDecodedSize(unsigned width, unsigned height)
@@ -933,7 +1019,7 @@ bool JPEGImageDecoder::outputScanlines()
 #if defined(TURBO_JPEG_RGB_SWIZZLE)
     if (turboSwizzled(info->out_color_space)) {
         while (info->output_scanline < info->output_height) {
-            unsigned char* row = reinterpret_cast<unsigned char*>(buffer.getAddr(0, info->output_scanline));
+            unsigned char* row = reinterpret_cast_ptr<unsigned char*>(buffer.getAddr(0, info->output_scanline));
             if (jpeg_read_scanlines(info, &row, 1) != 1)
                 return false;
 #if USE(QCMSLIB)
@@ -981,12 +1067,14 @@ void JPEGImageDecoder::decode(bool onlySize)
     if (failed())
         return;
 
-    if (!m_reader)
+    if (!m_reader) {
         m_reader = adoptPtr(new JPEGImageReader(this));
+        m_reader->setData(m_data.get());
+    }
 
     // If we couldn't decode the image but have received all the data, decoding
     // has failed.
-    if (!m_reader->decode(*m_data, onlySize) && isAllDataReceived())
+    if (!m_reader->decode(onlySize) && isAllDataReceived())
         setFailed();
 
     // If decoding is done or failed, we don't need the JPEGImageReader anymore.

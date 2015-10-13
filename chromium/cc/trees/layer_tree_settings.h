@@ -5,6 +5,8 @@
 #ifndef CC_TREES_LAYER_TREE_SETTINGS_H_
 #define CC_TREES_LAYER_TREE_SETTINGS_H_
 
+#include <vector>
+
 #include "base/basictypes.h"
 #include "cc/base/cc_export.h"
 #include "cc/debug/layer_tree_debug_state.h"
@@ -33,7 +35,6 @@ class CC_EXPORT LayerTreeSettings {
   bool use_external_begin_frame_source;
   bool main_frame_before_activation_enabled;
   bool using_synchronous_renderer_compositor;
-  bool report_overscroll_only_for_scrollable_axes;
   bool accelerated_animation_enabled;
   bool can_use_lcd_text;
   bool use_distance_field_text;
@@ -52,7 +53,6 @@ class CC_EXPORT LayerTreeSettings {
   int scrollbar_fade_delay_ms;
   int scrollbar_fade_resize_delay_ms;
   int scrollbar_fade_duration_ms;
-  float scrollbar_show_scale_threshold;
   SkColor solid_color_scrollbar_color;
   bool timeout_and_draw_when_animation_checkerboards;
   bool layer_transforms_should_scale_layer_contents;
@@ -62,31 +62,28 @@ class CC_EXPORT LayerTreeSettings {
   float top_controls_show_threshold;
   float top_controls_hide_threshold;
   double background_animation_rate;
-  size_t max_partial_texture_updates;
   gfx::Size default_tile_size;
   gfx::Size max_untiled_layer_size;
-  gfx::Size default_tile_grid_size;
   gfx::Size minimum_occlusion_tracking_size;
-  size_t max_tiles_for_interest_area;
+  size_t tiling_interest_area_padding;
   float skewport_target_time_in_seconds;
   int skewport_extrapolation_limit_in_content_pixels;
-  size_t max_unused_resource_memory_percentage;
   size_t max_memory_for_prepaint_percentage;
   bool strict_layer_property_change_checking;
-  bool use_one_copy;
   bool use_zero_copy;
   bool use_persistent_map_for_gpu_memory_buffers;
   bool enable_elastic_overscroll;
-  unsigned use_image_texture_target;
+  // An array of image texture targets for each GpuMemoryBuffer format.
+  std::vector<unsigned> use_image_texture_targets;
   bool ignore_root_layer_flings;
   size_t scheduled_raster_task_limit;
   bool use_occlusion_for_tile_prioritization;
   bool record_full_layer;
-  bool use_display_lists;
   bool verify_property_trees;
-  bool gather_pixel_refs;
+  bool image_decode_tasks_enabled;
   bool use_compositor_animation_timelines;
-  bool invert_viewport_scroll_order;
+  bool wait_for_beginframe_interval;
+  int max_staging_buffer_usage_in_bytes;
 
   LayerTreeDebugState initial_debug_state;
 

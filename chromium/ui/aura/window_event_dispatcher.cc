@@ -246,7 +246,7 @@ void WindowEventDispatcher::DispatchMouseExitToHidingWindow(Window* window) {
   if (window->Contains(mouse_moved_handler_) &&
       window->ContainsPointInRoot(last_mouse_location)) {
     DispatchDetails details =
-        DispatchMouseExitAtPoint(window, last_mouse_location);
+        DispatchMouseExitAtPoint(this->window(), last_mouse_location);
     if (details.dispatcher_destroyed)
       return;
   }
@@ -287,6 +287,8 @@ ui::EventDispatchDetails WindowEventDispatcher::ProcessGestures(
     return details;
 
   Window* target = GetGestureTarget(gestures->get().at(0));
+  // If a window has been hidden between the touch event and now, the associated
+  // gestures may not have a valid target.
   if (!target)
     return details;
 
@@ -469,7 +471,7 @@ ui::EventDispatchDetails WindowEventDispatcher::PreDispatchEvent(
     PreDispatchTouchEvent(target_window, static_cast<ui::TouchEvent*>(event));
   }
   old_dispatch_target_ = event_dispatch_target_;
-  event_dispatch_target_ = static_cast<Window*>(target);
+  event_dispatch_target_ = target_window;
   return DispatchDetails();
 }
 
@@ -496,8 +498,6 @@ ui::EventDispatchDetails WindowEventDispatcher::PostDispatchEvent(
       if (!touchevent.synchronous_handling_disabled()) {
         scoped_ptr<ui::GestureRecognizer::Gestures> gestures;
 
-        // Once we've fully migrated to the eager gesture detector, we won't
-        // need to pass an event here.
         gestures.reset(ui::GestureRecognizer::Get()->AckTouchEvent(
             touchevent.unique_event_id(), event.result(),
             static_cast<Window*>(target)));

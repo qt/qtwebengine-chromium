@@ -7,9 +7,9 @@
 
 #include "core/layout/LayoutPart.h"
 #include "core/paint/BoxPainter.h"
-#include "core/paint/DeprecatedPaintLayer.h"
 #include "core/paint/LayoutObjectDrawingRecorder.h"
 #include "core/paint/PaintInfo.h"
+#include "core/paint/PaintLayer.h"
 #include "core/paint/RoundedInnerRectClipper.h"
 #include "core/paint/ScrollableAreaPainter.h"
 #include "core/paint/TransformRecorder.h"
@@ -33,11 +33,8 @@ void PartPainter::paint(const PaintInfo& paintInfo, const LayoutPoint& paintOffs
         return;
     }
 
-    LayoutRect visualOverflowRect(m_layoutPart.visualOverflowRect());
-    visualOverflowRect.moveBy(adjustedPaintOffset);
-
     if ((paintInfo.phase == PaintPhaseOutline || paintInfo.phase == PaintPhaseSelfOutline) && m_layoutPart.style()->hasOutline())
-        ObjectPainter(m_layoutPart).paintOutline(paintInfo, borderRect, visualOverflowRect);
+        ObjectPainter(m_layoutPart).paintOutline(paintInfo, adjustedPaintOffset);
 
     if (paintInfo.phase != PaintPhaseForeground)
         return;
@@ -63,11 +60,11 @@ void PartPainter::paint(const PaintInfo& paintInfo, const LayoutPoint& paintOffs
     }
 
     // Paint a partially transparent wash over selected widgets.
-    if (m_layoutPart.isSelected() && !m_layoutPart.document().printing() && !LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(*paintInfo.context, m_layoutPart, paintInfo.phase)) {
+    if (m_layoutPart.isSelected() && !paintInfo.isPrinting() && !LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(*paintInfo.context, m_layoutPart, paintInfo.phase, adjustedPaintOffset)) {
         LayoutRect rect = m_layoutPart.localSelectionRect();
         rect.moveBy(adjustedPaintOffset);
         IntRect selectionRect = pixelSnappedIntRect(rect);
-        LayoutObjectDrawingRecorder drawingRecorder(*paintInfo.context, m_layoutPart, paintInfo.phase, selectionRect);
+        LayoutObjectDrawingRecorder drawingRecorder(*paintInfo.context, m_layoutPart, paintInfo.phase, selectionRect, adjustedPaintOffset);
         paintInfo.context->fillRect(selectionRect, m_layoutPart.selectionBackgroundColor());
     }
 

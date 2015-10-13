@@ -28,17 +28,12 @@ class SynchronousCompositorClient {
   virtual void DidDestroyCompositor(SynchronousCompositor* compositor) = 0;
 
   // See LayerScrollOffsetDelegate for details.
-  virtual gfx::Vector2dF GetTotalRootLayerScrollOffset() = 0;
   virtual void UpdateRootLayerState(const gfx::Vector2dF& total_scroll_offset,
                                     const gfx::Vector2dF& max_scroll_offset,
                                     const gfx::SizeF& scrollable_size,
                                     float page_scale_factor,
                                     float min_page_scale_factor,
                                     float max_page_scale_factor) = 0;
-  virtual bool IsExternalScrollActive() const = 0;
-
-  typedef base::Callback<void(base::TimeTicks)> AnimationCallback;
-  virtual void SetNeedsAnimateScroll(const AnimationCallback& animation) = 0;
 
   virtual void DidOverscroll(gfx::Vector2dF accumulated_overscroll,
                              gfx::Vector2dF latest_overscroll_delta,

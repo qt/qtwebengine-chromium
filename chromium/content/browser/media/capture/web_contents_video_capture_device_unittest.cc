@@ -24,6 +24,7 @@
 #include "content/public/test/test_browser_context.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "content/public/test/test_utils.h"
+#include "content/test/test_render_frame_host_factory.h"
 #include "content/test/test_render_view_host.h"
 #include "content/test/test_web_contents.h"
 #include "media/base/video_capture_types.h"
@@ -37,7 +38,9 @@
 #include "ui/base/layout.h"
 #include "ui/gfx/display.h"
 #include "ui/gfx/geometry/dip_util.h"
+#include "ui/gfx/geometry/size_conversions.h"
 #include "ui/gfx/screen.h"
+#include "ui/gfx/test/test_screen.h"
 
 namespace content {
 namespace {
@@ -244,12 +247,16 @@ class CaptureTestRenderViewHost : public TestRenderViewHost {
   CaptureTestRenderViewHost(SiteInstance* instance,
                             RenderViewHostDelegate* delegate,
                             RenderWidgetHostDelegate* widget_delegate,
-                            int routing_id,
-                            int main_frame_routing_id,
+                            int32 routing_id,
+                            int32 main_frame_routing_id,
                             bool swapped_out,
                             CaptureTestSourceController* controller)
-      : TestRenderViewHost(instance, delegate, widget_delegate, routing_id,
-                           main_frame_routing_id, swapped_out),
+      : TestRenderViewHost(instance,
+                           delegate,
+                           widget_delegate,
+                           routing_id,
+                           main_frame_routing_id,
+                           swapped_out),
         controller_(controller) {
     // Override the default view installed by TestRenderViewHost; we need
     // our special subclass which has mocked-out tab capture support.
@@ -261,7 +268,7 @@ class CaptureTestRenderViewHost : public TestRenderViewHost {
   // TestRenderViewHost overrides.
   void CopyFromBackingStore(const gfx::Rect& src_rect,
                             const gfx::Size& accelerated_dst_size,
-                            ReadbackRequestCallback& callback,
+                            const ReadbackRequestCallback& callback,
                             const SkColorType color_type) override {
     gfx::Size size = controller_->GetCopyResultSize();
     SkColor color = controller_->GetSolidColor();
@@ -303,13 +310,14 @@ class CaptureTestRenderViewHostFactory : public RenderViewHostFactory {
       SiteInstance* instance,
       RenderViewHostDelegate* delegate,
       RenderWidgetHostDelegate* widget_delegate,
-      int routing_id,
-      int main_frame_routing_id,
+      int32 routing_id,
+      int32 main_frame_routing_id,
       bool swapped_out) override {
     return new CaptureTestRenderViewHost(instance, delegate, widget_delegate,
                                          routing_id, main_frame_routing_id,
                                          swapped_out, controller_);
   }
+
  private:
   CaptureTestSourceController* controller_;
 
@@ -336,15 +344,15 @@ class StubClient : public media::VideoCaptureDevice::Client {
                     int rotation,
                     const base::TimeTicks& timestamp));
   MOCK_METHOD9(OnIncomingCapturedYuvData,
-               void (const uint8* y_data,
-                     const uint8* u_data,
-                     const uint8* v_data,
-                     size_t y_stride,
-                     size_t u_stride,
-                     size_t v_stride,
-                     const media::VideoCaptureFormat& frame_format,
-                     int clockwise_rotation,
-                     const base::TimeTicks& timestamp));
+               void(const uint8* y_data,
+                    const uint8* u_data,
+                    const uint8* v_data,
+                    size_t y_stride,
+                    size_t u_stride,
+                    size_t v_stride,
+                    const media::VideoCaptureFormat& frame_format,
+                    int clockwise_rotation,
+                    const base::TimeTicks& timestamp));
 
   MOCK_METHOD0(DoOnIncomingCapturedBuffer, void(void));
 
@@ -375,7 +383,7 @@ class StubClient : public media::VideoCaptureDevice::Client {
       const scoped_refptr<media::VideoFrame>& frame,
       const base::TimeTicks& timestamp) override {
     EXPECT_FALSE(frame->visible_rect().IsEmpty());
-    EXPECT_EQ(media::VideoFrame::I420, frame->format());
+    EXPECT_EQ(media::PIXEL_FORMAT_I420, frame->format());
     double frame_rate = 0;
     EXPECT_TRUE(
         frame->metadata()->GetDouble(media::VideoFrameMetadata::FRAME_RATE,
@@ -416,9 +424,12 @@ class StubClient : public media::VideoCaptureDevice::Client {
       DCHECK(pool_.get());
     }
     int id() const override { return id_; }
-    size_t size() const override { return buffer_handle_->size(); }
-    void* data() override { return buffer_handle_->data(); }
-    ClientBuffer AsClientBuffer() override { return nullptr; }
+    gfx::Size dimensions() const override { return gfx::Size(); }
+    size_t mapped_size() const override {
+      return buffer_handle_->mapped_size();
+    }
+    void* data(int plane) override { return buffer_handle_->data(plane); }
+    ClientBuffer AsClientBuffer(int plane) override { return nullptr; }
 #if defined(OS_POSIX)
     base::FileDescriptor AsPlatformFile() override {
       return base::FileDescriptor();
@@ -540,46 +551,17 @@ class StubClientObserver {
   DISALLOW_COPY_AND_ASSIGN(StubClientObserver);
 };
 
-// A dummy implementation of gfx::Screen, since WebContentsVideoCaptureDevice
-// needs access to a gfx::Display's device scale factor.
-class FakeScreen : public gfx::Screen {
- public:
-  FakeScreen() : the_one_display_(0x1337, gfx::Rect(0, 0, 2560, 1440)) {
-    the_one_display_.set_device_scale_factor(kTestDeviceScaleFactor);
-  }
-  ~FakeScreen() override {}
-
-  // gfx::Screen implementation (only what's needed for testing).
-  gfx::Point GetCursorScreenPoint() override { return gfx::Point(); }
-  gfx::NativeWindow GetWindowUnderCursor() override { return NULL; }
-  gfx::NativeWindow GetWindowAtScreenPoint(const gfx::Point& point) override {
-    return NULL;
-  }
-  int GetNumDisplays() const override { return 1; }
-  std::vector<gfx::Display> GetAllDisplays() const override {
-    return std::vector<gfx::Display>(1, the_one_display_);
-  }
-  gfx::Display GetDisplayNearestWindow(gfx::NativeView view) const override {
-    return the_one_display_;
-  }
-  gfx::Display GetDisplayNearestPoint(const gfx::Point& point) const override {
-    return the_one_display_;
-  }
-  gfx::Display GetDisplayMatching(const gfx::Rect& match_rect) const override {
-    return the_one_display_;
-  }
-  gfx::Display GetPrimaryDisplay() const override { return the_one_display_; }
-  void AddObserver(gfx::DisplayObserver* observer) override {}
-  void RemoveObserver(gfx::DisplayObserver* observer) override {}
-
- private:
-  gfx::Display the_one_display_;
-
-  DISALLOW_COPY_AND_ASSIGN(FakeScreen);
-};
+// crbug.com/159234
+#if defined(OS_ANDROID)
+#define MAYBE_WebContentsVideoCaptureDeviceTest \
+  DISABLED_WebContentsVideoCaptureDeviceTest
+#else
+#define MAYBE_WebContentsVideoCaptureDeviceTest \
+  WebContentsVideoCaptureDeviceTest
+#endif  // defined(OS_ANDROID)
 
 // Test harness that sets up a minimal environment with necessary stubs.
-class WebContentsVideoCaptureDeviceTest : public testing::Test {
+class MAYBE_WebContentsVideoCaptureDeviceTest : public testing::Test {
  public:
   // This is public because C++ method pointer scoping rules are silly and make
   // this hard to use with Bind().
@@ -589,8 +571,12 @@ class WebContentsVideoCaptureDeviceTest : public testing::Test {
 
  protected:
   void SetUp() override {
-    gfx::Screen::SetScreenInstance(gfx::SCREEN_TYPE_NATIVE, &fake_screen_);
-    ASSERT_EQ(&fake_screen_, gfx::Screen::GetNativeScreen());
+    test_screen_.display()->set_id(0x1337);
+    test_screen_.display()->set_bounds(gfx::Rect(0, 0, 2560, 1440));
+    test_screen_.display()->set_device_scale_factor(kTestDeviceScaleFactor);
+
+    gfx::Screen::SetScreenInstance(gfx::SCREEN_TYPE_NATIVE, &test_screen_);
+    ASSERT_EQ(&test_screen_, gfx::Screen::GetNativeScreen());
 
     // TODO(nick): Sadness and woe! Much "mock-the-world" boilerplate could be
     // eliminated here, if only we could use RenderViewHostTestHarness. The
@@ -605,6 +591,7 @@ class WebContentsVideoCaptureDeviceTest : public testing::Test {
     // WebContents, it in turn creates CaptureTestRenderViewHosts.
     render_view_host_factory_.reset(
         new CaptureTestRenderViewHostFactory(&controller_));
+    render_frame_host_factory_.reset(new TestRenderFrameHostFactory());
 
     browser_context_.reset(new TestBrowserContext());
 
@@ -643,6 +630,7 @@ class WebContentsVideoCaptureDeviceTest : public testing::Test {
     base::RunLoop().RunUntilIdle();
 
     SiteInstanceImpl::set_render_process_host_factory(NULL);
+    render_frame_host_factory_.reset();
     render_view_host_factory_.reset();
     render_process_host_factory_.reset();
 
@@ -655,7 +643,7 @@ class WebContentsVideoCaptureDeviceTest : public testing::Test {
   media::VideoCaptureDevice* device() { return device_.get(); }
 
   // Returns the device scale factor of the capture target's native view.  This
-  // is necessary because, architecturally, the FakeScreen implementation is
+  // is necessary because, architecturally, the TestScreen implementation is
   // ignored on Mac platforms (when determining the device scale factor for a
   // particular window).
   float GetDeviceScaleFactor() const {
@@ -681,7 +669,7 @@ class WebContentsVideoCaptureDeviceTest : public testing::Test {
   }
 
   void SimulateSourceSizeChange(const gfx::Size& size) {
-    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+    DCHECK_CURRENTLY_ON(BrowserThread::UI);
     CaptureTestView* test_view = static_cast<CaptureTestView*>(
         web_contents_->GetRenderViewHost()->GetView());
     test_view->SetSize(size);
@@ -703,7 +691,7 @@ class WebContentsVideoCaptureDeviceTest : public testing::Test {
   }
 
  private:
-  FakeScreen fake_screen_;
+  gfx::test::TestScreen test_screen_;
 
   StubClientObserver client_observer_;
 
@@ -717,6 +705,9 @@ class WebContentsVideoCaptureDeviceTest : public testing::Test {
   // under the control of |controller_|.
   scoped_ptr<CaptureTestRenderViewHostFactory> render_view_host_factory_;
 
+  // Self-registering RenderFrameHostFactory.
+  scoped_ptr<TestRenderFrameHostFactory> render_frame_host_factory_;
+
   // A mocked-out browser and tab.
   scoped_ptr<TestBrowserContext> browser_context_;
   scoped_ptr<WebContents> web_contents_;
@@ -727,7 +718,8 @@ class WebContentsVideoCaptureDeviceTest : public testing::Test {
   TestBrowserThreadBundle thread_bundle_;
 };
 
-TEST_F(WebContentsVideoCaptureDeviceTest, InvalidInitialWebContentsError) {
+TEST_F(MAYBE_WebContentsVideoCaptureDeviceTest,
+       InvalidInitialWebContentsError) {
   // Before the installs itself on the UI thread up to start capturing, we'll
   // delete the web contents. This should trigger an error which can happen in
   // practice; we should be able to recover gracefully.
@@ -742,7 +734,7 @@ TEST_F(WebContentsVideoCaptureDeviceTest, InvalidInitialWebContentsError) {
   device()->StopAndDeAllocate();
 }
 
-TEST_F(WebContentsVideoCaptureDeviceTest, WebContentsDestroyed) {
+TEST_F(MAYBE_WebContentsVideoCaptureDeviceTest, WebContentsDestroyed) {
   const float device_scale_factor = GetDeviceScaleFactor();
   const gfx::Size capture_preferred_size(
       static_cast<int>(kTestWidth / device_scale_factor),
@@ -770,13 +762,13 @@ TEST_F(WebContentsVideoCaptureDeviceTest, WebContentsDestroyed) {
   // Post a task to close the tab. We should see an error reported to the
   // consumer.
   BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
-      base::Bind(&WebContentsVideoCaptureDeviceTest::ResetWebContents,
+      base::Bind(&MAYBE_WebContentsVideoCaptureDeviceTest::ResetWebContents,
                  base::Unretained(this)));
   ASSERT_NO_FATAL_FAILURE(client_observer()->WaitForError());
   device()->StopAndDeAllocate();
 }
 
-TEST_F(WebContentsVideoCaptureDeviceTest,
+TEST_F(MAYBE_WebContentsVideoCaptureDeviceTest,
        StopDeviceBeforeCaptureMachineCreation) {
   media::VideoCaptureParams capture_params;
   capture_params.requested_format.frame_size.SetSize(kTestWidth, kTestHeight);
@@ -795,7 +787,7 @@ TEST_F(WebContentsVideoCaptureDeviceTest,
   base::RunLoop().RunUntilIdle();
 }
 
-TEST_F(WebContentsVideoCaptureDeviceTest, StopWithRendererWorkToDo) {
+TEST_F(MAYBE_WebContentsVideoCaptureDeviceTest, StopWithRendererWorkToDo) {
   // Set up the test to use RGB copies and an normal
   source()->SetCanCopyToVideoFrame(false);
   source()->SetUseFrameSubscriber(false);
@@ -817,7 +809,7 @@ TEST_F(WebContentsVideoCaptureDeviceTest, StopWithRendererWorkToDo) {
   ASSERT_FALSE(client_observer()->HasError());
 }
 
-TEST_F(WebContentsVideoCaptureDeviceTest, DeviceRestart) {
+TEST_F(MAYBE_WebContentsVideoCaptureDeviceTest, DeviceRestart) {
   media::VideoCaptureParams capture_params;
   capture_params.requested_format.frame_size.SetSize(kTestWidth, kTestHeight);
   capture_params.requested_format.frame_rate = kTestFramesPerSecond;
@@ -855,7 +847,7 @@ TEST_F(WebContentsVideoCaptureDeviceTest, DeviceRestart) {
 // the picture emitted from the source and expect to see each delivered to the
 // consumer. The test will alternate between the three capture paths, simulating
 // falling in and out of accelerated compositing.
-TEST_F(WebContentsVideoCaptureDeviceTest, GoesThroughAllTheMotions) {
+TEST_F(MAYBE_WebContentsVideoCaptureDeviceTest, GoesThroughAllTheMotions) {
   media::VideoCaptureParams capture_params;
   capture_params.requested_format.frame_size.SetSize(kTestWidth, kTestHeight);
   capture_params.requested_format.frame_rate = kTestFramesPerSecond;
@@ -905,7 +897,7 @@ TEST_F(WebContentsVideoCaptureDeviceTest, GoesThroughAllTheMotions) {
   device()->StopAndDeAllocate();
 }
 
-TEST_F(WebContentsVideoCaptureDeviceTest, BadFramesGoodFrames) {
+TEST_F(MAYBE_WebContentsVideoCaptureDeviceTest, BadFramesGoodFrames) {
   media::VideoCaptureParams capture_params;
   capture_params.requested_format.frame_size.SetSize(kTestWidth, kTestHeight);
   capture_params.requested_format.frame_rate = kTestFramesPerSecond;
@@ -936,7 +928,8 @@ TEST_F(WebContentsVideoCaptureDeviceTest, BadFramesGoodFrames) {
 // Tests that, when configured with the FIXED_ASPECT_RATIO resolution change
 // policy, the source size changes result in video frames of possibly varying
 // resolutions, but all with the same aspect ratio.
-TEST_F(WebContentsVideoCaptureDeviceTest, VariableResolution_FixedAspectRatio) {
+TEST_F(MAYBE_WebContentsVideoCaptureDeviceTest,
+       VariableResolution_FixedAspectRatio) {
   media::VideoCaptureParams capture_params;
   capture_params.requested_format.frame_size.SetSize(kTestWidth, kTestHeight);
   capture_params.requested_format.frame_rate = kTestFramesPerSecond;
@@ -992,7 +985,8 @@ TEST_F(WebContentsVideoCaptureDeviceTest, VariableResolution_FixedAspectRatio) {
 // Tests that, when configured with the ANY_WITHIN_LIMIT resolution change
 // policy, the source size changes result in video frames of possibly varying
 // resolutions.
-TEST_F(WebContentsVideoCaptureDeviceTest, VariableResolution_AnyWithinLimits) {
+TEST_F(MAYBE_WebContentsVideoCaptureDeviceTest,
+       VariableResolution_AnyWithinLimits) {
   media::VideoCaptureParams capture_params;
   capture_params.requested_format.frame_size.SetSize(kTestWidth, kTestHeight);
   capture_params.requested_format.frame_rate = kTestFramesPerSecond;
@@ -1048,6 +1042,100 @@ TEST_F(WebContentsVideoCaptureDeviceTest, VariableResolution_AnyWithinLimits) {
                                    arbitrary_source_size.width())));
 
   device()->StopAndDeAllocate();
+}
+
+TEST_F(MAYBE_WebContentsVideoCaptureDeviceTest,
+       ComputesStandardResolutionsForPreferredSize) {
+  // Helper function to run the same testing procedure for multiple combinations
+  // of |policy|, |standard_size| and |oddball_size|.
+  const auto RunTestForPreferredSize =
+      [=](media::ResolutionChangePolicy policy,
+          const gfx::Size& oddball_size,
+          const gfx::Size& standard_size) {
+    SCOPED_TRACE(::testing::Message()
+                 << "policy=" << policy
+                 << ", oddball_size=" << oddball_size.ToString()
+                 << ", standard_size=" << standard_size.ToString());
+
+    // Compute the expected preferred size.  For the fixed-resolution use case,
+    // the |oddball_size| is always the expected size; whereas for the
+    // variable-resolution cases, the |standard_size| is the expected size.
+    // Also, adjust to account for the device scale factor.
+    gfx::Size capture_preferred_size = gfx::ScaleToFlooredSize(
+        policy == media::RESOLUTION_POLICY_FIXED_RESOLUTION ? oddball_size
+                                                            : standard_size,
+        1.0f / GetDeviceScaleFactor());
+    ASSERT_NE(capture_preferred_size, web_contents()->GetPreferredSize());
+
+    // Start the WebContentsVideoCaptureDevice.
+    media::VideoCaptureParams capture_params;
+    capture_params.requested_format.frame_size = oddball_size;
+    capture_params.requested_format.frame_rate = kTestFramesPerSecond;
+    capture_params.requested_format.pixel_format = media::PIXEL_FORMAT_I420;
+    capture_params.resolution_change_policy = policy;
+    StubClientObserver unused_observer;
+    device()->AllocateAndStart(capture_params, unused_observer.PassClient());
+    base::RunLoop().RunUntilIdle();
+
+    // Check that the preferred size of the WebContents matches the one provided
+    // by WebContentsVideoCaptureDevice.
+    EXPECT_EQ(capture_preferred_size, web_contents()->GetPreferredSize());
+
+    // Stop the WebContentsVideoCaptureDevice.
+    device()->StopAndDeAllocate();
+    base::RunLoop().RunUntilIdle();
+  };
+
+  const media::ResolutionChangePolicy policies[3] = {
+    media::RESOLUTION_POLICY_FIXED_RESOLUTION,
+    media::RESOLUTION_POLICY_FIXED_ASPECT_RATIO,
+    media::RESOLUTION_POLICY_ANY_WITHIN_LIMIT,
+  };
+
+  for (size_t i = 0; i < arraysize(policies); ++i) {
+    // A 16:9 standard resolution should be set as the preferred size when the
+    // source size is almost or exactly 16:9.
+    for (int delta_w = 0; delta_w <= +5; ++delta_w) {
+      for (int delta_h = 0; delta_h <= +5; ++delta_h) {
+        RunTestForPreferredSize(policies[i],
+                                gfx::Size(1280 + delta_w, 720 + delta_h),
+                                gfx::Size(1280, 720));
+      }
+    }
+    for (int delta_w = -5; delta_w <= +5; ++delta_w) {
+      for (int delta_h = -5; delta_h <= +5; ++delta_h) {
+        RunTestForPreferredSize(policies[i],
+                                gfx::Size(1365 + delta_w, 768 + delta_h),
+                                gfx::Size(1280, 720));
+      }
+    }
+
+    // A 4:3 standard resolution should be set as the preferred size when the
+    // source size is almost or exactly 4:3.
+    for (int delta_w = 0; delta_w <= +5; ++delta_w) {
+      for (int delta_h = 0; delta_h <= +5; ++delta_h) {
+        RunTestForPreferredSize(policies[i],
+                                gfx::Size(640 + delta_w, 480 + delta_h),
+                                gfx::Size(640, 480));
+      }
+    }
+    for (int delta_w = -5; delta_w <= +5; ++delta_w) {
+      for (int delta_h = -5; delta_h <= +5; ++delta_h) {
+        RunTestForPreferredSize(policies[i],
+                                gfx::Size(800 + delta_w, 600 + delta_h),
+                                gfx::Size(768, 576));
+      }
+    }
+
+    // When the source size is not a common video aspect ratio, there is no
+    // adjustment made.
+    RunTestForPreferredSize(
+        policies[i], gfx::Size(1000, 1000), gfx::Size(1000, 1000));
+    RunTestForPreferredSize(
+        policies[i], gfx::Size(1600, 1000), gfx::Size(1600, 1000));
+    RunTestForPreferredSize(
+        policies[i], gfx::Size(837, 999), gfx::Size(837, 999));
+  }
 }
 
 }  // namespace

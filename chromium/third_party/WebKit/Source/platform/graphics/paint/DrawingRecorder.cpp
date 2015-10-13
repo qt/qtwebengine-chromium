@@ -16,19 +16,24 @@ namespace blink {
 
 bool DrawingRecorder::useCachedDrawingIfPossible(GraphicsContext& context, const DisplayItemClientWrapper& client, DisplayItem::Type type)
 {
-    if (!RuntimeEnabledFeatures::slimmingPaintEnabled())
-        return false;
-
     ASSERT(context.displayItemList());
     ASSERT(DisplayItem::isDrawingType(type));
 
-    if (context.displayItemList()->displayItemConstructionIsDisabled() || RuntimeEnabledFeatures::slimmingPaintUnderInvalidationCheckingEnabled())
+    if (context.displayItemList()->displayItemConstructionIsDisabled())
         return false;
 
     if (!context.displayItemList()->clientCacheIsValid(client.displayItemClient()))
         return false;
 
-    context.displayItemList()->createAndAppend<CachedDisplayItem>(client, DisplayItem::drawingTypeToCachedType(type));
+    context.displayItemList()->createAndAppend<CachedDisplayItem>(client, DisplayItem::drawingTypeToCachedDrawingType(type));
+
+#if ENABLE(ASSERT)
+    // When under-invalidation checking is enabled, we output CachedDrawing display item
+    // followed by the display item containing forced painting.
+    if (RuntimeEnabledFeatures::slimmingPaintUnderInvalidationCheckingEnabled())
+        return false;
+#endif
+
     return true;
 }
 
@@ -37,19 +42,18 @@ DrawingRecorder::DrawingRecorder(GraphicsContext& context, const DisplayItemClie
     , m_displayItemClient(displayItemClient)
     , m_displayItemType(displayItemType)
 #if ENABLE(ASSERT)
-    , m_displayItemPosition(RuntimeEnabledFeatures::slimmingPaintEnabled() ? m_context.displayItemList()->newDisplayItemsSize() : 0)
+    , m_displayItemPosition(m_context.displayItemList()->newDisplayItems().size())
     , m_underInvalidationCheckingMode(DrawingDisplayItem::CheckPicture)
 #endif
 {
-    if (!RuntimeEnabledFeatures::slimmingPaintEnabled())
-        return;
-
     ASSERT(context.displayItemList());
     if (context.displayItemList()->displayItemConstructionIsDisabled())
         return;
 
     // Must check DrawingRecorder::useCachedDrawingIfPossible before creating the DrawingRecorder.
-    ASSERT(!useCachedDrawingIfPossible(m_context, m_displayItemClient, m_displayItemType));
+    ASSERT((RuntimeEnabledFeatures::slimmingPaintOffsetCachingEnabled() && context.displayItemList()->paintOffsetWasInvalidated(displayItemClient.displayItemClient()))
+        || RuntimeEnabledFeatures::slimmingPaintUnderInvalidationCheckingEnabled()
+        || !useCachedDrawingIfPossible(m_context, m_displayItemClient, m_displayItemType));
 
     ASSERT(DisplayItem::isDrawingType(displayItemType));
 
@@ -78,9 +82,6 @@ DrawingRecorder::DrawingRecorder(GraphicsContext& context, const DisplayItemClie
 
 DrawingRecorder::~DrawingRecorder()
 {
-    if (!RuntimeEnabledFeatures::slimmingPaintEnabled())
-        return;
-
     ASSERT(m_context.displayItemList());
     if (m_context.displayItemList()->displayItemConstructionIsDisabled())
         return;
@@ -90,7 +91,7 @@ DrawingRecorder::~DrawingRecorder()
         m_context.restore();
 
     m_context.setInDrawingRecorder(false);
-    ASSERT(m_displayItemPosition == m_context.displayItemList()->newDisplayItemsSize());
+    ASSERT(m_displayItemPosition == m_context.displayItemList()->newDisplayItems().size());
 #endif
 
     m_context.displayItemList()->createAndAppend<DrawingDisplayItem>(m_displayItemClient

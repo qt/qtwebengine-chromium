@@ -54,10 +54,6 @@ void WebContentLayerImpl::setDoubleSided(bool double_sided) {
   layer_->layer()->SetDoubleSided(double_sided);
 }
 
-void WebContentLayerImpl::setDrawCheckerboardForMissingTiles(bool enable) {
-  layer_->layer()->SetDrawCheckerboardForMissingTiles(enable);
-}
-
 void WebContentLayerImpl::PaintContents(
     SkCanvas* canvas,
     const gfx::Rect& clip,
@@ -87,6 +83,10 @@ WebContentLayerImpl::PaintContentsToDisplayList(
 
 bool WebContentLayerImpl::FillsBoundsCompletely() const {
   return false;
+}
+
+size_t WebContentLayerImpl::GetApproximateUnsharedMemoryUsage() const {
+  return client_->approximateUnsharedMemoryUsage();
 }
 
 }  // namespace cc_blink

@@ -46,7 +46,7 @@ _INCLUDE_RE = lazy_re.compile(
     '<include[^>]+?src="(?P<filename>[^"\']*)".*?>(\s*</include>)?',
     re.DOTALL)
 _SRC_RE = lazy_re.compile(
-    r'<(?!script)(?:[^>]+?\s)src=(?P<quote>")(?P<filename>[^"\']*)\1',
+    r'<(?!script)(?:[^>]+?\s)src=(?P<quote>")(?!\[\[|{{)(?P<filename>[^"\']*)\1',
     re.MULTILINE)
 _ICON_RE = lazy_re.compile(
     r'<link rel="icon"\s(?:[^>]+?\s)?'

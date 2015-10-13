@@ -21,7 +21,7 @@ source_set("gfx_export") {
 }
 
 vector_icons_cc_file = "$target_gen_dir/vector_icons.cc"
-vector_icons_public_h_file = "$target_gen_dir/vector_icons_public.h"
+vector_icons_h_file = "$target_gen_dir/vector_icons.h"
 
 component("gfx") {
   sources = [
@@ -52,22 +52,16 @@ component("gfx") {
     "animation/throb_animation.h",
     "animation/tween.cc",
     "animation/tween.h",
-    "blit.cc",
-    "blit.h",
     "break_list.h",
-    "canvas.cc",
-    "canvas.h",
-    "canvas_notimplemented.cc",
-    "canvas_paint_mac.h",
-    "canvas_paint_mac.mm",
-    "canvas_skia.cc",
-    "canvas_skia_paint.h",
+    "buffer_format_util.cc",
+    "buffer_format_util.h",
     "codec/jpeg_codec.cc",
     "codec/jpeg_codec.h",
     "codec/png_codec.cc",
     "codec/png_codec.h",
     "color_analysis.cc",
     "color_analysis.h",
+    "color_palette.h",
     "color_profile.cc",
     "color_profile.h",
     "color_profile_mac.mm",
@@ -101,16 +95,14 @@ component("gfx") {
     "font_render_params_win.cc",
     "gdi_util.cc",
     "gdi_util.h",
+    "generic_shared_memory_id.cc",
+    "generic_shared_memory_id.h",
     "gfx_paths.cc",
     "gfx_paths.h",
-    "gpu_memory_buffer.cc",
-    "gpu_memory_buffer.h",
     "hud_font.cc",
     "hud_font.h",
     "icon_util.cc",
     "icon_util.h",
-    "image/canvas_image_source.cc",
-    "image/canvas_image_source.h",
     "image/image.cc",
     "image/image.h",
     "image/image_family.cc",
@@ -121,8 +113,6 @@ component("gfx") {
     "image/image_png_rep.h",
     "image/image_skia.cc",
     "image/image_skia.h",
-    "image/image_skia_operations.cc",
-    "image/image_skia_operations.h",
     "image/image_skia_rep.cc",
     "image/image_skia_rep.h",
     "image/image_skia_source.h",
@@ -141,12 +131,10 @@ component("gfx") {
     "mac/coordinate_conversion.mm",
     "mac/nswindow_frame_controls.h",
     "mac/nswindow_frame_controls.mm",
-    "mac/scoped_ns_disable_screen_updates.h",
+    "mac/scoped_cocoa_disable_screen_updates.h",
     "native_widget_types.h",
     "nine_image_painter.cc",
     "nine_image_painter.h",
-    "paint_throbber.cc",
-    "paint_throbber.h",
     "path.cc",
     "path.h",
     "path_win.cc",
@@ -222,6 +210,8 @@ component("gfx") {
     "win/dpi.h",
     "win/hwnd_util.cc",
     "win/hwnd_util.h",
+    "win/metro_mode.cc",
+    "win/metro_mode.h",
     "win/scoped_set_map_mode.h",
     "win/singleton_hwnd.cc",
     "win/singleton_hwnd.h",
@@ -230,9 +220,34 @@ component("gfx") {
     "win/window_impl.cc",
     "win/window_impl.h",
   ]
+  if (!is_ios) {
+    sources += [
+      "blit.cc",
+      "blit.h",
+      "canvas.cc",
+      "canvas.h",
+      "canvas_notimplemented.cc",
+      "canvas_paint_mac.h",
+      "canvas_paint_mac.mm",
+      "canvas_skia.cc",
+      "canvas_skia_paint.h",
+      "gpu_memory_buffer.cc",
+      "gpu_memory_buffer.h",
+      "image/canvas_image_source.cc",
+      "image/canvas_image_source.h",
+      "image/image_skia_operations.cc",
+      "image/image_skia_operations.h",
+      "paint_throbber.cc",
+      "paint_throbber.h",
+    ]
+  }
 
-  # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
-  configs += [ "//build/config/compiler:no_size_t_to_int_warning" ]
+  configs += [
+    "//build/config:precompiled_headers",
+
+    # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+    "//build/config/compiler:no_size_t_to_int_warning",
+  ]
 
   defines = [ "GFX_IMPLEMENTATION" ]
 
@@ -260,14 +275,19 @@ component("gfx") {
     sources += [
       "harfbuzz_font_skia.cc",
       "harfbuzz_font_skia.h",
-      "render_text.cc",
-      "render_text.h",
       "render_text_harfbuzz.cc",
       "render_text_harfbuzz.h",
       "render_text_mac.cc",
       "render_text_mac.h",
       "text_utils_skia.cc",
     ]
+
+    if (!is_ios) {
+      sources += [
+        "render_text.cc",
+        "render_text.h",
+      ]
+    }
   } else {
     # We don't support RenderText on these platforms.
   }
@@ -310,7 +330,7 @@ component("gfx") {
     }
 
     if (!is_debug) {
-      configs -= [ "//build/config/compiler:optimize" ]
+      configs -= [ "//build/config/compiler:default_optimization" ]
       configs += [ "//build/config/compiler:optimize_max" ]
     }
 
@@ -322,7 +342,7 @@ component("gfx") {
       "android",
       "jnigraphics",
     ]
-  } else {
+  } else if (!is_ios) {
     sources -= [ "canvas_notimplemented.cc" ]
   }
 
@@ -331,9 +351,10 @@ component("gfx") {
     sources += [
       "paint_vector_icon.cc",
       "paint_vector_icon.h",
-      "vector_icons.h",
+      "vector_icon_types.h",
+      "vector_icons_public.h",
       vector_icons_cc_file,
-      vector_icons_public_h_file,
+      vector_icons_h_file,
     ]
     deps += [ ":aggregate_vector_icons" ]
   }
@@ -355,7 +376,7 @@ component("gfx") {
 
   # Linux.
   if (is_linux) {
-    configs += [ "//build/config/linux:fontconfig" ]
+    deps += [ "//build/linux:fontconfig" ]
   }
 
   # Chrome OS
@@ -385,6 +406,10 @@ component("gfx") {
     sources -= [ "path_x11.cc" ]
   }
 
+  if (use_ozone) {
+    sources += [ "native_pixmap_handle_ozone.h" ]
+  }
+
   if (use_cairo) {
     configs += [ "//build/config/linux:pangocairo" ]
   }
@@ -394,17 +419,81 @@ component("gfx") {
 action("aggregate_vector_icons") {
   script = "vector_icons/aggregate_vector_icons.py"
   sources = [
-    "vector_icons",
+    "vector_icon_types.h",
+    "vector_icons/account_box.icon",
+    "vector_icons/account_child_invert.icon",
+    "vector_icons/apps.icon",
+    "vector_icons/autofill.icon",
+    "vector_icons/autologin.icon",
+    "vector_icons/bar_close.1x.icon",
+    "vector_icons/bar_close.icon",
+    "vector_icons/blocked_badge.icon",
+    "vector_icons/check_circle.icon",
+    "vector_icons/chrome_product.icon",
+    "vector_icons/code.icon",
+    "vector_icons/cookie.icon",
+    "vector_icons/crashed_tab.icon",
+    "vector_icons/error_circle.icon",
+    "vector_icons/extension.icon",
+    "vector_icons/extension_crashed.icon",
+    "vector_icons/file_download.icon",
+    "vector_icons/file_download_incognito.1x.icon",
+    "vector_icons/file_download_incognito.icon",
+    "vector_icons/file_download_shelf.icon",
+    "vector_icons/find_next.1x.icon",
+    "vector_icons/find_next.icon",
+    "vector_icons/find_prev.1x.icon",
+    "vector_icons/find_prev.icon",
+    "vector_icons/folder.1x.icon",
+    "vector_icons/folder.icon",
+    "vector_icons/folder_managed.1x.icon",
+    "vector_icons/folder_managed.icon",
+    "vector_icons/folder_supervised.1x.icon",
+    "vector_icons/folder_supervised.icon",
+    "vector_icons/fullscreen.icon",
+    "vector_icons/globe.icon",
+    "vector_icons/help_outline.icon",
+    "vector_icons/image.icon",
+    "vector_icons/laptop.icon",
+    "vector_icons/location_on.icon",
+    "vector_icons/midi.icon",
+    "vector_icons/mixed_content.icon",
+    "vector_icons/mode_edit.icon",
+    "vector_icons/my_location.icon",
+    "vector_icons/notifications.icon",
+    "vector_icons/paintbrush.icon",
+    "vector_icons/photo_camera.icon",
+    "vector_icons/protocol_handler.icon",
+    "vector_icons/remove_box.icon",
+    "vector_icons/sad_tab.icon",
+    "vector_icons/smartphone.icon",
+    "vector_icons/star.icon",
+    "vector_icons/star_border.icon",
+    "vector_icons/supervisor_account.icon",
+    "vector_icons/tab.icon",
+    "vector_icons/tab_audio.1x.icon",
+    "vector_icons/tab_audio.icon",
+    "vector_icons/tab_audio_muting.1x.icon",
+    "vector_icons/tab_audio_muting.icon",
+    "vector_icons/tab_close_hovered_pressed.1x.icon",
+    "vector_icons/tab_close_hovered_pressed.icon",
+    "vector_icons/tab_close_normal.1x.icon",
+    "vector_icons/tab_close_normal.icon",
+    "vector_icons/tablet.icon",
+    "vector_icons/translate.icon",
+    "vector_icons/warning.icon",
+    "vector_icons/warning_badge.icon",
+    "vector_icons/web.icon",
   ]
   outputs = [
     vector_icons_cc_file,
-    vector_icons_public_h_file,
+    vector_icons_h_file,
   ]
 
   args = [
     "--working_directory=" + rebase_path("vector_icons/"),
     "--output_cc=" + rebase_path(vector_icons_cc_file, root_build_dir),
-    "--output_h=" + rebase_path(vector_icons_public_h_file, root_build_dir),
+    "--output_h=" + rebase_path(vector_icons_h_file, root_build_dir),
   ]
 }
 
@@ -421,6 +510,8 @@ source_set("test_support") {
     "test/fontconfig_util_linux.h",
     "test/gfx_util.cc",
     "test/gfx_util.h",
+    "test/test_screen.cc",
+    "test/test_screen.h",
     "test/ui_cocoa_test_helper.h",
     "test/ui_cocoa_test_helper.mm",
   ]
@@ -445,8 +536,17 @@ source_set("test_support") {
     ]
   }
   if (is_linux) {
-    configs += [ "//build/config/linux:fontconfig" ]
+    deps += [ "//build/linux:fontconfig" ]
   }
+}
+
+# TODO(GYP): Delete this after we've converted everything to GN.
+# The _run targets exist only for compatibility w/ GYP.
+group("gfx_unittests_run") {
+  testonly = true
+  deps = [
+    ":gfx_unittests",
+  ]
 }
 
 test("gfx_unittests") {
@@ -464,6 +564,11 @@ test("gfx_unittests") {
     "text_utils_unittest.cc",
   ]
 
+  data = [
+    "test/data/",
+    "$root_out_dir/ui_test.pak",
+  ]
+
   if (!is_ios) {
     sources += [
       "animation/animation_container_unittest.cc",
@@ -478,6 +583,7 @@ test("gfx_unittests") {
       "codec/jpeg_codec_unittest.cc",
       "codec/png_codec_unittest.cc",
       "color_analysis_unittest.cc",
+      "color_profile_mac_unittest.mm",
       "color_utils_unittest.cc",
       "display_change_notifier_unittest.cc",
       "display_unittest.cc",
@@ -504,7 +610,6 @@ test("gfx_unittests") {
       "range/range_mac_unittest.mm",
       "range/range_unittest.cc",
       "range/range_win_unittest.cc",
-      "render_text_unittest.cc",
       "sequential_id_generator_unittest.cc",
       "shadow_value_unittest.cc",
       "skbitmap_operations_unittest.cc",
@@ -512,6 +617,10 @@ test("gfx_unittests") {
       "transform_util_unittest.cc",
       "utf16_indexing_unittest.cc",
     ]
+  }
+
+  if (!is_android && !is_ios) {
+    sources += [ "render_text_unittest.cc" ]
   }
 
   # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
@@ -532,6 +641,10 @@ test("gfx_unittests") {
     "//ui/resources:ui_test_pak",
   ]
 
+  data_deps = [
+    "//ui/resources:ui_test_pak",
+  ]
+
   if (!is_mac && !is_ios) {
     sources += [
       "interpolated_transform_unittest.cc",
@@ -547,13 +660,9 @@ test("gfx_unittests") {
     ]
   }
 
-  if (is_android || is_ios) {
-    sources -= [ "render_text_unittest.cc" ]
-  }
-
   if (use_aura) {
     sources -= [ "screen_unittest.cc" ]
-  } else {
+  } else if (!is_ios) {
     sources -= [ "nine_image_painter_unittest.cc" ]
   }
 
@@ -563,6 +672,7 @@ test("gfx_unittests") {
 
   if (is_win) {
     sources += [
+      "color_profile_win_unittest.cc",
       "font_fallback_win_unittest.cc",
       "icon_util_unittest.cc",
       "icon_util_unittests.rc",

@@ -9,6 +9,8 @@
 #include "SkTDArray.h"
 #include "SkTSort.h"
 
+#include <stdlib.h>
+
 DEFINE_bool(undefok, false, "Silently ignore unknown flags instead of crashing.");
 
 template <typename T> static void ignore_result(const T&) {}
@@ -16,7 +18,7 @@ template <typename T> static void ignore_result(const T&) {}
 bool SkFlagInfo::CreateStringFlag(const char* name, const char* shortName,
                                   SkCommandLineFlags::StringArray* pStrings,
                                   const char* defaultValue, const char* helpString) {
-    SkFlagInfo* info = SkNEW_ARGS(SkFlagInfo, (name, shortName, kString_FlagType, helpString));
+    SkFlagInfo* info = new SkFlagInfo(name, shortName, kString_FlagType, helpString);
     info->fDefaultString.set(defaultValue);
 
     info->fStrings = pStrings;
@@ -27,7 +29,7 @@ bool SkFlagInfo::CreateStringFlag(const char* name, const char* shortName,
 void SkFlagInfo::SetDefaultStrings(SkCommandLineFlags::StringArray* pStrings,
                                    const char* defaultValue) {
     pStrings->reset();
-    if (NULL == defaultValue) {
+    if (nullptr == defaultValue) {
         return;
     }
     // If default is "", leave the array empty.
@@ -266,7 +268,7 @@ void SkCommandLineFlags::Parse(int argc, char** argv) {
         if (!helpPrinted) {
             bool flagMatched = false;
             SkFlagInfo* flag = gHead;
-            while (flag != NULL) {
+            while (flag != nullptr) {
                 if (flag->match(argv[i])) {
                     flagMatched = true;
                     switch (flag->getFlagType()) {
@@ -285,7 +287,7 @@ void SkCommandLineFlags::Parse(int argc, char** argv) {
                             flag->resetStrings();
                             // Add all arguments until another flag is reached.
                             while (i+1 < argc) {
-                                char* end = NULL;
+                                char* end = nullptr;
                                 // Negative numbers aren't flags.
                                 ignore_result(strtod(argv[i+1], &end));
                                 if (end == argv[i+1] && SkStrStartsWith(argv[i+1], '-')) {
@@ -329,10 +331,10 @@ void SkCommandLineFlags::Parse(int argc, char** argv) {
     // Since all of the flags have been set, release the memory used by each
     // flag. FLAGS_x can still be used after this.
     SkFlagInfo* flag = gHead;
-    gHead = NULL;
-    while (flag != NULL) {
+    gHead = nullptr;
+    while (flag != nullptr) {
         SkFlagInfo* next = flag->next();
-        SkDELETE(flag);
+        delete flag;
         flag = next;
     }
     if (helpPrinted) {

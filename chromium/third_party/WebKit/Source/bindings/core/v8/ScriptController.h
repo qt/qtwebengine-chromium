@@ -68,6 +68,7 @@ enum ReasonForCallingCanExecuteScripts {
 
 class CORE_EXPORT ScriptController final : public NoBaseWillBeGarbageCollectedFinalized<ScriptController> {
     WTF_MAKE_NONCOPYABLE(ScriptController);
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(ScriptController);
 public:
     enum ExecuteScriptPolicy {
         ExecuteScriptWhenScriptsDisabled,
@@ -161,7 +162,7 @@ private:
 
     LocalFrame* frame() const { return toLocalFrame(m_windowProxyManager->frame()); }
 
-    typedef HashMap<Widget*, NPObject*> PluginObjectMap;
+    typedef WillBeHeapHashMap<RawPtrWillBeMember<Widget>, NPObject*> PluginObjectMap;
 
     v8::Local<v8::Value> evaluateScriptInMainWorld(const ScriptSourceCode&, AccessControlStatus, ExecuteScriptPolicy, double* compilationFinishTime = 0);
 

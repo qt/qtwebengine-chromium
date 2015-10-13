@@ -8,7 +8,6 @@ import argparse
 import logging
 import os
 import socket
-import xmlrpclib
 
 LOGGING_LEVELS = ['DEBUG', 'INFO', 'WARNING', 'WARN', 'ERROR']
 MY_IP = socket.gethostbyname(socket.gethostname())
@@ -34,3 +33,11 @@ def InitLogging():
   logging.basicConfig(
       format='%(asctime)s %(filename)s:%(lineno)s %(levelname)s] %(message)s',
       datefmt='%H:%M:%S', level=args.verbosity)
+
+
+def GetOutputDir():
+  """Get the isolated output directory specified on the command line."""
+  parser = argparse.ArgumentParser()
+  parser.add_argument('--output-dir')
+  args, _ = parser.parse_known_args()
+  return args.output_dir

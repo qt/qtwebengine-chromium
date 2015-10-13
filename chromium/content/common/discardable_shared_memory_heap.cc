@@ -28,8 +28,10 @@ DiscardableSharedMemoryHeap::Span::Span(
     base::DiscardableSharedMemory* shared_memory,
     size_t start,
     size_t length)
-    : shared_memory_(shared_memory), start_(start), length_(length) {
-}
+    : shared_memory_(shared_memory),
+      start_(start),
+      length_(length),
+      is_locked_(false) {}
 
 DiscardableSharedMemoryHeap::Span::~Span() {
 }
@@ -58,6 +60,29 @@ bool DiscardableSharedMemoryHeap::ScopedMemorySegment::IsUsed() const {
 
 bool DiscardableSharedMemoryHeap::ScopedMemorySegment::IsResident() const {
   return heap_->IsMemoryResident(shared_memory_.get());
+}
+
+bool DiscardableSharedMemoryHeap::ScopedMemorySegment::ContainsSpan(
+    Span* span) const {
+  return shared_memory_ == span->shared_memory();
+}
+
+base::trace_event::MemoryAllocatorDump*
+DiscardableSharedMemoryHeap::ScopedMemorySegment::CreateMemoryAllocatorDump(
+    Span* span,
+    size_t block_size,
+    const char* name,
+    base::trace_event::ProcessMemoryDump* pmd) const {
+  DCHECK_EQ(shared_memory_, span->shared_memory());
+  base::trace_event::MemoryAllocatorDump* dump = pmd->CreateAllocatorDump(name);
+  dump->AddScalar(base::trace_event::MemoryAllocatorDump::kNameSize,
+                  base::trace_event::MemoryAllocatorDump::kUnitsBytes,
+                  static_cast<uint64_t>(span->length() * block_size));
+
+  pmd->AddSuballocation(
+      dump->guid(),
+      base::StringPrintf("discardable/segment_%d/allocated_objects", id_));
+  return dump;
 }
 
 void DiscardableSharedMemoryHeap::ScopedMemorySegment::OnMemoryDump(
@@ -255,6 +280,7 @@ DiscardableSharedMemoryHeap::Carve(Span* span, size_t blocks) {
   if (extra) {
     scoped_ptr<Span> leftover(
         new Span(serving->shared_memory_, serving->start_ + blocks, extra));
+    leftover->set_is_locked(false);
     DCHECK_IMPLIES(extra > 1, spans_.find(leftover->start_) == spans_.end());
     RegisterSpan(leftover.get());
 
@@ -343,18 +369,23 @@ void DiscardableSharedMemoryHeap::OnMemoryDump(
     int32_t segment_id,
     base::trace_event::ProcessMemoryDump* pmd) {
   size_t allocated_objects_count = 0;
-  size_t allocated_objects_size_in_bytes = 0;
+  size_t allocated_objects_blocks = 0;
+  size_t locked_objects_blocks = 0;
   size_t offset =
       reinterpret_cast<size_t>(shared_memory->memory()) / block_size_;
   size_t end = offset + size / block_size_;
   while (offset < end) {
     Span* span = spans_[offset];
     if (!IsInFreeList(span)) {
+      allocated_objects_blocks += span->length_;
+      locked_objects_blocks += span->is_locked_ ? span->length_ : 0;
       allocated_objects_count++;
-      allocated_objects_size_in_bytes += span->length_ * block_size_;
     }
     offset += span->length_;
   }
+  size_t allocated_objects_size_in_bytes =
+      allocated_objects_blocks * block_size_;
+  size_t locked_objects_size_in_bytes = locked_objects_blocks * block_size_;
 
   std::string segment_dump_name =
       base::StringPrintf("discardable/segment_%d", segment_id);
@@ -362,23 +393,27 @@ void DiscardableSharedMemoryHeap::OnMemoryDump(
       pmd->CreateAllocatorDump(segment_dump_name);
   segment_dump->AddScalar(base::trace_event::MemoryAllocatorDump::kNameSize,
                           base::trace_event::MemoryAllocatorDump::kUnitsBytes,
-                          static_cast<uint64_t>(size));
+                          size);
 
   base::trace_event::MemoryAllocatorDump* obj_dump =
       pmd->CreateAllocatorDump(segment_dump_name + "/allocated_objects");
-  obj_dump->AddScalar(base::trace_event::MemoryAllocatorDump::kNameObjectsCount,
+  obj_dump->AddScalar(base::trace_event::MemoryAllocatorDump::kNameObjectCount,
                       base::trace_event::MemoryAllocatorDump::kUnitsObjects,
-                      static_cast<uint64_t>(allocated_objects_count));
+                      allocated_objects_count);
   obj_dump->AddScalar(base::trace_event::MemoryAllocatorDump::kNameSize,
                       base::trace_event::MemoryAllocatorDump::kUnitsBytes,
-                      static_cast<uint64_t>(allocated_objects_size_in_bytes));
+                      allocated_objects_size_in_bytes);
+  obj_dump->AddScalar("locked_size",
+                      base::trace_event::MemoryAllocatorDump::kUnitsBytes,
+                      locked_objects_size_in_bytes);
 
   // Emit an ownership edge towards a global allocator dump node. This allows
   // to avoid double-counting segments when both browser and child process emit
   // them. In the special case of single-process-mode, this will be the only
   // dumper active and the single ownership edge will become a no-op in the UI.
   const uint64 tracing_process_id =
-      base::trace_event::MemoryDumpManager::GetInstance()->tracing_process_id();
+      base::trace_event::MemoryDumpManager::GetInstance()
+          ->GetTracingProcessId();
   base::trace_event::MemoryAllocatorDumpGuid shared_segment_guid =
       GetSegmentGUIDForTracing(tracing_process_id, segment_id);
   pmd->CreateSharedGlobalAllocatorDump(shared_segment_guid);
@@ -395,6 +430,28 @@ DiscardableSharedMemoryHeap::GetSegmentGUIDForTracing(uint64 tracing_process_id,
                                                       int32 segment_id) {
   return base::trace_event::MemoryAllocatorDumpGuid(base::StringPrintf(
       "discardable-x-process/%" PRIx64 "/%d", tracing_process_id, segment_id));
+}
+
+base::trace_event::MemoryAllocatorDump*
+DiscardableSharedMemoryHeap::CreateMemoryAllocatorDump(
+    Span* span,
+    const char* name,
+    base::trace_event::ProcessMemoryDump* pmd) const {
+  if (!span->shared_memory()) {
+    base::trace_event::MemoryAllocatorDump* dump =
+        pmd->CreateAllocatorDump(name);
+    dump->AddScalar(base::trace_event::MemoryAllocatorDump::kNameSize,
+                    base::trace_event::MemoryAllocatorDump::kUnitsBytes, 0u);
+    return dump;
+  }
+
+  ScopedVector<ScopedMemorySegment>::const_iterator it =
+      std::find_if(memory_segments_.begin(), memory_segments_.end(),
+                   [span](const ScopedMemorySegment* segment) {
+                     return segment->ContainsSpan(span);
+                   });
+  DCHECK(it != memory_segments_.end());
+  return (*it)->CreateMemoryAllocatorDump(span, block_size_, name, pmd);
 }
 
 }  // namespace content

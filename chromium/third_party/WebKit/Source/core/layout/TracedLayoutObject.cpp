@@ -13,9 +13,9 @@
 
 namespace blink {
 
-PassRefPtr<TraceEvent::ConvertableToTraceFormat> TracedLayoutObject::create(const LayoutView& view)
+PassRefPtr<TraceEvent::ConvertableToTraceFormat> TracedLayoutObject::create(const LayoutView& view, bool traceGeometry)
 {
-    return adoptRef(new TracedLayoutObject(view));
+    return adoptRef(new TracedLayoutObject(view, traceGeometry));
 }
 
 String TracedLayoutObject::asTraceFormat() const
@@ -26,11 +26,12 @@ String TracedLayoutObject::asTraceFormat() const
     return builder.toString();
 }
 
-TracedLayoutObject::TracedLayoutObject(const LayoutObject& object)
+TracedLayoutObject::TracedLayoutObject(const LayoutObject& object, bool traceGeometry)
     : m_address((unsigned long) &object)
     , m_isAnonymous(object.isAnonymous())
     , m_isPositioned(object.isOutOfFlowPositioned())
     , m_isRelPositioned(object.isRelPositioned())
+    , m_isStickyPositioned(object.isStickyPositioned())
     , m_isFloating(object.isFloating())
     , m_selfNeeds(object.selfNeedsLayout())
     , m_positionedMovement(object.needsPositionedMovementLayout())
@@ -38,7 +39,7 @@ TracedLayoutObject::TracedLayoutObject(const LayoutObject& object)
     , m_posChildNeeds(object.posChildNeedsLayout())
     , m_isTableCell(object.isTableCell())
     , m_name(String(object.name()).isolatedCopy())
-    , m_absRect(object.absoluteBoundingBoxRect())
+    , m_absRect(traceGeometry ? object.absoluteBoundingBoxRect() : IntRect())
 {
     if (Node* node = object.node()) {
         m_tag = String(node->nodeName()).isolatedCopy();
@@ -57,12 +58,14 @@ TracedLayoutObject::TracedLayoutObject(const LayoutObject& object)
 
     // FIXME: When the fixmes in LayoutTreeAsText::writeLayoutObject() are
     // fixed, deduplicate it with this.
-    if (object.isText()) {
-        m_rect = LayoutRect(toLayoutText(object).linesBoundingBox());
-    } else if (object.isLayoutInline()) {
-        m_rect = LayoutRect(toLayoutInline(object).linesBoundingBox());
-    } else if (object.isBox()) {
-        m_rect = toLayoutBox(&object)->frameRect();
+    if (traceGeometry) {
+        if (object.isText()) {
+            m_rect = LayoutRect(toLayoutText(object).linesBoundingBox());
+        } else if (object.isLayoutInline()) {
+            m_rect = LayoutRect(toLayoutInline(object).linesBoundingBox());
+        } else if (object.isBox()) {
+            m_rect = toLayoutBox(&object)->frameRect();
+        }
     }
 
     if (m_isTableCell) {
@@ -77,7 +80,7 @@ TracedLayoutObject::TracedLayoutObject(const LayoutObject& object)
     }
 
     for (LayoutObject* child = object.slowFirstChild(); child; child = child->nextSibling()) {
-        m_children.append(adoptRef(new TracedLayoutObject(*child)));
+        m_children.append(adoptRef(new TracedLayoutObject(*child, traceGeometry)));
     }
 }
 
@@ -125,6 +128,8 @@ PassRefPtr<JSONObject> TracedLayoutObject::toJSON() const
         json->setBoolean("anonymous", m_isAnonymous);
     if (m_isRelPositioned)
         json->setBoolean("relativePositioned", m_isRelPositioned);
+    if (m_isStickyPositioned)
+        json->setBoolean("stickyPositioned", m_isStickyPositioned);
     if (m_isFloating)
         json->setBoolean("float", m_isFloating);
     if (m_children.size()) {

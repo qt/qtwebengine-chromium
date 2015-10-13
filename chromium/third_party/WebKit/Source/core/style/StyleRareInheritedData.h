@@ -30,6 +30,7 @@
 #include "core/style/DataRef.h"
 #include "platform/Length.h"
 #include "platform/graphics/Color.h"
+#include "platform/heap/Handle.h"
 #include "platform/text/TabSize.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
@@ -45,7 +46,11 @@ class ShadowList;
 class StyleImage;
 
 typedef RefVector<AppliedTextDecoration> AppliedTextDecorationList;
+#if ENABLE(OILPAN)
+typedef HeapVector<CursorData> CursorList;
+#else
 typedef RefVector<CursorData> CursorList;
+#endif
 
 // This struct is for rarely used inherited CSS3, CSS2, and WebKit-specific properties.
 // By grouping them together, we save space, and only allocate this object when someone
@@ -64,7 +69,7 @@ public:
     bool shadowDataEquivalent(const StyleRareInheritedData&) const;
     bool quotesDataEquivalent(const StyleRareInheritedData&) const;
 
-    RefPtr<StyleImage> listStyleImage;
+    RefPtrWillBePersistent<StyleImage> listStyleImage;
 
     StyleColor textStrokeColor() const { return m_textStrokeColorIsCurrentColor ? StyleColor::currentColor() : StyleColor(m_textStrokeColor); }
     StyleColor textFillColor() const { return m_textFillColorIsCurrentColor ? StyleColor::currentColor() : StyleColor(m_textFillColor); }
@@ -92,7 +97,8 @@ public:
     RefPtr<ShadowList> textShadow; // Our text shadow information for shadowed text drawing.
     AtomicString highlight; // Apple-specific extension for custom highlight rendering.
 
-    RefPtr<CursorList> cursorData;
+    RefPtrWillBePersistent<CursorList> cursorData;
+
     Length indent;
     float m_effectiveZoom;
 
@@ -125,7 +131,6 @@ public:
     unsigned m_textCombine : 1; // CSS3 text-combine properties
     unsigned m_textIndentLine : 1; // TextIndentEachLine
     unsigned m_textIndentType : 1; // TextIndentHanging
-    unsigned m_lineBoxContain: 7; // LineBoxContain
     // CSS Image Values Level 3
     unsigned m_imageRendering : 3; // EImageRendering
     unsigned m_textUnderlinePosition : 1; // TextUnderlinePosition
@@ -136,6 +141,8 @@ public:
     unsigned m_subtreeWillChangeContents : 1;
 
     unsigned m_selfOrAncestorHasDirAutoAttribute : 1;
+
+    unsigned m_respectImageOrientation : 1;
 
     AtomicString hyphenationString;
     short hyphenationLimitBefore;

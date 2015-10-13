@@ -14,7 +14,7 @@ namespace blink {
 
 class AnimationLengthStyleInterpolationTest : public ::testing::Test {
 protected:
-    static PassOwnPtrWillBeRawPtr<InterpolableValue> lengthToInterpolableValue(const CSSValue& value)
+    static PassOwnPtr<InterpolableValue> lengthToInterpolableValue(const CSSValue& value)
     {
         return LengthStyleInterpolation::toInterpolableValue(value);
     }
@@ -29,9 +29,9 @@ protected:
         return interpolableValueToLength(lengthToInterpolableValue(*value).get(), RangeAll);
     }
 
-    static PassOwnPtrWillBeRawPtr<InterpolableList> createInterpolableLength(double a, double b, double c, double d, double e, double f, double g, double h, double i, double j)
+    static PassOwnPtr<InterpolableList> createInterpolableLength(double a, double b, double c, double d, double e, double f, double g, double h, double i, double j)
     {
-        OwnPtrWillBeRawPtr<InterpolableList> list = InterpolableList::create(10);
+        OwnPtr<InterpolableList> list = InterpolableList::create(10);
         list->set(0, InterpolableNumber::create(a));
         list->set(1, InterpolableNumber::create(b));
         list->set(2, InterpolableNumber::create(c));
@@ -57,7 +57,7 @@ protected:
     {
         CSSPrimitiveValue::CSSLengthTypeArray lengthTypeArray;
         initLengthArray(lengthArray);
-        RefPtrWillBeRawPtr<MutableStylePropertySet> propertySet = MutableStylePropertySet::create();
+        RefPtrWillBeRawPtr<MutableStylePropertySet> propertySet = MutableStylePropertySet::create(HTMLQuirksMode);
         propertySet->setProperty(CSSPropertyLeft, text);
         toCSSPrimitiveValue(propertySet->getPropertyCSSValue(CSSPropertyLeft).get())->accumulateLengthArray(lengthArray);
         return lengthArray;
@@ -67,52 +67,53 @@ protected:
 #define TEST_PRIMITIVE_VALUE(ACTUAL_VALUE, EXPECTED_DOUBLE_VALUE, EXPECTED_UNIT_TYPE)                \
     EXPECT_TRUE((ACTUAL_VALUE)->isPrimitiveValue());                                                 \
     EXPECT_EQ((EXPECTED_DOUBLE_VALUE), toCSSPrimitiveValue((ACTUAL_VALUE).get())->getDoubleValue()); \
-    EXPECT_EQ((EXPECTED_UNIT_TYPE), toCSSPrimitiveValue((ACTUAL_VALUE).get())->primitiveType());
+    EXPECT_EQ((EXPECTED_UNIT_TYPE), toCSSPrimitiveValue((ACTUAL_VALUE).get())->typeWithCalcResolved());
 
-#define EXPECT_CSS_LENGTH_ARRAY_ELEMENTS_EQUAL(EXPECTED, ACTUAL)        \
-    for (size_t i = 0; i < CSSPrimitiveValue::LengthUnitTypeCount; ++i) \
-    EXPECT_EQ((EXPECTED).at(i), (ACTUAL).at(i))
+#define EXPECT_CSS_LENGTH_ARRAY_ELEMENTS_EQUAL(EXPECTED, ACTUAL)          \
+    for (size_t i = 0; i < CSSPrimitiveValue::LengthUnitTypeCount; ++i) { \
+        EXPECT_EQ((EXPECTED).at(i), (ACTUAL).at(i));                      \
+    }
 
 TEST_F(AnimationLengthStyleInterpolationTest, ZeroLength)
 {
-    RefPtrWillBeRawPtr<CSSValue> value1 = roundTrip(CSSPrimitiveValue::create(0, CSSPrimitiveValue::CSS_PX));
-    TEST_PRIMITIVE_VALUE(value1, 0, CSSPrimitiveValue::CSS_PX);
+    RefPtrWillBeRawPtr<CSSValue> value1 = roundTrip(CSSPrimitiveValue::create(0, CSSPrimitiveValue::UnitType::Pixels));
+    TEST_PRIMITIVE_VALUE(value1, 0, CSSPrimitiveValue::UnitType::Pixels);
 
-    RefPtrWillBeRawPtr<CSSValue> value2 = roundTrip(CSSPrimitiveValue::create(0, CSSPrimitiveValue::CSS_PERCENTAGE));
-    TEST_PRIMITIVE_VALUE(value2, 0, CSSPrimitiveValue::CSS_PERCENTAGE);
+    RefPtrWillBeRawPtr<CSSValue> value2 = roundTrip(CSSPrimitiveValue::create(0, CSSPrimitiveValue::UnitType::Percentage));
+    TEST_PRIMITIVE_VALUE(value2, 0, CSSPrimitiveValue::UnitType::Percentage);
 
-    RefPtrWillBeRawPtr<CSSValue> value3 = roundTrip(CSSPrimitiveValue::create(0, CSSPrimitiveValue::CSS_EMS));
-    TEST_PRIMITIVE_VALUE(value3, 0, CSSPrimitiveValue::CSS_EMS);
+    RefPtrWillBeRawPtr<CSSValue> value3 = roundTrip(CSSPrimitiveValue::create(0, CSSPrimitiveValue::UnitType::Ems));
+    TEST_PRIMITIVE_VALUE(value3, 0, CSSPrimitiveValue::UnitType::Ems);
 }
 
 TEST_F(AnimationLengthStyleInterpolationTest, SingleUnit)
 {
-    RefPtrWillBeRawPtr<CSSValue> value = roundTrip(CSSPrimitiveValue::create(10, CSSPrimitiveValue::CSS_PX));
-    TEST_PRIMITIVE_VALUE(value, 10, CSSPrimitiveValue::CSS_PX);
+    RefPtrWillBeRawPtr<CSSValue> value = roundTrip(CSSPrimitiveValue::create(10, CSSPrimitiveValue::UnitType::Pixels));
+    TEST_PRIMITIVE_VALUE(value, 10, CSSPrimitiveValue::UnitType::Pixels);
 
-    value = roundTrip(CSSPrimitiveValue::create(30, CSSPrimitiveValue::CSS_PERCENTAGE));
-    TEST_PRIMITIVE_VALUE(value, 30, CSSPrimitiveValue::CSS_PERCENTAGE);
+    value = roundTrip(CSSPrimitiveValue::create(30, CSSPrimitiveValue::UnitType::Percentage));
+    TEST_PRIMITIVE_VALUE(value, 30, CSSPrimitiveValue::UnitType::Percentage);
 
-    value = roundTrip(CSSPrimitiveValue::create(10, CSSPrimitiveValue::CSS_EMS));
-    TEST_PRIMITIVE_VALUE(value, 10, CSSPrimitiveValue::CSS_EMS);
+    value = roundTrip(CSSPrimitiveValue::create(10, CSSPrimitiveValue::UnitType::Ems));
+    TEST_PRIMITIVE_VALUE(value, 10, CSSPrimitiveValue::UnitType::Ems);
 }
 
 TEST_F(AnimationLengthStyleInterpolationTest, SingleClampedUnit)
 {
-    RefPtrWillBeRawPtr<CSSValue> value1 = CSSPrimitiveValue::create(-10, CSSPrimitiveValue::CSS_PX);
+    RefPtrWillBeRawPtr<CSSValue> value1 = CSSPrimitiveValue::create(-10, CSSPrimitiveValue::UnitType::Pixels);
     value1 = interpolableValueToLength(lengthToInterpolableValue(*value1).get(), RangeNonNegative);
-    TEST_PRIMITIVE_VALUE(value1, 0, CSSPrimitiveValue::CSS_PX);
+    TEST_PRIMITIVE_VALUE(value1, 0, CSSPrimitiveValue::UnitType::Pixels);
 
-    RefPtrWillBeRawPtr<CSSValue> value2 = CSSPrimitiveValue::create(-10, CSSPrimitiveValue::CSS_EMS);
+    RefPtrWillBeRawPtr<CSSValue> value2 = CSSPrimitiveValue::create(-10, CSSPrimitiveValue::UnitType::Ems);
     value2 = interpolableValueToLength(lengthToInterpolableValue(*value2).get(), RangeNonNegative);
-    TEST_PRIMITIVE_VALUE(value2, 0, CSSPrimitiveValue::CSS_EMS);
+    TEST_PRIMITIVE_VALUE(value2, 0, CSSPrimitiveValue::UnitType::Ems);
 }
 
 TEST_F(AnimationLengthStyleInterpolationTest, MultipleUnits)
 {
     CSSLengthArray expectation, actual;
     initLengthArray(expectation);
-    OwnPtrWillBeRawPtr<InterpolableList> result = InterpolableList::create(2);
+    OwnPtr<InterpolableList> result = InterpolableList::create(2);
     result->set(0, createInterpolableLength(0, 10, 0, 10, 0, 10, 0, 10, 0, 10));
     result->set(1, createInterpolableLength(0, 1, 0, 1, 0, 1, 0, 1, 0, 1));
     toCSSPrimitiveValue(interpolableValueToLength(result.get(), RangeAll).get())->accumulateLengthArray(expectation);
@@ -124,7 +125,7 @@ TEST_F(AnimationLengthStyleInterpolationTest, MultipleUnitsWithSingleValues)
 {
     CSSLengthArray expectation, actual;
     initLengthArray(expectation);
-    OwnPtrWillBeRawPtr<InterpolableList> result = InterpolableList::create(2);
+    OwnPtr<InterpolableList> result = InterpolableList::create(2);
     result->set(0, createInterpolableLength(0, 10, 0, 10, 0, 10, 0, 10, 0, 10));
     result->set(1, createInterpolableLength(0, 1, 0, 1, 0, 1, 0, 1, 0, 1));
     toCSSPrimitiveValue(interpolableValueToLength(result.get(), RangeAll).get())->accumulateLengthArray(expectation);
@@ -136,7 +137,7 @@ TEST_F(AnimationLengthStyleInterpolationTest, MultipleUnitsWithMultipleValues)
 {
     CSSLengthArray expectation, actual;
     initLengthArray(expectation);
-    OwnPtrWillBeRawPtr<InterpolableList> result = InterpolableList::create(2);
+    OwnPtr<InterpolableList> result = InterpolableList::create(2);
     result->set(0, createInterpolableLength(0, 20, 0, 30, 0, 8, 0, 10, 0, 7));
     result->set(1, createInterpolableLength(0, 1, 0, 1, 0, 1, 0, 1, 0, 1));
     toCSSPrimitiveValue(interpolableValueToLength(result.get(), RangeAll).get())->accumulateLengthArray(expectation);
@@ -148,7 +149,7 @@ TEST_F(AnimationLengthStyleInterpolationTest, MultipleUnitsWithZeroValue)
 {
     CSSLengthArray expectation, actual;
     initLengthArray(expectation);
-    OwnPtrWillBeRawPtr<InterpolableList> result = InterpolableList::create(2);
+    OwnPtr<InterpolableList> result = InterpolableList::create(2);
     result->set(0, createInterpolableLength(0, 10, 0, 10, 0, 10, 0, 10, 0, 10));
     result->set(1, createInterpolableLength(1, 1, 0, 1, 0, 1, 0, 1, 0, 1));
     toCSSPrimitiveValue(interpolableValueToLength(result.get(), RangeAll).get())->accumulateLengthArray(expectation);
@@ -160,7 +161,7 @@ TEST_F(AnimationLengthStyleInterpolationTest, MultipleUnitsWithZeroValues)
 {
     CSSLengthArray expectation, actual;
     initLengthArray(expectation);
-    OwnPtrWillBeRawPtr<InterpolableList> result = InterpolableList::create(2);
+    OwnPtr<InterpolableList> result = InterpolableList::create(2);
     result->set(0, createInterpolableLength(0, 10, 0, 10, 0, 10, 0, 10, 0, 10));
     result->set(1, createInterpolableLength(1, 1, 1, 1, 0, 1, 0, 1, 1, 1));
     toCSSPrimitiveValue(interpolableValueToLength(result.get(), RangeAll).get())->accumulateLengthArray(expectation);

@@ -220,10 +220,10 @@ TEST_F(DrawingBufferTest, testPaintRenderingResultsToCanvas)
     OwnPtr<ImageBuffer> imageBuffer = ImageBuffer::create(imageBufferSurface.release());
     EXPECT_FALSE(!imageBuffer);
     EXPECT_FALSE(imageBuffer->isAccelerated());
-    EXPECT_FALSE(imageBuffer->bitmap().isNull());
+    EXPECT_FALSE(!imageBuffer->newImageSnapshot());
     m_drawingBuffer->paintRenderingResultsToCanvas(imageBuffer.get());
     EXPECT_FALSE(imageBuffer->isAccelerated());
-    EXPECT_FALSE(imageBuffer->bitmap().isNull());
+    EXPECT_FALSE(!imageBuffer->newImageSnapshot());
     m_drawingBuffer->beginDestruction();
 }
 
@@ -262,6 +262,7 @@ TEST_F(DrawingBufferTest, verifyResizingProperlyAffectsMailboxes)
     m_drawingBuffer->markContentsChanged();
     EXPECT_TRUE(m_drawingBuffer->prepareMailbox(&mailbox, 0));
     EXPECT_EQ(initialSize, webContext()->mostRecentlyProducedSize());
+    m_drawingBuffer->mailboxReleased(mailbox, false);
     m_drawingBuffer->beginDestruction();
 }
 

@@ -109,6 +109,9 @@ class IPAddress {
   // For socketaddress' benefit. Returns the IP in host byte order.
   uint32 v4AddressAsHostOrderInteger() const;
 
+  // Whether this is an unspecified IP address.
+  bool IsNil() const;
+
   static void set_strip_sensitive(bool enable);
 
  private:
@@ -175,6 +178,8 @@ int IPAddressPrecedence(const IPAddress& ip);
 
 // Returns 'ip' truncated to be 'length' bits long.
 IPAddress TruncateIP(const IPAddress& ip, int length);
+
+IPAddress GetLoopbackIP(int family);
 
 // Returns the number of contiguously set bits, counting from the MSB in network
 // byte order, in this IPAddress. Bits after the first 0 encountered are not

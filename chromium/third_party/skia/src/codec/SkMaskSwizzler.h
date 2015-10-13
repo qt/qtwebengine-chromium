@@ -4,6 +4,8 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
+#ifndef SkMaskSwizzler_DEFINED
+#define SkMaskSwizzler_DEFINED
 
 #include "SkMasks.h"
 #include "SkSwizzler.h"
@@ -19,46 +21,40 @@ class SkMaskSwizzler {
 public:
 
     /*
-     *
      * Create a new swizzler
      * @param masks Unowned pointer to helper class
-     *
      */
-    static SkMaskSwizzler* CreateMaskSwizzler(const SkImageInfo& imageInfo,
-                                              void* dst, size_t dstRowBytes,
+    static SkMaskSwizzler* CreateMaskSwizzler(const SkImageInfo& dstInfo,
+                                              const SkImageInfo& srcInfo,
                                               SkMasks* masks,
                                               uint32_t bitsPerPixel);
 
     /*
-     *
-     * Swizzle the row with the specified y value
-     *
+     * Swizzle a row
      */
-    SkSwizzler::ResultAlpha next(const uint8_t* SK_RESTRICT src, int y);
+    SkSwizzler::ResultAlpha swizzle(void* dst, const uint8_t* SK_RESTRICT src);
 
 private:
 
     /*
-     *
      * Row procedure used for swizzle
-     *
      */
     typedef SkSwizzler::ResultAlpha (*RowProc)(
             void* dstRow, const uint8_t* srcRow, int width,
-            SkMasks* masks);
+            SkMasks* masks, uint32_t startX, uint32_t sampleX);
 
     /*
-     *
      * Constructor for mask swizzler
-     *
      */
-    SkMaskSwizzler(const SkImageInfo& info, void* dst, size_t dstRowBytes,
-            SkMasks* masks, RowProc proc);
+    SkMaskSwizzler(const SkImageInfo& info, SkMasks* masks, RowProc proc,
+            uint32_t sampleX);
 
     // Fields
     const SkImageInfo& fDstInfo;
-    void*              fDst;
-    size_t             fDstRowBytes;
     SkMasks*           fMasks;       // unowned
     const RowProc      fRowProc;
+    const uint32_t     fSampleX;
+    const uint32_t     fStartX;
 };
+
+#endif

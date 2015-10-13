@@ -28,7 +28,7 @@
 #ifndef ResourceRequest_h
 #define ResourceRequest_h
 
-#include "platform/network/FormData.h"
+#include "platform/network/EncodedFormData.h"
 #include "platform/network/HTTPHeaderMap.h"
 #include "platform/network/HTTPParsers.h"
 #include "platform/network/ResourceLoadPriority.h"
@@ -46,6 +46,15 @@ enum ResourceRequestCachePolicy {
     ReturnCacheDataElseLoad, // back/forward or encoding change - allow stale data
     ReturnCacheDataDontLoad, // results of a post - allow stale data and only use cache
     ReloadBypassingCache, // end-to-end reload
+};
+
+enum ResourceRequestBlockedReason {
+    ResourceRequestBlockedReasonCSP,
+    ResourceRequestBlockedReasonMixedContent,
+    ResourceRequestBlockedReasonOrigin,
+    ResourceRequestBlockedReasonInspector,
+    ResourceRequestBlockedReasonOther,
+    ResourceRequestBlockedReasonNone
 };
 
 enum InputToLoadPerfMetricReportPolicy {
@@ -137,8 +146,8 @@ public:
     const AtomicString& httpAccept() const { return httpHeaderField("Accept"); }
     void setHTTPAccept(const AtomicString& httpAccept) { setHTTPHeaderField("Accept", httpAccept); }
 
-    FormData* httpBody() const;
-    void setHTTPBody(PassRefPtr<FormData> httpBody);
+    EncodedFormData* httpBody() const;
+    void setHTTPBody(PassRefPtr<EncodedFormData>);
 
     bool allowStoredCredentials() const;
     void setAllowStoredCredentials(bool allowCredentials);
@@ -209,6 +218,9 @@ public:
     WebURLRequest::FetchCredentialsMode fetchCredentialsMode() const { return m_fetchCredentialsMode; }
     void setFetchCredentialsMode(WebURLRequest::FetchCredentialsMode mode) { m_fetchCredentialsMode = mode; }
 
+    WebURLRequest::FetchRedirectMode fetchRedirectMode() const { return m_fetchRedirectMode; }
+    void setFetchRedirectMode(WebURLRequest::FetchRedirectMode redirect) { m_fetchRedirectMode = redirect; }
+
     bool cacheControlContainsNoCache() const;
     bool cacheControlContainsNoStore() const;
     bool hasCacheValidatorFields() const;
@@ -242,7 +254,7 @@ private:
     RefPtr<SecurityOrigin> m_requestorOrigin;
     AtomicString m_httpMethod;
     HTTPHeaderMap m_httpHeaderFields;
-    RefPtr<FormData> m_httpBody;
+    RefPtr<EncodedFormData> m_httpBody;
     bool m_allowStoredCredentials : 1;
     bool m_reportUploadProgress : 1;
     bool m_reportRawHeaders : 1;
@@ -261,6 +273,7 @@ private:
     WebURLRequest::FrameType m_frameType;
     WebURLRequest::FetchRequestMode m_fetchRequestMode;
     WebURLRequest::FetchCredentialsMode m_fetchCredentialsMode;
+    WebURLRequest::FetchRedirectMode m_fetchRedirectMode;
     ReferrerPolicy m_referrerPolicy;
     bool m_didSetHTTPReferrer;
     bool m_checkForBrowserSideNavigation;
@@ -293,7 +306,7 @@ public:
 
     String m_httpMethod;
     OwnPtr<CrossThreadHTTPHeaderMapData> m_httpHeaders;
-    RefPtr<FormData> m_httpBody;
+    RefPtr<EncodedFormData> m_httpBody;
     bool m_allowStoredCredentials;
     bool m_reportUploadProgress;
     bool m_hasUserGesture;
@@ -310,6 +323,7 @@ public:
     WebURLRequest::FrameType m_frameType;
     WebURLRequest::FetchRequestMode m_fetchRequestMode;
     WebURLRequest::FetchCredentialsMode m_fetchCredentialsMode;
+    WebURLRequest::FetchRedirectMode m_fetchRedirectMode;
     ReferrerPolicy m_referrerPolicy;
     bool m_didSetHTTPReferrer;
     bool m_checkForBrowserSideNavigation;

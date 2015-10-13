@@ -30,41 +30,51 @@
 
 namespace blink {
 
-class PLATFORM_EXPORT Filter : public RefCountedWillBeGarbageCollectedFinalized<Filter> {
+class SourceGraphic;
+class FilterEffect;
+
+class PLATFORM_EXPORT Filter final : public RefCountedWillBeGarbageCollectedFinalized<Filter> {
 public:
-    virtual ~Filter() { }
-    DEFINE_INLINE_VIRTUAL_TRACE() { }
+    enum UnitScaling {
+        UserSpace,
+        BoundingBox
+    };
+
+    static PassRefPtrWillBeRawPtr<Filter> create(const FloatRect& referenceBox, const FloatRect& filterRegion, float scale, UnitScaling);
+    static PassRefPtrWillBeRawPtr<Filter> create(float scale);
+
+    ~Filter();
+    DECLARE_TRACE();
 
     float scale() const { return m_scale; }
-    FloatRect mapLocalRectToAbsoluteRect(const FloatRect& rect) const { FloatRect result(rect); result.scale(m_scale); return result; }
-    FloatRect mapAbsoluteRectToLocalRect(const FloatRect& rect) const { FloatRect result(rect); result.scale(1.0f / m_scale); return result; }
-    virtual float applyHorizontalScale(float value) const { return m_scale * value; }
-    virtual float applyVerticalScale(float value) const { return m_scale * value; }
+    FloatRect mapLocalRectToAbsoluteRect(const FloatRect&) const;
+    FloatRect mapAbsoluteRectToLocalRect(const FloatRect&) const;
 
-    virtual FloatPoint3D resolve3dPoint(const FloatPoint3D& point) const { return point; }
+    float applyHorizontalScale(float value) const;
+    float applyVerticalScale(float value) const;
 
-    virtual IntRect sourceImageRect() const = 0;
+    FloatPoint3D resolve3dPoint(const FloatPoint3D&) const;
 
-    FloatRect absoluteFilterRegion() const { return m_absoluteFilterRegion; }
+    FloatRect absoluteFilterRegion() const { return mapLocalRectToAbsoluteRect(m_filterRegion); }
 
-    FloatRect filterRegion() const { return m_filterRegion; }
-    void setFilterRegion(const FloatRect& rect)
-    {
-        m_filterRegion = rect;
-        m_absoluteFilterRegion = rect;
-        m_absoluteFilterRegion.scale(m_scale);
-    }
+    const FloatRect& filterRegion() const { return m_filterRegion; }
+    const FloatRect& referenceBox() const { return m_referenceBox; }
 
-protected:
-    explicit Filter(float scale)
-        : m_scale(scale)
-    {
-    }
+    void setLastEffect(PassRefPtrWillBeRawPtr<FilterEffect>);
+    FilterEffect* lastEffect() const { return m_lastEffect.get(); }
+
+    SourceGraphic* sourceGraphic() const { return m_sourceGraphic.get(); }
 
 private:
-    float m_scale;
-    FloatRect m_absoluteFilterRegion;
+    Filter(const FloatRect& referenceBox, const FloatRect& filterRegion, float scale, UnitScaling);
+
+    FloatRect m_referenceBox;
     FloatRect m_filterRegion;
+    float m_scale;
+    UnitScaling m_unitScaling;
+
+    RefPtrWillBeMember<SourceGraphic> m_sourceGraphic;
+    RefPtrWillBeMember<FilterEffect> m_lastEffect;
 };
 
 } // namespace blink

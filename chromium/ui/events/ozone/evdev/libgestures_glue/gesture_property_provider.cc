@@ -505,7 +505,7 @@ bool IsMatchTypeSupported(const std::string& match_type) {
 
 // Check if a match criteria is a device type one.
 bool IsMatchDeviceType(const std::string& match_type) {
-  return base::StartsWithASCII(match_type, "MatchIs", true);
+  return base::StartsWith(match_type, "MatchIs", base::CompareCase::SENSITIVE);
 }
 
 // Parse a boolean value keyword (e.g., on/off, true/false).
@@ -766,10 +766,10 @@ MatchUSBID::MatchUSBID(const std::string& arg) : MatchCriteria(arg) {
       LOG(ERROR) << "Invalid USB ID: " << args_[i];
       continue;
     }
-    std::vector<std::string> tokens;
-    base::SplitString(args_[i], ':', &tokens);
-    vid_patterns_.push_back(base::StringToLowerASCII(tokens[0]));
-    pid_patterns_.push_back(base::StringToLowerASCII(tokens[1]));
+    std::vector<std::string> tokens = base::SplitString(
+        args_[i], ":", base::TRIM_WHITESPACE, base::SPLIT_WANT_ALL);
+    vid_patterns_.push_back(base::ToLowerASCII(tokens[0]));
+    pid_patterns_.push_back(base::ToLowerASCII(tokens[1]));
   }
   if (vid_patterns_.empty()) {
     LOG(ERROR) << "No valid USB ID pattern found, will be ignored: \"" << arg

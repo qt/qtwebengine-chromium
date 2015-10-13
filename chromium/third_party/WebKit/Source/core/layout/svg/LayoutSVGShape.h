@@ -45,14 +45,23 @@ enum ShapeGeometryCodePath {
     EllipseGeometryFastPath
 };
 
+struct LayoutSVGShapeRareData {
+    WTF_MAKE_NONCOPYABLE(LayoutSVGShapeRareData);
+    WTF_MAKE_FAST_ALLOCATED(LayoutSVGShapeRareData);
+public:
+    LayoutSVGShapeRareData() {}
+    Path m_cachedNonScalingStrokePath;
+    AffineTransform m_cachedNonScalingStrokeTransform;
+};
+
 class LayoutSVGShape : public LayoutSVGModelObject {
 public:
     explicit LayoutSVGShape(SVGGeometryElement*);
-    virtual ~LayoutSVGShape();
+    ~LayoutSVGShape() override;
 
     void setNeedsShapeUpdate() { m_needsShapeUpdate = true; }
-    virtual void setNeedsBoundariesUpdate() override final { m_needsBoundariesUpdate = true; }
-    virtual void setNeedsTransformUpdate() override final { m_needsTransformUpdate = true; }
+    void setNeedsBoundariesUpdate() final { m_needsBoundariesUpdate = true; }
+    void setNeedsTransformUpdate() final { m_needsTransformUpdate = true; }
 
     bool nodeAtFloatPointInternal(const HitTestRequest&, const FloatPoint&, PointerEventsHitRules);
 
@@ -61,33 +70,30 @@ public:
         ASSERT(m_path);
         return *m_path;
     }
+    bool hasPath() const { return m_path.get(); }
 
     virtual bool isShapeEmpty() const { return path().isEmpty(); }
 
     bool hasNonScalingStroke() const { return style()->svgStyle().vectorEffect() == VE_NON_SCALING_STROKE; }
     Path* nonScalingStrokePath(const Path*, const AffineTransform&) const;
     AffineTransform nonScalingStrokeTransform() const;
-    virtual AffineTransform localTransform() const override final { return m_localTransform ? *m_localTransform : LayoutSVGModelObject::localTransform(); }
+    AffineTransform localTransform() const final { return m_localTransform ? *m_localTransform : LayoutSVGModelObject::localTransform(); }
 
     virtual const Vector<MarkerPosition>* markerPositions() const { return nullptr; }
 
     float strokeWidth() const;
 
     virtual ShapeGeometryCodePath geometryCodePath() const { return PathGeometry; }
-    virtual const Vector<FloatPoint>* zeroLengthLineCaps() const { return nullptr; }
 
-    virtual FloatRect objectBoundingBox() const override final { return m_fillBoundingBox; }
+    FloatRect objectBoundingBox() const final { return m_fillBoundingBox; }
 
-    virtual const char* name() const override { return "LayoutSVGShape"; }
+    const char* name() const override { return "LayoutSVGShape"; }
 
 protected:
     void clearPath() { m_path.clear(); }
+    void createPath();
 
-    // Reconstruct the Path. Subclasses may use geometry knowledge to avoid creating a Path.
     virtual void updateShapeFromElement();
-
-    virtual void updateStrokeAndFillBoundingBoxes();
-
     // Calculates an inclusive bounding box of this shape as if this shape has
     // a stroke. If this shape has a stroke, then m_strokeBoundingBox is returned;
     // otherwise, estimates a bounding box (not necessarily tight) that would
@@ -98,29 +104,34 @@ protected:
 
     FloatRect m_fillBoundingBox;
     FloatRect m_strokeBoundingBox;
+    LayoutSVGShapeRareData& ensureRareData() const;
 
 private:
     // Hit-detection separated for the fill and the stroke
     bool fillContains(const FloatPoint&, bool requiresFill = true, const WindRule fillRule = RULE_NONZERO);
     bool strokeContains(const FloatPoint&, bool requiresStroke = true);
 
-    virtual const AffineTransform& localToParentTransform() const override final { return m_localTransform ? *m_localTransform : LayoutSVGModelObject::localToParentTransform(); }
+    const AffineTransform& localToParentTransform() const final { return m_localTransform ? *m_localTransform : LayoutSVGModelObject::localToParentTransform(); }
+    LayoutRect clippedOverflowRectForPaintInvalidation(const LayoutBoxModelObject*,
+        const PaintInvalidationState* = nullptr) const override;
 
-    virtual bool isOfType(LayoutObjectType type) const override { return type == LayoutObjectSVGShape || LayoutSVGModelObject::isOfType(type); }
-    virtual void layout() override final;
-    virtual void paint(const PaintInfo&, const LayoutPoint&) override final;
-    virtual void addFocusRingRects(Vector<LayoutRect>&, const LayoutPoint& additionalOffset) const override final;
+    bool isOfType(LayoutObjectType type) const override { return type == LayoutObjectSVGShape || LayoutSVGModelObject::isOfType(type); }
+    void layout() final;
+    void paint(const PaintInfo&, const LayoutPoint&) const final;
+    void addOutlineRects(Vector<LayoutRect>&, const LayoutPoint& additionalOffset, IncludeBlockVisualOverflowOrNot) const final;
 
-    virtual bool nodeAtFloatPoint(HitTestResult&, const FloatPoint& pointInParent, HitTestAction) override final;
+    bool nodeAtFloatPoint(HitTestResult&, const FloatPoint& pointInParent, HitTestAction) final;
 
-    virtual FloatRect strokeBoundingBox() const override final { return m_strokeBoundingBox; }
-
+    FloatRect strokeBoundingBox() const final { return m_strokeBoundingBox; }
+    FloatRect calculateObjectBoundingBox() const;
+    FloatRect calculateStrokeBoundingBox() const;
     void updatePaintInvalidationBoundingBox();
     void updateLocalTransform();
 
 private:
     OwnPtr<AffineTransform> m_localTransform;
     OwnPtr<Path> m_path;
+    mutable OwnPtr<LayoutSVGShapeRareData> m_rareData;
 
     bool m_needsBoundariesUpdate : 1;
     bool m_needsShapeUpdate : 1;

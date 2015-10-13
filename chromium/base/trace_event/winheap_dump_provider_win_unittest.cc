@@ -15,12 +15,13 @@ namespace trace_event {
 
 TEST(WinHeapDumpProviderTest, OnMemoryDump) {
   ProcessMemoryDump pmd(make_scoped_refptr(new MemoryDumpSessionState()));
+  MemoryDumpArgs dump_args = {MemoryDumpLevelOfDetail::DETAILED};
 
   WinHeapDumpProvider* winheap_dump_provider =
       WinHeapDumpProvider::GetInstance();
   ASSERT_NE(static_cast<WinHeapDumpProvider*>(nullptr), winheap_dump_provider);
 
-  ASSERT_NO_FATAL_FAILURE(winheap_dump_provider->OnMemoryDump(&pmd));
+  ASSERT_NO_FATAL_FAILURE(winheap_dump_provider->OnMemoryDump(dump_args, &pmd));
 }
 
 }  // namespace trace_event

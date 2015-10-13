@@ -27,6 +27,11 @@ class IOBuffer;
 
 namespace device {
 
+struct EndpointMapValue {
+  int interface_number;
+  UsbTransferType transfer_type;
+};
+
 class UsbContext;
 struct UsbConfigDescriptor;
 class UsbDeviceImpl;
@@ -49,40 +54,36 @@ class UsbDeviceHandleImpl : public UsbDeviceHandle {
                                     int alternate_setting,
                                     const ResultCallback& callback) override;
   void ResetDevice(const ResultCallback& callback) override;
+  void ClearHalt(uint8_t endpoint, const ResultCallback& callback) override;
 
   void ControlTransfer(UsbEndpointDirection direction,
                        TransferRequestType request_type,
                        TransferRecipient recipient,
-                       uint8 request,
-                       uint16 value,
-                       uint16 index,
+                       uint8_t request,
+                       uint16_t value,
+                       uint16_t index,
                        scoped_refptr<net::IOBuffer> buffer,
                        size_t length,
                        unsigned int timeout,
                        const TransferCallback& callback) override;
 
-  void BulkTransfer(UsbEndpointDirection direction,
-                    uint8 endpoint,
-                    scoped_refptr<net::IOBuffer> buffer,
-                    size_t length,
-                    unsigned int timeout,
-                    const TransferCallback& callback) override;
-
-  void InterruptTransfer(UsbEndpointDirection direction,
-                         uint8 endpoint,
-                         scoped_refptr<net::IOBuffer> buffer,
-                         size_t length,
-                         unsigned int timeout,
-                         const TransferCallback& callback) override;
-
   void IsochronousTransfer(UsbEndpointDirection direction,
-                           uint8 endpoint,
+                           uint8_t endpoint_number,
                            scoped_refptr<net::IOBuffer> buffer,
                            size_t length,
                            unsigned int packets,
                            unsigned int packet_length,
                            unsigned int timeout,
                            const TransferCallback& callback) override;
+
+  void GenericTransfer(UsbEndpointDirection direction,
+                       uint8_t endpoint_number,
+                       scoped_refptr<net::IOBuffer> buffer,
+                       size_t length,
+                       unsigned int timeout,
+                       const TransferCallback& callback) override;
+  bool FindInterfaceByEndpoint(uint8_t endpoint_address,
+                               uint8_t* interface_number) override;
 
  protected:
   friend class UsbDeviceImpl;
@@ -119,6 +120,8 @@ class UsbDeviceHandleImpl : public UsbDeviceHandle {
                                             bool success,
                                             const ResultCallback& callback);
   void ResetDeviceOnBlockingThread(const ResultCallback& callback);
+  void ClearHaltOnBlockingThread(uint8_t endpoint,
+                                 const ResultCallback& callback);
 
   // Refresh endpoint_map_ after ClaimInterface, ReleaseInterface and
   // SetInterfaceAlternateSetting.
@@ -127,33 +130,15 @@ class UsbDeviceHandleImpl : public UsbDeviceHandle {
   // Look up the claimed interface by endpoint. Return NULL if the interface
   // of the endpoint is not found.
   scoped_refptr<InterfaceClaimer> GetClaimedInterfaceForEndpoint(
-      unsigned char endpoint);
+      uint8_t endpoint);
 
   void ControlTransferInternal(
       UsbEndpointDirection direction,
       TransferRequestType request_type,
       TransferRecipient recipient,
-      uint8 request,
-      uint16 value,
-      uint16 index,
-      scoped_refptr<net::IOBuffer> buffer,
-      size_t length,
-      unsigned int timeout,
-      scoped_refptr<base::TaskRunner> callback_task_runner,
-      const TransferCallback& callback);
-
-  void BulkTransferInternal(
-      UsbEndpointDirection direction,
-      uint8 endpoint,
-      scoped_refptr<net::IOBuffer> buffer,
-      size_t length,
-      unsigned int timeout,
-      scoped_refptr<base::TaskRunner> callback_task_runner,
-      const TransferCallback& callback);
-
-  void InterruptTransferInternal(
-      UsbEndpointDirection direction,
-      uint8 endpoint,
+      uint8_t request,
+      uint16_t value,
+      uint16_t index,
       scoped_refptr<net::IOBuffer> buffer,
       size_t length,
       unsigned int timeout,
@@ -161,12 +146,19 @@ class UsbDeviceHandleImpl : public UsbDeviceHandle {
       const TransferCallback& callback);
 
   void IsochronousTransferInternal(
-      UsbEndpointDirection direction,
-      uint8 endpoint,
+      uint8_t endpoint_address,
       scoped_refptr<net::IOBuffer> buffer,
       size_t length,
       unsigned int packets,
       unsigned int packet_length,
+      unsigned int timeout,
+      scoped_refptr<base::TaskRunner> callback_task_runner,
+      const TransferCallback& callback);
+
+  void GenericTransferInternal(
+      uint8_t endpoint_address,
+      scoped_refptr<net::IOBuffer> buffer,
+      size_t length,
       unsigned int timeout,
       scoped_refptr<base::TaskRunner> callback_task_runner,
       const TransferCallback& callback);
@@ -193,8 +185,8 @@ class UsbDeviceHandleImpl : public UsbDeviceHandle {
   // This set holds weak pointers to pending transfers.
   std::set<Transfer*> transfers_;
 
-  // A map from endpoints to interfaces
-  typedef std::map<int, int> EndpointMap;
+  // A map from endpoints to EndpointMapValue
+  typedef std::map<int, EndpointMapValue> EndpointMap;
   EndpointMap endpoint_map_;
 
   // Retain the UsbContext so that the platform context will not be destroyed

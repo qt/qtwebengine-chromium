@@ -24,12 +24,10 @@
 namespace gpu {
 namespace gles2 {
 
-static const unsigned int kProcessInterval = 16;
 static const char* kGpuTraceSourceNames[] = {
-  "GroupMarker", // kTraceGroupMarker = 0,
-  "TraceCHROMIUM", // kTraceCHROMIUM = 1,
-  "TraceCmd", // kTraceDecoder = 2,
-  "Disjoint", // kTraceDisjoint = 3, // Used internally.
+  "TraceCHROMIUM", // kTraceCHROMIUM,
+  "TraceCmd", // kTraceDecoder,
+  "Disjoint", // kTraceDisjoint, // Used internally.
 };
 static_assert(NUM_TRACER_SOURCES == arraysize(kGpuTraceSourceNames),
               "Trace source names must match enumeration.");
@@ -70,7 +68,7 @@ void TraceOutputter::TraceDevice(GpuTracerSource source,
       TRACE_DISABLED_BY_DEFAULT("gpu.device"),
       name.c_str(),
       local_trace_device_id_,
-      named_thread_.thread_id(),
+      named_thread_.GetThreadId(),
       start_time,
       "gl_category",
       category.c_str(),
@@ -83,7 +81,7 @@ void TraceOutputter::TraceDevice(GpuTracerSource source,
       TRACE_DISABLED_BY_DEFAULT("gpu.device"),
       name.c_str(),
       local_trace_device_id_,
-      named_thread_.thread_id(),
+      named_thread_.GetThreadId(),
       end_time - 1,
       "gl_category",
       category.c_str(),
@@ -252,7 +250,6 @@ bool GPUTracer::EndDecoding() {
         }
       }
     }
-    IssueProcessTask();
   }
 
   gpu_executing_ = false;
@@ -298,7 +295,6 @@ bool GPUTracer::End(GpuTracerSource source) {
       }
 
       finished_traces_.push_back(trace);
-      IssueProcessTask();
     }
 
     markers_[source].pop_back();
@@ -307,42 +303,8 @@ bool GPUTracer::End(GpuTracerSource source) {
   return false;
 }
 
-bool GPUTracer::IsTracing() {
-  return (*gpu_trace_srv_category != 0) || (*gpu_trace_dev_category != 0);
-}
-
-const std::string& GPUTracer::CurrentCategory(GpuTracerSource source) const {
-  if (source >= 0 &&
-      source < NUM_TRACER_SOURCES &&
-      !markers_[source].empty()) {
-    return markers_[source].back().category_;
-  }
-  return base::EmptyString();
-}
-
-const std::string& GPUTracer::CurrentName(GpuTracerSource source) const {
-  if (source >= 0 &&
-      source < NUM_TRACER_SOURCES &&
-      !markers_[source].empty()) {
-    return markers_[source].back().name_;
-  }
-  return base::EmptyString();
-}
-
-scoped_refptr<Outputter> GPUTracer::CreateOutputter(const std::string& name) {
-  return TraceOutputter::Create(name);
-}
-
-void GPUTracer::PostTask() {
-  base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
-      FROM_HERE, base::Bind(&GPUTracer::Process, base::AsWeakPtr(this)),
-      base::TimeDelta::FromMilliseconds(kProcessInterval));
-}
-
-void GPUTracer::Process() {
-  process_posted_ = false;
-  ProcessTraces();
-  IssueProcessTask();
+bool GPUTracer::HasTracesToProcess() {
+  return !finished_traces_.empty();
 }
 
 void GPUTracer::ProcessTraces() {
@@ -387,6 +349,32 @@ void GPUTracer::ProcessTraces() {
   DCHECK(GL_NO_ERROR == glGetError());
 }
 
+bool GPUTracer::IsTracing() {
+  return (*gpu_trace_srv_category != 0) || (*gpu_trace_dev_category != 0);
+}
+
+const std::string& GPUTracer::CurrentCategory(GpuTracerSource source) const {
+  if (source >= 0 &&
+      source < NUM_TRACER_SOURCES &&
+      !markers_[source].empty()) {
+    return markers_[source].back().category_;
+  }
+  return base::EmptyString();
+}
+
+const std::string& GPUTracer::CurrentName(GpuTracerSource source) const {
+  if (source >= 0 &&
+      source < NUM_TRACER_SOURCES &&
+      !markers_[source].empty()) {
+    return markers_[source].back().name_;
+  }
+  return base::EmptyString();
+}
+
+scoped_refptr<Outputter> GPUTracer::CreateOutputter(const std::string& name) {
+  return TraceOutputter::Create(name);
+}
+
 bool GPUTracer::CheckDisjointStatus() {
   const int64 current_time = gpu_timing_client_->GetCurrentCPUTime();
   if (*gpu_trace_dev_category == 0)
@@ -422,14 +410,6 @@ void GPUTracer::ClearOngoingTraces(bool have_context) {
     finished_traces_.front()->Destroy(have_context);
     finished_traces_.pop_front();
   }
-}
-
-void GPUTracer::IssueProcessTask() {
-  if (finished_traces_.empty() || process_posted_)
-    return;
-
-  process_posted_ = true;
-  PostTask();
 }
 
 }  // namespace gles2

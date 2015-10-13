@@ -23,6 +23,7 @@ namespace webrtc {
 // Forward declarations.
 class BackgroundNoise;
 class RandomVector;
+class StatisticsCalculator;
 class SyncBuffer;
 
 // This class handles extrapolation of audio data from the sync_buffer to
@@ -34,6 +35,7 @@ class Expand {
   Expand(BackgroundNoise* background_noise,
          SyncBuffer* sync_buffer,
          RandomVector* random_vector,
+         StatisticsCalculator* statistics,
          int fs,
          size_t num_channels);
 
@@ -62,7 +64,7 @@ class Expand {
 
   // Accessors and mutators.
   virtual size_t overlap_length() const;
-  int16_t max_lag() const { return max_lag_; }
+  size_t max_lag() const { return max_lag_; }
 
  protected:
   static const int kMaxConsecutiveExpands = 200;
@@ -86,19 +88,19 @@ class Expand {
   // necessary to produce concealment data.
   void AnalyzeSignal(int16_t* random_vector);
 
-  RandomVector* random_vector_;
-  SyncBuffer* sync_buffer_;
+  RandomVector* const random_vector_;
+  SyncBuffer* const sync_buffer_;
   bool first_expand_;
   const int fs_hz_;
   const size_t num_channels_;
   int consecutive_expands_;
 
  private:
-  static const int kUnvoicedLpcOrder = 6;
-  static const int kNumCorrelationCandidates = 3;
-  static const int kDistortionLength = 20;
-  static const int kLpcAnalysisLength = 160;
-  static const int kMaxSampleRate = 48000;
+  static const size_t kUnvoicedLpcOrder = 6;
+  static const size_t kNumCorrelationCandidates = 3;
+  static const size_t kDistortionLength = 20;
+  static const size_t kLpcAnalysisLength = 160;
+  static const size_t kMaxSampleRate = 48000;
   static const int kNumLags = 3;
 
   struct ChannelParameters {
@@ -127,16 +129,18 @@ class Expand {
 
   void UpdateLagIndex();
 
-  BackgroundNoise* background_noise_;
+  BackgroundNoise* const background_noise_;
+  StatisticsCalculator* const statistics_;
   const size_t overlap_length_;
-  int16_t max_lag_;
+  size_t max_lag_;
   size_t expand_lags_[kNumLags];
   int lag_index_direction_;
   int current_lag_index_;
   bool stop_muting_;
+  size_t expand_duration_samples_;
   rtc::scoped_ptr<ChannelParameters[]> channel_parameters_;
 
-  DISALLOW_COPY_AND_ASSIGN(Expand);
+  RTC_DISALLOW_COPY_AND_ASSIGN(Expand);
 };
 
 struct ExpandFactory {
@@ -146,6 +150,7 @@ struct ExpandFactory {
   virtual Expand* Create(BackgroundNoise* background_noise,
                          SyncBuffer* sync_buffer,
                          RandomVector* random_vector,
+                         StatisticsCalculator* statistics,
                          int fs,
                          size_t num_channels) const;
 };

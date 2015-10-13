@@ -10,6 +10,7 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
+#include "base/gtest_prod_util.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "net/base/address_list.h"
@@ -24,12 +25,11 @@
 namespace net {
 
 class ClientSocketFactory;
-class FtpNetworkSession;
 class StreamSocket;
 
 class NET_EXPORT_PRIVATE FtpNetworkTransaction : public FtpTransaction {
  public:
-  FtpNetworkTransaction(FtpNetworkSession* session,
+  FtpNetworkTransaction(HostResolver* resolver,
                         ClientSocketFactory* socket_factory);
   ~FtpNetworkTransaction() override;
 
@@ -200,8 +200,6 @@ class NET_EXPORT_PRIVATE FtpNetworkTransaction : public FtpTransaction {
 
   CompletionCallback io_callback_;
   CompletionCallback user_callback_;
-
-  scoped_refptr<FtpNetworkSession> session_;
 
   BoundNetLog net_log_;
   const FtpRequestInfo* request_;

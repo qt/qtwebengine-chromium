@@ -9,9 +9,9 @@
 #include <string>
 #include <vector>
 
-#include "base/memory/scoped_vector.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
+#include "base/time/time.h"
 #include "content/common/content_export.h"
 #include "content/common/gpu/gpu_memory_manager.h"
 #include "content/common/gpu/gpu_memory_manager_client.h"
@@ -34,6 +34,7 @@
 
 namespace gpu {
 struct Mailbox;
+class SyncPointClient;
 class ValueStateMap;
 namespace gles2 {
 class MailboxManager;
@@ -69,20 +70,21 @@ class GpuCommandBufferStub
 
   GpuCommandBufferStub(
       GpuChannel* channel,
+      base::SingleThreadTaskRunner* task_runner,
       GpuCommandBufferStub* share_group,
       const gfx::GLSurfaceHandle& handle,
       gpu::gles2::MailboxManager* mailbox_manager,
+      gpu::PreemptionFlag* preempt_by_flag,
       gpu::gles2::SubscriptionRefSet* subscription_ref_set,
       gpu::ValueStateMap* pending_valuebuffer_state,
       const gfx::Size& size,
       const gpu::gles2::DisallowedFeatures& disallowed_features,
       const std::vector<int32>& attribs,
       gfx::GpuPreference gpu_preference,
-      bool use_virtualized_gl_context,
+      int32 stream_id,
       int32 route_id,
-      int32 surface_id,
+      bool offscreen,
       GpuWatchdog* watchdog,
-      bool software,
       const GURL& active_url);
 
   ~GpuCommandBufferStub() override;
@@ -103,11 +105,6 @@ class GpuCommandBufferStub
   // Whether this command buffer can currently handle IPC messages.
   bool IsScheduled();
 
-  // If the command buffer is pre-empted and cannot process commands.
-  bool IsPreempted() const {
-    return scheduler_.get() && scheduler_->IsPreempted();
-  }
-
   // Whether there are commands in the buffer that haven't been processed.
   bool HasUnprocessedCommands();
 
@@ -115,12 +112,15 @@ class GpuCommandBufferStub
   gpu::GpuScheduler* scheduler() const { return scheduler_.get(); }
   GpuChannel* channel() const { return channel_; }
 
-  // Identifies the target surface.
-  int32 surface_id() const { return surface_id_; }
+  // Unique command buffer ID for this command buffer stub.
+  uint64_t command_buffer_id() const { return command_buffer_id_; }
 
   // Identifies the various GpuCommandBufferStubs in the GPU process belonging
   // to the same renderer process.
   int32 route_id() const { return route_id_; }
+
+  // Identifies the stream for this command buffer.
+  int32 stream_id() const { return stream_id_; }
 
   gfx::GpuPreference gpu_preference() { return gpu_preference_; }
 
@@ -138,17 +138,13 @@ class GpuCommandBufferStub
 
   // Associates a sync point to this stub. When the stub is destroyed, it will
   // retire all sync points that haven't been previously retired.
-  void AddSyncPoint(uint32 sync_point);
-
-  void SetPreemptByFlag(scoped_refptr<gpu::PreemptionFlag> flag);
+  void AddSyncPoint(uint32 sync_point, bool retire);
 
   void SetLatencyInfoCallback(const LatencyInfoCallback& callback);
 
   void MarkContextLost();
 
   const gpu::gles2::FeatureInfo* GetFeatureInfo() const;
-
-  uint64 GetMemoryUsage() const;
 
   void SendSwapBuffersCompleted(
       const std::vector<ui::LatencyInfo>& latency_info,
@@ -158,8 +154,10 @@ class GpuCommandBufferStub
 
  private:
   GpuMemoryManager* GetMemoryManager() const;
-  bool MakeCurrent();
+
   void Destroy();
+
+  bool MakeCurrent();
 
   // Cleans up and sends reply if OnInitialize failed.
   void OnInitializeFailed(IPC::Message* reply_message);
@@ -178,7 +176,6 @@ class GpuCommandBufferStub
                                  IPC::Message* reply_message);
   void OnAsyncFlush(int32 put_offset, uint32 flush_count,
                     const std::vector<ui::LatencyInfo>& latency_info);
-  void OnRescheduled();
   void OnRegisterTransferBuffer(int32 id,
                                 base::SharedMemoryHandle transfer_buffer,
                                 uint32 size);
@@ -188,7 +185,7 @@ class GpuCommandBufferStub
   void OnCreateVideoDecoder(media::VideoCodecProfile profile,
                             int32 route_id,
                             IPC::Message* reply_message);
-  void OnCreateVideoEncoder(media::VideoFrame::Format input_format,
+  void OnCreateVideoEncoder(media::VideoPixelFormat input_format,
                             const gfx::Size& input_visible_size,
                             media::VideoCodecProfile output_profile,
                             uint32 initial_bitrate,
@@ -201,7 +198,7 @@ class GpuCommandBufferStub
 
   void OnRetireSyncPoint(uint32 sync_point);
   bool OnWaitSyncPoint(uint32 sync_point);
-  void OnSyncPointRetired();
+  void OnWaitSyncPointCompleted(uint32 sync_point);
   void OnSignalSyncPoint(uint32 sync_point, uint32 id);
   void OnSignalSyncPointAck(uint32 id);
   void OnSignalQuery(uint32 query, uint32 id);
@@ -211,14 +208,16 @@ class GpuCommandBufferStub
   void OnCreateImage(int32 id,
                      gfx::GpuMemoryBufferHandle handle,
                      gfx::Size size,
-                     gfx::GpuMemoryBuffer::Format format,
+                     gfx::BufferFormat format,
                      uint32 internalformat);
   void OnDestroyImage(int32 id);
+  void OnCreateStreamTexture(uint32 texture_id,
+                             int32 stream_id,
+                             bool* succeeded);
 
   void OnCommandProcessed();
   void OnParseError();
-  void OnCreateStreamTexture(
-      uint32 texture_id, int32 stream_id, bool* succeeded);
+  void OnSchedulingChanged(bool scheduled);
 
   void ReportState();
 
@@ -227,37 +226,46 @@ class GpuCommandBufferStub
 
   // Poll the command buffer to execute work.
   void PollWork();
+  void PerformWork();
 
-  // Whether this command buffer needs to be polled again in the future.
-  bool HasMoreWork();
-
-  void ScheduleDelayedWork(int64 delay);
+  // Schedule processing of delayed work. This updates the time at which
+  // delayed work should be processed. |process_delayed_work_time_| is
+  // updated to current time + delay. Call this after processing some amount
+  // of delayed work.
+  void ScheduleDelayedWork(base::TimeDelta delay);
 
   bool CheckContextLost();
   void CheckCompleteWaits();
+  void PullTextureUpdates(uint32 sync_point);
 
   // The lifetime of objects of this class is managed by a GpuChannel. The
   // GpuChannels destroy all the GpuCommandBufferStubs that they own when they
   // are destroyed. So a raw pointer is safe.
   GpuChannel* channel_;
 
+  // Task runner for main thread.
+  scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
+
   // The group of contexts that share namespaces with this context.
   scoped_refptr<gpu::gles2::ContextGroup> context_group_;
 
+  bool initialized_;
   gfx::GLSurfaceHandle handle_;
   gfx::Size initial_size_;
   gpu::gles2::DisallowedFeatures disallowed_features_;
   std::vector<int32> requested_attribs_;
   gfx::GpuPreference gpu_preference_;
   bool use_virtualized_gl_context_;
-  int32 route_id_;
-  int32 surface_id_;
-  bool software_;
+  const uint64_t command_buffer_id_;
+  const int32 stream_id_;
+  const int32 route_id_;
+  const bool offscreen_;
   uint32 last_flush_count_;
 
   scoped_ptr<gpu::CommandBufferService> command_buffer_;
   scoped_ptr<gpu::gles2::GLES2Decoder> decoder_;
   scoped_ptr<gpu::GpuScheduler> scheduler_;
+  scoped_ptr<gpu::SyncPointClient> sync_point_client_;
   scoped_refptr<gfx::GLSurface> surface_;
 
   scoped_ptr<GpuMemoryManagerClientState> memory_manager_client_state_;
@@ -272,10 +280,10 @@ class GpuCommandBufferStub
 
   // A queue of sync points associated with this stub.
   std::deque<uint32> sync_points_;
-  int sync_point_wait_count_;
+  bool waiting_for_sync_point_;
 
-  bool delayed_work_scheduled_;
-  uint64 previous_messages_processed_;
+  base::TimeTicks process_delayed_work_time_;
+  uint32_t previous_processed_num_;
   base::TimeTicks last_idle_time_;
 
   scoped_refptr<gpu::PreemptionFlag> preemption_flag_;

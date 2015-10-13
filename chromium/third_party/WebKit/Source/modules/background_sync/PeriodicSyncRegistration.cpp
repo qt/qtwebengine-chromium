@@ -20,12 +20,11 @@
 
 namespace blink {
 
-PeriodicSyncRegistration* PeriodicSyncRegistration::take(ScriptPromiseResolver*, WebSyncRegistration* syncRegistration, ServiceWorkerRegistration* serviceWorkerRegistration)
+PeriodicSyncRegistration* PeriodicSyncRegistration::take(ScriptPromiseResolver*, PassOwnPtr<WebSyncRegistration> registration, ServiceWorkerRegistration* serviceWorkerRegistration)
 {
-    OwnPtr<WebSyncRegistration> registration = adoptPtr(syncRegistration);
     PeriodicSyncRegistrationOptions options = PeriodicSyncRegistrationOptions();
-    options.setMinPeriod(syncRegistration->minPeriodMs);
-    switch (syncRegistration->networkState) {
+    options.setMinPeriod(registration->minPeriodMs);
+    switch (registration->networkState) {
     case WebSyncRegistration::NetworkState::NetworkStateAny:
         options.setNetworkState("any");
         break;
@@ -36,7 +35,7 @@ PeriodicSyncRegistration* PeriodicSyncRegistration::take(ScriptPromiseResolver*,
         options.setNetworkState("online");
         break;
     }
-    switch (syncRegistration->powerState) {
+    switch (registration->powerState) {
     case WebSyncRegistration::PowerState::PowerStateAuto:
         options.setPowerState("auto");
         break;
@@ -44,14 +43,8 @@ PeriodicSyncRegistration* PeriodicSyncRegistration::take(ScriptPromiseResolver*,
         options.setPowerState("avoid-draining");
         break;
     }
-    options.setTag(syncRegistration->tag);
-    return new PeriodicSyncRegistration(syncRegistration->id, options, serviceWorkerRegistration);
-}
-
-void PeriodicSyncRegistration::dispose(WebSyncRegistration* syncRegistration)
-{
-    if (syncRegistration)
-        delete syncRegistration;
+    options.setTag(registration->tag);
+    return new PeriodicSyncRegistration(registration->id, options, serviceWorkerRegistration);
 }
 
 PeriodicSyncRegistration::PeriodicSyncRegistration(int64_t id, const PeriodicSyncRegistrationOptions& options, ServiceWorkerRegistration* serviceWorkerRegistration)
@@ -66,6 +59,13 @@ PeriodicSyncRegistration::PeriodicSyncRegistration(int64_t id, const PeriodicSyn
 
 PeriodicSyncRegistration::~PeriodicSyncRegistration()
 {
+    Platform* currentPlatform = Platform::current();
+    if (!currentPlatform)
+        return;
+    WebSyncProvider* syncProvider = currentPlatform->backgroundSyncProvider();
+    if (!syncProvider)
+        return;
+    syncProvider->releaseRegistration(m_id);
 }
 
 ScriptPromise PeriodicSyncRegistration::unregister(ScriptState* scriptState)
@@ -73,13 +73,13 @@ ScriptPromise PeriodicSyncRegistration::unregister(ScriptState* scriptState)
     if (m_id == WebSyncRegistration::UNREGISTERED_SYNC_ID)
         return ScriptPromise::rejectWithDOMException(scriptState, DOMException::create(AbortError, "Operation failed - not a valid registration object"));
 
-    RefPtrWillBeRawPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(scriptState);
+    ScriptPromiseResolver* resolver = ScriptPromiseResolver::create(scriptState);
     ScriptPromise promise = resolver->promise();
 
     WebSyncProvider* webSyncProvider = Platform::current()->backgroundSyncProvider();
     ASSERT(webSyncProvider);
 
-    webSyncProvider->unregisterBackgroundSync(WebSyncRegistration::PeriodicityPeriodic, m_id, m_tag, m_serviceWorkerRegistration->webRegistration(), new SyncUnregistrationCallbacks(resolver, m_serviceWorkerRegistration));
+    webSyncProvider->unregisterBackgroundSync(m_id, m_serviceWorkerRegistration->webRegistration(), new SyncUnregistrationCallbacks(resolver, m_serviceWorkerRegistration));
 
     return promise;
 }

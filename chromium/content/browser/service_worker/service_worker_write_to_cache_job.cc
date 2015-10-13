@@ -11,8 +11,8 @@
 #include "content/browser/service_worker/service_worker_context_core.h"
 #include "content/browser/service_worker/service_worker_disk_cache.h"
 #include "content/browser/service_worker/service_worker_metrics.h"
-#include "content/browser/service_worker/service_worker_utils.h"
 #include "content/common/service_worker/service_worker_types.h"
+#include "content/common/service_worker/service_worker_utils.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
 #include "net/http/http_network_session.h"
@@ -331,7 +331,8 @@ void ServiceWorkerWriteToCacheJob::Start() {
         net::URLRequestStatus::FAILED, net::ERR_FAILED));
     return;
   }
-  if (incumbent_response_id_ != kInvalidServiceWorkerResourceId) {
+  if (incumbent_response_id_ != kInvalidServiceWorkerResourceId &&
+      !version_->skip_script_comparison()) {
     scoped_ptr<ServiceWorkerResponseReader> incumbent_reader =
         context_->storage()->CreateResponseReader(incumbent_response_id_);
     consumer_.reset(new Comparer(this, incumbent_reader.Pass()));

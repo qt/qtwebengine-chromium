@@ -46,7 +46,9 @@ class StyleSheetList;
 
 enum class ShadowRootType {
     UserAgent,
-    Open
+    OpenByDefault,
+    Open,
+    Closed
 };
 
 class CORE_EXPORT ShadowRoot final : public DocumentFragment, public TreeScope, public DoublyLinkedListNode<ShadowRoot> {
@@ -68,13 +70,15 @@ public:
     using TreeScope::document;
     using TreeScope::getElementById;
 
+    // TODO(kochi): crbug.com/507413 In non-Oilpan, host() may return null during queued
+    // event handling (e.g. during execCommand()).
     Element* host() const { return toElement(parentOrShadowHostNode()); }
     ElementShadow* owner() const { return host() ? host()->shadow() : 0; }
 
     ShadowRoot* youngerShadowRoot() const { return prev(); }
 
     ShadowRoot* olderShadowRootForBindings() const;
-    bool shouldExposeToBindings() const { return type() == ShadowRootType::Open; }
+    bool isOpen() const { return type() == ShadowRootType::OpenByDefault || type() == ShadowRootType::Open; }
 
     bool isYoungest() const { return !youngerShadowRoot(); }
     bool isOldest() const { return !olderShadowRoot(); }
@@ -155,7 +159,7 @@ private:
     RawPtrWillBeMember<ShadowRoot> m_next;
     OwnPtrWillBeMember<ShadowRootRareData> m_shadowRootRareData;
     unsigned m_numberOfStyles : 27;
-    unsigned m_type : 1;
+    unsigned m_type : 2;
     unsigned m_registeredWithParentShadowRoot : 1;
     unsigned m_descendantInsertionPointsIsValid : 1;
     unsigned m_delegatesFocus : 1;

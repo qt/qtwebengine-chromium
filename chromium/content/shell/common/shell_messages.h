@@ -109,3 +109,12 @@ IPC_STRUCT_TRAITS_END()
 
 IPC_MESSAGE_ROUTED1(ShellViewHostMsg_LeakDetectionDone,
                     content::LeakDetectionResult /* result */)
+
+IPC_MESSAGE_ROUTED1(ShellViewHostMsg_SetBluetoothManualChooser,
+                    bool /* enable */)
+IPC_MESSAGE_ROUTED0(ShellViewHostMsg_GetBluetoothManualChooserEvents)
+IPC_MESSAGE_ROUTED1(ShellViewMsg_ReplyBluetoothManualChooserEvents,
+                    std::vector<std::string> /* events */)
+IPC_MESSAGE_ROUTED2(ShellViewHostMsg_SendBluetoothManualChooserEvent,
+                    std::string /* event */,
+                    std::string /* argument */)

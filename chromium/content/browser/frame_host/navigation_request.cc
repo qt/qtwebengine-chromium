@@ -7,12 +7,14 @@
 #include "content/browser/frame_host/frame_tree.h"
 #include "content/browser/frame_host/frame_tree_node.h"
 #include "content/browser/frame_host/navigation_controller_impl.h"
+#include "content/browser/frame_host/navigation_handle_impl.h"
 #include "content/browser/frame_host/navigation_request_info.h"
 #include "content/browser/frame_host/navigator.h"
 #include "content/browser/loader/navigation_url_loader.h"
 #include "content/browser/site_instance_impl.h"
 #include "content/common/resource_request_body.h"
 #include "content/public/browser/navigation_controller.h"
+#include "content/public/browser/navigation_throttle.h"
 #include "content/public/browser/stream_handle.h"
 #include "content/public/common/content_client.h"
 #include "net/base/load_flags.h"
@@ -90,7 +92,7 @@ scoped_ptr<NavigationRequest> NavigationRequest::CreateBrowserInitiated(
                             LoadFlagFromNavigationType(navigation_type), false),
       entry.ConstructRequestNavigationParams(
           frame_entry, navigation_start, is_same_document_history_load,
-          controller->HasCommittedRealLoad(frame_tree_node),
+          frame_tree_node->has_committed_real_load(),
           controller->GetPendingEntryIndex() == -1,
           controller->GetIndexOfEntry(&entry),
           controller->GetLastCommittedEntryIndex(),
@@ -178,9 +180,23 @@ bool NavigationRequest::BeginNavigation() {
   state_ = STARTED;
 
   if (ShouldMakeNetworkRequestForURL(common_params_.url)) {
+    // TODO(clamy): pass the real value for |is_external_protocol| if needed.
+    NavigationThrottle::ThrottleCheckResult result =
+        navigation_handle_->WillStartRequest(
+            begin_params_.method == "POST",
+            Referrer::SanitizeForRequest(common_params_.url,
+                                         common_params_.referrer),
+            begin_params_.has_user_gesture, common_params_.transition, false);
+
+    // Abort the request if needed. This will destroy the NavigationRequest.
+    if (result == NavigationThrottle::CANCEL_AND_IGNORE) {
+      frame_tree_node_->ResetNavigationRequest(false);
+      return false;
+    }
+
     loader_ = NavigationURLLoader::Create(
         frame_tree_node_->navigator()->GetController()->GetBrowserContext(),
-        frame_tree_node_->frame_tree_node_id(), info_.Pass(), this);
+        info_.Pass(), this);
     return true;
   }
 
@@ -195,16 +211,42 @@ bool NavigationRequest::BeginNavigation() {
   // DidStartProvisionalLoadForFrame for the navigation.
 }
 
+void NavigationRequest::CreateNavigationHandle(NavigatorDelegate* delegate) {
+  navigation_handle_ = NavigationHandleImpl::Create(
+      common_params_.url, frame_tree_node_->IsMainFrame(), delegate);
+}
+
+void NavigationRequest::TransferNavigationHandleOwnership(
+    RenderFrameHostImpl* render_frame_host) {
+  render_frame_host->SetNavigationHandle(navigation_handle_.Pass());
+  render_frame_host->navigation_handle()->ReadyToCommitNavigation(
+      render_frame_host);
+}
+
 void NavigationRequest::OnRequestRedirected(
     const net::RedirectInfo& redirect_info,
     const scoped_refptr<ResourceResponse>& response) {
-  // TODO(davidben): Track other changes from redirects. These are important
-  // for, e.g., reloads.
   common_params_.url = redirect_info.new_url;
+  begin_params_.method = redirect_info.new_method;
+  common_params_.referrer.url = GURL(redirect_info.new_referrer);
 
-  // TODO(davidben): This where prerender and navigation_interceptor should be
-  // integrated. For now, just always follow all redirects.
+  // TODO(clamy): Have CSP + security upgrade checks here.
+  // TODO(clamy): Kill the renderer if FilterURL fails?
+  // TODO(clamy): pass the real value for |is_external_protocol| if needed.
+  NavigationThrottle::ThrottleCheckResult result =
+      navigation_handle_->WillRedirectRequest(
+          common_params_.url, begin_params_.method == "POST",
+          common_params_.referrer.url, false);
+
+  // Abort the request if needed. This will destroy the NavigationRequest.
+  if (result == NavigationThrottle::CANCEL_AND_IGNORE) {
+    frame_tree_node_->ResetNavigationRequest(false);
+    return;
+  }
+
   loader_->FollowRedirect();
+
+  navigation_handle_->DidRedirectNavigation(redirect_info.new_url);
 }
 
 void NavigationRequest::OnResponseStarted(
@@ -220,6 +262,7 @@ void NavigationRequest::OnRequestFailed(bool has_stale_copy_in_cache,
                                         int net_error) {
   DCHECK(state_ == STARTED);
   state_ = FAILED;
+  navigation_handle_->set_net_error_code(static_cast<net::Error>(net_error));
   frame_tree_node_->navigator()->FailedNavigation(
       frame_tree_node_, has_stale_copy_in_cache, net_error);
 }

@@ -25,14 +25,18 @@ namespace webrtc {
 namespace testing {
 namespace bwe {
 
+class MetricRecorder;
+
 class PacketSender : public PacketProcessor {
  public:
   PacketSender(PacketProcessorListener* listener, int flow_id)
       : PacketProcessor(listener, flow_id, kSender),
+        running_(true),
         // For Packet::send_time_us() to be comparable with timestamps from
         // clock_, the clock of the PacketSender and the Source must be aligned.
         // We assume that both start at time 0.
-        clock_(0) {}
+        clock_(0),
+        metric_recorder_(nullptr) {}
   virtual ~PacketSender() {}
   // Call GiveFeedback() with the returned interval in milliseconds, provided
   // there is a new estimate available.
@@ -42,8 +46,20 @@ class PacketSender : public PacketProcessor {
   virtual int GetFeedbackIntervalMs() const = 0;
   void SetSenderTimestamps(Packets* in_out);
 
+  virtual uint32_t TargetBitrateKbps() { return 0; }
+
+  virtual void Pause();
+  virtual void Resume(int64_t paused_time_ms);
+
+  void set_metric_recorder(MetricRecorder* metric_recorder);
+  virtual void RecordBitrate();
+
  protected:
+  bool running_;  // Initialized by default as true.
   SimulatedClock clock_;
+
+ private:
+  MetricRecorder* metric_recorder_;
 };
 
 class VideoSender : public PacketSender, public BitrateObserver {
@@ -58,10 +74,15 @@ class VideoSender : public PacketSender, public BitrateObserver {
 
   virtual VideoSource* source() const { return source_; }
 
+  uint32_t TargetBitrateKbps() override;
+
   // Implements BitrateObserver.
   void OnNetworkChanged(uint32_t target_bitrate_bps,
                         uint8_t fraction_lost,
                         int64_t rtt) override;
+
+  void Pause() override;
+  void Resume(int64_t paused_time_ms) override;
 
  protected:
   void ProcessFeedbackAndGeneratePackets(int64_t time_ms,
@@ -74,7 +95,8 @@ class VideoSender : public PacketSender, public BitrateObserver {
   std::list<Module*> modules_;
 
  private:
-  DISALLOW_COPY_AND_ASSIGN(VideoSender);
+  uint32_t previous_sending_bitrate_;
+  RTC_DISALLOW_COPY_AND_ASSIGN(VideoSender);
 };
 
 class PacedVideoSender : public VideoSender, public PacedSender::Callback {
@@ -107,33 +129,29 @@ class PacedVideoSender : public VideoSender, public PacedSender::Callback {
   Packets queue_;
   Packets pacer_queue_;
 
-  DISALLOW_IMPLICIT_CONSTRUCTORS(PacedVideoSender);
+  RTC_DISALLOW_IMPLICIT_CONSTRUCTORS(PacedVideoSender);
 };
 
 class TcpSender : public PacketSender {
  public:
-  TcpSender(PacketProcessorListener* listener, int flow_id, int64_t offset_ms)
-      : PacketSender(listener, flow_id),
-        cwnd_(10),
-        ssthresh_(std::numeric_limits<int>::max()),
-        ack_received_(false),
-        last_acked_seq_num_(0),
-        next_sequence_number_(0),
-        offset_ms_(offset_ms),
-        last_reduction_time_ms_(-1),
-        last_rtt_ms_(0) {}
-
+  TcpSender(PacketProcessorListener* listener, int flow_id, int64_t offset_ms);
+  TcpSender(PacketProcessorListener* listener,
+            int flow_id,
+            int64_t offset_ms,
+            int send_limit_bytes);
   virtual ~TcpSender() {}
 
   void RunFor(int64_t time_ms, Packets* in_out) override;
   int GetFeedbackIntervalMs() const override { return 10; }
+
+  uint32_t TargetBitrateKbps() override;
 
  private:
   struct InFlight {
    public:
     InFlight(const MediaPacket& packet)
         : sequence_number(packet.header().sequenceNumber),
-          time_ms(packet.send_time_us() / 1000) {}
+          time_ms(packet.send_time_ms()) {}
 
     InFlight(uint16_t seq_num, int64_t now_ms)
         : sequence_number(seq_num), time_ms(now_ms) {}
@@ -153,6 +171,7 @@ class TcpSender : public PacketSender {
   int TriggerTimeouts();
   void HandleLoss();
   Packets GeneratePackets(size_t num_packets);
+  void UpdateSendBitrateEstimate(size_t num_packets);
 
   float cwnd_;
   int ssthresh_;
@@ -163,6 +182,11 @@ class TcpSender : public PacketSender {
   int64_t offset_ms_;
   int64_t last_reduction_time_ms_;
   int64_t last_rtt_ms_;
+  int total_sent_bytes_;
+  int send_limit_bytes_;  // Initialized by default as kNoLimit.
+  int64_t last_generated_packets_ms_;
+  size_t num_recent_sent_packets_;
+  uint32_t bitrate_kbps_;
 };
 }  // namespace bwe
 }  // namespace testing

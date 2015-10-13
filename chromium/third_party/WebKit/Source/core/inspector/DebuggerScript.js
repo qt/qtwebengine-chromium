@@ -130,18 +130,21 @@ DebuggerScript._setScopeVariableValue = function(scopeHolder, scopeIndex, variab
     return undefined;
 }
 
-DebuggerScript.getScripts = function(contextDataSubstring)
+DebuggerScript.getScripts = function(contextGroupId)
 {
     var result = [];
     var scripts = Debug.scripts();
+    var contextDataPrefix = null;
+    if (contextGroupId)
+        contextDataPrefix = contextGroupId + ",";
     for (var i = 0; i < scripts.length; ++i) {
         var script = scripts[i];
-        if (contextDataSubstring) {
+        if (contextDataPrefix) {
             if (!script.context_data)
                 continue;
             // Context data is a string in the following format:
-            // "["("page"|"injected"|"worker")","<id>"]"
-            if (script.context_data.indexOf(contextDataSubstring) === -1)
+            // <id>","("page"|"injected"|"worker")
+            if (script.context_data.indexOf(contextDataPrefix) !== 0)
                 continue;
         }
         result.push(DebuggerScript._formatScript(script));
@@ -176,7 +179,7 @@ DebuggerScript._formatScript = function(script)
         startColumn: script.column_offset,
         endLine: endLine,
         endColumn: endColumn,
-        isContentScript: !!script.context_data && script.context_data.indexOf("[injected,") === 0,
+        isContentScript: !!script.context_data && script.context_data.endsWith(",injected"),
         isInternalScript: script.is_debugger_script
     };
 }
@@ -295,7 +298,7 @@ DebuggerScript.liveEditScriptSource = function(scriptId, newSource, preview)
     var changeLog = [];
     try {
         var result = Debug.LiveEdit.SetScriptSource(scriptToEdit, newSource, preview, changeLog);
-        return [0, result];
+        return [0, result.stack_modified];
     } catch (e) {
         if (e instanceof Debug.LiveEdit.Failure && "details" in e) {
             var details = e.details;
@@ -490,7 +493,7 @@ DebuggerScript._frameMirrorToJSCallFrame = function(frameMirror, callerFrame, sc
 
     function restart()
     {
-        return Debug.LiveEdit.RestartFrame(frameMirror);
+        return frameMirror.restart();
     }
 
     function setVariableValue(scopeNumber, variableName, newValue)

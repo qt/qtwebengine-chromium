@@ -79,7 +79,7 @@ cr.define('cr.ui', function() {
   };
 
   /**
-   * Updates version label visibilty.
+   * Updates version label visibility.
    * @param {boolean} show True if version label should be visible.
    */
   Oobe.showVersion = function(show) {
@@ -285,10 +285,16 @@ cr.define('cr.ui', function() {
    * @param {string} username Login username.
    * @param {string} password Login password.
    */
-  Oobe.loginForTesting = function(username, password) {
+  Oobe.loginForTesting = function(username, password, gaia_id) {
     Oobe.disableSigninUI();
     chrome.send('skipToLoginForTesting', [username]);
-    chrome.send('completeLogin', ['12345', username, password, false]);
+    if (!gaia_id) {
+      /* TODO (alemate): Remove this backward compatibility hack when
+         as soon as all telemetry tests will pass gaia_id directly.
+      */
+      gaia_id = '12345';
+    }
+    chrome.send('completeLogin', [gaia_id, username, password, false]);
   };
 
   /**
@@ -350,12 +356,11 @@ cr.define('cr.ui', function() {
    * attribute screen if it's present.
    */
   Oobe.isEnrollmentSuccessfulForTest = function() {
-    if (document.querySelector(
-        '.oauth-enroll-state-attribute-prompt') != undefined) {
+    if (document.querySelector('.oauth-enroll-state-attribute-prompt'))
       chrome.send('oauthEnrollAttributes', ['', '']);
-    }
 
-    return document.querySelector('.oauth-enroll-state-success') != undefined;
+    return $('oauth-enrollment').classList.contains(
+      'oauth-enroll-state-success');
   };
 
   /**

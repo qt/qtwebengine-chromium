@@ -5,10 +5,10 @@
 #include "content/browser/frame_host/frame_tree.h"
 
 #include <queue>
+#include <utility>
 
 #include "base/bind.h"
 #include "base/callback.h"
-#include "base/command_line.h"
 #include "base/containers/hash_tables.h"
 #include "base/lazy_instance.h"
 #include "content/browser/frame_host/frame_tree_node.h"
@@ -18,7 +18,7 @@
 #include "content/browser/frame_host/render_frame_proxy_host.h"
 #include "content/browser/renderer_host/render_view_host_factory.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
-#include "content/public/common/content_switches.h"
+#include "content/common/site_isolation_policy.h"
 #include "third_party/WebKit/public/web/WebSandboxFlags.h"
 
 namespace content {
@@ -227,7 +227,7 @@ void FrameTree::CreateProxiesForSiteInstance(
   if (!source || !source->IsMainFrame()) {
     RenderViewHostImpl* render_view_host = GetRenderViewHost(site_instance);
     if (!render_view_host) {
-      if (RenderFrameHostManager::IsSwappedOutStateForbidden()) {
+      if (SiteIsolationPolicy::IsSwappedOutStateForbidden()) {
         root()->render_manager()->CreateRenderFrameProxy(site_instance);
       } else {
         root()->render_manager()->CreateRenderFrame(
@@ -257,6 +257,18 @@ FrameTreeNode* FrameTree::GetFocusedFrame() {
 }
 
 void FrameTree::SetFocusedFrame(FrameTreeNode* node) {
+  // If the focused frame changed across processes, send a message to the old
+  // focused frame's renderer process to clear focus from that frame and fire
+  // blur events.
+  FrameTreeNode* oldFocusedFrame = GetFocusedFrame();
+  if (oldFocusedFrame &&
+      oldFocusedFrame->current_frame_host()->GetSiteInstance() !=
+          node->current_frame_host()->GetSiteInstance()) {
+    DCHECK(SiteIsolationPolicy::AreCrossProcessFramesPossible());
+    oldFocusedFrame->current_frame_host()->ClearFocus();
+  }
+
+  node->set_last_focus_time(base::TimeTicks::Now());
   focused_frame_tree_node_id_ = node->frame_tree_node_id();
 }
 
@@ -266,37 +278,31 @@ void FrameTree::SetFrameRemoveListener(
 }
 
 RenderViewHostImpl* FrameTree::CreateRenderViewHost(SiteInstance* site_instance,
-                                                    int routing_id,
-                                                    int main_frame_routing_id,
+                                                    int32 routing_id,
+                                                    int32 main_frame_routing_id,
                                                     bool swapped_out,
                                                     bool hidden) {
   RenderViewHostMap::iterator iter =
       render_view_host_map_.find(site_instance->GetId());
   if (iter != render_view_host_map_.end()) {
-    // If a RenderViewHost's main frame is pending deletion for this
-    // |site_instance|, put it in the map of RenderViewHosts pending shutdown.
-    // Otherwise return the existing RenderViewHost for the SiteInstance.
-    RenderFrameHostImpl* main_frame = static_cast<RenderFrameHostImpl*>(
-        iter->second->GetMainFrame());
-    if (main_frame &&
-        main_frame->frame_tree_node()->render_manager()->IsPendingDeletion(
-            main_frame)) {
+    // If a RenderViewHost is pending deletion for this |site_instance|, it
+    // shouldn't be reused, so put it in the map of RenderViewHosts pending
+    // shutdown.  Otherwise, return the existing RenderViewHost for the
+    // SiteInstance.  Note that if swapped-out is forbidden, the
+    // RenderViewHost's main frame has already been cleared, so we cannot rely
+    // on checking whether the main frame is pending deletion.
+    if (iter->second->is_pending_deletion()) {
       render_view_host_pending_shutdown_map_.insert(
-          std::pair<int, RenderViewHostImpl*>(site_instance->GetId(),
-                                              iter->second));
+          std::make_pair(site_instance->GetId(), iter->second));
       render_view_host_map_.erase(iter);
     } else {
       return iter->second;
     }
   }
-  RenderViewHostImpl* rvh = static_cast<RenderViewHostImpl*>(
-      RenderViewHostFactory::Create(site_instance,
-                                    render_view_delegate_,
-                                    render_widget_delegate_,
-                                    routing_id,
-                                    main_frame_routing_id,
-                                    swapped_out,
-                                    hidden));
+  RenderViewHostImpl* rvh =
+      static_cast<RenderViewHostImpl*>(RenderViewHostFactory::Create(
+          site_instance, render_view_delegate_, render_widget_delegate_,
+          routing_id, main_frame_routing_id, swapped_out, hidden));
 
   render_view_host_map_[site_instance->GetId()] = rvh;
   return rvh;

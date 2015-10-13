@@ -24,7 +24,7 @@ check_targets = [
   "//cc/*",
 
   #"//chrome/*",  # Epic number of errors.
-  "//chrome/installer/*",
+  #"//chrome/installer/*", # A few errors, need to verify the size after fixing.
   "//chromecast/*",
 
   # TODO(brettw): Fix http://crbug.com/460828 and uncomment the following
@@ -36,17 +36,30 @@ check_targets = [
   "//components/app_modal/*",
   "//components/autofill/*",
   "//components/bookmarks/*",
+  "//components/google/*",
+  "//components/history/*",
+
+  # TODO(dpranke): Reenable once v8 exports v8_base as a public_dep
+  #"//components/html_viewer/*",
+
+  "//components/mus/*",
+  "//components/omnibox/*",
   "//components/os_crypt/*",
   "//components/pref_registry/*",
   "//components/undo/*",
   "//components/update_client/*",
-  "//components/url_fixer/*",
+  "//components/url_formatter/*",
   "//components/url_matcher/*",
   "//components/user_manager/*",
   "//components/user_prefs/*",
   "//components/variations/*",
   "//components/wallpaper/*",
+  "//components/web_cache/*",
   "//components/webcrypto/*",
+  "//components/web_modal/*",
+  "//components/web_view/*",
+  "//components/webdata/*",
+  "//components/webdata_services/*",
 
   #"//content/*",  # A whole lot of errors.
   "//courgette/*",
@@ -68,8 +81,11 @@ check_targets = [
   "//ipc/*",
 
   #"//jingle/*",
+  "//mandoline/*",
+
   #"//media/*",  # Lots of errors.
-  #"//mojo/*",
+  "mojo/*",
+
   #"//native_client/*",
   #"//net/*",  # Needs GN binary changes to work on Android.
 
@@ -100,7 +116,6 @@ check_targets = [
 # discouraged except for gypi_to_gn calls.
 exec_script_whitelist = [
   "//ash/BUILD.gn",
-  "//build/config/android/BUILD.gn",
   "//build/config/android/config.gni",
   "//build/config/android/internal_rules.gni",
   "//build/config/android/rules.gni",
@@ -110,12 +125,17 @@ exec_script_whitelist = [
   "//build/config/linux/BUILD.gn",
   "//build/config/linux/pkg_config.gni",
   "//build/config/mac/mac_sdk.gni",
+  "//build/config/posix/BUILD.gn",
+  "//build/config/win/BUILD.gn",
   "//build/config/win/visual_studio_version.gni",
   "//build/gn_helpers.py",
   "//build/gypi_to_gn.py",
+  "//build/linux/BUILD.gn",
   "//build/toolchain/gcc_toolchain.gni",
   "//build/toolchain/mac/BUILD.gn",
+  "//build/toolchain/nacl/BUILD.gn",
   "//build/toolchain/win/BUILD.gn",
+  "//build/util/version.gni",
   "//chrome/android/BUILD.gn",
   "//chrome/browser/BUILD.gn",
   "//chrome/browser/chromeos/BUILD.gn",
@@ -153,19 +173,6 @@ exec_script_whitelist = [
   "//google_apis/BUILD.gn",
   "//gpu/gles2_conform_support/BUILD.gn",
   "//jingle/BUILD.gn",
-  "//native_client/build/toolchain/gcc_toolchain.gni",
-  "//native_client/build/toolchain/nacl/BUILD.gn",
-  "//native_client/build/config/android/BUILD.gn",
-  "//native_client/build/config/gcc/gcc_version.gni",
-  "//native_client/build/config/ios/ios_sdk.gni",
-  "//native_client/build/config/linux/BUILD.gn",
-  "//native_client/build/config/linux/pkg_config.gni",
-  "//native_client/build/config/mac/mac_sdk.gni",
-  "//native_client/build/config/win/visual_studio_version.gni",
-  "//native_client/build/toolchain/gcc_toolchain.gni",
-  "//native_client/build/toolchain/mac/BUILD.gn",
-  "//native_client/build/toolchain/nacl/BUILD.gn",
-  "//native_client/build/toolchain/win/BUILD.gn",
   "//net/BUILD.gn",
   "//ppapi/ppapi_sources.gni",
   "//printing/BUILD.gn",
@@ -175,14 +182,15 @@ exec_script_whitelist = [
   "//skia/BUILD.gn",
   "//third_party/android_platform/BUILD.gn",
   "//third_party/angle/BUILD.gn",
+  "//third_party/angle/src/tests/BUILD.gn",
   "//third_party/boringssl/BUILD.gn",
+  "//third_party/catapult/tracing/BUILD.gn",
   "//third_party/cld_2/BUILD.gn",
   "//third_party/cython/rules.gni",
   "//third_party/google_input_tools/inputview.gni",
   "//third_party/harfbuzz-ng/BUILD.gn",
   "//third_party/libaddressinput/BUILD.gn",
   "//third_party/opus/BUILD.gn",
-  "//third_party/trace-viewer/tracing/BUILD.gn",
   "//third_party/WebKit/Source/bindings/bindings.gni",
   "//third_party/WebKit/Source/bindings/scripts/scripts.gni",
   "//third_party/WebKit/Source/config.gni",
@@ -193,6 +201,7 @@ exec_script_whitelist = [
   "//third_party/WebKit/Source/platform/platform.gni",
   "//third_party/WebKit/Source/web/BUILD.gn",
   "//third_party/WebKit/Source/wtf/BUILD.gn",
+  "//third_party/WebKit/public/BUILD.gn",
   "//tools/gn/BUILD.gn",
   "//tools/gn/build_settings.h",
   "//tools/gn/command_help.cc",

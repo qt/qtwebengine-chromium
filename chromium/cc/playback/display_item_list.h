@@ -10,10 +10,9 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/trace_event/trace_event.h"
 #include "cc/base/cc_export.h"
-#include "cc/base/scoped_ptr_vector.h"
-#include "cc/base/sidecar_list_container.h"
+#include "cc/base/list_container.h"
+#include "cc/playback/discardable_image_map.h"
 #include "cc/playback/display_item.h"
-#include "cc/playback/pixel_ref_map.h"
 #include "skia/ext/refptr.h"
 #include "third_party/skia/include/core/SkPicture.h"
 #include "ui/gfx/geometry/rect.h"
@@ -28,16 +27,13 @@ class DisplayItemListSettings;
 class CC_EXPORT DisplayItemList
     : public base::RefCountedThreadSafe<DisplayItemList> {
  public:
-  static scoped_refptr<DisplayItemList> CreateWithoutCachedPicture(
-      const DisplayItemListSettings& settings);
-
-  // Creates a display item list with the given cull rect (if picture caching
-  // is used). The resulting display list will not support sidecar data.
-  static scoped_refptr<DisplayItemList> Create(gfx::Rect layer_rect,
-                                               bool use_cached_picture);
-
+  // Creates a display item list. If picture caching is used, then layer_rect
+  // specifies the cull rect of the display item list (the picture will not
+  // exceed this rect). If picture caching is not used, then the given rect can
+  // be empty.
+  // TODO(vmpstr): Maybe this cull rect can be part of the settings instead.
   static scoped_refptr<DisplayItemList> Create(
-      gfx::Rect layer_rect,
+      const gfx::Rect& layer_rect,
       const DisplayItemListSettings& settings);
 
   void Raster(SkCanvas* canvas,
@@ -71,6 +67,7 @@ class CC_EXPORT DisplayItemList
   bool IsSuitableForGpuRasterization() const;
   int ApproximateOpCount() const;
   size_t ApproximateMemoryUsage() const;
+  bool ShouldBeAnalyzedForSolidColor() const;
 
   bool RetainsIndividualDisplayItems() const;
 
@@ -79,17 +76,14 @@ class CC_EXPORT DisplayItemList
 
   void EmitTraceSnapshot() const;
 
-  void GatherPixelRefs(const gfx::Size& grid_cell_size);
-
-  // Finds the sidecar for a display item in this list.
-  void* GetSidecar(DisplayItem* display_item);
+  void GenerateDiscardableImagesMetadata();
+  void GetDiscardableImagesInRect(const gfx::Rect& rect,
+                                  std::vector<PositionImage>* images);
 
  private:
   DisplayItemList(gfx::Rect layer_rect,
                   const DisplayItemListSettings& display_list_settings,
                   bool retain_individual_display_items);
-  DisplayItemList(gfx::Rect layer_rect,
-                  const DisplayItemListSettings& display_list_settings);
   ~DisplayItemList();
 
   // While appending new items, if they are not being retained, this can process
@@ -103,16 +97,16 @@ class CC_EXPORT DisplayItemList
   bool ProcessAppendedItemsCalled() const { return true; }
 #endif
 
-  SidecarListContainer<DisplayItem> items_;
+  ListContainer<DisplayItem> items_;
   skia::RefPtr<SkPicture> picture_;
 
   scoped_ptr<SkPictureRecorder> recorder_;
   skia::RefPtr<SkCanvas> canvas_;
-  bool use_cached_picture_;
+  const bool use_cached_picture_;
   bool retain_individual_display_items_;
 
   gfx::Rect layer_rect_;
-  bool all_items_are_suitable_for_gpu_rasterization_;
+  bool is_suitable_for_gpu_rasterization_;
   int approximate_op_count_;
 
   // Memory usage due to the cached SkPicture.
@@ -121,10 +115,9 @@ class CC_EXPORT DisplayItemList
   // Memory usage due to external data held by display items.
   size_t external_memory_usage_;
 
-  scoped_ptr<PixelRefMap> pixel_refs_;
+  DiscardableImageMap image_map_;
 
   friend class base::RefCountedThreadSafe<DisplayItemList>;
-  friend class PixelRefMap::Iterator;
   FRIEND_TEST_ALL_PREFIXES(DisplayItemListTest, ApproximateMemoryUsage);
   DISALLOW_COPY_AND_ASSIGN(DisplayItemList);
 };

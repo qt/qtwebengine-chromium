@@ -80,7 +80,7 @@ WebRange WebRange::fromDocumentRange(WebLocalFrame* frame, int start, int length
     LocalFrame* webFrame = toWebLocalFrameImpl(frame)->frame();
     Element* selectionRoot = webFrame->selection().rootEditableElement();
     ContainerNode* scope = selectionRoot ? selectionRoot : webFrame->document()->documentElement();
-    return PlainTextRange(start, start + length).createRange(*scope);
+    return createRange(PlainTextRange(start, start + length).createRange(*scope));
 }
 
 WebRange::WebRange(const PassRefPtrWillBeRawPtr<Range>& range)

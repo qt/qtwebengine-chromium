@@ -10,7 +10,7 @@
 
 #include "GrSingleTextureEffect.h"
 #include "GrTextureDomain.h"
-#include "gl/GrGLProcessor.h"
+#include "gl/GrGLFragmentProcessor.h"
 
 class GrGLBicubicEffect;
 class GrInvariantOutput;
@@ -27,10 +27,6 @@ public:
 
     const char* name() const override { return "Bicubic"; }
 
-    void getGLProcessorKey(const GrGLSLCaps&, GrProcessorKeyBuilder*) const override;
-
-    GrGLFragmentProcessor* createGLInstance() const override;
-
     const GrTextureDomain& domain() const { return fDomain; }
 
     /**
@@ -38,16 +34,15 @@ public:
      */
     static GrFragmentProcessor* Create(GrProcessorDataManager* procDataManager, GrTexture* tex,
                                        const SkScalar coefficients[16],
-                                       const SkRect* domain = NULL) {
-        if (NULL == domain) {
+                                       const SkRect* domain = nullptr) {
+        if (nullptr == domain) {
             static const SkShader::TileMode kTileModes[] = { SkShader::kClamp_TileMode,
                                                              SkShader::kClamp_TileMode };
             return Create(procDataManager, tex, coefficients,
                           GrCoordTransform::MakeDivByTextureWHMatrix(tex), kTileModes);
         } else {
-            return SkNEW_ARGS(GrBicubicEffect, (procDataManager, tex, coefficients,
-                                                GrCoordTransform::MakeDivByTextureWHMatrix(tex),
-                                                *domain));
+            return new GrBicubicEffect(procDataManager, tex, coefficients,
+                                       GrCoordTransform::MakeDivByTextureWHMatrix(tex), *domain);
         }
     }
 
@@ -67,7 +62,7 @@ public:
     static GrFragmentProcessor* Create(GrProcessorDataManager* procDataManager, GrTexture* tex,
                                        const SkScalar coefficients[16], const SkMatrix& matrix,
                                        const SkShader::TileMode tileModes[2]) {
-        return SkNEW_ARGS(GrBicubicEffect, (procDataManager, tex, coefficients, matrix, tileModes));
+        return new GrBicubicEffect(procDataManager, tex, coefficients, matrix, tileModes);
     }
 
     /**
@@ -75,8 +70,7 @@ public:
      */
     static GrFragmentProcessor* Create(GrProcessorDataManager* procDataManager, GrTexture* tex,
                                        const SkMatrix& matrix, const SkRect& domain) {
-        return SkNEW_ARGS(GrBicubicEffect, (procDataManager, tex, gMitchellCoefficients, matrix,
-                                            domain));
+        return new GrBicubicEffect(procDataManager, tex, gMitchellCoefficients, matrix, domain);
     }
 
     /**
@@ -94,6 +88,11 @@ private:
                     const SkMatrix &matrix, const SkShader::TileMode tileModes[2]);
     GrBicubicEffect(GrProcessorDataManager*, GrTexture*, const SkScalar coefficients[16],
                     const SkMatrix &matrix, const SkRect& domain);
+
+    GrGLFragmentProcessor* onCreateGLInstance() const override;
+
+    void onGetGLProcessorKey(const GrGLSLCaps&, GrProcessorKeyBuilder*) const override;
+
     bool onIsEqual(const GrFragmentProcessor&) const override;
 
     void onComputeInvariantOutput(GrInvariantOutput* inout) const override;

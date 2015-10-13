@@ -109,7 +109,7 @@ static bool TestGetASN1() {
   static const uint8_t kData2[] = {0x30, 3, 1, 2};
   static const uint8_t kData3[] = {0x30, 0x80};
   static const uint8_t kData4[] = {0x30, 0x81, 1, 1};
-  static const uint8_t kData5[] = {0x30, 0x82, 0, 1, 1};
+  static const uint8_t kData5[4 + 0x80] = {0x30, 0x82, 0, 0x80};
   static const uint8_t kData6[] = {0xa1, 3, 0x4, 1, 1};
   static const uint8_t kData7[] = {0xa1, 3, 0x4, 2, 1};
   static const uint8_t kData8[] = {0xa1, 3, 0x2, 1, 1};
@@ -649,6 +649,14 @@ static bool TestASN1Uint64() {
   return true;
 }
 
+static int TestZero() {
+  CBB cbb;
+  CBB_zero(&cbb);
+  // Calling |CBB_cleanup| on a zero-state |CBB| must not crash.
+  CBB_cleanup(&cbb);
+  return 1;
+}
+
 int main(void) {
   CRYPTO_library_init();
 
@@ -665,7 +673,8 @@ int main(void) {
       !TestCBBASN1() ||
       !TestBerConvert() ||
       !TestASN1Uint64() ||
-      !TestGetOptionalASN1Bool()) {
+      !TestGetOptionalASN1Bool() ||
+      !TestZero()) {
     return 1;
   }
 

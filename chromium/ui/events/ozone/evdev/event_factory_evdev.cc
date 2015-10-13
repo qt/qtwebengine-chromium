@@ -63,6 +63,12 @@ class ProxyDeviceEventDispatcher : public DeviceEventDispatcherEvdev {
                               event_factory_evdev_, params));
   }
 
+  void DispatchPinchEvent(const PinchEventParams& params) override {
+    ui_thread_runner_->PostTask(
+        FROM_HERE, base::Bind(&EventFactoryEvdev::DispatchPinchEvent,
+                              event_factory_evdev_, params));
+  }
+
   void DispatchScrollEvent(const ScrollEventParams& params) override {
     ui_thread_runner_->PostTask(
         FROM_HERE, base::Bind(&EventFactoryEvdev::DispatchScrollEvent,
@@ -167,6 +173,7 @@ void EventFactoryEvdev::DispatchMouseMoveEvent(
                    params.timestamp, modifiers_.GetModifierFlags(),
                    /* changed_button_flags */ 0);
   event.set_source_device_id(params.device_id);
+  event.set_pointer_details(params.pointer_details);
   DispatchUiEvent(&event);
 }
 
@@ -216,6 +223,7 @@ void EventFactoryEvdev::DispatchMouseButtonEvent(
                    modifiers_.GetModifierFlags() | flag,
                    /* changed_button_flags */ flag);
   event.set_source_device_id(params.device_id);
+  event.set_pointer_details(params.pointer_details);
   DispatchUiEvent(&event);
 }
 
@@ -226,6 +234,17 @@ void EventFactoryEvdev::DispatchMouseWheelEvent(
   MouseWheelEvent event(params.delta, params.location, params.location,
                         params.timestamp, modifiers_.GetModifierFlags(),
                         0 /* changed_button_flags */);
+  event.set_source_device_id(params.device_id);
+  DispatchUiEvent(&event);
+}
+
+void EventFactoryEvdev::DispatchPinchEvent(const PinchEventParams& params) {
+  TRACE_EVENT1("evdev", "EventFactoryEvdev::DispatchPinchEvent", "device",
+               params.device_id);
+  GestureEventDetails details(params.type);
+  details.set_scale(params.scale);
+  GestureEvent event(params.location.x(), params.location.y(), 0,
+                     params.timestamp, details);
   event.set_source_device_id(params.device_id);
   DispatchUiEvent(&event);
 }
@@ -353,11 +372,13 @@ void EventFactoryEvdev::WarpCursorTo(gfx::AcceleratedWidget widget,
   cursor_->MoveCursorTo(widget, location);
 
   base::ThreadTaskRunnerHandle::Get()->PostTask(
-      FROM_HERE, base::Bind(&EventFactoryEvdev::DispatchMouseMoveEvent,
-                            weak_ptr_factory_.GetWeakPtr(),
-                            MouseMoveEventParams(-1 /* device_id */,
-                                                 cursor_->GetLocation(),
-                                                 EventTimeForNow())));
+      FROM_HERE,
+      base::Bind(&EventFactoryEvdev::DispatchMouseMoveEvent,
+                 weak_ptr_factory_.GetWeakPtr(),
+                 MouseMoveEventParams(
+                     -1 /* device_id */, cursor_->GetLocation(),
+                     PointerDetails(EventPointerType::POINTER_TYPE_MOUSE),
+                     EventTimeForNow())));
 }
 
 int EventFactoryEvdev::NextDeviceId() {

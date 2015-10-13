@@ -44,7 +44,6 @@
 #include "wtf/HashSet.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/PassRefPtr.h"
-#include "wtf/RefCounted.h"
 #include "wtf/Vector.h"
 
 namespace blink {
@@ -56,13 +55,11 @@ class CORE_EXPORT KeyframeEffectModelBase : public EffectModel {
 public:
     // FIXME: Implement accumulation.
 
-    using PropertySpecificKeyframeVector = WillBeHeapVector<OwnPtrWillBeMember<Keyframe::PropertySpecificKeyframe>>;
-    class PropertySpecificKeyframeGroup : public NoBaseWillBeGarbageCollected<PropertySpecificKeyframeGroup> {
+    using PropertySpecificKeyframeVector = Vector<OwnPtr<Keyframe::PropertySpecificKeyframe>>;
+    class PropertySpecificKeyframeGroup {
     public:
-        void appendKeyframe(PassOwnPtrWillBeRawPtr<Keyframe::PropertySpecificKeyframe>);
+        void appendKeyframe(PassOwnPtr<Keyframe::PropertySpecificKeyframe>);
         const PropertySpecificKeyframeVector& keyframes() const { return m_keyframes; }
-
-        DECLARE_TRACE();
 
     private:
         void removeRedundantKeyframes();
@@ -77,7 +74,7 @@ public:
 
     PropertyHandleSet properties() const;
 
-    using KeyframeVector = WillBeHeapVector<RefPtrWillBeMember<Keyframe>>;
+    using KeyframeVector = Vector<RefPtr<Keyframe>>;
     const KeyframeVector& getFrames() const { return m_keyframes; }
     void setFrames(KeyframeVector& keyframes);
 
@@ -88,9 +85,9 @@ public:
     }
 
     // EffectModel implementation.
-    virtual void sample(int iteration, double fraction, double iterationDuration, OwnPtrWillBeRawPtr<WillBeHeapVector<RefPtrWillBeMember<Interpolation>>>&) const override;
+    bool sample(int iteration, double fraction, double iterationDuration, OwnPtr<Vector<RefPtr<Interpolation>>>&) const override;
 
-    virtual bool isKeyframeEffectModel() const override { return true; }
+    bool isKeyframeEffectModel() const override { return true; }
 
     virtual bool isAnimatableValueKeyframeEffectModel() const { return false; }
     virtual bool isStringKeyframeEffectModel() const { return false; }
@@ -101,12 +98,11 @@ public:
         return m_hasSyntheticKeyframes;
     }
 
-    DECLARE_VIRTUAL_TRACE();
-
     // FIXME: This is a hack used to resolve CSSValues to AnimatableValues while we have a valid handle on an element.
     // This should be removed once AnimatableValues are obsolete.
     void forceConversionsToAnimatableValues(Element&, const ComputedStyle* baseStyle);
-    bool updateNeutralKeyframeAnimatableValues(CSSPropertyID, PassRefPtrWillBeRawPtr<AnimatableValue>);
+    bool snapshotNeutralCompositorKeyframes(Element&, const ComputedStyle& oldStyle, const ComputedStyle& newStyle);
+    bool snapshotAllCompositorKeyframes(Element&, const ComputedStyle* baseStyle);
 
     template<typename T>
     inline void forEachInterpolation(const T& callback) { m_interpolationEffect->forEachInterpolation(callback); }
@@ -119,11 +115,15 @@ public:
         return m_keyframeGroups->contains(property);
     }
 
-    virtual bool isTransformRelatedEffect() const override;
+    bool isTransformRelatedEffect() const override;
 
 protected:
-    KeyframeEffectModelBase(PassRefPtrWillBeRawPtr<TimingFunction> neutralKeyframeEasing)
-        : m_neutralKeyframeEasing(neutralKeyframeEasing)
+    KeyframeEffectModelBase(PassRefPtr<TimingFunction> neutralKeyframeEasing)
+        : m_lastIteration(0)
+        , m_lastFraction(std::numeric_limits<double>::quiet_NaN())
+        , m_lastIterationDuration(0)
+        , m_neutralKeyframeEasing(neutralKeyframeEasing)
+        , m_hasSyntheticKeyframes(false)
     {
     }
 
@@ -132,15 +132,17 @@ protected:
     // Lazily computes the groups of property-specific keyframes.
     void ensureKeyframeGroups() const;
     void ensureInterpolationEffect(Element* = nullptr, const ComputedStyle* baseStyle = nullptr) const;
-    void snapshotCompositableProperties(Element&, const ComputedStyle* baseStyle);
 
     KeyframeVector m_keyframes;
     // The spec describes filtering the normalized keyframes at sampling time
     // to get the 'property-specific keyframes'. For efficiency, we cache the
     // property-specific lists.
-    using KeyframeGroupMap = WillBeHeapHashMap<PropertyHandle, OwnPtrWillBeMember<PropertySpecificKeyframeGroup>>;
-    mutable OwnPtrWillBeMember<KeyframeGroupMap> m_keyframeGroups;
-    mutable RefPtrWillBeMember<InterpolationEffect> m_interpolationEffect;
+    using KeyframeGroupMap = HashMap<PropertyHandle, OwnPtr<PropertySpecificKeyframeGroup>>;
+    mutable OwnPtr<KeyframeGroupMap> m_keyframeGroups;
+    mutable RefPtr<InterpolationEffect> m_interpolationEffect;
+    mutable int m_lastIteration;
+    mutable double m_lastFraction;
+    mutable double m_lastIterationDuration;
     RefPtr<TimingFunction> m_neutralKeyframeEasing;
 
     mutable bool m_hasSyntheticKeyframes;
@@ -151,14 +153,14 @@ protected:
 template <class Keyframe>
 class KeyframeEffectModel final : public KeyframeEffectModelBase {
 public:
-    using KeyframeVector = WillBeHeapVector<RefPtrWillBeMember<Keyframe>>;
-    static PassRefPtrWillBeRawPtr<KeyframeEffectModel<Keyframe>> create(const KeyframeVector& keyframes, PassRefPtrWillBeRawPtr<TimingFunction> neutralKeyframeEasing = nullptr)
+    using KeyframeVector = Vector<RefPtr<Keyframe>>;
+    static KeyframeEffectModel<Keyframe>* create(const KeyframeVector& keyframes, PassRefPtr<TimingFunction> neutralKeyframeEasing = nullptr)
     {
-        return adoptRefWillBeNoop(new KeyframeEffectModel(keyframes, neutralKeyframeEasing));
+        return new KeyframeEffectModel(keyframes, neutralKeyframeEasing);
     }
 
 private:
-    KeyframeEffectModel(const KeyframeVector& keyframes, PassRefPtrWillBeRawPtr<TimingFunction> neutralKeyframeEasing)
+    KeyframeEffectModel(const KeyframeVector& keyframes, PassRefPtr<TimingFunction> neutralKeyframeEasing)
         : KeyframeEffectModelBase(neutralKeyframeEasing)
     {
         m_keyframes.appendVector(keyframes);

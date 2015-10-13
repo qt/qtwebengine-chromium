@@ -11,6 +11,7 @@
 #include "base/callback.h"
 #include "base/location.h"
 #include "base/single_thread_task_runner.h"
+#include "base/synchronization/lock.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/thread_task_runner_handle.h"
 #include "base/threading/thread.h"
@@ -188,6 +189,7 @@ class TextureLayerTest : public testing::Test {
   TextureLayerTest()
       : fake_client_(
             FakeLayerTreeHostClient(FakeLayerTreeHostClient::DIRECT_3D)),
+        output_surface_(FakeOutputSurface::Create3d()),
         host_impl_(&proxy_, &shared_bitmap_manager_, &task_graph_runner_),
         test_data_(&shared_bitmap_manager_) {}
 
@@ -213,6 +215,7 @@ class TextureLayerTest : public testing::Test {
   FakeLayerTreeHostClient fake_client_;
   TestSharedBitmapManager shared_bitmap_manager_;
   TestTaskGraphRunner task_graph_runner_;
+  scoped_ptr<OutputSurface> output_surface_;
   FakeLayerTreeHostImpl host_impl_;
   CommonMailboxObjects test_data_;
   LayerSettings layer_settings_;
@@ -233,55 +236,6 @@ TEST_F(TextureLayerTest, CheckPropertyChangeCausesCorrectBehavior) {
       0.5f, 0.5f, 0.5f, 0.5f));
   EXPECT_SET_NEEDS_COMMIT(1, test_layer->SetPremultipliedAlpha(false));
   EXPECT_SET_NEEDS_COMMIT(1, test_layer->SetBlendBackgroundColor(true));
-}
-
-TEST_F(TextureLayerTest, RateLimiter) {
-  FakeTextureLayerClient client;
-  scoped_refptr<TextureLayer> test_layer =
-      TextureLayer::CreateForMailbox(layer_settings_, &client);
-  test_layer->SetIsDrawable(true);
-  EXPECT_CALL(*layer_tree_host_, SetNeedsCommit()).Times(AnyNumber());
-  layer_tree_host_->SetRootLayer(test_layer);
-
-  // Don't rate limit until we invalidate.
-  EXPECT_CALL(*layer_tree_host_, StartRateLimiter()).Times(0);
-  test_layer->SetRateLimitContext(true);
-  Mock::VerifyAndClearExpectations(layer_tree_host_.get());
-
-  // Do rate limit after we invalidate.
-  EXPECT_CALL(*layer_tree_host_, StartRateLimiter());
-  test_layer->SetNeedsDisplay();
-  Mock::VerifyAndClearExpectations(layer_tree_host_.get());
-
-  // Stop rate limiter when we don't want it any more.
-  EXPECT_CALL(*layer_tree_host_, StopRateLimiter());
-  test_layer->SetRateLimitContext(false);
-  Mock::VerifyAndClearExpectations(layer_tree_host_.get());
-
-  // Or we clear the client.
-  test_layer->SetRateLimitContext(true);
-  EXPECT_CALL(*layer_tree_host_, StopRateLimiter());
-  EXPECT_CALL(*layer_tree_host_, SetNeedsCommit()).Times(AnyNumber());
-  test_layer->ClearClient();
-  Mock::VerifyAndClearExpectations(layer_tree_host_.get());
-
-  // Reset to a layer with a client, that started the rate limiter.
-  test_layer = TextureLayer::CreateForMailbox(layer_settings_, &client);
-  test_layer->SetIsDrawable(true);
-  test_layer->SetRateLimitContext(true);
-  EXPECT_CALL(*layer_tree_host_, SetNeedsCommit()).Times(AnyNumber());
-  layer_tree_host_->SetRootLayer(test_layer);
-  EXPECT_CALL(*layer_tree_host_, StartRateLimiter()).Times(0);
-  Mock::VerifyAndClearExpectations(layer_tree_host_.get());
-  EXPECT_CALL(*layer_tree_host_, StartRateLimiter());
-  test_layer->SetNeedsDisplay();
-  Mock::VerifyAndClearExpectations(layer_tree_host_.get());
-
-  // Stop rate limiter when we're removed from the tree.
-  EXPECT_CALL(*layer_tree_host_, StopRateLimiter());
-  EXPECT_CALL(*layer_tree_host_, SetNeedsCommit()).Times(1);
-  layer_tree_host_->SetRootLayer(nullptr);
-  Mock::VerifyAndClearExpectations(layer_tree_host_.get());
 }
 
 class TestMailboxHolder : public TextureLayer::TextureMailboxHolder {
@@ -823,10 +777,19 @@ class TextureLayerMailboxIsActivatedDuringCommit : public LayerTreeTest {
   }
 
   void WillActivateTreeOnThread(LayerTreeHostImpl* impl) override {
+    base::AutoLock lock(activate_count_lock_);
     ++activate_count_;
   }
 
   void DidCommit() override {
+    // The first frame doesn't cause anything to be returned so it does not
+    // need to wait for activation.
+    if (layer_tree_host()->source_frame_number() > 1) {
+      base::AutoLock lock(activate_count_lock_);
+      // The activate happened before commit is done on the main side.
+      EXPECT_EQ(activate_count_, layer_tree_host()->source_frame_number());
+    }
+
     switch (layer_tree_host()->source_frame_number()) {
       case 1:
         // The first mailbox has been activated. Set a new mailbox, and
@@ -846,31 +809,14 @@ class TextureLayerMailboxIsActivatedDuringCommit : public LayerTreeTest {
   }
 
   void CommitCompleteOnThread(LayerTreeHostImpl* host_impl) override {
-    switch (host_impl->active_tree()->source_frame_number()) {
-      case 0: {
-        // The activate for the 1st mailbox should have happened before now.
-        EXPECT_EQ(1, activate_count_);
-        break;
-      }
-      case 1: {
-        // The activate for the 2nd mailbox should have happened before now.
-        EXPECT_EQ(2, activate_count_);
-        break;
-      }
-      case 2: {
-        // The activate to remove the layer should have happened before now.
-        EXPECT_EQ(3, activate_count_);
-        break;
-      }
-      case 3: {
-        NOTREACHED();
-        break;
-      }
-    }
+    // The activate didn't happen before commit is done on the impl side (but it
+    // should happen before the main thread is done).
+    EXPECT_EQ(activate_count_, host_impl->sync_tree()->source_frame_number());
   }
 
   void AfterTest() override {}
 
+  base::Lock activate_count_lock_;
   int activate_count_;
   scoped_refptr<Layer> root_;
   scoped_refptr<TextureLayer> layer_;
@@ -889,7 +835,7 @@ class TextureLayerImplWithMailboxTest : public TextureLayerTest {
     TextureLayerTest::SetUp();
     layer_tree_host_ =
         MockLayerTreeHost::Create(&fake_client_, &task_graph_runner_);
-    EXPECT_TRUE(host_impl_.InitializeRenderer(FakeOutputSurface::Create3d()));
+    EXPECT_TRUE(host_impl_.InitializeRenderer(output_surface_.get()));
   }
 
   bool WillDraw(TextureLayerImpl* layer, DrawMode mode) {

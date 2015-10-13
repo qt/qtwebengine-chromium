@@ -44,10 +44,11 @@ public:
     UnacceleratedImageBufferSurface(const IntSize&, OpacityMode = NonOpaque);
     ~UnacceleratedImageBufferSurface() override;
 
-    SkCanvas* canvas() const override;
+    SkCanvas* canvas() override;
     bool isValid() const override;
+    const SkBitmap& deprecatedBitmapForOverwrite() override;
 
-    PassRefPtr<SkImage> newImageSnapshot() const override;
+    PassRefPtr<SkImage> newImageSnapshot(AccelerationHint) override;
 private:
     RefPtr<SkSurface> m_surface;
 };

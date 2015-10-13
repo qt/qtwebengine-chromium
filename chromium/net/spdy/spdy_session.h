@@ -57,7 +57,7 @@ const int kMaxConcurrentPushedStreams = 1000;
 // If more than this many bytes have been read or more than that many
 // milliseconds have passed, return ERR_IO_PENDING from ReadLoop.
 const int kYieldAfterBytesRead = 32 * 1024;
-const int kYieldAfterDurationMilliseconds = 50;
+const int kYieldAfterDurationMilliseconds = 20;
 
 // First and last valid stream IDs. As we always act as the client,
 // start at 1 for the first stream id.
@@ -503,7 +503,7 @@ class NET_EXPORT SpdySession : public BufferedSpdyFramerVisitorInterface,
   // Default value of SETTINGS_INITIAL_WINDOW_SIZE per protocol specification.
   // A session is always created with this initial window size.
   static int32 GetDefaultInitialWindowSize(NextProto protocol) {
-    return protocol < kProtoHTTP2MinimumVersion ? 65536 : 65535;
+    return protocol < kProtoHTTP2 ? 65536 : 65535;
   }
 
   // https://http2.github.io/http2-spec/#TLSUsage mandates minimum security
@@ -953,10 +953,6 @@ class NET_EXPORT SpdySession : public BufferedSpdyFramerVisitorInterface,
   bool check_ping_status_pending() const { return check_ping_status_pending_; }
 
   size_t max_concurrent_streams() const { return max_concurrent_streams_; }
-
-  // Returns the SSLClientSocket that this SPDY session sits on top of,
-  // or NULL, if the transport is not SSL.
-  SSLClientSocket* GetSSLClientSocket() const;
 
   // Whether Do{Read,Write}Loop() is in the call stack. Useful for
   // making sure we don't destroy ourselves prematurely in that case.

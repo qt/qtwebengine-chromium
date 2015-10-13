@@ -22,10 +22,10 @@
 
 #include "core/css/resolver/ViewportStyleResolver.h"
 #include "core/dom/ClientRectList.h"
-#include "core/dom/DocumentMarkerController.h"
 #include "core/dom/VisitedLinkState.h"
-#include "core/editing/Caret.h"
-#include "core/editing/UndoStack.h"
+#include "core/editing/DragCaretController.h"
+#include "core/editing/commands/UndoStack.h"
+#include "core/editing/markers/DocumentMarkerController.h"
 #include "core/events/Event.h"
 #include "core/fetch/ResourceFetcher.h"
 #include "core/frame/DOMTimer.h"
@@ -46,14 +46,14 @@
 #include "core/page/PointerLockController.h"
 #include "core/page/ValidationMessageClient.h"
 #include "core/page/scrolling/ScrollingCoordinator.h"
-#include "core/paint/DeprecatedPaintLayer.h"
+#include "core/paint/PaintLayer.h"
+#include "platform/MemoryPurgeController.h"
 #include "platform/graphics/GraphicsLayer.h"
 #include "platform/plugins/PluginData.h"
-#include "wtf/RefCountedLeakCounter.h"
+#include "public/platform/Platform.h"
+#include "public/platform/WebFrameHostScheduler.h"
 
 namespace blink {
-
-DEFINE_DEBUG_ONLY_GLOBAL(WTF::RefCountedLeakCounter, pageCounter, ("Page"));
 
 // static
 HashSet<Page*>& Page::allPages()
@@ -130,10 +130,6 @@ Page::Page(PageClients& pageClients)
 
     ASSERT(!allPages().contains(this));
     allPages().add(this);
-
-#ifndef NDEBUG
-    pageCounter.increment();
-#endif
 }
 
 Page::~Page()
@@ -161,6 +157,14 @@ ScrollingCoordinator* Page::scrollingCoordinator()
     return m_scrollingCoordinator.get();
 }
 
+MemoryPurgeController& Page::memoryPurgeController()
+{
+    if (!m_memoryPurgeController)
+        m_memoryPurgeController = MemoryPurgeController::create();
+
+    return *m_memoryPurgeController;
+}
+
 String Page::mainThreadScrollingReasonsAsText()
 {
     if (ScrollingCoordinator* scrollingCoordinator = this->scrollingCoordinator())
@@ -176,6 +180,9 @@ ClientRectList* Page::nonFastScrollableRects(const LocalFrame* frame)
         DisableCompositingQueryAsserts disabler;
         scrollingCoordinator->updateAfterCompositingChangeIfNeeded();
     }
+
+    if (!frame->view()->layerForScrolling())
+        return ClientRectList::create();
 
     // Now retain non-fast scrollable regions
     return ClientRectList::create(frame->view()->layerForScrolling()->platformLayer()->nonFastScrollableRegion());
@@ -301,29 +308,14 @@ void Page::setDefersLoading(bool defers)
     }
 }
 
-void Page::setPageScaleFactor(float scale, const IntPoint& origin)
+void Page::setPageScaleFactor(float scale)
 {
-    if (!mainFrame()->isLocalFrame())
-        return;
-
-    FrameView* view = deprecatedLocalMainFrame()->view();
-    PinchViewport& viewport = frameHost().pinchViewport();
-
-    if (scale != viewport.scale()) {
-        viewport.setScale(scale);
-
-        chromeClient().pageScaleFactorChanged();
-
-        deprecatedLocalMainFrame()->loader().saveScrollState();
-    }
-
-    if (view && view->scrollPosition() != origin)
-        view->setScrollPosition(origin, ProgrammaticScroll);
+    frameHost().visualViewport().setScale(scale);
 }
 
 float Page::pageScaleFactor() const
 {
-    return frameHost().pinchViewport().scale();
+    return frameHost().visualViewport().scale();
 }
 
 void Page::setDeviceScaleFactor(float scaleFactor)
@@ -345,7 +337,7 @@ void Page::setDeviceColorProfile(const Vector<char>& profile)
 
 void Page::resetDeviceColorProfile()
 {
-    // FIXME: implement.
+    RuntimeEnabledFeatures::setImageColorProfilesEnabled(false);
 }
 
 void Page::allVisitedStateChanged()
@@ -397,10 +389,14 @@ void Page::setVisibilityState(PageVisibilityState visibilityState, bool isInitia
         return;
     m_visibilityState = visibilityState;
 
-    if (visibilityState == PageVisibilityStateVisible)
+    // TODO(alexclarke): Move throttling of timers to chromium.
+    if (visibilityState == PageVisibilityStateVisible) {
+        m_frameHost->frameHostScheduler()->setPageInBackground(false);
         setTimerAlignmentInterval(DOMTimer::visiblePageAlignmentInterval());
-    else
+    } else {
+        m_frameHost->frameHostScheduler()->setPageInBackground(true);
         setTimerAlignmentInterval(DOMTimer::hiddenPageAlignmentInterval());
+    }
 
     if (!isInitialState)
         notifyPageVisibilityChanged();
@@ -479,7 +475,6 @@ void Page::settingsChanged(SettingsDelegate::ChangeType changeType)
             if (frame->isLocalFrame())
                 toLocalFrame(frame)->document()->mediaQueryAffectingValueChanged();
         }
-        setNeedsRecalcStyleInAllFrames();
         break;
     case SettingsDelegate::AccessibilityStateChange:
         if (!mainFrame() || !mainFrame()->isLocalFrame())
@@ -524,6 +519,7 @@ void Page::didCommitLoad(LocalFrame* frame)
     if (m_mainFrame == frame) {
         frame->console().clearMessages();
         useCounter().didCommitLoad();
+        frameHost().visualViewport().sendUMAMetrics();
         m_originsUsingFeatures.updateMeasurementsAndClear();
         UserGestureIndicator::clearProcessedUserGestureSinceLoad();
     }
@@ -544,10 +540,21 @@ void Page::acceptLanguagesChanged()
         frames[i]->localDOMWindow()->acceptLanguagesChanged();
 }
 
+void Page::setCompositedDisplayList(PassOwnPtr<CompositedDisplayList> compositedDisplayList)
+{
+    chromeClient().setCompositedDisplayList(compositedDisplayList);
+}
+
+CompositedDisplayList* Page::compositedDisplayListForTesting()
+{
+    return chromeClient().compositedDisplayListForTesting();
+}
+
 DEFINE_TRACE(Page)
 {
 #if ENABLE(OILPAN)
     visitor->trace(m_animator);
+    visitor->trace(m_autoscrollController);
     visitor->trace(m_dragCaretController);
     visitor->trace(m_dragController);
     visitor->trace(m_focusController);
@@ -559,6 +566,7 @@ DEFINE_TRACE(Page)
     visitor->trace(m_validationMessageClient);
     visitor->trace(m_multisamplingChangedObservers);
     visitor->trace(m_frameHost);
+    visitor->trace(m_memoryPurgeController);
     HeapSupplementable<Page>::trace(visitor);
 #endif
     PageLifecycleNotifier::trace(visitor);
@@ -583,10 +591,6 @@ void Page::willBeDestroyed()
 
     if (m_scrollingCoordinator)
         m_scrollingCoordinator->willBeDestroyed();
-
-#ifndef NDEBUG
-    pageCounter.decrement();
-#endif
 
     chromeClient().chromeDestroyed();
     if (m_validationMessageClient)

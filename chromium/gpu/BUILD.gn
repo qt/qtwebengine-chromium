@@ -49,6 +49,45 @@ component("gpu") {
   ]
 }
 
+# GYP version: //gpu/gpu.gyp:command_buffer_gles2
+shared_library("command_buffer_gles2") {
+  sources = [
+    # TODO(hendrikw): Move egl out of gles2_conform_support.
+    "gles2_conform_support/egl/config.cc",
+    "gles2_conform_support/egl/config.h",
+    "gles2_conform_support/egl/display.cc",
+    "gles2_conform_support/egl/display.h",
+    "gles2_conform_support/egl/egl.cc",
+    "gles2_conform_support/egl/surface.cc",
+    "gles2_conform_support/egl/surface.h",
+  ]
+
+  deps = [
+    "//base",
+    "//gpu/command_buffer/client:gles2_c_lib",
+    "//gpu/command_buffer/client:gles2_implementation",
+    "//gpu/command_buffer/service",
+    "//ui/gl:gl",
+  ]
+
+  if (!is_component_build) {
+    deps += [
+      "//gpu/command_buffer/client:client_sources",
+      "//gpu/command_buffer/client:gles2_cmd_helper_sources",
+    ]
+  }
+
+  defines = [
+    "COMMAND_BUFFER_GLES_LIB_SUPPORT_ONLY",
+    "EGLAPIENTRY=",
+  ]
+  if (current_os == "win") {
+    defines += [ "EGLAPI=__declspec(dllexport)" ]
+  } else {
+    defines += [ "EGLAPI=__attribute__((visibility(\"default\")))" ]
+  }
+}
+
 source_set("test_support") {
   testonly = true
   sources = [
@@ -69,15 +108,24 @@ source_set("test_support") {
   ]
 }
 
+group("gl_tests_run") {
+  testonly = true
+  deps = [
+    ":gl_tests",
+  ]
+}
+
 test("gl_tests") {
   sources = [
     "command_buffer/tests/compressed_texture_test.cc",
+    "command_buffer/tests/es3_misc_functions_unittest.cc",
     "command_buffer/tests/gl_bind_uniform_location_unittest.cc",
     "command_buffer/tests/gl_chromium_framebuffer_multisample_unittest.cc",
     "command_buffer/tests/gl_chromium_path_rendering_unittest.cc",
     "command_buffer/tests/gl_clear_framebuffer_unittest.cc",
     "command_buffer/tests/gl_compressed_copy_texture_CHROMIUM_unittest.cc",
     "command_buffer/tests/gl_copy_texture_CHROMIUM_unittest.cc",
+    "command_buffer/tests/gl_cube_map_texture_unittest.cc",
     "command_buffer/tests/gl_depth_texture_unittest.cc",
     "command_buffer/tests/gl_gpu_memory_buffer_unittest.cc",
     "command_buffer/tests/gl_lose_context_chromium_unittest.cc",
@@ -130,6 +178,15 @@ test("gl_tests") {
   }
 }
 
+# TODO(GYP): Delete this after we've converted everything to GN.
+# The _run targets exist only for compatibility w/ GYP.
+group("gpu_unittests_run") {
+  testonly = true
+  deps = [
+    ":gpu_unittests",
+  ]
+}
+
 test("gpu_unittests") {
   sources = [
     "command_buffer/client/buffer_tracker_unittest.cc",
@@ -155,10 +212,6 @@ test("gpu_unittests") {
     "command_buffer/common/id_allocator_test.cc",
     "command_buffer/common/trace_event.h",
     "command_buffer/common/unittest_main.cc",
-    "command_buffer/service/async_pixel_transfer_delegate_mock.cc",
-    "command_buffer/service/async_pixel_transfer_delegate_mock.h",
-    "command_buffer/service/async_pixel_transfer_manager_mock.cc",
-    "command_buffer/service/async_pixel_transfer_manager_mock.h",
     "command_buffer/service/buffer_manager_unittest.cc",
     "command_buffer/service/cmd_parser_test.cc",
     "command_buffer/service/command_buffer_service_unittest.cc",
@@ -180,7 +233,6 @@ test("gpu_unittests") {
     "command_buffer/service/gles2_cmd_decoder_unittest_2_autogen.h",
     "command_buffer/service/gles2_cmd_decoder_unittest_3.cc",
     "command_buffer/service/gles2_cmd_decoder_unittest_3_autogen.h",
-    "command_buffer/service/gles2_cmd_decoder_unittest_async_pixel.cc",
     "command_buffer/service/gles2_cmd_decoder_unittest_attribs.cc",
     "command_buffer/service/gles2_cmd_decoder_unittest_base.cc",
     "command_buffer/service/gles2_cmd_decoder_unittest_base.h",
@@ -202,6 +254,7 @@ test("gpu_unittests") {
     "command_buffer/service/memory_program_cache_unittest.cc",
     "command_buffer/service/mocks.cc",
     "command_buffer/service/mocks.h",
+    "command_buffer/service/path_manager_unittest.cc",
     "command_buffer/service/program_cache_unittest.cc",
     "command_buffer/service/program_manager_unittest.cc",
     "command_buffer/service/query_manager_unittest.cc",
@@ -230,7 +283,12 @@ test("gpu_unittests") {
     "config/gpu_util_unittest.cc",
   ]
 
-  configs += [ "//build/config/compiler:no_size_t_to_int_warning" ]
+  configs += [
+    "//build/config:precompiled_headers",
+
+    # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+    "//build/config/compiler:no_size_t_to_int_warning",
+  ]
 
   deps = [
     ":gpu",
@@ -246,6 +304,7 @@ test("gpu_unittests") {
     "//ui/gfx:test_support",
     "//ui/gl",
     "//ui/gl:gl_unittest_utils",
+    "//ui/gl:test_support",
     "//gpu/command_buffer/common:gles2_utils",
     "//gpu/command_buffer/client:gles2_c_lib",
     "//gpu/command_buffer/client:gles2_implementation",
@@ -271,17 +330,20 @@ test("gpu_perftests") {
   ]
 }
 
-test("angle_unittests") {
-  sources = [
-    "angle_unittest_main.cc",
-  ]
-
+# TODO(GYP): Delete this after we've converted everything to GN.
+# The _run targets exist only for compatibility w/ GYP.
+group("angle_unittests_run") {
+  testonly = true
   deps = [
-    "//base",
-    "//base/test:test_support",
-    "//base/third_party/dynamic_annotations",
-    "//testing/gmock",
-    "//testing/gtest",
-    "//third_party/angle:translator_static",
+    "//third_party/angle/src/tests:angle_unittests",
+  ]
+}
+
+# TODO(GYP): Delete this after we've converted everything to GN.
+# The _run targets exist only for compatibility w/ GYP.
+group("angle_end2end_tests_run") {
+  testonly = true
+  deps = [
+    "//third_party/angle/src/tests:angle_end2end_tests",
   ]
 }

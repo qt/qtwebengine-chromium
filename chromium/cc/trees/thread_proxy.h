@@ -17,6 +17,7 @@
 #include "cc/scheduler/scheduler.h"
 #include "cc/trees/layer_tree_host_impl.h"
 #include "cc/trees/proxy.h"
+#include "cc/trees/threaded_channel.h"
 
 namespace base {
 class SingleThreadTaskRunner;
@@ -25,13 +26,20 @@ class SingleThreadTaskRunner;
 namespace cc {
 
 class BeginFrameSource;
+class ChannelImpl;
+class ChannelMain;
 class ContextProvider;
 class InputHandlerClient;
 class LayerTreeHost;
+class ProxyImpl;
+class ProxyMain;
 class Scheduler;
 class ScopedThreadProxy;
+class ThreadedChannel;
 
 class CC_EXPORT ThreadProxy : public Proxy,
+                              public ProxyMain,
+                              public ProxyImpl,
                               NON_EXPORTED_BASE(LayerTreeHostImplClient),
                               NON_EXPORTED_BASE(SchedulerClient) {
  public:
@@ -54,25 +62,41 @@ class CC_EXPORT ThreadProxy : public Proxy,
     bool evicted_ui_resources;
   };
 
+  // Commits between the main and impl threads are processed through a pipeline
+  // with the following stages. For efficiency we can early out at any stage if
+  // we decide that no further processing is necessary.
+  enum CommitPipelineStage {
+    NO_PIPELINE_STAGE,
+    ANIMATE_PIPELINE_STAGE,
+    UPDATE_LAYERS_PIPELINE_STAGE,
+    COMMIT_PIPELINE_STAGE,
+  };
+
   struct MainThreadOnly {
     MainThreadOnly(ThreadProxy* proxy, int layer_tree_host_id);
     ~MainThreadOnly();
 
     const int layer_tree_host_id;
 
-    // Set only when SetNeedsAnimate is called.
-    bool animate_requested;
-    // Set only when SetNeedsCommit is called.
-    bool commit_requested;
-    // Set by SetNeedsAnimate, SetNeedsUpdateLayers, and SetNeedsCommit.
-    bool commit_request_sent_to_impl_thread;
+    // The furthest pipeline stage which has been requested for the next
+    // commit.
+    CommitPipelineStage max_requested_pipeline_stage;
+    // The commit pipeline stage that is currently being processed.
+    CommitPipelineStage current_pipeline_stage;
+    // The commit pipeline stage at which processing for the current commit
+    // will stop. Only valid while we are executing the pipeline (i.e.,
+    // |current_pipeline_stage| is set to a pipeline stage).
+    CommitPipelineStage final_pipeline_stage;
 
     bool started;
     bool prepare_tiles_pending;
-    bool can_cancel_commit;
     bool defer_commits;
 
     RendererCapabilities renderer_capabilities_main_thread_copy;
+
+    // TODO(khushalsagar): Make this scoped_ptr<ChannelMain> when ProxyMain
+    // and ProxyImpl are split.
+    ChannelMain* channel_main;
 
     base::WeakPtrFactory<ThreadProxy> weak_factory;
   };
@@ -117,8 +141,6 @@ class CC_EXPORT ThreadProxy : public Proxy,
 
     bool input_throttled_until_commit;
 
-    base::TimeTicks animation_time;
-
     // Whether a commit has been completed since the last time animations were
     // ticked. If this happens, we need to animate again.
     bool did_commit_after_animating;
@@ -134,6 +156,9 @@ class CC_EXPORT ThreadProxy : public Proxy,
     BeginFrameArgs last_processed_begin_main_frame_args;
 
     scoped_ptr<LayerTreeHostImpl> layer_tree_host_impl;
+
+    ChannelImpl* channel_impl;
+
     base::WeakPtrFactory<ThreadProxy> weak_factory;
   };
 
@@ -145,7 +170,7 @@ class CC_EXPORT ThreadProxy : public Proxy,
   void FinishAllRendering() override;
   bool IsStarted() const override;
   bool CommitToActiveTree() const override;
-  void SetOutputSurface(scoped_ptr<OutputSurface>) override;
+  void SetOutputSurface(OutputSurface* output_surface) override;
   void SetLayerTreeHostClientReady() override;
   void SetVisible(bool visible) override;
   void SetThrottleFrameProduction(bool throttle) override;
@@ -162,12 +187,11 @@ class CC_EXPORT ThreadProxy : public Proxy,
   void MainThreadHasStoppedFlinging() override;
   void Start() override;
   void Stop() override;
-  void ForceSerializeOnSwapBuffers() override;
   bool SupportsImplScrolling() const override;
-  void SetDebugState(const LayerTreeDebugState& debug_state) override;
   bool MainFrameWillHappenForTesting() override;
   void SetChildrenNeedBeginFrames(bool children_need_begin_frames) override;
   void SetAuthoritativeVSyncInterval(const base::TimeDelta& interval) override;
+  void ReleaseOutputSurface() override;
 
   // LayerTreeHostImplClient implementation
   void UpdateRendererCapabilitiesOnImplThread() override;
@@ -222,6 +246,16 @@ class CC_EXPORT ThreadProxy : public Proxy,
   void SendBeginFramesToChildren(const BeginFrameArgs& args) override;
   void SendBeginMainFrameNotExpectedSoon() override;
 
+  // ProxyMain implementation
+  base::WeakPtr<ProxyMain> GetMainWeakPtr() override;
+  void SetChannel(scoped_ptr<ThreadedChannel> threaded_channel) override;
+  void DidCompleteSwapBuffers() override;
+
+  // ProxyImpl implementation
+  base::WeakPtr<ProxyImpl> GetImplWeakPtr() override;
+  void SetThrottleFrameProductionOnImpl(bool throttle) override;
+  void SetLayerTreeHostClientReadyOnImpl() override;
+
  protected:
   ThreadProxy(
       LayerTreeHost* layer_tree_host,
@@ -237,13 +271,15 @@ class CC_EXPORT ThreadProxy : public Proxy,
       scoped_ptr<BeginMainFrameAndCommitState> begin_main_frame_state);
   void BeginMainFrameNotExpectedSoon();
   void DidCommitAndDrawFrame();
-  void DidCompleteSwapBuffers();
   void SetAnimationEvents(scoped_ptr<AnimationEventsVector> queue);
   void DidLoseOutputSurface();
   void RequestNewOutputSurface();
   void DidInitializeOutputSurface(bool success,
                                   const RendererCapabilities& capabilities);
-  void SendCommitRequestToImplThreadIfNeeded();
+  // Returns |true| if the request was actually sent, |false| if one was
+  // already outstanding.
+  bool SendCommitRequestToImplThreadIfNeeded(
+      CommitPipelineStage required_stage);
   void DidCompletePageScaleAnimation();
 
   // Called on impl thread.
@@ -253,25 +289,21 @@ class CC_EXPORT ThreadProxy : public Proxy,
   void BeginMainFrameAbortedOnImplThread(CommitEarlyOutReason reason);
   void FinishAllRenderingOnImplThread(CompletionEvent* completion);
   void InitializeImplOnImplThread(CompletionEvent* completion);
-  void SetLayerTreeHostClientReadyOnImplThread();
   void SetVisibleOnImplThread(CompletionEvent* completion, bool visible);
-  void SetThrottleFrameProductionOnImplThread(bool throttle);
   void HasInitializedOutputSurfaceOnImplThread(
       CompletionEvent* completion,
       bool* has_initialized_output_surface);
   void DeleteContentsTexturesOnImplThread(CompletionEvent* completion);
-  void InitializeOutputSurfaceOnImplThread(
-      scoped_ptr<OutputSurface> output_surface);
+  void InitializeOutputSurfaceOnImplThread(OutputSurface* output_surface);
+  void ReleaseOutputSurfaceOnImplThread(CompletionEvent* completion);
   void FinishGLOnImplThread(CompletionEvent* completion);
   void LayerTreeHostClosedOnImplThread(CompletionEvent* completion);
   DrawResult DrawSwapInternal(bool forced_draw);
-  void ForceSerializeOnSwapBuffersOnImplThread(CompletionEvent* completion);
   void MainFrameWillHappenOnImplThreadForTesting(CompletionEvent* completion,
                                                  bool* main_frame_will_happen);
   void SetSwapUsedIncompleteTileOnImplThread(bool used_incomplete_tile);
   void MainThreadHasStoppedFlingingOnImplThread();
   void SetInputThrottledUntilCommitOnImplThread(bool is_throttled);
-  void SetDebugStateOnImplThread(const LayerTreeDebugState& debug_state);
   void SetDeferCommitsOnImplThread(bool defer_commits) const;
   void PostFrameTimingEvents(
       scoped_ptr<FrameTimingTracker::CompositeTimingSet> composite_events,
@@ -291,6 +323,9 @@ class CC_EXPORT ThreadProxy : public Proxy,
   // Use accessors instead of this variable directly.
   CompositorThreadOnly compositor_thread_vars_unsafe_;
   CompositorThreadOnly& impl();
+
+  // TODO(khushalsagar): Remove this. Temporary variable to hold the channel.
+  scoped_ptr<ThreadedChannel> threaded_channel_;
 
   base::WeakPtr<ThreadProxy> main_thread_weak_ptr_;
   base::WeakPtr<ThreadProxy> impl_thread_weak_ptr_;

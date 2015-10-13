@@ -31,6 +31,7 @@ enum Token {
   kConfigWinVista,
   kConfigWin7,
   kConfigWin8,
+  kConfigWin10,
   kConfigWin,
   kConfigMacLeopard,
   kConfigMacSnowLeopard,
@@ -50,6 +51,11 @@ enum Token {
   // build type
   kConfigRelease,
   kConfigDebug,
+  // ANGLE renderer
+  kConfigD3D9,
+  kConfigD3D11,
+  kConfigGLDesktop,
+  kConfigGLES,
   // expectation
   kExpectationPass,
   kExpectationFail,
@@ -74,34 +80,39 @@ struct TokenInfo {
 };
 
 const TokenInfo kTokenData[] = {
-  { "xp", GPUTestConfig::kOsWinXP },
-  { "vista", GPUTestConfig::kOsWinVista },
-  { "win7", GPUTestConfig::kOsWin7 },
-  { "win8", GPUTestConfig::kOsWin8 },
-  { "win", GPUTestConfig::kOsWin },
-  { "leopard", GPUTestConfig::kOsMacLeopard },
-  { "snowleopard", GPUTestConfig::kOsMacSnowLeopard },
-  { "lion", GPUTestConfig::kOsMacLion },
-  { "mountainlion", GPUTestConfig::kOsMacMountainLion },
-  { "mavericks", GPUTestConfig::kOsMacMavericks },
-  { "yosemite", GPUTestConfig::kOsMacYosemite },
-  { "mac", GPUTestConfig::kOsMac },
-  { "linux", GPUTestConfig::kOsLinux },
-  { "chromeos", GPUTestConfig::kOsChromeOS },
-  { "android", GPUTestConfig::kOsAndroid },
-  { "nvidia", 0x10DE },
-  { "amd", 0x1002 },
-  { "intel", 0x8086 },
-  { "vmware", 0x15ad },
-  { "release", GPUTestConfig::kBuildTypeRelease },
-  { "debug", GPUTestConfig::kBuildTypeDebug },
-  { "pass", GPUTestExpectationsParser::kGpuTestPass },
-  { "fail", GPUTestExpectationsParser::kGpuTestFail },
-  { "flaky", GPUTestExpectationsParser::kGpuTestFlaky },
-  { "timeout", GPUTestExpectationsParser::kGpuTestTimeout },
-  { "skip", GPUTestExpectationsParser::kGpuTestSkip },
-  { ":", 0 },
-  { "=", 0 },
+    {"xp", GPUTestConfig::kOsWinXP},
+    {"vista", GPUTestConfig::kOsWinVista},
+    {"win7", GPUTestConfig::kOsWin7},
+    {"win8", GPUTestConfig::kOsWin8},
+    {"win10", GPUTestConfig::kOsWin10},
+    {"win", GPUTestConfig::kOsWin},
+    {"leopard", GPUTestConfig::kOsMacLeopard},
+    {"snowleopard", GPUTestConfig::kOsMacSnowLeopard},
+    {"lion", GPUTestConfig::kOsMacLion},
+    {"mountainlion", GPUTestConfig::kOsMacMountainLion},
+    {"mavericks", GPUTestConfig::kOsMacMavericks},
+    {"yosemite", GPUTestConfig::kOsMacYosemite},
+    {"mac", GPUTestConfig::kOsMac},
+    {"linux", GPUTestConfig::kOsLinux},
+    {"chromeos", GPUTestConfig::kOsChromeOS},
+    {"android", GPUTestConfig::kOsAndroid},
+    {"nvidia", 0x10DE},
+    {"amd", 0x1002},
+    {"intel", 0x8086},
+    {"vmware", 0x15ad},
+    {"release", GPUTestConfig::kBuildTypeRelease},
+    {"debug", GPUTestConfig::kBuildTypeDebug},
+    {"d3d9", GPUTestConfig::kAPID3D9},
+    {"d3d11", GPUTestConfig::kAPID3D11},
+    {"opengl", GPUTestConfig::kAPIGLDesktop},
+    {"gles", GPUTestConfig::kAPIGLES},
+    {"pass", GPUTestExpectationsParser::kGpuTestPass},
+    {"fail", GPUTestExpectationsParser::kGpuTestFail},
+    {"flaky", GPUTestExpectationsParser::kGpuTestFlaky},
+    {"timeout", GPUTestExpectationsParser::kGpuTestTimeout},
+    {"skip", GPUTestExpectationsParser::kGpuTestSkip},
+    {":", 0},
+    {"=", 0},
 };
 
 enum ErrorType {
@@ -111,6 +122,7 @@ enum ErrorType {
   kErrorEntryWithOsConflicts,
   kErrorEntryWithGpuVendorConflicts,
   kErrorEntryWithBuildTypeConflicts,
+  kErrorEntryWithAPIConflicts,
   kErrorEntryWithGpuDeviceIdConflicts,
   kErrorEntryWithExpectationConflicts,
   kErrorEntriesOverlap,
@@ -119,21 +131,22 @@ enum ErrorType {
 };
 
 const char* kErrorMessage[] = {
-  "file IO failed",
-  "entry with wrong format",
-  "entry invalid, likely wrong modifiers combination",
-  "entry with OS modifier conflicts",
-  "entry with GPU vendor modifier conflicts",
-  "entry with GPU build type conflicts",
-  "entry with GPU device id conflicts or malformat",
-  "entry with expectation modifier conflicts",
-  "two entries's configs overlap",
+    "file IO failed",
+    "entry with wrong format",
+    "entry invalid, likely wrong modifiers combination",
+    "entry with OS modifier conflicts",
+    "entry with GPU vendor modifier conflicts",
+    "entry with GPU build type conflicts",
+    "entry with GPU API conflicts",
+    "entry with GPU device id conflicts or malformat",
+    "entry with expectation modifier conflicts",
+    "two entries' configs overlap",
 };
 
 Token ParseToken(const std::string& word) {
-  if (base::StartsWithASCII(word, "//", false))
+  if (base::StartsWith(word, "//", base::CompareCase::INSENSITIVE_ASCII))
     return kTokenComment;
-  if (base::StartsWithASCII(word, "0x", false))
+  if (base::StartsWith(word, "0x", base::CompareCase::INSENSITIVE_ASCII))
     return kConfigGPUDeviceID;
 
   for (int32 i = 0; i < kNumberOfExactMatchTokens; ++i) {
@@ -174,8 +187,8 @@ bool GPUTestExpectationsParser::LoadTestExpectations(const std::string& data) {
   entries_.clear();
   error_messages_.clear();
 
-  std::vector<std::string> lines;
-  base::SplitString(data, '\n', &lines);
+  std::vector<std::string> lines = base::SplitString(
+      data, "\n", base::TRIM_WHITESPACE, base::SPLIT_WANT_ALL);
   bool rt = true;
   for (size_t i = 0; i < lines.size(); ++i) {
     if (!ParseLine(lines[i], i + 1))
@@ -221,8 +234,9 @@ GPUTestExpectationsParser::GetErrorMessages() const {
 bool GPUTestExpectationsParser::ParseConfig(
     const std::string& config_data, GPUTestConfig* config) {
   DCHECK(config);
-  std::vector<std::string> tokens;
-  base::SplitStringAlongWhitespace(config_data, &tokens);
+  std::vector<std::string> tokens = base::SplitString(
+      config_data, base::kWhitespaceASCII, base::KEEP_WHITESPACE,
+      base::SPLIT_WANT_NONEMPTY);
 
   for (size_t i = 0; i < tokens.size(); ++i) {
     Token token = ParseToken(tokens[i]);
@@ -231,6 +245,7 @@ bool GPUTestExpectationsParser::ParseConfig(
       case kConfigWinVista:
       case kConfigWin7:
       case kConfigWin8:
+      case kConfigWin10:
       case kConfigWin:
       case kConfigMacLeopard:
       case kConfigMacSnowLeopard:
@@ -248,6 +263,10 @@ bool GPUTestExpectationsParser::ParseConfig(
       case kConfigVMWare:
       case kConfigRelease:
       case kConfigDebug:
+      case kConfigD3D9:
+      case kConfigD3D11:
+      case kConfigGLDesktop:
+      case kConfigGLES:
       case kConfigGPUDeviceID:
         if (token == kConfigGPUDeviceID) {
           if (!UpdateTestConfig(config, tokens[i], 0))
@@ -266,8 +285,9 @@ bool GPUTestExpectationsParser::ParseConfig(
 
 bool GPUTestExpectationsParser::ParseLine(
     const std::string& line_data, size_t line_number) {
-  std::vector<std::string> tokens;
-  base::SplitStringAlongWhitespace(line_data, &tokens);
+  std::vector<std::string> tokens = base::SplitString(
+      line_data, base::kWhitespaceASCII, base::KEEP_WHITESPACE,
+      base::SPLIT_WANT_NONEMPTY);
   int32 stage = kLineParserBegin;
   GPUTestExpectationEntry entry;
   entry.line_number = line_number;
@@ -283,6 +303,7 @@ bool GPUTestExpectationsParser::ParseLine(
       case kConfigWinVista:
       case kConfigWin7:
       case kConfigWin8:
+      case kConfigWin10:
       case kConfigWin:
       case kConfigMacLeopard:
       case kConfigMacSnowLeopard:
@@ -300,6 +321,10 @@ bool GPUTestExpectationsParser::ParseLine(
       case kConfigVMWare:
       case kConfigRelease:
       case kConfigDebug:
+      case kConfigD3D9:
+      case kConfigD3D11:
+      case kConfigGLDesktop:
+      case kConfigGLES:
       case kConfigGPUDeviceID:
         // MODIFIERS, could be in any order, need at least one.
         if (stage != kLineParserConfigs && stage != kLineParserBugID) {
@@ -398,6 +423,7 @@ bool GPUTestExpectationsParser::UpdateTestConfig(
     case kConfigWinVista:
     case kConfigWin7:
     case kConfigWin8:
+    case kConfigWin10:
     case kConfigWin:
     case kConfigMacLeopard:
     case kConfigMacSnowLeopard:
@@ -444,6 +470,17 @@ bool GPUTestExpectationsParser::UpdateTestConfig(
       }
       config->set_build_type(
           config->build_type() | kTokenData[token].flag);
+      break;
+    case kConfigD3D9:
+    case kConfigD3D11:
+    case kConfigGLDesktop:
+    case kConfigGLES:
+      if ((config->api() & kTokenData[token].flag) != 0) {
+        PushErrorMessage(kErrorMessage[kErrorEntryWithAPIConflicts],
+                         line_number);
+        return false;
+      }
+      config->set_api(config->api() | kTokenData[token].flag);
       break;
     default:
       DCHECK(false);

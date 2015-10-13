@@ -7,10 +7,12 @@
 
 #include "platform/RuntimeEnabledFeatures.h"
 #include "platform/graphics/GraphicsContext.h"
+#include "platform/graphics/paint/CachedDisplayItem.h"
 #include "platform/graphics/paint/ClipPathRecorder.h"
 #include "platform/graphics/paint/ClipRecorder.h"
 #include "platform/graphics/paint/DrawingDisplayItem.h"
 #include "platform/graphics/paint/DrawingRecorder.h"
+#include "platform/graphics/paint/SubsequenceRecorder.h"
 #include <gtest/gtest.h>
 
 namespace blink {
@@ -18,29 +20,28 @@ namespace blink {
 class DisplayItemListTest : public ::testing::Test {
 public:
     DisplayItemListTest()
-        : m_originalSlimmingPaintEnabled(RuntimeEnabledFeatures::slimmingPaintEnabled()) { }
+        : m_displayItemList(DisplayItemList::create())
+        , m_originalSlimmingPaintSubsequenceCachingEnabled(RuntimeEnabledFeatures::slimmingPaintSubsequenceCachingEnabled()) { }
 
 protected:
-    DisplayItemList& displayItemList() { return m_displayItemList; }
-    const DisplayItems& newPaintListBeforeUpdate() { return displayItemList().m_newDisplayItems; }
+    DisplayItemList& displayItemList() { return *m_displayItemList; }
 
 private:
-    void SetUp() override
-    {
-        RuntimeEnabledFeatures::setSlimmingPaintEnabled(true);
-    }
     void TearDown() override
     {
-        RuntimeEnabledFeatures::setSlimmingPaintEnabled(m_originalSlimmingPaintEnabled);
+        RuntimeEnabledFeatures::setSlimmingPaintSubsequenceCachingEnabled(m_originalSlimmingPaintSubsequenceCachingEnabled);
     }
 
-    DisplayItemList m_displayItemList;
-    bool m_originalSlimmingPaintEnabled;
+    OwnPtr<DisplayItemList> m_displayItemList;
+    bool m_originalSlimmingPaintSubsequenceCachingEnabled;
 };
 
 const DisplayItem::Type foregroundDrawingType = static_cast<DisplayItem::Type>(DisplayItem::DrawingPaintPhaseFirst + 4);
-const DisplayItem::Type backgroundDrawingType = DisplayItem::BoxDecorationBackground;
+const DisplayItem::Type backgroundDrawingType = DisplayItem::DrawingPaintPhaseFirst;
 const DisplayItem::Type clipType = DisplayItem::ClipFirst;
+const DisplayItem::Type subsequenceType = DisplayItem::SubsequenceNormalFlowAndPositiveZOrder;
+const DisplayItem::Type endSubsequenceType = DisplayItem::subsequenceTypeToEndSubsequenceType(subsequenceType);
+const DisplayItem::Type cachedSubsequenceType = DisplayItem::subsequenceTypeToCachedSubsequenceType(subsequenceType);
 
 class TestDisplayItemClient {
 public:
@@ -55,9 +56,9 @@ private:
     String m_name;
 };
 
-class TestDisplayItem : public DisplayItem {
+class TestDisplayItem final : public DisplayItem {
 public:
-    TestDisplayItem(const TestDisplayItemClient& client, Type type) : DisplayItem(client, type) { }
+    TestDisplayItem(const TestDisplayItemClient& client, Type type) : DisplayItem(client, type, sizeof(*this)) { }
 
     void replay(GraphicsContext&) final { ASSERT_NOT_REACHED(); }
     void appendToWebDisplayItemList(WebDisplayItemList*) const final { ASSERT_NOT_REACHED(); }
@@ -78,9 +79,9 @@ public:
             break; \
         const TestDisplayItem expected[] = { __VA_ARGS__ }; \
         for (size_t index = 0; index < std::min<size_t>(actual.size(), expectedSize); index++) { \
-            TRACE_DISPLAY_ITEMS(index, expected[index], *actual.elementAt(index)); \
-            EXPECT_EQ(expected[index].client(), actual.elementAt(index)->client()); \
-            EXPECT_EQ(expected[index].type(), actual.elementAt(index)->type()); \
+            TRACE_DISPLAY_ITEMS(index, expected[index], actual[index]); \
+            EXPECT_EQ(expected[index].client(), actual[index].client()); \
+            EXPECT_EQ(expected[index].type(), actual[index].type()); \
         } \
     } while (false);
 
@@ -130,7 +131,7 @@ TEST_F(DisplayItemListTest, UpdateBasic)
         TestDisplayItem(second, backgroundDrawingType),
         TestDisplayItem(first, foregroundDrawingType));
 
-    displayItemList().invalidate(second.displayItemClient());
+    displayItemList().invalidate(second);
     drawRect(context, first, backgroundDrawingType, FloatRect(100, 100, 300, 300));
     drawRect(context, first, foregroundDrawingType, FloatRect(100, 100, 300, 300));
     displayItemList().commitNewDisplayItems();
@@ -157,7 +158,7 @@ TEST_F(DisplayItemListTest, UpdateSwapOrder)
         TestDisplayItem(second, backgroundDrawingType),
         TestDisplayItem(unaffected, backgroundDrawingType));
 
-    displayItemList().invalidate(second.displayItemClient());
+    displayItemList().invalidate(second);
     drawRect(context, second, backgroundDrawingType, FloatRect(100, 100, 50, 200));
     drawRect(context, first, backgroundDrawingType, FloatRect(100, 100, 100, 100));
     drawRect(context, unaffected, backgroundDrawingType, FloatRect(300, 300, 10, 10));
@@ -218,7 +219,7 @@ TEST_F(DisplayItemListTest, UpdateInvalidationWithPhases)
         TestDisplayItem(second, foregroundDrawingType),
         TestDisplayItem(third, foregroundDrawingType));
 
-    displayItemList().invalidate(second.displayItemClient());
+    displayItemList().invalidate(second);
     drawRect(context, first, backgroundDrawingType, FloatRect(100, 100, 100, 100));
     drawRect(context, second, backgroundDrawingType, FloatRect(100, 100, 50, 200));
     drawRect(context, third, backgroundDrawingType, FloatRect(300, 100, 50, 50));
@@ -250,8 +251,8 @@ TEST_F(DisplayItemListTest, UpdateAddFirstOverlap)
         TestDisplayItem(second, backgroundDrawingType),
         TestDisplayItem(second, foregroundDrawingType));
 
-    displayItemList().invalidate(first.displayItemClient());
-    displayItemList().invalidate(second.displayItemClient());
+    displayItemList().invalidate(first);
+    displayItemList().invalidate(second);
     drawRect(context, first, backgroundDrawingType, FloatRect(100, 100, 150, 150));
     drawRect(context, first, foregroundDrawingType, FloatRect(100, 100, 150, 150));
     drawRect(context, second, backgroundDrawingType, FloatRect(200, 200, 50, 50));
@@ -264,7 +265,7 @@ TEST_F(DisplayItemListTest, UpdateAddFirstOverlap)
         TestDisplayItem(second, backgroundDrawingType),
         TestDisplayItem(second, foregroundDrawingType));
 
-    displayItemList().invalidate(first.displayItemClient());
+    displayItemList().invalidate(first);
     drawRect(context, second, backgroundDrawingType, FloatRect(200, 200, 50, 50));
     drawRect(context, second, foregroundDrawingType, FloatRect(200, 200, 50, 50));
     displayItemList().commitNewDisplayItems();
@@ -288,8 +289,8 @@ TEST_F(DisplayItemListTest, UpdateAddLastOverlap)
         TestDisplayItem(first, backgroundDrawingType),
         TestDisplayItem(first, foregroundDrawingType));
 
-    displayItemList().invalidate(first.displayItemClient());
-    displayItemList().invalidate(second.displayItemClient());
+    displayItemList().invalidate(first);
+    displayItemList().invalidate(second);
     drawRect(context, first, backgroundDrawingType, FloatRect(100, 100, 150, 150));
     drawRect(context, first, foregroundDrawingType, FloatRect(100, 100, 150, 150));
     drawRect(context, second, backgroundDrawingType, FloatRect(200, 200, 50, 50));
@@ -302,8 +303,8 @@ TEST_F(DisplayItemListTest, UpdateAddLastOverlap)
         TestDisplayItem(second, backgroundDrawingType),
         TestDisplayItem(second, foregroundDrawingType));
 
-    displayItemList().invalidate(first.displayItemClient());
-    displayItemList().invalidate(second.displayItemClient());
+    displayItemList().invalidate(first);
+    displayItemList().invalidate(second);
     drawRect(context, first, backgroundDrawingType, FloatRect(100, 100, 150, 150));
     drawRect(context, first, foregroundDrawingType, FloatRect(100, 100, 150, 150));
     displayItemList().commitNewDisplayItems();
@@ -332,7 +333,7 @@ TEST_F(DisplayItemListTest, UpdateClip)
         TestDisplayItem(second, backgroundDrawingType),
         TestDisplayItem(first, DisplayItem::clipTypeToEndClipType(clipType)));
 
-    displayItemList().invalidate(first.displayItemClient());
+    displayItemList().invalidate(first);
     drawRect(context, first, backgroundDrawingType, FloatRect(100, 100, 150, 150));
     drawRect(context, second, backgroundDrawingType, FloatRect(100, 100, 150, 150));
     displayItemList().commitNewDisplayItems();
@@ -341,7 +342,7 @@ TEST_F(DisplayItemListTest, UpdateClip)
         TestDisplayItem(first, backgroundDrawingType),
         TestDisplayItem(second, backgroundDrawingType));
 
-    displayItemList().invalidate(second.displayItemClient());
+    displayItemList().invalidate(second);
     drawRect(context, first, backgroundDrawingType, FloatRect(100, 100, 150, 150));
     {
         ClipRecorder clipRecorder(context, second, clipType, LayoutRect(1, 1, 2, 2));
@@ -371,10 +372,10 @@ TEST_F(DisplayItemListTest, CachedDisplayItems)
         TestDisplayItem(second, backgroundDrawingType));
     EXPECT_TRUE(displayItemList().clientCacheIsValid(first.displayItemClient()));
     EXPECT_TRUE(displayItemList().clientCacheIsValid(second.displayItemClient()));
-    const SkPicture* firstPicture = static_cast<const DrawingDisplayItem*>(displayItemList().displayItems().elementAt(0))->picture();
-    const SkPicture* secondPicture = static_cast<const DrawingDisplayItem*>(displayItemList().displayItems().elementAt(1))->picture();
+    const SkPicture* firstPicture = static_cast<const DrawingDisplayItem&>(displayItemList().displayItems()[0]).picture();
+    const SkPicture* secondPicture = static_cast<const DrawingDisplayItem&>(displayItemList().displayItems()[1]).picture();
 
-    displayItemList().invalidate(first.displayItemClient());
+    displayItemList().invalidate(first);
     EXPECT_FALSE(displayItemList().clientCacheIsValid(first.displayItemClient()));
     EXPECT_TRUE(displayItemList().clientCacheIsValid(second.displayItemClient()));
 
@@ -386,9 +387,9 @@ TEST_F(DisplayItemListTest, CachedDisplayItems)
         TestDisplayItem(first, backgroundDrawingType),
         TestDisplayItem(second, backgroundDrawingType));
     // The first display item should be updated.
-    EXPECT_NE(firstPicture, static_cast<const DrawingDisplayItem*>(displayItemList().displayItems().elementAt(0))->picture());
+    EXPECT_NE(firstPicture, static_cast<const DrawingDisplayItem&>(displayItemList().displayItems()[0]).picture());
     // The second display item should be cached.
-    EXPECT_EQ(secondPicture, static_cast<const DrawingDisplayItem*>(displayItemList().displayItems().elementAt(1))->picture());
+    EXPECT_EQ(secondPicture, static_cast<const DrawingDisplayItem&>(displayItemList().displayItems()[1]).picture());
     EXPECT_TRUE(displayItemList().clientCacheIsValid(first.displayItemClient()));
     EXPECT_TRUE(displayItemList().clientCacheIsValid(second.displayItemClient()));
 
@@ -426,7 +427,7 @@ TEST_F(DisplayItemListTest, ComplexUpdateSwapOrder)
         TestDisplayItem(container2, foregroundDrawingType));
 
     // Simulate the situation when container1 e.g. gets a z-index that is now greater than container2.
-    displayItemList().invalidate(container1.displayItemClient());
+    displayItemList().invalidate(container1);
     drawRect(context, container2, backgroundDrawingType, FloatRect(100, 200, 100, 100));
     drawRect(context, content2, backgroundDrawingType, FloatRect(100, 200, 50, 200));
     drawRect(context, content2, foregroundDrawingType, FloatRect(100, 200, 50, 200));
@@ -448,119 +449,190 @@ TEST_F(DisplayItemListTest, ComplexUpdateSwapOrder)
         TestDisplayItem(container1, foregroundDrawingType));
 }
 
-// Enable this when cached subtree flags are ready.
-#if 0
-TEST_F(DisplayItemListTest, CachedSubtreeSwapOrder)
+TEST_F(DisplayItemListTest, CachedSubsequenceSwapOrder)
 {
+    RuntimeEnabledFeatures::setSlimmingPaintSubsequenceCachingEnabled(true);
+
     TestDisplayItemClient container1("container1");
     TestDisplayItemClient content1("content1");
     TestDisplayItemClient container2("container2");
     TestDisplayItemClient content2("content2");
-    GraphicsContext context(nullptr, &displayItemList());
+    GraphicsContext context(&displayItemList());
 
     {
-        SubtreeRecorder r(context, container1, backgroundDrawingType);
-        r.begin();
+        SubsequenceRecorder r(context, container1, subsequenceType);
         drawRect(context, container1, backgroundDrawingType, FloatRect(100, 100, 100, 100));
         drawRect(context, content1, backgroundDrawingType, FloatRect(100, 100, 50, 200));
-    }
-    {
-        SubtreeRecorder r(context, container1, foregroundDrawingType);
-        r.begin();
         drawRect(context, content1, foregroundDrawingType, FloatRect(100, 100, 50, 200));
         drawRect(context, container1, foregroundDrawingType, FloatRect(100, 100, 100, 100));
     }
     {
-        SubtreeRecorder r(context, container2, backgroundDrawingType);
-        r.begin();
+        SubsequenceRecorder r(context, container2, subsequenceType);
         drawRect(context, container2, backgroundDrawingType, FloatRect(100, 200, 100, 100));
         drawRect(context, content2, backgroundDrawingType, FloatRect(100, 200, 50, 200));
-    }
-    {
-        SubtreeRecorder r(context, container2, foregroundDrawingType);
-        r.begin();
         drawRect(context, content2, foregroundDrawingType, FloatRect(100, 200, 50, 200));
         drawRect(context, container2, foregroundDrawingType, FloatRect(100, 200, 100, 100));
     }
     displayItemList().commitNewDisplayItems();
 
-    EXPECT_DISPLAY_LIST(displayItemList().displayItems(), 16,
-        TestDisplayItem(container1, DisplayItem::paintPhaseToBeginSubtreeType(backgroundDrawingType)),
+    EXPECT_DISPLAY_LIST(displayItemList().displayItems(), 12,
+        TestDisplayItem(container1, subsequenceType),
         TestDisplayItem(container1, backgroundDrawingType),
         TestDisplayItem(content1, backgroundDrawingType),
-        TestDisplayItem(container1, DisplayItem::paintPhaseToEndSubtreeType(backgroundDrawingType)),
-
-        TestDisplayItem(container1, DisplayItem::paintPhaseToBeginSubtreeType(foregroundDrawingType)),
         TestDisplayItem(content1, foregroundDrawingType),
         TestDisplayItem(container1, foregroundDrawingType),
-        TestDisplayItem(container1, DisplayItem::paintPhaseToEndSubtreeType(foregroundDrawingType)),
+        TestDisplayItem(container1, endSubsequenceType),
 
-        TestDisplayItem(container2, DisplayItem::paintPhaseToBeginSubtreeType(backgroundDrawingType)),
+        TestDisplayItem(container2, subsequenceType),
         TestDisplayItem(container2, backgroundDrawingType),
         TestDisplayItem(content2, backgroundDrawingType),
-        TestDisplayItem(container2, DisplayItem::paintPhaseToEndSubtreeType(backgroundDrawingType)),
-
-        TestDisplayItem(container2, DisplayItem::paintPhaseToBeginSubtreeType(foregroundDrawingType)),
         TestDisplayItem(content2, foregroundDrawingType),
         TestDisplayItem(container2, foregroundDrawingType),
-        TestDisplayItem(container2, DisplayItem::paintPhaseToEndSubtreeType(foregroundDrawingType)));
+        TestDisplayItem(container2, endSubsequenceType));
 
-    // Simulate the situation when container1 e.g. gets a z-index that is now greater than container2,
-    // and at the same time container2 is scrolled out of viewport and content2 is invalidated.
-    displayItemList().invalidate(content2.displayItemClient());
+    // Simulate the situation when container1 e.g. gets a z-index that is now greater than container2.
+    EXPECT_TRUE(SubsequenceRecorder::useCachedSubsequenceIfPossible(context, container2, subsequenceType));
+    EXPECT_TRUE(SubsequenceRecorder::useCachedSubsequenceIfPossible(context, container1, subsequenceType));
+
+    EXPECT_DISPLAY_LIST(displayItemList().newDisplayItems(), 2,
+        TestDisplayItem(container2, cachedSubsequenceType),
+        TestDisplayItem(container1, cachedSubsequenceType));
+
+    displayItemList().commitNewDisplayItems();
+
+    EXPECT_DISPLAY_LIST(displayItemList().displayItems(), 12,
+        TestDisplayItem(container2, subsequenceType),
+        TestDisplayItem(container2, backgroundDrawingType),
+        TestDisplayItem(content2, backgroundDrawingType),
+        TestDisplayItem(content2, foregroundDrawingType),
+        TestDisplayItem(container2, foregroundDrawingType),
+        TestDisplayItem(container2, endSubsequenceType),
+
+        TestDisplayItem(container1, subsequenceType),
+        TestDisplayItem(container1, backgroundDrawingType),
+        TestDisplayItem(content1, backgroundDrawingType),
+        TestDisplayItem(content1, foregroundDrawingType),
+        TestDisplayItem(container1, foregroundDrawingType),
+        TestDisplayItem(container1, endSubsequenceType));
+}
+
+TEST_F(DisplayItemListTest, OutOfOrderNoCrash)
+{
+    TestDisplayItemClient client("client");
+    GraphicsContext context(&displayItemList());
+
+    const DisplayItem::Type type1 = DisplayItem::DrawingFirst;
+    const DisplayItem::Type type2 = static_cast<DisplayItem::Type>(DisplayItem::DrawingFirst + 1);
+    const DisplayItem::Type type3 = static_cast<DisplayItem::Type>(DisplayItem::DrawingFirst + 2);
+    const DisplayItem::Type type4 = static_cast<DisplayItem::Type>(DisplayItem::DrawingFirst + 3);
+
+    drawRect(context, client, type1, FloatRect(100, 100, 100, 100));
+    drawRect(context, client, type2, FloatRect(100, 100, 50, 200));
+    drawRect(context, client, type3, FloatRect(100, 100, 50, 200));
+    drawRect(context, client, type4, FloatRect(100, 100, 100, 100));
+
+    displayItemList().commitNewDisplayItems();
+
+    drawRect(context, client, type2, FloatRect(100, 100, 50, 200));
+    drawRect(context, client, type3, FloatRect(100, 100, 50, 200));
+    drawRect(context, client, type1, FloatRect(100, 100, 100, 100));
+    drawRect(context, client, type4, FloatRect(100, 100, 100, 100));
+
+    displayItemList().commitNewDisplayItems();
+}
+
+TEST_F(DisplayItemListTest, CachedNestedSubsequenceUpdate)
+{
+    RuntimeEnabledFeatures::setSlimmingPaintSubsequenceCachingEnabled(true);
+
+    TestDisplayItemClient container1("container1");
+    TestDisplayItemClient content1("content1");
+    TestDisplayItemClient container2("container2");
+    TestDisplayItemClient content2("content2");
+    GraphicsContext context(&displayItemList());
+
     {
-        SubtreeRecorder r(context, container2, backgroundDrawingType);
-    }
-    EXPECT_EQ((size_t)1, newPaintListBeforeUpdate().size());
-    EXPECT_TRUE(newPaintListBeforeUpdate().last()->isSubtreeCached());
-    {
-        SubtreeRecorder r(context, container2, foregroundDrawingType);
-    }
-    EXPECT_EQ((size_t)2, newPaintListBeforeUpdate().size());
-    EXPECT_TRUE(newPaintListBeforeUpdate().last()->isSubtreeCached());
-    {
-        SubtreeRecorder r(context, container1, backgroundDrawingType);
-        r.begin();
+        SubsequenceRecorder r(context, container1, subsequenceType);
         drawRect(context, container1, backgroundDrawingType, FloatRect(100, 100, 100, 100));
-        drawRect(context, content1, backgroundDrawingType, FloatRect(100, 100, 50, 200));
+        {
+            SubsequenceRecorder r(context, content1, subsequenceType);
+            drawRect(context, content1, backgroundDrawingType, FloatRect(100, 100, 50, 200));
+            drawRect(context, content1, foregroundDrawingType, FloatRect(100, 100, 50, 200));
+        }
+        drawRect(context, container1, foregroundDrawingType, FloatRect(100, 100, 100, 100));
     }
     {
-        SubtreeRecorder r(context, container1, foregroundDrawingType);
-        r.begin();
-        drawRect(context, content1, foregroundDrawingType, FloatRect(100, 100, 50, 200));
-        drawRect(context, container1, foregroundDrawingType, FloatRect(100, 100, 100, 100));
+        SubsequenceRecorder r(context, container2, subsequenceType);
+        drawRect(context, container2, backgroundDrawingType, FloatRect(100, 200, 100, 100));
+        {
+            SubsequenceRecorder r(context, content2, subsequenceType);
+            drawRect(context, content2, backgroundDrawingType, FloatRect(100, 200, 50, 200));
+        }
     }
     displayItemList().commitNewDisplayItems();
 
     EXPECT_DISPLAY_LIST(displayItemList().displayItems(), 14,
-        TestDisplayItem(container2, DisplayItem::paintPhaseToBeginSubtreeType(backgroundDrawingType)),
-        TestDisplayItem(container2, backgroundDrawingType),
-        TestDisplayItem(container2, DisplayItem::paintPhaseToEndSubtreeType(backgroundDrawingType)),
-
-        TestDisplayItem(container2, DisplayItem::paintPhaseToBeginSubtreeType(foregroundDrawingType)),
-        TestDisplayItem(container2, foregroundDrawingType),
-        TestDisplayItem(container2, DisplayItem::paintPhaseToEndSubtreeType(foregroundDrawingType)),
-
-        TestDisplayItem(container1, DisplayItem::paintPhaseToBeginSubtreeType(backgroundDrawingType)),
+        TestDisplayItem(container1, subsequenceType),
         TestDisplayItem(container1, backgroundDrawingType),
+        TestDisplayItem(content1, subsequenceType),
         TestDisplayItem(content1, backgroundDrawingType),
-        TestDisplayItem(container1, DisplayItem::paintPhaseToEndSubtreeType(backgroundDrawingType)),
-
-        TestDisplayItem(container1, DisplayItem::paintPhaseToBeginSubtreeType(foregroundDrawingType)),
         TestDisplayItem(content1, foregroundDrawingType),
+        TestDisplayItem(content1, endSubsequenceType),
         TestDisplayItem(container1, foregroundDrawingType),
-        TestDisplayItem(container1, DisplayItem::paintPhaseToEndSubtreeType(foregroundDrawingType)));
-}
-#endif
+        TestDisplayItem(container1, endSubsequenceType),
 
-static bool isDrawing(const DisplayItem& item)
-{
-    return DisplayItem::isDrawingType(item.type());
-}
+        TestDisplayItem(container2, subsequenceType),
+        TestDisplayItem(container2, backgroundDrawingType),
+        TestDisplayItem(content2, subsequenceType),
+        TestDisplayItem(content2, backgroundDrawingType),
+        TestDisplayItem(content2, endSubsequenceType),
+        TestDisplayItem(container2, endSubsequenceType));
 
-static bool isCached(const DisplayItem& item)
-{
-    return DisplayItem::isCachedType(item.type());
+    // Invalidate container1 but not content1.
+    displayItemList().invalidate(container1);
+
+    // Container2 itself now becomes empty (but still has the 'content2' child),
+    // and chooses not to output subsequence info.
+    displayItemList().invalidate(container2);
+    displayItemList().invalidate(content2);
+    EXPECT_FALSE(SubsequenceRecorder::useCachedSubsequenceIfPossible(context, container2, subsequenceType));
+    EXPECT_FALSE(SubsequenceRecorder::useCachedSubsequenceIfPossible(context, content2, subsequenceType));
+    // Content2 now outputs foreground only.
+    {
+        SubsequenceRecorder r(context, content2, subsequenceType);
+        drawRect(context, content2, foregroundDrawingType, FloatRect(100, 200, 50, 200));
+    }
+    // Repaint container1 with foreground only.
+    {
+        EXPECT_FALSE(SubsequenceRecorder::useCachedSubsequenceIfPossible(context, container1, subsequenceType));
+        SubsequenceRecorder r(context, container1, subsequenceType);
+        // Use cached subsequence of content1.
+        EXPECT_TRUE(SubsequenceRecorder::useCachedSubsequenceIfPossible(context, content1, subsequenceType));
+        drawRect(context, container1, foregroundDrawingType, FloatRect(100, 100, 100, 100));
+    }
+    EXPECT_DISPLAY_LIST(displayItemList().newDisplayItems(), 7,
+        TestDisplayItem(content2, subsequenceType),
+        TestDisplayItem(content2, foregroundDrawingType),
+        TestDisplayItem(content2, endSubsequenceType),
+        TestDisplayItem(container1, subsequenceType),
+        TestDisplayItem(content1, cachedSubsequenceType),
+        TestDisplayItem(container1, foregroundDrawingType),
+        TestDisplayItem(container1, endSubsequenceType));
+
+    displayItemList().commitNewDisplayItems();
+
+    EXPECT_DISPLAY_LIST(displayItemList().displayItems(), 10,
+        TestDisplayItem(content2, subsequenceType),
+        TestDisplayItem(content2, foregroundDrawingType),
+        TestDisplayItem(content2, endSubsequenceType),
+
+        TestDisplayItem(container1, subsequenceType),
+        TestDisplayItem(content1, subsequenceType),
+        TestDisplayItem(content1, backgroundDrawingType),
+        TestDisplayItem(content1, foregroundDrawingType),
+        TestDisplayItem(content1, endSubsequenceType),
+        TestDisplayItem(container1, foregroundDrawingType),
+        TestDisplayItem(container1, endSubsequenceType));
 }
 
 TEST_F(DisplayItemListTest, Scope)
@@ -575,76 +647,74 @@ TEST_F(DisplayItemListTest, Scope)
 
     drawRect(context, multicol, backgroundDrawingType, FloatRect(100, 200, 100, 100));
 
-    displayItemList().beginScope(multicol.displayItemClient());
+    displayItemList().beginScope();
     drawRect(context, content, foregroundDrawingType, rect1);
-    displayItemList().endScope(multicol.displayItemClient());
+    displayItemList().endScope();
 
-    displayItemList().beginScope(multicol.displayItemClient());
+    displayItemList().beginScope();
     drawRect(context, content, foregroundDrawingType, rect2);
-    displayItemList().endScope(multicol.displayItemClient());
+    displayItemList().endScope();
     displayItemList().commitNewDisplayItems();
 
     EXPECT_DISPLAY_LIST(displayItemList().displayItems(), 3,
         TestDisplayItem(multicol, backgroundDrawingType),
         TestDisplayItem(content, foregroundDrawingType),
         TestDisplayItem(content, foregroundDrawingType));
-    RefPtr<const SkPicture> picture1 = static_cast<const DrawingDisplayItem*>(displayItemList().displayItems().elementAt(1))->picture();
-    RefPtr<const SkPicture> picture2 = static_cast<const DrawingDisplayItem*>(displayItemList().displayItems().elementAt(2))->picture();
+    RefPtr<const SkPicture> picture1 = static_cast<const DrawingDisplayItem&>(displayItemList().displayItems()[1]).picture();
+    RefPtr<const SkPicture> picture2 = static_cast<const DrawingDisplayItem&>(displayItemList().displayItems()[2]).picture();
     EXPECT_NE(picture1, picture2);
 
     // Draw again with nothing invalidated.
     EXPECT_TRUE(displayItemList().clientCacheIsValid(multicol.displayItemClient()));
     drawRect(context, multicol, backgroundDrawingType, FloatRect(100, 200, 100, 100));
-    displayItemList().beginScope(multicol.displayItemClient());
+    displayItemList().beginScope();
     drawRect(context, content, foregroundDrawingType, rect1);
-    displayItemList().endScope(multicol.displayItemClient());
+    displayItemList().endScope();
 
-    displayItemList().beginScope(multicol.displayItemClient());
+    displayItemList().beginScope();
     drawRect(context, content, foregroundDrawingType, rect2);
-    displayItemList().endScope(multicol.displayItemClient());
+    displayItemList().endScope();
 
-    EXPECT_TRUE(isCached(*newPaintListBeforeUpdate().elementAt(0)));
-    EXPECT_TRUE(isDrawing(*newPaintListBeforeUpdate().elementAt(1)));
-    EXPECT_TRUE(isDrawing(*newPaintListBeforeUpdate().elementAt(2)));
+    EXPECT_DISPLAY_LIST(displayItemList().newDisplayItems(), 3,
+        TestDisplayItem(multicol, DisplayItem::drawingTypeToCachedDrawingType(backgroundDrawingType)),
+        TestDisplayItem(content, foregroundDrawingType),
+        TestDisplayItem(content, foregroundDrawingType));
+
     displayItemList().commitNewDisplayItems();
 
     EXPECT_DISPLAY_LIST(displayItemList().displayItems(), 3,
         TestDisplayItem(multicol, backgroundDrawingType),
         TestDisplayItem(content, foregroundDrawingType),
         TestDisplayItem(content, foregroundDrawingType));
-    EXPECT_NE(picture1, static_cast<const DrawingDisplayItem*>(displayItemList().displayItems().elementAt(1))->picture());
-    EXPECT_NE(picture2, static_cast<const DrawingDisplayItem*>(displayItemList().displayItems().elementAt(2))->picture());
+    EXPECT_NE(picture1, static_cast<const DrawingDisplayItem&>(displayItemList().displayItems()[1]).picture());
+    EXPECT_NE(picture2, static_cast<const DrawingDisplayItem&>(displayItemList().displayItems()[2]).picture());
 
     // Now the multicol becomes 3 columns and repaints.
-    displayItemList().invalidate(multicol.displayItemClient());
+    displayItemList().invalidate(multicol);
     drawRect(context, multicol, backgroundDrawingType, FloatRect(100, 100, 100, 100));
 
-    displayItemList().beginScope(multicol.displayItemClient());
+    displayItemList().beginScope();
     drawRect(context, content, foregroundDrawingType, rect1);
-    displayItemList().endScope(multicol.displayItemClient());
+    displayItemList().endScope();
 
-    displayItemList().beginScope(multicol.displayItemClient());
+    displayItemList().beginScope();
     drawRect(context, content, foregroundDrawingType, rect2);
-    displayItemList().endScope(multicol.displayItemClient());
+    displayItemList().endScope();
 
-    displayItemList().beginScope(multicol.displayItemClient());
+    displayItemList().beginScope();
     drawRect(context, content, foregroundDrawingType, rect3);
-    displayItemList().endScope(multicol.displayItemClient());
+    displayItemList().endScope();
 
     // We should repaint everything on invalidation of the scope container.
-    EXPECT_TRUE(isDrawing(*newPaintListBeforeUpdate().elementAt(0)));
-    EXPECT_TRUE(isDrawing(*newPaintListBeforeUpdate().elementAt(1)));
-    EXPECT_TRUE(isDrawing(*newPaintListBeforeUpdate().elementAt(2)));
-    EXPECT_TRUE(isDrawing(*newPaintListBeforeUpdate().elementAt(3)));
-    displayItemList().commitNewDisplayItems();
-
-    EXPECT_DISPLAY_LIST(displayItemList().displayItems(), 4,
+    EXPECT_DISPLAY_LIST(displayItemList().newDisplayItems(), 4,
         TestDisplayItem(multicol, backgroundDrawingType),
         TestDisplayItem(content, foregroundDrawingType),
         TestDisplayItem(content, foregroundDrawingType),
         TestDisplayItem(content, foregroundDrawingType));
-    EXPECT_NE(picture1, static_cast<const DrawingDisplayItem*>(displayItemList().displayItems().elementAt(1))->picture());
-    EXPECT_NE(picture2, static_cast<const DrawingDisplayItem*>(displayItemList().displayItems().elementAt(2))->picture());
+    EXPECT_NE(picture1, static_cast<const DrawingDisplayItem&>(displayItemList().newDisplayItems()[1]).picture());
+    EXPECT_NE(picture2, static_cast<const DrawingDisplayItem&>(displayItemList().newDisplayItems()[2]).picture());
+
+    displayItemList().commitNewDisplayItems();
 }
 
 TEST_F(DisplayItemListTest, OptimizeNoopPairs)
@@ -669,7 +739,7 @@ TEST_F(DisplayItemListTest, OptimizeNoopPairs)
         TestDisplayItem(second, DisplayItem::EndClipPath),
         TestDisplayItem(third, backgroundDrawingType));
 
-    displayItemList().invalidate(second.displayItemClient());
+    displayItemList().invalidate(second);
     drawRect(context, first, backgroundDrawingType, FloatRect(0, 0, 100, 100));
     {
         ClipRecorder clipRecorder(context, second, clipType, LayoutRect(1, 1, 2, 2));
@@ -683,7 +753,7 @@ TEST_F(DisplayItemListTest, OptimizeNoopPairs)
         TestDisplayItem(first, backgroundDrawingType),
         TestDisplayItem(third, backgroundDrawingType));
 
-    displayItemList().invalidate(second.displayItemClient());
+    displayItemList().invalidate(second);
     drawRect(context, first, backgroundDrawingType, FloatRect(0, 0, 100, 100));
     {
         ClipRecorder clipRecorder(context, second, clipType, LayoutRect(1, 1, 2, 2));

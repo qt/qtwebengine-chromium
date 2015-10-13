@@ -248,8 +248,8 @@ WebPluginDelegateImpl::WebPluginDelegateImpl(WebPlugin* plugin,
   memset(&window_, 0, sizeof(window_));
 
   const WebPluginInfo& plugin_info = instance_->plugin_lib()->plugin_info();
-  std::wstring filename =
-      base::StringToLowerASCII(plugin_info.path.BaseName().value());
+  base::string16 filename =
+      base::ToLowerASCII(plugin_info.path.BaseName().value());
 
   if (instance_->mime_type() == kFlashPluginSwfMimeType ||
       filename == kFlashPlugin) {
@@ -1092,8 +1092,8 @@ bool WebPluginDelegateImpl::PlatformSetPluginHasFocus(bool focused) {
 
 static bool NPEventFromWebMouseEvent(const WebMouseEvent& event,
                                      NPEvent* np_event) {
-  np_event->lParam = static_cast<uint32>(MAKELPARAM(event.windowX,
-                                                   event.windowY));
+  np_event->lParam =
+      static_cast<uint32>(MAKELPARAM(event.windowX, event.windowY));
   np_event->wParam = 0;
 
   if (event.modifiers & WebInputEvent::ControlKey)
@@ -1124,6 +1124,8 @@ static bool NPEventFromWebMouseEvent(const WebMouseEvent& event,
         case WebMouseEvent::ButtonRight:
           np_event->event = WM_RBUTTONDOWN;
           break;
+        case WebMouseEvent::ButtonNone:
+          break;
       }
       return true;
     case WebInputEvent::MouseUp:
@@ -1136,6 +1138,8 @@ static bool NPEventFromWebMouseEvent(const WebMouseEvent& event,
           break;
         case WebMouseEvent::ButtonRight:
           np_event->event = WM_RBUTTONUP;
+          break;
+        case WebMouseEvent::ButtonNone:
           break;
       }
       return true;

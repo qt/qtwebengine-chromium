@@ -37,19 +37,18 @@
 #include "platform/graphics/ImageSource.h"
 #include "platform/image-decoders/ImageAnimation.h"
 #include "wtf/Forward.h"
+#include "wtf/OwnPtr.h"
 
 namespace blink {
 
 template <typename T> class Timer;
 
-class PLATFORM_EXPORT BitmapImage : public Image {
+class PLATFORM_EXPORT BitmapImage final : public Image {
     friend class GeneratedImage;
     friend class CrossfadeGeneratedImage;
     friend class GradientGeneratedImage;
     friend class GraphicsContext;
 public:
-    static PassRefPtr<BitmapImage> create(const SkBitmap&, ImageObserver* = 0);
-
     static PassRefPtr<BitmapImage> create(ImageObserver* observer = 0)
     {
         return adoptRef(new BitmapImage(observer));
@@ -61,8 +60,6 @@ public:
     ~BitmapImage() override;
 
     bool isBitmapImage() const override;
-    bool isLazyDecodedBitmap() override;
-    bool isImmutableBitmap() override;
 
     bool currentFrameHasSingleSecurityOrigin() const override;
 
@@ -87,14 +84,16 @@ public:
     ImageAnimationPolicy animationPolicy() override { return m_animationPolicy; }
     void advanceTime(double deltaTimeInSeconds) override;
 
-    bool bitmapForCurrentFrame(SkBitmap*) override;
+    // Advance the image animation by one frame.
+    void advanceAnimationForTesting() override { internalAdvanceAnimation(false); }
+
+    PassRefPtr<SkImage> imageForCurrentFrame() override;
     PassRefPtr<Image> imageForDefaultFrame() override;
     bool currentFrameKnownToBeOpaque() override;
-    ImageOrientation currentFrameOrientation();
+    bool currentFrameIsComplete() override;
+    bool currentFrameIsLazyDecoded() override;
 
-#if ENABLE(ASSERT)
-    bool notSolidColor() override;
-#endif
+    ImageOrientation currentFrameOrientation();
 
 private:
     friend class BitmapImageTest;
@@ -116,7 +115,7 @@ private:
     size_t currentFrame() const { return m_currentFrame; }
     size_t frameCount();
 
-    bool frameAtIndex(size_t, SkBitmap*) WARN_UNUSED_RETURN;
+    PassRefPtr<SkImage> frameAtIndex(size_t);
 
     bool frameIsCompleteAtIndex(size_t);
     float frameDurationAtIndex(size_t);
@@ -168,14 +167,6 @@ private:
     // Returns whether the animation was advanced.
     bool internalAdvanceAnimation(bool skippingFrames);
 
-    // Checks to see if the image is a 1x1 solid color.  We optimize these images and just do a fill rect instead.
-    // This check should happen regardless whether m_checkedForSolidColor is already set, as the frame may have
-    // changed.
-    void checkForSolidColor();
-
-    bool mayFillWithSolidColor() override;
-    Color solidColor() const override;
-
     ImageSource m_source;
     mutable IntSize m_size; // The size to use for the overall image (will just be the size of the first image).
     mutable IntSize m_sizeRespectingOrientation;
@@ -183,20 +174,15 @@ private:
     size_t m_currentFrame; // The index of the current frame of animation.
     Vector<FrameData, 1> m_frames; // An array of the cached frames of the animation. We have to ref frames to pin them in the cache.
 
-    Timer<BitmapImage>* m_frameTimer;
+    OwnPtr<Timer<BitmapImage>> m_frameTimer;
     int m_repetitionCount; // How many total animation loops we should do.  This will be cAnimationNone if this image type is incapable of animation.
     RepetitionCountStatus m_repetitionCountStatus;
     int m_repetitionsComplete;  // How many repetitions we've finished.
     double m_desiredFrameStartTime;  // The system time at which we hope to see the next call to startAnimation().
 
-    Color m_solidColor;  // If we're a 1x1 solid color, this is the color to use to fill.
-
     size_t m_frameCount;
 
     ImageAnimationPolicy m_animationPolicy; // Whether or not we can play animation.
-
-    bool m_isSolidColor : 1; // Whether or not we are a 1x1 solid image.
-    bool m_checkedForSolidColor : 1; // Whether we've checked the frame for solid color.
 
     bool m_animationFinished : 1; // Whether or not we've completed the entire animation.
 

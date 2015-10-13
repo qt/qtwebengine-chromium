@@ -94,7 +94,7 @@ class StreamRequestImpl : public WebSocketStreamRequest {
     HttpRequestHeaders headers;
     headers.SetHeader(websockets::kUpgrade, websockets::kWebSocketLowercase);
     headers.SetHeader(HttpRequestHeaders::kConnection, websockets::kUpgrade);
-    headers.SetHeader(HttpRequestHeaders::kOrigin, origin.string());
+    headers.SetHeader(HttpRequestHeaders::kOrigin, origin.Serialize());
     headers.SetHeader(websockets::kSecWebSocketVersion,
                       websockets::kSupportedVersion);
     url_request_->SetExtraRequestHeaders(headers);

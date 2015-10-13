@@ -25,8 +25,6 @@ class MojoProxyResolverImpl::Job {
 
   void Start();
 
-  net::ProxyResolver::RequestHandle request_handle() { return request_handle_; }
-
  private:
   // Mojo error handler. This is invoked in response to the client
   // disconnecting, indicating cancellation.
@@ -41,8 +39,6 @@ class MojoProxyResolverImpl::Job {
   GURL url_;
   net::ProxyResolver::RequestHandle request_handle_;
   bool done_;
-
-  base::WeakPtrFactory<interfaces::ProxyResolverRequestClient> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(Job);
 };
@@ -67,9 +63,6 @@ void MojoProxyResolverImpl::GetProxyForUrl(
 }
 
 void MojoProxyResolverImpl::DeleteJob(Job* job) {
-  if (job->request_handle())
-    request_handle_to_job_.erase(job->request_handle());
-
   size_t num_erased = resolve_jobs_.erase(job);
   DCHECK(num_erased);
   delete job;
@@ -83,9 +76,7 @@ MojoProxyResolverImpl::Job::Job(
       client_(client.Pass()),
       url_(url),
       request_handle_(nullptr),
-      done_(false),
-      weak_factory_(client_.get()) {
-}
+      done_(false) {}
 
 MojoProxyResolverImpl::Job::~Job() {
   if (request_handle_ && !done_)
@@ -97,11 +88,9 @@ void MojoProxyResolverImpl::Job::Start() {
       url_, &result_, base::Bind(&Job::GetProxyDone, base::Unretained(this)),
       &request_handle_,
       make_scoped_ptr(new MojoProxyResolverV8TracingBindings<
-          interfaces::ProxyResolverRequestClient>(weak_factory_.GetWeakPtr())));
+                      interfaces::ProxyResolverRequestClient>(client_.get())));
   client_.set_connection_error_handler(base::Bind(
       &MojoProxyResolverImpl::Job::OnConnectionError, base::Unretained(this)));
-  resolver_->request_handle_to_job_.insert(
-      std::make_pair(request_handle_, this));
 }
 
 void MojoProxyResolverImpl::Job::GetProxyDone(int error) {

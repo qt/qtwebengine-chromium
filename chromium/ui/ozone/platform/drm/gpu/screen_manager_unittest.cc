@@ -203,6 +203,38 @@ TEST_F(ScreenManagerTest, CheckMirrorModeTransitions) {
   EXPECT_TRUE(screen_manager_->GetDisplayController(GetSecondaryBounds()));
 }
 
+// Make sure we're using each display's mode when doing mirror mode otherwise
+// the timings may be off.
+TEST_F(ScreenManagerTest, CheckMirrorModeModesettingWithDisplaysMode) {
+  screen_manager_->AddDisplayController(drm_, kPrimaryCrtc, kPrimaryConnector);
+  screen_manager_->ConfigureDisplayController(
+      drm_, kPrimaryCrtc, kPrimaryConnector, GetPrimaryBounds().origin(),
+      kDefaultMode);
+
+  // Copy the mode and use the copy so we can tell what mode the CRTC was
+  // configured with. The clock value is modified so we can tell which mode is
+  // being used.
+  drmModeModeInfo kSecondaryMode = kDefaultMode;
+  kSecondaryMode.clock++;
+
+  screen_manager_->AddDisplayController(drm_, kSecondaryCrtc,
+                                        kSecondaryConnector);
+  screen_manager_->ConfigureDisplayController(
+      drm_, kSecondaryCrtc, kSecondaryConnector, GetPrimaryBounds().origin(),
+      kSecondaryMode);
+
+  ui::HardwareDisplayController* controller =
+      screen_manager_->GetDisplayController(GetPrimaryBounds());
+  for (ui::CrtcController* crtc : controller->crtc_controllers()) {
+    if (crtc->crtc() == kPrimaryCrtc)
+      EXPECT_EQ(kDefaultMode.clock, crtc->mode().clock);
+    else if (crtc->crtc() == kSecondaryCrtc)
+      EXPECT_EQ(kSecondaryMode.clock, crtc->mode().clock);
+    else
+      NOTREACHED();
+  }
+}
+
 TEST_F(ScreenManagerTest, MonitorGoneInMirrorMode) {
   screen_manager_->AddDisplayController(drm_, kPrimaryCrtc, kPrimaryConnector);
   screen_manager_->ConfigureDisplayController(
@@ -460,10 +492,11 @@ TEST_F(ScreenManagerTest, EnableControllerWhenWindowHasBuffer) {
       new ui::DrmWindow(1, device_manager_.get(), screen_manager_.get()));
   window->Initialize();
   window->OnBoundsChanged(GetPrimaryBounds());
-  scoped_refptr<ui::ScanoutBuffer> buffer =
-      buffer_generator_->Create(drm_, GetPrimaryBounds().size());
-  window->QueueOverlayPlane(ui::OverlayPlane(buffer));
-  window->SchedulePageFlip(false /* is_sync */, base::Bind(&EmptySwapCallback));
+  scoped_refptr<ui::ScanoutBuffer> buffer = buffer_generator_->Create(
+      drm_, gfx::BufferFormat::BGRA_8888, GetPrimaryBounds().size());
+  window->SchedulePageFlip(
+      std::vector<ui::OverlayPlane>(1, ui::OverlayPlane(buffer)),
+      base::Bind(&EmptySwapCallback));
   screen_manager_->AddWindow(1, window.Pass());
 
   screen_manager_->AddDisplayController(drm_, kPrimaryCrtc, kPrimaryConnector);

@@ -41,7 +41,6 @@ WebInspector.RenderingOptions = function()
     this._mapSettingToSetter(WebInspector.moduleSetting("showPaintRects"), "setShowPaintRects");
     this._mapSettingToSetter(WebInspector.moduleSetting("showDebugBorders"), "setShowDebugBorders");
     this._mapSettingToSetter(WebInspector.moduleSetting("showFPSCounter"), "setShowFPSCounter");
-    this._mapSettingToSetter(WebInspector.moduleSetting("continuousPainting"), "setContinuousPaintingEnabled");
     this._mapSettingToSetter(WebInspector.moduleSetting("showScrollBottleneckRects"), "setShowScrollBottleneckRects");
 
     WebInspector.targetManager.observeTargets(this, WebInspector.Target.Type.Page);
@@ -101,15 +100,55 @@ WebInspector.RenderingOptions.View = function()
     this.element.classList.add("help-indent-labels");
 
     var div = this.element.createChild("div", "settings-tab help-content help-container help-no-columns");
-    div.appendChild(WebInspector.SettingsUI.createSettingCheckbox(WebInspector.UIString("Show paint rectangles"), WebInspector.moduleSetting("showPaintRects")));
-    div.appendChild(WebInspector.SettingsUI.createSettingCheckbox(WebInspector.UIString("Show composited layer borders"), WebInspector.moduleSetting("showDebugBorders")));
+    div.appendChild(WebInspector.SettingsUI.createSettingCheckbox(WebInspector.UIString("Enable paint flashing"), WebInspector.moduleSetting("showPaintRects")));
+    div.appendChild(WebInspector.SettingsUI.createSettingCheckbox(WebInspector.UIString("Show layer borders"), WebInspector.moduleSetting("showDebugBorders")));
     div.appendChild(WebInspector.SettingsUI.createSettingCheckbox(WebInspector.UIString("Show FPS meter"), WebInspector.moduleSetting("showFPSCounter")));
-    div.appendChild(WebInspector.SettingsUI.createSettingCheckbox(WebInspector.UIString("Enable continuous page repainting"), WebInspector.moduleSetting("continuousPainting")));
-    var child = WebInspector.SettingsUI.createSettingCheckbox(WebInspector.UIString("Show potential scroll bottlenecks"), WebInspector.moduleSetting("showScrollBottleneckRects"));
+    var child = WebInspector.SettingsUI.createSettingCheckbox(WebInspector.UIString("Show scrolling perf issues"), WebInspector.moduleSetting("showScrollBottleneckRects"));
     child.title = WebInspector.UIString("Shows areas of the page that slow down scrolling:\nTouch and mousewheel event listeners can delay scrolling.\nSome areas need to repaint their content when scrolled.");
     div.appendChild(child);
 }
 
 WebInspector.RenderingOptions.View.prototype = {
     __proto__: WebInspector.VBox.prototype
+}
+
+/**
+ * @constructor
+ * @implements {WebInspector.ToolbarItem.Provider}
+ */
+WebInspector.RenderingOptions.ButtonProvider = function()
+{
+    this._button = new WebInspector.ToolbarMenuButton(WebInspector.UIString("Rendering performance options"), "timer-toolbar-item", this._appendItems.bind(this));
+    this._renderingOptions = [{ label: WebInspector.UIString("Enable paint flashing"), setting: WebInspector.moduleSetting("showPaintRects") },
+        { label: WebInspector.UIString("Show layer borders"), setting: WebInspector.moduleSetting("showDebugBorders") },
+        { label: WebInspector.UIString("Show scrolling perf issues"), setting: WebInspector.moduleSetting("showScrollBottleneckRects") },
+        { label: WebInspector.UIString("Show FPS meter"), setting: WebInspector.moduleSetting("showFPSCounter") }];
+}
+
+WebInspector.RenderingOptions.ButtonProvider.prototype = {
+    /**
+     * @override
+     * @return {?WebInspector.ToolbarItem}
+     */
+    item: function()
+    {
+        return this._button;
+    },
+
+    /**
+     * @param {!WebInspector.ContextMenu} contextMenu
+     */
+    _appendItems: function(contextMenu)
+    {
+        for (var option of this._renderingOptions)
+            contextMenu.appendCheckboxItem(option.label, this._toggleSetting.bind(this, option.setting), option.setting.get());
+    },
+
+    /**
+     * @param {!WebInspector.Setting} setting
+     */
+    _toggleSetting: function(setting)
+    {
+        setting.set(!setting.get());
+    }
 }

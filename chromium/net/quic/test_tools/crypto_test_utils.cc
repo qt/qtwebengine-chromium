@@ -32,9 +32,6 @@ namespace test {
 
 namespace {
 
-const char kServerHostname[] = "test.example.com";
-const uint16 kServerPort = 80;
-
 // CryptoFramerVisitor is a framer visitor that records handshake messages.
 class CryptoFramerVisitor : public CryptoFramerVisitorInterface {
  public:
@@ -206,6 +203,7 @@ int CryptoTestUtils::HandshakeWithFakeServer(
 int CryptoTestUtils::HandshakeWithFakeClient(
     PacketSavingConnection* server_conn,
     QuicCryptoServerStream* server,
+    const QuicServerId& server_id,
     const FakeClientOptions& options) {
   PacketSavingConnection* client_conn =
       new PacketSavingConnection(Perspective::IS_CLIENT);
@@ -213,10 +211,8 @@ int CryptoTestUtils::HandshakeWithFakeClient(
   client_conn->AdvanceTime(QuicTime::Delta::FromSeconds(1));
 
   QuicCryptoClientConfig crypto_config;
-  bool is_https = false;
   AsyncTestChannelIDSource* async_channel_id_source = nullptr;
   if (options.channel_id_enabled) {
-    is_https = true;
 
     ChannelIDSource* source = ChannelIDSourceForTesting();
     if (options.channel_id_source_async) {
@@ -225,12 +221,13 @@ int CryptoTestUtils::HandshakeWithFakeClient(
     }
     crypto_config.SetChannelIDSource(source);
   }
-  QuicServerId server_id(kServerHostname, kServerPort, is_https,
-                         PRIVACY_MODE_DISABLED);
-  if (!options.dont_verify_certs) {
-    // TODO(wtc): replace this with ProofVerifierForTesting() when we have
-    // a working ProofSourceForTesting().
+  if (!options.dont_verify_certs && server_id.is_https()) {
+#if defined(USE_OPENSSL)
+    crypto_config.SetProofVerifier(ProofVerifierForTesting());
+#else
+    // TODO(rch): Implement a NSS proof source.
     crypto_config.SetProofVerifier(FakeProofVerifierForTesting());
+#endif
   }
   TestQuicSpdyClientSession client_session(client_conn, DefaultQuicConfig(),
                                            server_id, &crypto_config);
@@ -247,7 +244,7 @@ int CryptoTestUtils::HandshakeWithFakeClient(
   if (options.channel_id_enabled) {
     scoped_ptr<ChannelIDKey> channel_id_key;
     QuicAsyncStatus status = crypto_config.channel_id_source()->GetChannelIDKey(
-        kServerHostname, &channel_id_key, nullptr);
+        server_id.host(), &channel_id_key, nullptr);
     EXPECT_EQ(QUIC_SUCCESS, status);
     EXPECT_EQ(channel_id_key->SerializeKey(),
               server->crypto_negotiated_params().channel_id);
@@ -560,14 +557,6 @@ CryptoHandshakeMessage CryptoTestUtils::Message(const char* message_tag, ...) {
   va_list ap;
   va_start(ap, message_tag);
 
-  CryptoHandshakeMessage message = BuildMessage(message_tag, ap);
-  va_end(ap);
-  return message;
-}
-
-// static
-CryptoHandshakeMessage CryptoTestUtils::BuildMessage(const char* message_tag,
-                                                     va_list ap) {
   CryptoHandshakeMessage msg;
   msg.set_tag(ParseTag(message_tag));
 
@@ -624,6 +613,7 @@ CryptoHandshakeMessage CryptoTestUtils::BuildMessage(const char* message_tag,
       CryptoFramer::ParseMessage(bytes->AsStringPiece()));
   CHECK(parsed.get());
 
+  va_end(ap);
   return *parsed;
 }
 

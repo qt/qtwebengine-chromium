@@ -27,9 +27,7 @@ public:
     virtual ~HitRegion() { }
 
     void removePixels(const Path&);
-    void updateAccessibility(Element* canvas);
 
-    bool contains(const LayoutPoint&) const;
     bool contains(const FloatPoint&) const;
 
     const String& id() const { return m_id; }
@@ -64,7 +62,7 @@ public:
 
     HitRegion* getHitRegionById(const String& id) const;
     HitRegion* getHitRegionByControl(Element*) const;
-    HitRegion* getHitRegionAtPoint(const LayoutPoint&) const;
+    HitRegion* getHitRegionAtPoint(const FloatPoint&) const;
 
     unsigned getHitRegionsCount() const;
 

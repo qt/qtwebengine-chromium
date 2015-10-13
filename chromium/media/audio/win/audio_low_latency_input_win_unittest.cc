@@ -65,7 +65,8 @@ class FakeAudioInputCallback : public AudioInputStream::AudioInputCallback {
               const AudioBus* src,
               uint32 hardware_delay_bytes,
               double volume) override {
-    EXPECT_NE(hardware_delay_bytes, 0u);
+    EXPECT_GE(hardware_delay_bytes, 0u);
+    EXPECT_LT(hardware_delay_bytes, 0xFFFFu);  // Arbitrarily picked.
     num_received_audio_frames_ += src->frames();
     data_event_.Signal();
   }
@@ -193,11 +194,10 @@ class AudioInputStreamWrapper {
 
  private:
   AudioInputStream* CreateInputStream() {
+    AudioParameters params = default_params_;
+    params.set_frames_per_buffer(frames_per_buffer_);
     AudioInputStream* ais = audio_man_->MakeAudioInputStream(
-        AudioParameters(format(), default_params_.channel_layout(),
-                        sample_rate(), bits_per_sample(), frames_per_buffer_,
-                        default_params_.effects()),
-        AudioManagerBase::kDefaultDeviceId);
+        params, AudioManagerBase::kDefaultDeviceId);
     EXPECT_TRUE(ais);
     return ais;
   }
@@ -366,7 +366,7 @@ TEST(WinAudioInputTest, WASAPIAudioInputStreamTestPacketSizes) {
   // We use 10ms packets and will run the test until ten packets are received.
   // All should contain valid packets of the same size and a valid delay
   // estimate.
-  EXPECT_CALL(sink, OnData(ais.get(), NotNull(), Gt(bytes_per_packet), _))
+  EXPECT_CALL(sink, OnData(ais.get(), NotNull(), _, _))
       .Times(AtLeast(10))
       .WillRepeatedly(CheckCountAndPostQuitTask(&count, 10, &loop));
   ais->Start(&sink);
@@ -386,7 +386,7 @@ TEST(WinAudioInputTest, WASAPIAudioInputStreamTestPacketSizes) {
   bytes_per_packet = aisw.channels() * aisw.frames_per_buffer() *
       (aisw.bits_per_sample() / 8);
 
-  EXPECT_CALL(sink, OnData(ais.get(), NotNull(), Gt(bytes_per_packet), _))
+  EXPECT_CALL(sink, OnData(ais.get(), NotNull(), _, _))
       .Times(AtLeast(10))
       .WillRepeatedly(CheckCountAndPostQuitTask(&count, 10, &loop));
   ais->Start(&sink);
@@ -402,7 +402,7 @@ TEST(WinAudioInputTest, WASAPIAudioInputStreamTestPacketSizes) {
   bytes_per_packet = aisw.channels() * aisw.frames_per_buffer() *
     (aisw.bits_per_sample() / 8);
 
-  EXPECT_CALL(sink, OnData(ais.get(), NotNull(), Gt(bytes_per_packet), _))
+  EXPECT_CALL(sink, OnData(ais.get(), NotNull(), _, _))
       .Times(AtLeast(10))
       .WillRepeatedly(CheckCountAndPostQuitTask(&count, 10, &loop));
   ais->Start(&sink);

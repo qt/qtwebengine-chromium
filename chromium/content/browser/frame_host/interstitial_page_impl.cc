@@ -34,7 +34,6 @@
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/content_browser_client.h"
-#include "content/public/browser/dom_operation_notification_details.h"
 #include "content/public/browser/interstitial_page_delegate.h"
 #include "content/public/browser/invalidate_type.h"
 #include "content/public/browser/notification_service.h"
@@ -253,9 +252,9 @@ void InterstitialPageImpl::Show() {
   render_view_host_ = CreateRenderViewHost();
   CreateWebContentsView();
 
-  std::string data_url = "data:text/html;charset=utf-8," +
-                         net::EscapePath(delegate_->GetHTMLContents());
-  frame_tree_.root()->current_frame_host()->NavigateToURL(GURL(data_url));
+  GURL data_url = GURL("data:text/html;charset=utf-8," +
+                       net::EscapePath(delegate_->GetHTMLContents()));
+  frame_tree_.root()->current_frame_host()->NavigateToInterstitialURL(data_url);
   frame_tree_.root()->current_frame_host()->SetAccessibilityMode(
       GetAccessibilityMode());
 
@@ -310,6 +309,8 @@ void InterstitialPageImpl::Hide() {
     controller_->delegate()->NotifyNavigationStateChanged(
         INVALIDATE_TYPE_TITLE);
   }
+
+  static_cast<WebContentsImpl*>(web_contents_)->DidChangeVisibleSSLState();
 
   InterstitialPageMap::iterator iter =
       g_web_contents_to_interstitial_page->find(web_contents_);
@@ -592,7 +593,8 @@ RenderViewHostImpl* InterstitialPageImpl::CreateRenderViewHost() {
 
   // Use the RenderViewHost from our FrameTree.
   frame_tree_.root()->render_manager()->Init(
-      browser_context, site_instance.get(), MSG_ROUTING_NONE, MSG_ROUTING_NONE);
+      browser_context, site_instance.get(), MSG_ROUTING_NONE, MSG_ROUTING_NONE,
+      MSG_ROUTING_NONE);
   return frame_tree_.root()->current_frame_host()->render_view_host();
 }
 
@@ -755,7 +757,7 @@ gfx::Rect InterstitialPageImpl::GetRootWindowResizerRect() const {
 }
 
 void InterstitialPageImpl::CreateNewWindow(
-    int render_process_id,
+    SiteInstance* source_site_instance,
     int route_id,
     int main_frame_route_id,
     const ViewHostMsg_CreateWindow_Params& params,
@@ -763,14 +765,14 @@ void InterstitialPageImpl::CreateNewWindow(
   NOTREACHED() << "InterstitialPage does not support showing popups yet.";
 }
 
-void InterstitialPageImpl::CreateNewWidget(int render_process_id,
-                                           int route_id,
+void InterstitialPageImpl::CreateNewWidget(int32 render_process_id,
+                                           int32 route_id,
                                            blink::WebPopupType popup_type) {
   NOTREACHED() << "InterstitialPage does not support showing drop-downs yet.";
 }
 
-void InterstitialPageImpl::CreateNewFullscreenWidget(int render_process_id,
-                                                     int route_id) {
+void InterstitialPageImpl::CreateNewFullscreenWidget(int32 render_process_id,
+                                                     int32 route_id) {
   NOTREACHED()
       << "InterstitialPage does not support showing full screen popups.";
 }
@@ -855,18 +857,16 @@ void InterstitialPageImpl::TakeActionOnResourceDispatcher(
 }
 
 void InterstitialPageImpl::OnDomOperationResponse(
-    const std::string& json_string,
-    int automation_id) {
+    const std::string& json_string) {
+  std::string json = json_string;
   // Needed by test code.
-  DomOperationNotificationDetails details(json_string, automation_id);
-  NotificationService::current()->Notify(
-      NOTIFICATION_DOM_OPERATION_RESPONSE,
-      Source<WebContents>(web_contents()),
-      Details<DomOperationNotificationDetails>(&details));
+  NotificationService::current()->Notify(NOTIFICATION_DOM_OPERATION_RESPONSE,
+                                         Source<WebContents>(web_contents()),
+                                         Details<std::string>(&json));
 
   if (!enabled())
     return;
-  delegate_->CommandReceived(details.json);
+  delegate_->CommandReceived(json_string);
 }
 
 

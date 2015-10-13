@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "mojo/edk/system/raw_channel.h"
+#include "third_party/mojo/src/mojo/edk/system/raw_channel.h"
 
 #include <stdint.h>
 #include <stdio.h>
@@ -19,20 +19,20 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
 #include "base/rand_util.h"
-#include "base/synchronization/lock.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/test/test_io_thread.h"
 #include "base/threading/simple_thread.h"
 #include "build/build_config.h"  // TODO(vtl): Remove this.
-#include "mojo/edk/embedder/platform_channel_pair.h"
-#include "mojo/edk/embedder/platform_handle.h"
-#include "mojo/edk/embedder/scoped_platform_handle.h"
-#include "mojo/edk/system/message_in_transit.h"
-#include "mojo/edk/system/test_utils.h"
-#include "mojo/edk/system/transport_data.h"
-#include "mojo/edk/test/test_utils.h"
 #include "mojo/public/cpp/system/macros.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/mojo/src/mojo/edk/embedder/platform_channel_pair.h"
+#include "third_party/mojo/src/mojo/edk/embedder/platform_handle.h"
+#include "third_party/mojo/src/mojo/edk/embedder/scoped_platform_handle.h"
+#include "third_party/mojo/src/mojo/edk/system/message_in_transit.h"
+#include "third_party/mojo/src/mojo/edk/system/mutex.h"
+#include "third_party/mojo/src/mojo/edk/system/test_utils.h"
+#include "third_party/mojo/src/mojo/edk/system/transport_data.h"
+#include "third_party/mojo/src/mojo/edk/test/test_utils.h"
 
 namespace mojo {
 namespace system {
@@ -233,7 +233,7 @@ class ReadCheckerRawChannelDelegate : public RawChannel::Delegate {
     size_t expected_size;
     bool should_signal = false;
     {
-      base::AutoLock locker(lock_);
+      MutexLocker locker(&mutex_);
       CHECK_LT(position_, expected_sizes_.size());
       position = position_;
       expected_size = expected_sizes_[position];
@@ -261,7 +261,7 @@ class ReadCheckerRawChannelDelegate : public RawChannel::Delegate {
   void Wait() { done_event_.Wait(); }
 
   void SetExpectedSizes(const std::vector<uint32_t>& expected_sizes) {
-    base::AutoLock locker(lock_);
+    MutexLocker locker(&mutex_);
     CHECK_EQ(position_, expected_sizes_.size());
     expected_sizes_ = expected_sizes;
     position_ = 0;
@@ -270,9 +270,9 @@ class ReadCheckerRawChannelDelegate : public RawChannel::Delegate {
  private:
   base::WaitableEvent done_event_;
 
-  base::Lock lock_;  // Protects the following members.
-  std::vector<uint32_t> expected_sizes_;
-  size_t position_;
+  Mutex mutex_;
+  std::vector<uint32_t> expected_sizes_ MOJO_GUARDED_BY(mutex_);
+  size_t position_ MOJO_GUARDED_BY(mutex_);
 
   MOJO_DISALLOW_COPY_AND_ASSIGN(ReadCheckerRawChannelDelegate);
 };

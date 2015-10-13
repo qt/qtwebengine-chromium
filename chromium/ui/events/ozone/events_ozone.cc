@@ -60,12 +60,6 @@ DomCode CodeFromNative(const base::NativeEvent& native_event) {
   return event->code();
 }
 
-uint32 PlatformKeycodeFromNative(const base::NativeEvent& native_event) {
-  const ui::KeyEvent* event = static_cast<const ui::KeyEvent*>(native_event);
-  DCHECK(event->IsKeyEvent());
-  return event->platform_keycode();
-}
-
 bool IsCharFromNative(const base::NativeEvent& native_event) {
   const ui::KeyEvent* event = static_cast<const ui::KeyEvent*>(native_event);
   DCHECK(event->IsKeyEvent());
@@ -100,14 +94,14 @@ float GetTouchRadiusX(const base::NativeEvent& native_event) {
   const ui::TouchEvent* event =
       static_cast<const ui::TouchEvent*>(native_event);
   DCHECK(event->IsTouchEvent());
-  return event->radius_x();
+  return event->pointer_details().radius_x();
 }
 
 float GetTouchRadiusY(const base::NativeEvent& native_event) {
   const ui::TouchEvent* event =
       static_cast<const ui::TouchEvent*>(native_event);
   DCHECK(event->IsTouchEvent());
-  return event->radius_y();
+  return event->pointer_details().radius_y();
 }
 
 float GetTouchAngle(const base::NativeEvent& native_event) {
@@ -121,7 +115,7 @@ float GetTouchForce(const base::NativeEvent& native_event) {
   const ui::TouchEvent* event =
       static_cast<const ui::TouchEvent*>(native_event);
   DCHECK(event->IsTouchEvent());
-  return event->force();
+  return event->pointer_details().force();
 }
 
 bool GetScrollOffsets(const base::NativeEvent& native_event,
@@ -177,7 +171,7 @@ int GetModifiersFromKeyState() {
 
 void DispatchEventFromNativeUiEvent(const base::NativeEvent& native_event,
                                     base::Callback<void(ui::Event*)> callback) {
-  const ui::Event* native_ui_event = static_cast<ui::Event*>(native_event);
+  ui::Event* native_ui_event = static_cast<ui::Event*>(native_event);
   if (native_ui_event->IsKeyEvent()) {
     ui::KeyEvent key_event(native_event);
     callback.Run(&key_event);
@@ -193,6 +187,10 @@ void DispatchEventFromNativeUiEvent(const base::NativeEvent& native_event,
   } else if (native_ui_event->IsScrollEvent()) {
     ui::ScrollEvent scroll_event(native_event);
     callback.Run(&scroll_event);
+  } else if (native_ui_event->IsGestureEvent()) {
+    callback.Run(native_ui_event);
+    // TODO(mohsen): Use the same pattern for scroll/touch/wheel events.
+    // Apparently, there is no need for them to wrap the |native_event|.
   } else {
     NOTREACHED();
   }

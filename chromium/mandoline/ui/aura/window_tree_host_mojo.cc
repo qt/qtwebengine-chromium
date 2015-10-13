@@ -4,7 +4,8 @@
 
 #include "mandoline/ui/aura/window_tree_host_mojo.h"
 
-#include "components/view_manager/public/cpp/view_manager.h"
+#include "components/mus/public/cpp/view_tree_connection.h"
+#include "mandoline/ui/aura/input_method_mandoline.h"
 #include "mandoline/ui/aura/surface_context_factory.h"
 #include "mojo/application/public/interfaces/shell.mojom.h"
 #include "mojo/converters/geometry/geometry_type_converters.h"
@@ -19,7 +20,7 @@ namespace mandoline {
 ////////////////////////////////////////////////////////////////////////////////
 // WindowTreeHostMojo, public:
 
-WindowTreeHostMojo::WindowTreeHostMojo(mojo::Shell* shell, mojo::View* view)
+WindowTreeHostMojo::WindowTreeHostMojo(mojo::Shell* shell, mus::View* view)
     : view_(view), bounds_(view->bounds().To<gfx::Rect>()) {
   view_->AddObserver(this);
 
@@ -30,9 +31,13 @@ WindowTreeHostMojo::WindowTreeHostMojo(mojo::Shell* shell, mojo::View* view)
   ui::ContextFactory* default_context_factory =
       aura::Env::GetInstance()->context_factory();
   aura::Env::GetInstance()->set_context_factory(context_factory_.get());
-  CreateCompositor(GetAcceleratedWidget());
+  CreateCompositor();
+  OnAcceleratedWidgetAvailable();
   aura::Env::GetInstance()->set_context_factory(default_context_factory);
   DCHECK_EQ(context_factory_.get(), compositor()->context_factory());
+
+  input_method_.reset(new InputMethodMandoline(this, view_));
+  SetSharedInputMethod(input_method_.get());
 }
 
 WindowTreeHostMojo::~WindowTreeHostMojo() {
@@ -94,10 +99,9 @@ void WindowTreeHostMojo::OnCursorVisibilityChangedNative(bool show) {
 ////////////////////////////////////////////////////////////////////////////////
 // WindowTreeHostMojo, ViewObserver implementation:
 
-void WindowTreeHostMojo::OnViewBoundsChanged(
-    mojo::View* view,
-    const mojo::Rect& old_bounds,
-    const mojo::Rect& new_bounds) {
+void WindowTreeHostMojo::OnViewBoundsChanged(mus::View* view,
+                                             const mojo::Rect& old_bounds,
+                                             const mojo::Rect& new_bounds) {
   gfx::Rect old_bounds2 = old_bounds.To<gfx::Rect>();
   gfx::Rect new_bounds2 = new_bounds.To<gfx::Rect>();
   bounds_ = new_bounds2;

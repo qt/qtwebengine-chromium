@@ -43,17 +43,18 @@
 #include "core/StyleBuilderFunctions.h"
 #include "core/StylePropertyShorthand.h"
 #include "core/css/BasicShapeFunctions.h"
+#include "core/css/CSSBasicShapeValues.h"
+#include "core/css/CSSCounterValue.h"
 #include "core/css/CSSCursorImageValue.h"
+#include "core/css/CSSFunctionValue.h"
 #include "core/css/CSSGradientValue.h"
 #include "core/css/CSSGridTemplateAreasValue.h"
 #include "core/css/CSSHelper.h"
 #include "core/css/CSSImageSetValue.h"
-#include "core/css/CSSLineBoxContainValue.h"
 #include "core/css/CSSPathValue.h"
 #include "core/css/CSSPrimitiveValueMappings.h"
 #include "core/css/CSSPropertyMetadata.h"
-#include "core/css/Counter.h"
-#include "core/css/Pair.h"
+#include "core/css/CSSValuePair.h"
 #include "core/css/StylePropertySet.h"
 #include "core/css/StyleRule.h"
 #include "core/css/resolver/ElementStyleResources.h"
@@ -565,13 +566,14 @@ void StyleBuilderFunctions::applyValueCSSPropertyWebkitBorderImage(StyleResolver
 
 void StyleBuilderFunctions::applyValueCSSPropertyWebkitClipPath(StyleResolverState& state, CSSValue* value)
 {
+    if (value->isBasicShapeValue()) {
+        state.style()->setClipPath(ShapeClipPathOperation::create(basicShapeForValue(state, *value)));
+    }
     if (value->isPrimitiveValue()) {
         CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value);
         if (primitiveValue->getValueID() == CSSValueNone) {
             state.style()->setClipPath(nullptr);
-        } else if (primitiveValue->isShape()) {
-            state.style()->setClipPath(ShapeClipPathOperation::create(basicShapeForValue(state, primitiveValue->getShapeValue())));
-        } else if (primitiveValue->primitiveType() == CSSPrimitiveValue::CSS_URI) {
+        } else if (primitiveValue->isURI()) {
             String cssURLValue = primitiveValue->getStringValue();
             KURL url = state.document().completeURL(cssURLValue);
             // FIXME: It doesn't work with forward or external SVG references (see https://bugs.webkit.org/show_bug.cgi?id=90405)
@@ -582,9 +584,18 @@ void StyleBuilderFunctions::applyValueCSSPropertyWebkitClipPath(StyleResolverSta
 
 void StyleBuilderFunctions::applyValueCSSPropertyWebkitFilter(StyleResolverState& state, CSSValue* value)
 {
+    // FIXME: We should just make this a converter
     FilterOperations operations;
-    if (FilterOperationResolver::createFilterOperations(value, state.cssToLengthConversionData(), operations, state))
-        state.style()->setFilter(operations);
+    FilterOperationResolver::createFilterOperations(*value, state.cssToLengthConversionData(), operations, state);
+    state.style()->setFilter(operations);
+}
+
+void StyleBuilderFunctions::applyValueCSSPropertyBackdropFilter(StyleResolverState& state, CSSValue* value)
+{
+    // FIXME: We should just make this a converter
+    FilterOperations operations;
+    FilterOperationResolver::createFilterOperations(*value, state.cssToLengthConversionData(), operations, state);
+    state.style()->setBackdropFilter(operations);
 }
 
 void StyleBuilderFunctions::applyInitialCSSPropertyWebkitTextEmphasisStyle(StyleResolverState& state)
@@ -662,8 +673,8 @@ void StyleBuilderFunctions::applyValueCSSPropertyWillChange(StyleResolverState& 
 
     for (auto& willChangeValue : toCSSValueList(*value)) {
         CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(willChangeValue.get());
-        if (CSSPropertyID propertyID = primitiveValue->getPropertyID())
-            willChangeProperties.append(propertyID);
+        if (primitiveValue->isPropertyID())
+            willChangeProperties.append(primitiveValue->getPropertyID());
         else if (primitiveValue->getValueID() == CSSValueContents)
             willChangeContents = true;
         else if (primitiveValue->getValueID() == CSSValueScrollPosition)
@@ -708,6 +719,31 @@ void StyleBuilderFunctions::applyValueCSSPropertyContent(StyleResolverState& sta
             continue;
         }
 
+        if (item->isCounterValue()) {
+            CSSCounterValue* counterValue = toCSSCounterValue(item.get());
+            EListStyleType listStyleType = NoneListStyle;
+            CSSValueID listStyleIdent = counterValue->listStyle();
+            if (listStyleIdent != CSSValueNone)
+                listStyleType = static_cast<EListStyleType>(listStyleIdent - CSSValueDisc);
+            OwnPtr<CounterContent> counter = adoptPtr(new CounterContent(AtomicString(counterValue->identifier()), listStyleType, AtomicString(counterValue->separator())));
+            state.style()->setContent(counter.release(), didSet);
+            didSet = true;
+        }
+
+        if (item->isFunctionValue()) {
+            CSSFunctionValue* functionValue = toCSSFunctionValue(item.get());
+            ASSERT(functionValue->functionType() == CSSValueAttr);
+            // FIXME: Can a namespace be specified for an attr(foo)?
+            if (state.style()->styleType() == NOPSEUDO)
+                state.style()->setUnique();
+            else
+                state.parentStyle()->setUnique();
+            QualifiedName attr(nullAtom, AtomicString(toCSSPrimitiveValue(functionValue->item(0))->getStringValue()), nullAtom);
+            const AtomicString& value = state.element()->getAttribute(attr);
+            state.style()->setContent(value.isNull() ? emptyString() : value.string(), didSet);
+            didSet = true;
+        }
+
         if (!item->isPrimitiveValue())
             continue;
 
@@ -715,25 +751,6 @@ void StyleBuilderFunctions::applyValueCSSPropertyContent(StyleResolverState& sta
 
         if (contentValue->isString()) {
             state.style()->setContent(contentValue->getStringValue().impl(), didSet);
-            didSet = true;
-        } else if (contentValue->isAttr()) {
-            // FIXME: Can a namespace be specified for an attr(foo)?
-            if (state.style()->styleType() == NOPSEUDO)
-                state.style()->setUnique();
-            else
-                state.parentStyle()->setUnique();
-            QualifiedName attr(nullAtom, AtomicString(contentValue->getStringValue()), nullAtom);
-            const AtomicString& value = state.element()->getAttribute(attr);
-            state.style()->setContent(value.isNull() ? emptyString() : value.string(), didSet);
-            didSet = true;
-        } else if (contentValue->isCounter()) {
-            Counter* counterValue = contentValue->getCounterValue();
-            EListStyleType listStyleType = NoneListStyle;
-            CSSValueID listStyleIdent = counterValue->listStyleIdent();
-            if (listStyleIdent != CSSValueNone)
-                listStyleType = static_cast<EListStyleType>(listStyleIdent - CSSValueDisc);
-            OwnPtr<CounterContent> counter = adoptPtr(new CounterContent(AtomicString(counterValue->identifier()), listStyleType, AtomicString(counterValue->separator())));
-            state.style()->setContent(counter.release(), didSet);
             didSet = true;
         } else {
             switch (contentValue->getValueID()) {
@@ -766,10 +783,12 @@ void StyleBuilderFunctions::applyValueCSSPropertyContent(StyleResolverState& sta
 void StyleBuilderFunctions::applyValueCSSPropertyWebkitLocale(StyleResolverState& state, CSSValue* value)
 {
     const CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value);
-    if (primitiveValue->getValueID() == CSSValueAuto)
+    if (primitiveValue->getValueID() == CSSValueAuto) {
         state.style()->setLocale(nullAtom);
-    else
+    } else {
+        ASSERT(primitiveValue->isString());
         state.style()->setLocale(AtomicString(primitiveValue->getStringValue()));
+    }
     state.fontBuilder().setScript(state.style()->locale());
 }
 

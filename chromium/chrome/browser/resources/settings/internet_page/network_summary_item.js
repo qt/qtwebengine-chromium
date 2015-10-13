@@ -6,7 +6,6 @@
  * @fileoverview Polymer element for displaying the network state for a specific
  * type and a list of networks for that type.
  */
-(function() {
 
 /** @typedef {chrome.networkingPrivate.DeviceStateProperties} */
 var DeviceStateProperties;
@@ -45,21 +44,19 @@ Polymer({
 
     /**
      * Device state for the network type.
-     * @type {?DeviceStateProperties}
+     * @type {DeviceStateProperties|undefined}
      */
     deviceState: {
       type: Object,
-      value: null,
       observer: 'deviceStateChanged_'
     },
 
     /**
      * Network state for the active network.
-     * @type {?CrOnc.NetworkStateProperties}
+     * @type {!CrOnc.NetworkStateProperties|undefined}
      */
     networkState: {
       type: Object,
-      value: null
     },
 
     /**
@@ -98,7 +95,7 @@ Polymer({
   },
 
   /**
-   * @param {?DeviceStateProperties} deviceState The state of a device.
+   * @param {DeviceStateProperties} deviceState
    * @return {boolean} True if the device state is not set.
    * @private
    */
@@ -107,27 +104,37 @@ Polymer({
   },
 
   /**
-   * @param {?DeviceStateProperties} deviceState The state of a device.
+   * @param {DeviceStateProperties} deviceState
+   * @param {boolean} expanded The expanded state.
+   * @return {boolean} Whether or not the scanning spinner should be shown.
+   * @private
+   */
+  showScanning_: function(deviceState, expanded) {
+    return !!expanded && !!deviceState.Scanning;
+  },
+
+  /**
+   * @param {DeviceStateProperties|undefined} deviceState
    * @return {boolean} Whether or not the device state is enabled.
    * @private
    */
   deviceIsEnabled_: function(deviceState) {
-    return deviceState && deviceState.State == 'Enabled';
+    return !!deviceState && deviceState.State == 'Enabled';
   },
 
   /**
-   * @param {?DeviceStateProperties} deviceState The device state.
+   * @param {DeviceStateProperties} deviceState
    * @return {string} The class value for the device enabled button.
    * @private
    */
   getDeviceEnabledButtonClass_: function(deviceState) {
-    var visible = deviceState &&
-        deviceState.Type != 'Ethernet' && deviceState.Type != 'VPN';
+    var visible = deviceState && deviceState.Type != CrOnc.Type.ETHERNET &&
+                  deviceState.Type != CrOnc.Type.VPN;
     return visible ? '' : 'invisible';
   },
 
   /**
-   * @param {?DeviceStateProperties} deviceState The device state.
+   * @param {DeviceStateProperties} deviceState
    * @param {!Array<!CrOnc.NetworkStateProperties>} networkList
    * @return {string} The class value for the expand button.
    * @private
@@ -138,7 +145,7 @@ Polymer({
   },
 
   /**
-   * @param {?DeviceStateProperties} deviceState The device state.
+   * @param {DeviceStateProperties|undefined} deviceState
    * @param {!Array<!CrOnc.NetworkStateProperties>} networkList
    * @return {boolean} Whether or not to show the UI to expand the list.
    * @private
@@ -146,13 +153,23 @@ Polymer({
   expandIsVisible_: function(deviceState, networkList) {
     if (!this.deviceIsEnabled_(deviceState))
       return false;
-    var minLength = (this.type == 'WiFi') ? 1 : 2;
+    var minLength = (this.deviceState.Type == CrOnc.Type.WI_FI) ? 1 : 2;
     return networkList.length >= minLength;
   },
 
   /**
-   * Event triggered when the details div is clicked on.
-   * @param {!Object} event The enable button event.
+   * @param {!CrOnc.NetworkStateProperties} state
+   * @param {boolean} expanded The expanded state.
+   * @return {boolean} True if the 'Known networks' button should be shown.
+   * @private
+   */
+  showKnownNetworks_: function(state, expanded) {
+    return !!expanded && !!state && state.Type == CrOnc.Type.WI_FI;
+  },
+
+  /**
+   * Event triggered when the details div is clicked.
+   * @param {Event} event The enable button event.
    * @private
    */
   onDetailsClicked_: function(event) {
@@ -171,8 +188,16 @@ Polymer({
   },
 
   /**
+   * Event triggered when the known networks button is clicked.
+   * @private
+   */
+  onKnownNetworksClicked_: function() {
+    this.fire('show-known-networks', {type: CrOnc.Type.WI_FI});
+  },
+
+  /**
    * Event triggered when a network-list-item is the network list is selected.
-   * @param {!{detail: NetworkListItem}} event
+   * @param {!{detail: !CrOnc.NetworkStateProperties}} event
    * @private
    */
   onListItemSelected_: function(event) {
@@ -203,4 +228,3 @@ Polymer({
     this.$.details.classList.toggle('selectable', selectable);
   },
 });
-})();

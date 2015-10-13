@@ -13,6 +13,7 @@
 #include <dxgi1_2.h>
 #include <mfapi.h>
 #include <mferror.h>
+#include <ntverp.h>
 #include <wmcodecdsp.h>
 
 #include "base/base_paths_win.h"
@@ -90,9 +91,13 @@ const CLSID MEDIASUBTYPE_VP90 = {
 
 // The CLSID of the video processor media foundation transform which we use for
 // texture color conversion in DX11.
+// Defined in mfidl.h in the Windows 10 SDK. ntverp.h provides VER_PRODUCTBUILD
+// to detect which SDK we are compiling with.
+#if VER_PRODUCTBUILD < 10011  // VER_PRODUCTBUILD for 10.0.10158.0 SDK.
 DEFINE_GUID(CLSID_VideoProcessorMFT,
             0x88753b26, 0x5b24, 0x49bd, 0xb2, 0xe7, 0xc, 0x44, 0x5c, 0x78,
             0xc9, 0x82);
+#endif
 
 // MF_XVP_PLAYBACK_MODE
 // Data type: UINT32 (treat as BOOL)
@@ -810,7 +815,7 @@ void DXVAVideoDecodeAccelerator::AssignPictureBuffers(
   State state = GetState();
   RETURN_AND_NOTIFY_ON_FAILURE((state != kUninitialized),
       "Invalid state: " << state, ILLEGAL_STATE,);
-  RETURN_AND_NOTIFY_ON_FAILURE((kNumPictureBuffers == buffers.size()),
+  RETURN_AND_NOTIFY_ON_FAILURE((kNumPictureBuffers >= buffers.size()),
       "Failed to provide requested picture buffers. (Got " << buffers.size() <<
       ", requested " << kNumPictureBuffers << ")", INVALID_ARGUMENT,);
 
@@ -1002,6 +1007,7 @@ bool DXVAVideoDecodeAccelerator::InitDecoder(media::VideoCodecProfile profile) {
                       "blacklisted version of msmpeg2vdec.dll 6.7.7140",
                       false);
     codec_ = media::kCodecH264;
+    clsid = __uuidof(CMSH264DecoderMFT);
   } else if ((profile == media::VP8PROFILE_ANY ||
               profile == media::VP9PROFILE_ANY) &&
              base::CommandLine::ForCurrentProcess()->HasSwitch(
@@ -1500,13 +1506,14 @@ void DXVAVideoDecodeAccelerator::RequestPictureBuffers(int width, int height) {
 
 void DXVAVideoDecodeAccelerator::NotifyPictureReady(
     int picture_buffer_id,
-    int input_buffer_id,
-    const gfx::Rect& picture_buffer_size) {
+    int input_buffer_id) {
   DCHECK(main_thread_task_runner_->BelongsToCurrentThread());
   // This task could execute after the decoder has been torn down.
   if (GetState() != kUninitialized && client_) {
+    // TODO(henryhsu): Use correct visible size instead of (0, 0). We can't use
+    // coded size here so use (0, 0) intentionally to have the client choose.
     media::Picture picture(picture_buffer_id, input_buffer_id,
-                           picture_buffer_size, false);
+                           gfx::Rect(0, 0), false);
     client_->PictureReady(picture);
   }
 }
@@ -1827,9 +1834,7 @@ void DXVAVideoDecodeAccelerator::CopySurfaceComplete(
   picture_buffer->CopySurfaceComplete(src_surface,
                                       dest_surface);
 
-  NotifyPictureReady(picture_buffer->id(),
-                     input_buffer_id,
-                     gfx::Rect(picture_buffer->size()));
+  NotifyPictureReady(picture_buffer->id(), input_buffer_id);
 
   {
     base::AutoLock lock(decoder_lock_);

@@ -70,11 +70,11 @@ static bool shouldPaintBorderAfter(const LayoutFrameSet::GridAxis& axis, size_t 
 
 void FrameSetPainter::paintBorders(const PaintInfo& paintInfo, const LayoutPoint& adjustedPaintOffset)
 {
-    if (LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(*paintInfo.context, m_layoutFrameSet, paintInfo.phase))
+    if (LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(*paintInfo.context, m_layoutFrameSet, paintInfo.phase, adjustedPaintOffset))
         return;
 
     LayoutRect adjustedFrameRect(adjustedPaintOffset, m_layoutFrameSet.size());
-    LayoutObjectDrawingRecorder recorder(*paintInfo.context, m_layoutFrameSet, paintInfo.phase, adjustedFrameRect);
+    LayoutObjectDrawingRecorder recorder(*paintInfo.context, m_layoutFrameSet, paintInfo.phase, adjustedFrameRect, adjustedPaintOffset);
 
     LayoutUnit borderThickness = m_layoutFrameSet.frameSet()->border();
     if (!borderThickness)
@@ -116,7 +116,7 @@ void FrameSetPainter::paintChildren(const PaintInfo& paintInfo, const LayoutPoin
     size_t cols = m_layoutFrameSet.columns().m_sizes.size();
     for (size_t r = 0; r < rows; r++) {
         for (size_t c = 0; c < cols; c++) {
-            // Self-painting layers are painted during the DeprecatedPaintLayer paint recursion, not LayoutObject.
+            // Self-painting layers are painted during the PaintLayer paint recursion, not LayoutObject.
             if (!child->isBoxModelObject() || !toLayoutBoxModelObject(child)->hasSelfPaintingLayer())
                 child->paint(paintInfo, adjustedPaintOffset);
             child = child->nextSibling();

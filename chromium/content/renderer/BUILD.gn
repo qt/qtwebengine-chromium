@@ -28,6 +28,7 @@ source_set("renderer") {
     "//base/allocator",
     "//cc",
     "//cc/blink",
+    "//components/url_formatter",
     "//components/scheduler:scheduler",
     "//content:resources",
     "//content/common:mojo_bindings",
@@ -80,7 +81,15 @@ source_set("renderer") {
   }
 
   if (is_android) {
-    sources -= [ "media/audio_decoder.cc" ]
+    sources -= [
+      "media/audio_decoder.cc",
+      "usb/type_converters.cc",
+      "usb/type_converters.h",
+      "usb/web_usb_client_impl.cc",
+      "usb/web_usb_client_impl.h",
+      "usb/web_usb_device_impl.cc",
+      "usb/web_usb_device_impl.h",
+    ]
     sources += [
       "external_popup_menu.cc",
       "external_popup_menu.h",
@@ -104,6 +113,11 @@ source_set("renderer") {
       "java/gin_java_bridge_value_converter.h",
       "java/gin_java_function_invocation_helper.cc",
       "java/gin_java_function_invocation_helper.h",
+    ]
+
+    deps += [
+      "//device/devices_app/public/cpp",
+      "//device/devices_app/usb/public/interfaces",
     ]
   }
 
@@ -154,17 +168,9 @@ source_set("renderer") {
       "//ppapi/host",
       "//ppapi/proxy",
       "//ppapi/shared_impl",
-      "//third_party/libvpx",
+      "//third_party/libvpx_new",
       "//third_party/libyuv",
     ]
-  } else {
-    # These files are in the WebRTC list, but also require plugins.
-    if (enable_webrtc) {
-      sources -= [
-        "media/webrtc/video_destination_handler.cc",
-        "media/webrtc/video_destination_handler.h",
-      ]
-    }
   }
 
   if (enable_plugins && enable_webrtc) {

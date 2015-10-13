@@ -10,7 +10,6 @@
 #include "net/tools/quic/quic_client_session.h"
 #include "net/tools/quic/quic_spdy_client_stream.h"
 #include "net/tools/quic/spdy_balsa_utils.h"
-#include "net/tools/quic/test_tools/quic_test_utils.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -18,6 +17,9 @@ using net::test::DefaultQuicConfig;
 using net::test::MockConnection;
 using net::test::SupportedVersions;
 using net::test::kClientDataStreamId1;
+using net::test::kInitialSessionFlowControlWindowForTest;
+using net::test::kInitialStreamFlowControlWindowForTest;
+
 using std::string;
 using testing::StrictMock;
 using testing::TestWithParam;
@@ -70,7 +72,8 @@ INSTANTIATE_TEST_CASE_P(Tests, QuicSpdyClientStreamTest,
 TEST_P(QuicSpdyClientStreamTest, TestFraming) {
   stream_->OnStreamHeaders(headers_string_);
   stream_->OnStreamHeadersComplete(false, headers_string_.size());
-  EXPECT_EQ(body_.size(), stream_->ProcessData(body_.c_str(), body_.size()));
+  stream_->OnStreamFrame(
+      QuicStreamFrame(stream_->id(), /*fin=*/false, /*offset=*/0, body_));
   if (GetParam() > QUIC_VERSION_24) {
     EXPECT_EQ("200", stream_->headers().find(":status")->second);
   } else {
@@ -83,7 +86,8 @@ TEST_P(QuicSpdyClientStreamTest, TestFraming) {
 TEST_P(QuicSpdyClientStreamTest, TestFramingOnePacket) {
   stream_->OnStreamHeaders(headers_string_);
   stream_->OnStreamHeadersComplete(false, headers_string_.size());
-  EXPECT_EQ(body_.size(), stream_->ProcessData(body_.c_str(), body_.size()));
+  stream_->OnStreamFrame(
+      QuicStreamFrame(stream_->id(), /*fin=*/false, /*offset=*/0, body_));
   if (GetParam() > QUIC_VERSION_24) {
     EXPECT_EQ("200", stream_->headers().find(":status")->second);
   } else {
@@ -109,7 +113,8 @@ TEST_P(QuicSpdyClientStreamTest, DISABLED_TestFramingExtraData) {
 
   EXPECT_CALL(*connection_,
               SendRstStream(stream_->id(), QUIC_BAD_APPLICATION_PAYLOAD, 0));
-  stream_->ProcessData(large_body.c_str(), large_body.size());
+  stream_->OnStreamFrame(
+      QuicStreamFrame(stream_->id(), /*fin=*/false, /*offset=*/0, large_body));
 
   EXPECT_NE(QUIC_STREAM_NO_ERROR, stream_->stream_error());
 }

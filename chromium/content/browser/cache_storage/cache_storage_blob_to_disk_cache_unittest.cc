@@ -9,6 +9,7 @@
 #include "base/files/file_path.h"
 #include "base/macros.h"
 #include "base/run_loop.h"
+#include "base/test/null_task_runner.h"
 #include "base/thread_task_runner_handle.h"
 #include "content/browser/fileapi/chrome_blob_storage_context.h"
 #include "content/public/browser/browser_thread.h"
@@ -35,14 +36,32 @@ const int kCacheEntryIndex = 1;
 void DoNothingCompletion(int rv) {
 }
 
+class NullURLRequestContextGetter : public net::URLRequestContextGetter {
+ public:
+  NullURLRequestContextGetter() : null_task_runner_(new base::NullTaskRunner) {}
+
+  net::URLRequestContext* GetURLRequestContext() override { return nullptr; }
+
+  scoped_refptr<base::SingleThreadTaskRunner> GetNetworkTaskRunner()
+      const override {
+    return null_task_runner_;
+  }
+
+ private:
+  ~NullURLRequestContextGetter() override {}
+
+  scoped_refptr<base::SingleThreadTaskRunner> null_task_runner_;
+};
+
 // Returns a BlobProtocolHandler that uses |blob_storage_context|. Caller owns
 // the memory.
-storage::BlobProtocolHandler* CreateMockBlobProtocolHandler(
+scoped_ptr<storage::BlobProtocolHandler> CreateMockBlobProtocolHandler(
     storage::BlobStorageContext* blob_storage_context) {
   // The FileSystemContext and thread task runner are not actually used but a
   // task runner is needed to avoid a DCHECK in BlobURLRequestJob ctor.
-  return new storage::BlobProtocolHandler(
-      blob_storage_context, nullptr, base::ThreadTaskRunnerHandle::Get().get());
+  return make_scoped_ptr(new storage::BlobProtocolHandler(
+      blob_storage_context, nullptr,
+      base::ThreadTaskRunnerHandle::Get().get()));
 }
 
 // A CacheStorageBlobToDiskCache that can delay reading from blobs.
@@ -241,6 +260,11 @@ TEST_F(CacheStorageBlobToDiskCacheTest,
   base::RunLoop().RunUntilIdle();
   EXPECT_TRUE(callback_called_);
   EXPECT_FALSE(callback_success_);
+}
+
+TEST_F(CacheStorageBlobToDiskCacheTest, StreamWithNullContextRequest) {
+  url_request_context_getter_ = new NullURLRequestContextGetter();
+  EXPECT_FALSE(Stream());
 }
 
 }  // namespace

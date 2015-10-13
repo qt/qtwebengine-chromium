@@ -22,7 +22,8 @@ AAC::AAC()
 AAC::~AAC() {
 }
 
-bool AAC::Parse(const std::vector<uint8>& data, const LogCB& log_cb) {
+bool AAC::Parse(const std::vector<uint8>& data,
+                const scoped_refptr<MediaLog>& media_log) {
 #if defined(OS_ANDROID)
   codec_specific_data_ = data;
 #endif
@@ -36,6 +37,11 @@ bool AAC::Parse(const std::vector<uint8>& data, const LogCB& log_cb) {
 
   frequency_ = 0;
   extension_frequency_ = 0;
+
+  // TODO(msu.koo): Need to update comments after checking which version of
+  // ISO 14496-3 this implementation is according to. Also need to reflect
+  // ISO 14496-3:2009 if ISO 14496-3:2005 was reflected here.
+  // https://crbug.com/532281
 
   // The following code is written according to ISO 14496 Part 3 Table 1.13 -
   // Syntax of AudioSpecificConfig.
@@ -56,9 +62,6 @@ bool AAC::Parse(const std::vector<uint8>& data, const LogCB& log_cb) {
       RCHECK(reader.ReadBits(24, &extension_frequency_));
     RCHECK(reader.ReadBits(5, &profile_));
   }
-
-  MEDIA_LOG(INFO, log_cb) << "Audio codec: mp4a.40." << std::hex
-                          << static_cast<int>(profile_);
 
   RCHECK(SkipDecoderGASpecificConfig(&reader));
   RCHECK(SkipErrorSpecificConfig());
@@ -95,12 +98,26 @@ bool AAC::Parse(const std::vector<uint8>& data, const LogCB& log_cb) {
   }
 
   if (frequency_ == 0) {
-    RCHECK(frequency_index_ < kADTSFrequencyTableSize);
+    if (frequency_index_ >= kADTSFrequencyTableSize) {
+      MEDIA_LOG(ERROR, media_log)
+          << "Sampling Frequency Index(0x"
+          << std::hex << static_cast<int>(frequency_index_)
+          << ") is not supported. Please see ISO 14496-3:2005 Table 1.16 "
+          << "for supported Sampling Frequencies.";
+      return false;
+    }
     frequency_ = kADTSFrequencyTable[frequency_index_];
   }
 
   if (extension_frequency_ == 0 && extension_frequency_index != 0xff) {
-    RCHECK(extension_frequency_index < kADTSFrequencyTableSize);
+    if (extension_frequency_index >= kADTSFrequencyTableSize) {
+      MEDIA_LOG(ERROR, media_log)
+          << "Extension Sampling Frequency Index(0x"
+          << std::hex << static_cast<int>(extension_frequency_index)
+          << ") is not supported. Please see ISO 14496-3:2005 Table 1.16 "
+          << "for supported Sampling Frequencies.";
+      return false;
+    }
     extension_frequency_ = kADTSFrequencyTable[extension_frequency_index];
   }
 
@@ -108,12 +125,33 @@ bool AAC::Parse(const std::vector<uint8>& data, const LogCB& log_cb) {
   if (ps_present && channel_config_ == 1) {
     channel_layout_ = CHANNEL_LAYOUT_STEREO;
   } else {
-    RCHECK(channel_config_ < kADTSChannelLayoutTableSize);
+    if (channel_config_ >= kADTSChannelLayoutTableSize) {
+      MEDIA_LOG(ERROR, media_log)
+          << "Channel Configuration("
+          << static_cast<int>(channel_config_)
+          << ") is not supported. Please see ISO 14496-3:2005 Table 1.17 "
+          << "for supported Channel Configurations.";
+      return false;
+    }
     channel_layout_ = kADTSChannelLayoutTable[channel_config_];
   }
+  DCHECK(channel_layout_ != CHANNEL_LAYOUT_NONE);
 
-  return frequency_ != 0 && channel_layout_ != CHANNEL_LAYOUT_NONE &&
-         profile_ >= 1 && profile_ <= 4;
+  if (profile_ < 1 || profile_ > 4) {
+    MEDIA_LOG(ERROR, media_log)
+        << "Audio codec(mp4a.40." << static_cast<int>(profile_)
+        << ") is not supported. Please see ISO 14496-3:2005 Table 1.3 "
+        << "for Audio Profile Definitions.";
+    return false;
+  }
+
+  MEDIA_LOG(INFO, media_log)
+      << "Audio codec: mp4a.40." << static_cast<int>(profile_)
+      << ". Sampling frequency: " << frequency_ << "Hz"
+      << ". Sampling frequency(Extension): " << extension_frequency_ << "Hz"
+      << ". Channel layout: " << channel_layout_ << ".";
+
+  return true;
 }
 
 int AAC::GetOutputSamplesPerSecond(bool sbr_in_mimetype) const {

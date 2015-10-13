@@ -82,7 +82,7 @@ WebInspector.TimelineUIUtils._initEventStyles = function()
     eventStyles[recordTypes.ScrollLayer] = new WebInspector.TimelineRecordStyle(WebInspector.UIString("Scroll"), categories["rendering"]);
     eventStyles[recordTypes.CompositeLayers] = new WebInspector.TimelineRecordStyle(WebInspector.UIString("Composite Layers"), categories["painting"]);
     eventStyles[recordTypes.ParseHTML] = new WebInspector.TimelineRecordStyle(WebInspector.UIString("Parse HTML"), categories["loading"]);
-    eventStyles[recordTypes.ParseAuthorStyleSheet] = new WebInspector.TimelineRecordStyle(WebInspector.UIString("Parse Author Style Sheet"), categories["loading"]);
+    eventStyles[recordTypes.ParseAuthorStyleSheet] = new WebInspector.TimelineRecordStyle(WebInspector.UIString("Parse Stylesheet"), categories["loading"]);
     eventStyles[recordTypes.TimerInstall] = new WebInspector.TimelineRecordStyle(WebInspector.UIString("Install Timer"), categories["scripting"]);
     eventStyles[recordTypes.TimerRemove] = new WebInspector.TimelineRecordStyle(WebInspector.UIString("Remove Timer"), categories["scripting"]);
     eventStyles[recordTypes.TimerFire] = new WebInspector.TimelineRecordStyle(WebInspector.UIString("Timer Fired"), categories["scripting"]);
@@ -106,6 +106,9 @@ WebInspector.TimelineUIUtils._initEventStyles = function()
     eventStyles[recordTypes.RequestAnimationFrame] = new WebInspector.TimelineRecordStyle(WebInspector.UIString("Request Animation Frame"), categories["scripting"]);
     eventStyles[recordTypes.CancelAnimationFrame] = new WebInspector.TimelineRecordStyle(WebInspector.UIString("Cancel Animation Frame"), categories["scripting"]);
     eventStyles[recordTypes.FireAnimationFrame] = new WebInspector.TimelineRecordStyle(WebInspector.UIString("Animation Frame Fired"), categories["scripting"]);
+    eventStyles[recordTypes.RequestIdleCallback] = new WebInspector.TimelineRecordStyle(WebInspector.UIString("Request Idle Callback"), categories["scripting"]);
+    eventStyles[recordTypes.CancelIdleCallback] = new WebInspector.TimelineRecordStyle(WebInspector.UIString("Cancel Idle Callback"), categories["scripting"]);
+    eventStyles[recordTypes.FireIdleCallback] = new WebInspector.TimelineRecordStyle(WebInspector.UIString("Fire Idle Callback"), categories["scripting"]);
     eventStyles[recordTypes.WebSocketCreate] = new WebInspector.TimelineRecordStyle(WebInspector.UIString("Create WebSocket"), categories["scripting"]);
     eventStyles[recordTypes.WebSocketSendHandshakeRequest] = new WebInspector.TimelineRecordStyle(WebInspector.UIString("Send WebSocket Handshake"), categories["scripting"]);
     eventStyles[recordTypes.WebSocketReceiveHandshakeResponse] = new WebInspector.TimelineRecordStyle(WebInspector.UIString("Receive WebSocket Handshake"), categories["scripting"]);
@@ -135,13 +138,12 @@ WebInspector.TimelineUIUtils.isCoalescable = function(recordType)
 }
 
 /**
- * @param {!WebInspector.TimelineModel.Record} record
+ * @param {!WebInspector.TracingModel.Event} traceEvent
  * @param {!RegExp} regExp
  * @return {boolean}
  */
-WebInspector.TimelineUIUtils.testContentMatching = function(record, regExp)
+WebInspector.TimelineUIUtils.testContentMatching = function(traceEvent, regExp)
 {
-    var traceEvent = record.traceEvent();
     var title = WebInspector.TimelineUIUtils.eventStyle(traceEvent).title;
     var tokens = [title];
     if (traceEvent.url)
@@ -292,17 +294,13 @@ WebInspector.TimelineUIUtils.buildDetailsTextForTraceEvent = function(event, tar
         var delta = event.args["usedHeapSizeBefore"] - event.args["usedHeapSizeAfter"];
         detailsText = WebInspector.UIString("%s collected", Number.bytesToString(delta));
         break;
-    case recordType.TimerFire:
-        detailsText = eventData["timerId"];
-        break;
     case recordType.FunctionCall:
-        detailsText = linkifyLocationAsText(eventData["scriptId"], eventData["scriptLine"], 0);
+        // Omit internally generated script names.
+        if (eventData["scriptName"])
+            detailsText = linkifyLocationAsText(eventData["scriptId"], eventData["scriptLine"], 0);
         break;
     case recordType.JSFrame:
         detailsText = WebInspector.beautifyFunctionName(eventData["functionName"]);
-        break;
-    case recordType.FireAnimationFrame:
-        detailsText = eventData["id"];
         break;
     case recordType.EventDispatch:
         detailsText = eventData ? eventData["type"] : null;
@@ -313,56 +311,42 @@ WebInspector.TimelineUIUtils.buildDetailsTextForTraceEvent = function(event, tar
         if (width && height)
             detailsText = WebInspector.UIString("%d\u2009\u00d7\u2009%d", width, height);
         break;
-    case recordType.TimerInstall:
-    case recordType.TimerRemove:
-        detailsText = linkifyTopCallFrameAsText() || eventData["timerId"];
-        break;
-    case recordType.RequestAnimationFrame:
-    case recordType.CancelAnimationFrame:
-        detailsText = linkifyTopCallFrameAsText() || eventData["id"];
-        break;
     case recordType.ParseHTML:
         var endLine = event.args["endData"] && event.args["endData"]["endLine"];
-        var url = event.args["beginData"]["url"];
-        detailsText = endLine ? WebInspector.UIString("%s [%d:%d]", url, event.args["beginData"]["startLine"] + 1, endLine + 1) : url;
+        var url = WebInspector.displayNameForURL(event.args["beginData"]["url"]);
+        detailsText = endLine ? WebInspector.UIString("%s [%d\u2009\u2013\u2009%d]", url, event.args["beginData"]["startLine"] + 1, endLine + 1) : url;
         break;
-    case recordType.UpdateLayoutTree:
-    case recordType.RecalculateStyles:
-        detailsText = linkifyTopCallFrameAsText();
-        break;
+
     case recordType.EvaluateScript:
         var url = eventData["url"];
         if (url)
-            detailsText = url + ":" + eventData["lineNumber"];
+            detailsText = detailsText = WebInspector.displayNameForURL(url) + ":" + eventData["lineNumber"];
         break;
     case recordType.XHRReadyStateChange:
     case recordType.XHRLoad:
-    case recordType.ResourceSendRequest:
         var url = eventData["url"];
         if (url)
-            detailsText = WebInspector.displayNameForURL(url);
+            detailsText = detailsText = WebInspector.displayNameForURL(url);
         break;
+
+    case recordType.WebSocketCreate:
+    case recordType.WebSocketSendHandshakeRequest:
+    case recordType.WebSocketReceiveHandshakeResponse:
+    case recordType.WebSocketDestroy:
+    case recordType.ResourceSendRequest:
     case recordType.ResourceReceivedData:
     case recordType.ResourceReceiveResponse:
     case recordType.ResourceFinish:
-        var initiator = event.initiator;
-        if (initiator) {
-            var url = initiator.args["data"]["url"];
-            if (url)
-                detailsText = WebInspector.displayNameForURL(url);
-        }
-        break;
-    case recordType.EmbedderCallback:
-        detailsText = eventData["callbackName"];
-        break;
-
     case recordType.PaintImage:
     case recordType.DecodeImage:
     case recordType.ResizeImage:
     case recordType.DecodeLazyPixelRef:
-            var url = event.url;
-            if (url)
-                detailsText = WebInspector.displayNameForURL(url);
+        if (event.url)
+            detailsText = WebInspector.displayNameForURL(event.url);
+        break;
+
+    case recordType.EmbedderCallback:
+        detailsText = eventData["callbackName"];
         break;
 
     case recordType.Animation:
@@ -393,7 +377,7 @@ WebInspector.TimelineUIUtils.buildDetailsTextForTraceEvent = function(event, tar
         if (!rawLocation)
             return null;
         var uiLocation = WebInspector.debuggerWorkspaceBinding.rawLocationToUILocation(rawLocation);
-        return uiLocation.toUIString();
+        return uiLocation.linkText();
     }
 
     /**
@@ -430,24 +414,29 @@ WebInspector.TimelineUIUtils.buildDetailsNodeForTraceEvent = function(event, tar
     case recordType.GCEvent:
     case recordType.MajorGC:
     case recordType.MinorGC:
-    case recordType.TimerFire:
-    case recordType.FireAnimationFrame:
     case recordType.EventDispatch:
     case recordType.Paint:
+    case recordType.Animation:
+    case recordType.EmbedderCallback:
+    case recordType.ParseHTML:
+    case recordType.WebSocketCreate:
+    case recordType.WebSocketSendHandshakeRequest:
+    case recordType.WebSocketReceiveHandshakeResponse:
+    case recordType.WebSocketDestroy:
+        detailsText = WebInspector.TimelineUIUtils.buildDetailsTextForTraceEvent(event, target);
+        break;
     case recordType.PaintImage:
     case recordType.DecodeImage:
     case recordType.ResizeImage:
     case recordType.DecodeLazyPixelRef:
-    case recordType.Animation:
     case recordType.XHRReadyStateChange:
     case recordType.XHRLoad:
     case recordType.ResourceSendRequest:
     case recordType.ResourceReceivedData:
     case recordType.ResourceReceiveResponse:
     case recordType.ResourceFinish:
-    case recordType.EmbedderCallback:
-    case recordType.ParseHTML:
-        detailsText = WebInspector.TimelineUIUtils.buildDetailsTextForTraceEvent(event, target);
+        if (event.url)
+            details = WebInspector.linkifyResourceAsNode(event.url);
         break;
     case recordType.FunctionCall:
         details = linkifyLocation(eventData["scriptId"], eventData["scriptName"], eventData["scriptLine"], 0);
@@ -460,20 +449,6 @@ WebInspector.TimelineUIUtils.buildDetailsNodeForTraceEvent = function(event, tar
            details.createTextChild(" @ ");
            details.appendChild(location);
         }
-        break;
-    case recordType.TimerInstall:
-    case recordType.TimerRemove:
-        details = linkifyTopCallFrame();
-        detailsText = eventData["timerId"];
-        break;
-    case recordType.RequestAnimationFrame:
-    case recordType.CancelAnimationFrame:
-        details = linkifyTopCallFrame();
-        detailsText = eventData["id"];
-        break;
-    case recordType.UpdateLayoutTree:
-    case recordType.RecalculateStyles:
-        details = linkifyTopCallFrame();
         break;
     case recordType.EvaluateScript:
         var url = eventData["url"];
@@ -504,7 +479,7 @@ WebInspector.TimelineUIUtils.buildDetailsNodeForTraceEvent = function(event, tar
             return null;
 
         // FIXME(62725): stack trace line/column numbers are one-based.
-        return linkifier.linkifyScriptLocation(target, scriptId, url, lineNumber - 1, (columnNumber ||1) - 1, "timeline-details");
+        return linkifier.linkifyScriptLocation(target, scriptId, url, lineNumber - 1, (columnNumber || 1) - 1, "timeline-details");
     }
 
     /**
@@ -620,6 +595,14 @@ WebInspector.TimelineUIUtils._buildTraceEventDetailsSynchronously = function(eve
         var delta = event.args["usedHeapSizeBefore"] - event.args["usedHeapSizeAfter"];
         contentHelper.appendTextRow(WebInspector.UIString("Collected"), Number.bytesToString(delta));
         break;
+    case recordTypes.JSFrame:
+        var detailsNode = WebInspector.TimelineUIUtils.buildDetailsNodeForTraceEvent(event, model.target(), linkifier);
+        if (detailsNode)
+            contentHelper.appendElementRow(WebInspector.UIString("Function"), detailsNode);
+        var deoptReason = eventData["deoptReason"];
+        if (deoptReason && deoptReason != "no reason")
+            contentHelper.appendTextRow(WebInspector.UIString("Warning"), WebInspector.UIString("Not optimized: %s", deoptReason), true);
+        break;
     case recordTypes.TimerFire:
     case recordTypes.TimerInstall:
     case recordTypes.TimerRemove:
@@ -721,13 +704,22 @@ WebInspector.TimelineUIUtils._buildTraceEventDetailsSynchronously = function(eve
     case recordTypes.ParseHTML:
         var beginData = event.args["beginData"];
         var url = beginData["url"];
-        if (url)
-            contentHelper.appendTextRow(WebInspector.UIString("URL"), url);
         var startLine = beginData["startLine"] + 1;
         var endLine = event.args["endData"] ? event.args["endData"]["endLine"] + 1 : 0;
-        if (endLine)
-            contentHelper.appendTextRow(WebInspector.UIString("Range"), WebInspector.UIString("%d \u2014 %d", startLine, endLine));
+        if (url)
+            contentHelper.appendLocationRow(WebInspector.UIString("Range"), url, startLine, endLine);
         break;
+
+    case recordTypes.FireIdleCallback:
+        contentHelper.appendTextRow(WebInspector.UIString("Allotted time"), Number.millisToString(eventData["allottedMilliseconds"]));
+        contentHelper.appendTextRow(WebInspector.UIString("Invoked by timeout"), eventData["timedOut"]);
+        // Fall-through intended.
+
+    case recordTypes.RequestIdleCallback:
+    case recordTypes.CancelIdleCallback:
+        contentHelper.appendTextRow(WebInspector.UIString("Callback ID"), eventData["id"]);
+        break;
+
     default:
         var detailsNode = WebInspector.TimelineUIUtils.buildDetailsNodeForTraceEvent(event, model.target(), linkifier);
         if (detailsNode)
@@ -757,6 +749,79 @@ WebInspector.TimelineUIUtils._buildTraceEventDetailsSynchronously = function(eve
 }
 
 /**
+ * @param {!WebInspector.TimelineModel.NetworkRequest} request
+ * @return {!Array<!{title: string, value: (string|!Element)}>}
+ */
+WebInspector.TimelineUIUtils.buildNetworkRequestInfo = function(request)
+{
+    var duration = request.endTime - (request.startTime || -Infinity);
+    var items = [];
+    if (request.url)
+        items.push({ title: WebInspector.UIString("URL"), value: WebInspector.linkifyURLAsNode(request.url) });
+    if (isFinite(duration))
+        items.push({ title: WebInspector.UIString("Duration"), value: Number.millisToString(duration, true) });
+    if (request.requestMethod)
+        items.push({ title: WebInspector.UIString("Request Method"), value: request.requestMethod });
+    if (request.mimeType)
+        items.push({ title: WebInspector.UIString("Mime Type"), value: request.mimeType });
+    return items;
+}
+
+/**
+ * @param {!WebInspector.TimelineModel.NetworkRequest} request
+ * @param {!WebInspector.TimelineModel} model
+ * @param {!WebInspector.Linkifier} linkifier
+ * @return {!Promise<!DocumentFragment>}
+ */
+WebInspector.TimelineUIUtils.buildNetworkRequestDetails = function(request, model, linkifier)
+{
+    var fragment = createDocumentFragment();
+    var target = model.target();
+    var contentHelper = new WebInspector.TimelineDetailsContentHelper(target, linkifier, null, true);
+
+    var info = WebInspector.TimelineUIUtils.buildNetworkRequestInfo(request);
+    for (var item of info) {
+        if (typeof item.value === "string")
+            contentHelper.appendTextRow(item.title, item.value);
+        else
+            contentHelper.appendElementRow(item.title, item.value);
+    }
+
+    /**
+     * @param {function(?Element)} fulfill
+     */
+    function action(fulfill)
+    {
+        WebInspector.DOMPresentationUtils.buildImagePreviewContents(/** @type {!WebInspector.Target} */(target), request.url, false, saveImage);
+        /**
+         * @param {!Element=} element
+         */
+        function saveImage(element)
+        {
+            request.previewElement = element || null;
+            fulfill(request.previewElement);
+        }
+    }
+    var previewPromise;
+    if (request.previewElement)
+        previewPromise = Promise.resolve(request.previewElement);
+    else
+        previewPromise = request.url && target ? new Promise(action) : Promise.resolve(null);
+    /**
+     * @param {?Element} element
+     * @return {!DocumentFragment}
+     */
+    function appendPreview(element)
+    {
+        if (element)
+            contentHelper.appendElementRow(WebInspector.UIString("Preview"), request.previewElement);
+        fragment.appendChild(contentHelper.element);
+        return fragment;
+    }
+    return previewPromise.then(appendPreview);
+}
+
+/**
  * @param {!WebInspector.TracingModel.Event} event
  * @param {?WebInspector.Target} target
  * @param {!WebInspector.TimelineDetailsContentHelper} contentHelper
@@ -775,6 +840,9 @@ WebInspector.TimelineUIUtils._generateCauses = function(event, target, contentHe
         break;
     case recordTypes.FireAnimationFrame:
         callSiteStackLabel = WebInspector.UIString("Animation frame requested");
+        break;
+    case recordTypes.FireIdleCallback:
+        callSiteStackLabel = WebInspector.UIString("Idle callback requested");
         break;
     case recordTypes.UpdateLayoutTree:
     case recordTypes.RecalculateStyles:
@@ -1055,13 +1123,12 @@ WebInspector.TimelineUIUtils.InvalidationsGroupElement.prototype = {
 
 /**
  * @param {!Object} total
+ * @param {!WebInspector.TimelineModel} model
  * @param {!WebInspector.TimelineModel.Record} record
  */
-WebInspector.TimelineUIUtils.aggregateTimeForRecord = function(total, record)
+WebInspector.TimelineUIUtils.aggregateTimeForRecord = function(total, model, record)
 {
-    var traceEvent = record.traceEvent();
-    var model = record.timelineModel();
-    WebInspector.TimelineUIUtils._aggregatedStatsForTraceEvent(total, model, traceEvent);
+    WebInspector.TimelineUIUtils._aggregatedStatsForTraceEvent(total, model, record.traceEvent());
 }
 
 /**
@@ -1164,7 +1231,7 @@ WebInspector.TimelineUIUtils.buildPicturePreviewContent = function(event, target
 }
 
 /**
- * @param {string} recordType
+ * @param {!WebInspector.TimelineModel.RecordType} recordType
  * @param {?string} title
  * @param {number} position
  * @return {!Element}
@@ -1194,12 +1261,13 @@ WebInspector.TimelineUIUtils.createEventDivider = function(recordType, title, po
 
 /**
  * @param {!WebInspector.TimelineModel.Record} record
+ * @param {number} zeroTime
  * @param {number} position
  * @return {!Element}
  */
-WebInspector.TimelineUIUtils.createDividerForRecord = function(record, position)
+WebInspector.TimelineUIUtils.createDividerForRecord = function(record, zeroTime, position)
 {
-    var startTime = Number.millisToString(record.startTime() - record.timelineModel().minimumRecordTime());
+    var startTime = Number.millisToString(record.startTime() - zeroTime);
     var title = WebInspector.UIString("%s at %s", WebInspector.TimelineUIUtils.eventTitle(record.traceEvent()), startTime);
     return WebInspector.TimelineUIUtils.createEventDivider(record.type(), title, position);
 }
@@ -1221,17 +1289,9 @@ WebInspector.TimelineUIUtils._visibleTypes = function()
 /**
  * @return {!WebInspector.TimelineModel.Filter}
  */
-WebInspector.TimelineUIUtils.visibleRecordsFilter = function()
+WebInspector.TimelineUIUtils.visibleEventsFilter = function()
 {
-    return new WebInspector.TimelineVisibleRecordsFilter(WebInspector.TimelineUIUtils._visibleTypes());
-}
-
-/**
- * @return {!WebInspector.TraceEventFilter}
- */
-WebInspector.TimelineUIUtils.hiddenEventsFilter = function()
-{
-    return new WebInspector.InclusiveTraceEventNameFilter(WebInspector.TimelineUIUtils._visibleTypes());
+    return new WebInspector.TimelineVisibleEventsFilter(WebInspector.TimelineUIUtils._visibleTypes());
 }
 
 /**
@@ -1377,21 +1437,17 @@ WebInspector.TimelineUIUtils.generatePieChart = function(aggregatedStats, selfCa
  */
 WebInspector.TimelineUIUtils.generateDetailsContentForFrame = function(frameModel, frame, filmStripFrame)
 {
-    var durationInMillis = frame.endTime - frame.startTime;
-    var durationText = WebInspector.UIString("%s (at %s)", Number.millisToString(frame.endTime - frame.startTime, true),
-        Number.millisToString(frame.startTimeOffset, true));
     var pieChart = WebInspector.TimelineUIUtils.generatePieChart(frame.timeByCategory);
     var contentHelper = new WebInspector.TimelineDetailsContentHelper(null, null, null, false);
-    var warning = WebInspector.TimelineUIUtils.frameWarning(frame);
-    if (warning)
-        contentHelper.appendElementRow(WebInspector.UIString("Warning"), warning, true);
+    var duration = WebInspector.TimelineUIUtils.frameDuration(frame);
+    contentHelper.appendElementRow(WebInspector.UIString("Duration"), duration, frame.hasWarnings());
     if (filmStripFrame) {
         var filmStripPreview = createElementWithClass("img", "timeline-filmstrip-preview");
         filmStripFrame.imageDataPromise().then(onGotImageData.bind(null, filmStripPreview));
         contentHelper.appendElementRow(WebInspector.UIString("Screenshot"), filmStripPreview);
         filmStripPreview.addEventListener("click", frameClicked.bind(null, filmStripFrame), false);
     }
-    contentHelper.appendTextRow(WebInspector.UIString("Duration"), durationText);
+    var durationInMillis = frame.endTime - frame.startTime;
     contentHelper.appendTextRow(WebInspector.UIString("FPS"), Math.floor(1000 / durationInMillis));
     contentHelper.appendTextRow(WebInspector.UIString("CPU time"), Number.millisToString(frame.cpuTime, true));
     contentHelper.appendElementRow(WebInspector.UIString("Aggregated Time"), pieChart);
@@ -1423,16 +1479,19 @@ WebInspector.TimelineUIUtils.generateDetailsContentForFrame = function(frameMode
 
 /**
  * @param {!WebInspector.TimelineFrame} frame
- * @return {?Element}
+ * @return {!Element}
  */
-WebInspector.TimelineUIUtils.frameWarning = function(frame)
+WebInspector.TimelineUIUtils.frameDuration = function(frame)
 {
-    if (!frame.hasWarnings())
-        return null;
+    var durationText = WebInspector.UIString("%s (at %s)", Number.millisToString(frame.endTime - frame.startTime, true),
+        Number.millisToString(frame.startTimeOffset, true));
     var element = createElement("span");
-    element.createTextChild("Long frame times are an indication of jank and poor rendering performance. Read more at the ");
+    element.createTextChild(durationText);
+    if (!frame.hasWarnings())
+        return element;
+    element.createTextChild(WebInspector.UIString(". Long frame times are an indication of "));
     element.appendChild(WebInspector.linkifyURLAsNode("https://developers.google.com/web/fundamentals/performance/rendering/",
-                                                      "Web Fundamentals guide on Rendering Performance", undefined, true));
+                                                      WebInspector.UIString("jank"), undefined, true));
     element.createTextChild(".");
     return element;
 }
@@ -1665,6 +1724,21 @@ WebInspector.TimelineUIUtils.markerStyleForFrame = function()
 }
 
 /**
+ * @param {string} url
+ * @return {string}
+ */
+WebInspector.TimelineUIUtils.colorForURL = function(url)
+{
+    if (!WebInspector.TimelineUIUtils.colorForURL._colorGenerator) {
+        WebInspector.TimelineUIUtils.colorForURL._colorGenerator = new WebInspector.FlameChart.ColorGenerator(
+            { min: 40, max: 310, count: 10 },
+            { min: 50, max: 80, count: 3 },
+            85);
+    }
+    return WebInspector.TimelineUIUtils.colorForURL._colorGenerator.colorForID(url);
+}
+
+/**
  * @constructor
  * @param {string} title
  */
@@ -1775,10 +1849,13 @@ WebInspector.TimelineDetailsContentHelper.prototype = {
     /**
      * @param {string} title
      * @param {string|number|boolean} value
+     * @param {boolean=} isWarning
      */
-    appendTextRow: function(title, value)
+    appendTextRow: function(title, value, isWarning)
     {
         var rowElement = this.element.createChild("div", "timeline-details-view-row");
+        if (isWarning)
+            rowElement.classList.add("timeline-details-warning");
         rowElement.createChild("div", "timeline-details-view-row-title").textContent = title;
         rowElement.createChild("div", "timeline-details-view-row-value" + (this._monospaceValues ? " monospace" : "")).textContent = value;
     },
@@ -1791,10 +1868,10 @@ WebInspector.TimelineDetailsContentHelper.prototype = {
     appendElementRow: function(title, content, isWarning)
     {
         var rowElement = this.element.createChild("div", "timeline-details-view-row");
+        if (isWarning)
+            rowElement.classList.add("timeline-details-warning");
         var titleElement = rowElement.createChild("div", "timeline-details-view-row-title");
         titleElement.textContent = title;
-        if (isWarning)
-            titleElement.createChild("div", "timeline-details-warning-marker");
         var valueElement = rowElement.createChild("div", "timeline-details-view-row-value timeline-details-view-row-details" + (this._monospaceValues ? " monospace" : ""));
         if (content instanceof Node)
             valueElement.appendChild(content);
@@ -1805,13 +1882,17 @@ WebInspector.TimelineDetailsContentHelper.prototype = {
     /**
      * @param {string} title
      * @param {string} url
-     * @param {number} line
+     * @param {number} startLine
+     * @param {number=} endLine
      */
-    appendLocationRow: function(title, url, line)
+    appendLocationRow: function(title, url, startLine, endLine)
     {
         if (!this._linkifier || !this._target)
             return;
-        this.appendElementRow(title, this._linkifier.linkifyScriptLocation(this._target, null, url, line - 1) || "");
+        var locationContent = createElement("span");
+        locationContent.appendChild(this._linkifier.linkifyScriptLocation(this._target, null, url, startLine - 1));
+        locationContent.createTextChild(endLine ? String.sprintf(" [%d\u2009\u2013\u2009%d]", startLine , endLine) : "")
+        this.appendElementRow(title, locationContent);
     },
 
     /**
@@ -1843,5 +1924,4 @@ WebInspector.TimelineDetailsContentHelper.prototype = {
 
         stackTraceElement.appendChild(callFrameElem);
     }
-
 }

@@ -45,7 +45,8 @@ context. You should place this element as a child of `<body>` whenever possible.
       opened: {
         observer: '_openedChanged',
         type: Boolean,
-        value: false
+        value: false,
+        notify: true
       },
 
       /**
@@ -121,19 +122,8 @@ context. You should place this element as a child of `<body>` whenever possible.
 
     },
 
-/**
- * Fired after the `iron-overlay` opens.
- * @event iron-overlay-opened
- */
-
-/**
- * Fired after the `iron-overlay` closes.
- * @event iron-overlay-closed {{canceled: boolean}} detail -
- *     canceled: True if the overlay was canceled.
- */
-
     listeners: {
-      'click': '_onClick',
+      'tap': '_onClick',
       'iron-resize': '_onIronResize'
     },
 
@@ -193,7 +183,7 @@ context. You should place this element as a child of `<body>` whenever possible.
      * Cancels the overlay.
      */
     cancel: function() {
-      this.opened = false,
+      this.opened = false;
       this._setCanceled(true);
     },
 
@@ -233,7 +223,7 @@ context. You should place this element as a child of `<body>` whenever possible.
         // overlay becomes visible here
         this.style.display = '';
         // force layout to ensure transitions will go
-        this.offsetWidth;
+        /** @suppress {suspiciousCode} */ this.offsetWidth;
         if (this.opened) {
           this._renderOpened();
         } else {
@@ -251,8 +241,16 @@ context. You should place this element as a child of `<body>` whenever possible.
 
     _toggleListener: function(enable, node, event, boundListener, capture) {
       if (enable) {
+        // enable document-wide tap recognizer
+        if (event === 'tap') {
+          Polymer.Gestures.add(document, 'tap', null);
+        }
         node.addEventListener(event, boundListener, capture);
       } else {
+        // disable document-wide tap recognizer
+        if (event === 'tap') {
+          Polymer.Gestures.remove(document, 'tap', null);
+        }
         node.removeEventListener(event, boundListener, capture);
       }
     },
@@ -263,10 +261,10 @@ context. You should place this element as a child of `<body>` whenever possible.
       }
       // async so we don't auto-close immediately via a click.
       this._toggleListenersAsync = this.async(function() {
-        this._toggleListener(this.opened, document, 'click', this._boundOnCaptureClick, true);
+        this._toggleListener(this.opened, document, 'tap', this._boundOnCaptureClick, true);
         this._toggleListener(this.opened, document, 'keydown', this._boundOnCaptureKeydown, true);
         this._toggleListenersAsync = null;
-      });
+      }, 1);
     },
 
     // tasks which must occur before opening; e.g. making the element visible
@@ -353,11 +351,11 @@ context. You should place this element as a child of `<body>` whenever possible.
       this.style.display = '';
     },
 
-    _finishPositioning: function(target) {
+    _finishPositioning: function() {
       this.style.display = 'none';
       this.style.transform = this.style.webkitTransform = '';
       // force layout to avoid application of transform
-      this.offsetWidth;
+      /** @suppress {suspiciousCode} */ this.offsetWidth;
       this.style.transition = this.style.webkitTransition = '';
     },
 
@@ -408,6 +406,16 @@ context. You should place this element as a child of `<body>` whenever possible.
       }
     }
 
+/**
+ * Fired after the `iron-overlay` opens.
+ * @event iron-overlay-opened
+ */
+
+/**
+ * Fired after the `iron-overlay` closes.
+ * @event iron-overlay-closed
+ * @param {{canceled: (boolean|undefined)}} set to the `closingReason` attribute
+ */
   };
 
   /** @polymerBehavior */

@@ -19,9 +19,23 @@ WebMemoryDumpProviderAdapter::~WebMemoryDumpProviderAdapter() {
 }
 
 bool WebMemoryDumpProviderAdapter::OnMemoryDump(
+    const base::trace_event::MemoryDumpArgs& args,
     base::trace_event::ProcessMemoryDump* pmd) {
-  WebProcessMemoryDumpImpl web_pmd_impl(pmd);
-  return web_memory_dump_provider_->onMemoryDump(&web_pmd_impl);
+  blink::WebMemoryDumpLevelOfDetail level;
+  switch (args.level_of_detail) {
+    case base::trace_event::MemoryDumpLevelOfDetail::LIGHT:
+      level = blink::WebMemoryDumpLevelOfDetail::Light;
+      break;
+    case base::trace_event::MemoryDumpLevelOfDetail::DETAILED:
+      level = blink::WebMemoryDumpLevelOfDetail::Detailed;
+      break;
+    default:
+      NOTREACHED();
+      return false;
+  }
+  WebProcessMemoryDumpImpl web_pmd_impl(args.level_of_detail, pmd);
+
+  return web_memory_dump_provider_->onMemoryDump(level, &web_pmd_impl);
 }
 
 }  // namespace content

@@ -106,14 +106,10 @@ class SharedAudioRenderer : public MediaStreamAudioRenderer {
     on_play_state_changed_.Run(media_stream_, &playing_state_);
   }
 
-  void SwitchOutputDevice(
-      const std::string& device_id,
-      const GURL& security_origin,
-      const media::SwitchOutputDeviceCB& callback) override {
+  media::OutputDevice* GetOutputDevice() override {
+    DVLOG(1) << __FUNCTION__;
     DCHECK(thread_checker_.CalledOnValidThread());
-    DVLOG(1) << __FUNCTION__
-             << "(" << device_id << ", " << security_origin << ")";
-    delegate_->SwitchOutputDevice(device_id, security_origin, callback);
+    return delegate_->GetOutputDevice();
   }
 
   base::TimeDelta GetCurrentRenderTime() const override {
@@ -134,21 +130,6 @@ class SharedAudioRenderer : public MediaStreamAudioRenderer {
   WebRtcAudioRenderer::PlayingState playing_state_;
   OnPlayStateChanged on_play_state_changed_;
 };
-
-// Returns either AudioParameters::NO_EFFECTS or AudioParameters::DUCKING
-// depending on whether or not an input element is currently open with
-// ducking enabled.
-int GetCurrentDuckingFlag(int render_frame_id) {
-  RenderFrameImpl* const frame =
-      RenderFrameImpl::FromRoutingID(render_frame_id);
-  MediaStreamDispatcher* const dispatcher = frame ?
-      frame->GetMediaStreamDispatcher() : NULL;
-  if (dispatcher && dispatcher->IsAudioDuckingActive()) {
-    return media::AudioParameters::DUCKING;
-  }
-
-  return media::AudioParameters::NO_EFFECTS;
-}
 
 }  // namespace
 
@@ -204,8 +185,7 @@ WebRtcAudioRenderer::WebRtcAudioRenderer(
       fifo_delay_milliseconds_(0),
       sink_params_(media::AudioParameters::AUDIO_PCM_LOW_LATENCY,
                    media::CHANNEL_LAYOUT_STEREO, sample_rate, 16,
-                   frames_per_buffer,
-                   GetCurrentDuckingFlag(source_render_frame_id)),
+                   frames_per_buffer),
       render_callback_count_(0) {
   WebRtcLogMessage(base::StringPrintf(
       "WAR::WAR. source_render_frame_id=%d"
@@ -253,20 +233,18 @@ bool WebRtcAudioRenderer::Initialize(WebRtcAudioRendererSource* source) {
 
   // The WebRTC client only supports multiples of 10ms as buffer size where
   // 10ms is preferred for lowest possible delay.
-  media::AudioParameters source_params;
   const int frames_per_10ms = (sample_rate / 100);
   DVLOG(1) << "Using WebRTC output buffer size: " << frames_per_10ms;
-
-  source_params.Reset(media::AudioParameters::AUDIO_PCM_LOW_LATENCY,
-                      sink_params_.channel_layout(), sink_params_.channels(),
-                      sample_rate, 16, frames_per_10ms);
+  media::AudioParameters source_params(
+      media::AudioParameters::AUDIO_PCM_LOW_LATENCY,
+      sink_params_.channel_layout(), sample_rate, 16, frames_per_10ms);
+  source_params.set_channels_for_discrete(sink_params_.channels());
 
   const int frames_per_buffer =
       GetOptimalBufferSize(sample_rate, sink_params_.frames_per_buffer());
 
   sink_params_.Reset(sink_params_.format(), sink_params_.channel_layout(),
-                     sink_params_.channels(), sample_rate, 16,
-                     frames_per_buffer);
+                     sample_rate, 16, frames_per_buffer);
 
   // Create a FIFO if re-buffering is required to match the source input with
   // the sink request. The source acts as provider here and the sink as
@@ -293,10 +271,10 @@ bool WebRtcAudioRenderer::Initialize(WebRtcAudioRendererSource* source) {
   source_ = source;
 
   // Configure the audio rendering client and start rendering.
-  sink_ = AudioDeviceFactory::NewOutputDevice(source_render_frame_id_);
-
   DCHECK_GE(session_id_, 0);
-  sink_->InitializeWithSessionId(sink_params_, this, session_id_);
+  sink_ = AudioDeviceFactory::NewOutputDevice(
+      source_render_frame_id_, session_id_, std::string(), url::Origin());
+  sink_->Initialize(sink_params_, this);
 
   sink_->Start();
 
@@ -416,15 +394,11 @@ void WebRtcAudioRenderer::SetVolume(float volume) {
   OnPlayStateChanged(media_stream_, &playing_state_);
 }
 
-void WebRtcAudioRenderer::SwitchOutputDevice(
-    const std::string& device_id,
-    const GURL& security_origin,
-    const media::SwitchOutputDeviceCB& callback) {
+media::OutputDevice* WebRtcAudioRenderer::GetOutputDevice() {
+  DVLOG(1) << __FUNCTION__;
   DCHECK(thread_checker_.CalledOnValidThread());
   DCHECK(sink_);
-  DVLOG(1) << __FUNCTION__
-           << "(" << device_id << ", " << security_origin << ")";
-  sink_->SwitchOutputDevice(device_id, security_origin, callback);
+  return sink_->GetOutputDevice();
 }
 
 base::TimeDelta WebRtcAudioRenderer::GetCurrentRenderTime() const {
@@ -464,7 +438,7 @@ void WebRtcAudioRenderer::OnRenderError() {
 // Called by AudioPullFifo when more data is necessary.
 void WebRtcAudioRenderer::SourceCallback(
     int fifo_frame_delay, media::AudioBus* audio_bus) {
-  base::TimeTicks start_time = base::TimeTicks::Now() ;
+  base::TimeTicks start_time = base::TimeTicks::Now();
   DVLOG(2) << "WebRtcAudioRenderer::SourceCallback("
            << fifo_frame_delay << ", "
            << audio_bus->frames() << ")";

@@ -6,8 +6,8 @@
 
 #include "base/logging.h"
 #include "base/numerics/safe_conversions.h"
-#include "media/base/buffers.h"
 #include "media/base/stream_parser_buffer.h"
+#include "media/base/timestamp_constants.h"
 #include "media/base/video_frame.h"
 #include "media/filters/h264_parser.h"
 #include "media/formats/common/offset_byte_queue.h"
@@ -279,13 +279,8 @@ bool EsParserH264::UpdateVideoDecoderConfig(const H264SPS* sps) {
     return false;
 
   VideoDecoderConfig video_decoder_config(
-      kCodecH264,
-      VIDEO_CODEC_PROFILE_UNKNOWN,
-      VideoFrame::YV12,
-      coded_size,
-      visible_rect,
-      natural_size,
-      NULL, 0,
+      kCodecH264, VIDEO_CODEC_PROFILE_UNKNOWN, PIXEL_FORMAT_YV12,
+      COLOR_SPACE_HD_REC709, coded_size, visible_rect, natural_size, NULL, 0,
       false);
 
   if (!video_decoder_config.Matches(last_video_decoder_config_)) {

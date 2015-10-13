@@ -158,7 +158,7 @@ static inline String quoteCSSStringInternal(const CharacterType* characters, uns
     return String::adopt(buffer);
 }
 
-// We use single quotes for now because markup.cpp uses double quotes.
+// We use single quotes for now because Serialization.cpp uses double quotes.
 static String quoteCSSString(const String& string)
 {
     // This function expands each character to at most 3 characters ('\u0010' -> '\' '1' '0') as well as adds
@@ -200,7 +200,7 @@ static void serializeCharacterAsCodePoint(UChar32 c, StringBuilder& appendTo)
     appendTo.append(' ');
 }
 
-void serializeIdentifier(const String& identifier, StringBuilder& appendTo)
+bool serializeIdentifier(const String& identifier, StringBuilder& appendTo)
 {
     bool isFirst = true;
     bool isSecond = false;
@@ -208,11 +208,18 @@ void serializeIdentifier(const String& identifier, StringBuilder& appendTo)
     unsigned index = 0;
     while (index < identifier.length()) {
         UChar32 c = identifier.characterStartingAt(index);
+        if (c == 0) {
+            // Check for lone surrogate which characterStartingAt does not return.
+            c = identifier[index];
+            if (c == 0)
+                return false;
+        }
+
         index += U16_LENGTH(c);
 
-        if (c <= 0x1f || (0x30 <= c && c <= 0x39 && (isFirst || (isSecond && isFirstCharHyphen))))
+        if (c <= 0x1f || c == 0x7f || (0x30 <= c && c <= 0x39 && (isFirst || (isSecond && isFirstCharHyphen))))
             serializeCharacterAsCodePoint(c, appendTo);
-        else if (c == 0x2d && isSecond && isFirstCharHyphen)
+        else if (c == 0x2d && isFirst && index == identifier.length())
             serializeCharacter(c, appendTo);
         else if (0x80 <= c || c == 0x2d || c == 0x5f || (0x30 <= c && c <= 0x39) || (0x41 <= c && c <= 0x5a) || (0x61 <= c && c <= 0x7a))
             appendTo.append(c);
@@ -227,6 +234,7 @@ void serializeIdentifier(const String& identifier, StringBuilder& appendTo)
             isSecond = false;
         }
     }
+    return true;
 }
 
 void serializeString(const String& string, StringBuilder& appendTo)
@@ -253,6 +261,11 @@ String serializeString(const String& string)
     StringBuilder builder;
     serializeString(string, builder);
     return builder.toString();
+}
+
+String serializeURI(const String& string)
+{
+    return "url(" + serializeString(string) + ")";
 }
 
 } // namespace blink

@@ -74,9 +74,9 @@
 #include "content/public/browser/web_contents.h"
 #include "media/base/video_capture_types.h"
 #include "media/base/video_util.h"
-#include "media/capture/screen_capture_device_core.h"
-#include "media/capture/thread_safe_capture_oracle.h"
-#include "media/capture/video_capture_oracle.h"
+#include "media/capture/content/screen_capture_device_core.h"
+#include "media/capture/content/thread_safe_capture_oracle.h"
+#include "media/capture/content/video_capture_oracle.h"
 #include "skia/ext/image_operations.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkColor.h"
@@ -398,7 +398,7 @@ void RenderVideoFrame(const SkBitmap& input,
   }
 
   // Sanity-check the output buffer.
-  if (output->format() != media::VideoFrame::I420) {
+  if (output->format() != media::PIXEL_FORMAT_I420) {
     NOTREACHED();
     return;
   }
@@ -642,6 +642,43 @@ gfx::Size WebContentsCaptureMachine::ComputeOptimalViewSize() const {
   // http://crbug.com/350491
   gfx::Size optimal_size = oracle_proxy_->max_frame_size();
 
+  switch (capture_params_.resolution_change_policy) {
+    case media::RESOLUTION_POLICY_FIXED_RESOLUTION:
+      break;
+    case media::RESOLUTION_POLICY_FIXED_ASPECT_RATIO:
+    case media::RESOLUTION_POLICY_ANY_WITHIN_LIMIT: {
+      // If the max frame size is close to a common video aspect ratio, compute
+      // a standard resolution for that aspect ratio.  For example, given
+      // 1365x768, which is very close to 16:9, the optimal size would be
+      // 1280x720.  The purpose of this logic is to prevent scaling quality
+      // issues caused by "one pixel stretching" and/or odd-to-even dimension
+      // scaling, and to improve the performance of consumers of the captured
+      // video.
+      const auto HasIntendedAspectRatio =
+          [](const gfx::Size& size, int width_units, int height_units) {
+        const int a = height_units * size.width();
+        const int b = width_units * size.height();
+        const int percentage_diff = 100 * std::abs((a - b)) / b;
+        return percentage_diff <= 1;  // Effectively, anything strictly <2%.
+      };
+      const auto RoundToExactAspectRatio =
+          [](const gfx::Size& size, int width_step, int height_step) {
+        const int adjusted_height =
+            std::max(size.height() - (size.height() % height_step),
+                     height_step);
+        DCHECK_EQ((adjusted_height * width_step) % height_step, 0);
+        return gfx::Size(adjusted_height * width_step / height_step,
+                         adjusted_height);
+      };
+      if (HasIntendedAspectRatio(optimal_size, 16, 9))
+        optimal_size = RoundToExactAspectRatio(optimal_size, 160, 90);
+      else if (HasIntendedAspectRatio(optimal_size, 4, 3))
+        optimal_size = RoundToExactAspectRatio(optimal_size, 64, 48);
+      // Else, do not make an adjustment.
+      break;
+    }
+  }
+
   // If the ratio between physical and logical pixels is greater than 1:1,
   // shrink |optimal_size| by that amount.  Then, when external code resizes the
   // render widget to the "preferred size," the widget will be physically
@@ -653,8 +690,8 @@ gfx::Size WebContentsCaptureMachine::ComputeOptimalViewSize() const {
     const gfx::NativeView view = rwhv->GetNativeView();
     const float scale = ui::GetScaleFactorForNativeView(view);
     if (scale > 1.0f) {
-      const gfx::Size shrunk_size(
-          gfx::ToFlooredSize(gfx::ScaleSize(optimal_size, 1.0f / scale)));
+      const gfx::Size shrunk_size =
+          gfx::ScaleToFlooredSize(optimal_size, 1.0f / scale);
       if (shrunk_size.width() > 0 && shrunk_size.height() > 0)
         optimal_size = shrunk_size;
     }

@@ -114,7 +114,7 @@ void FrameConsole::addMessage(PassRefPtrWillBeRawPtr<ConsoleMessage> prpConsoleM
             return;
 
         if (frame().chromeClient().shouldReportDetailedMessageForSource(frame(), messageURL))
-            reportedCallStack = createScriptCallStack(ScriptCallStack::maxCallStackSizeToCapture);
+            reportedCallStack = currentScriptCallStack(ScriptCallStack::maxCallStackSizeToCapture);
     }
 
     String stackTrace;
@@ -128,6 +128,8 @@ void FrameConsole::reportResourceResponseReceived(DocumentLoader* loader, unsign
     if (!loader)
         return;
     if (response.httpStatusCode() < 400)
+        return;
+    if (response.wasFallbackRequiredByServiceWorker())
         return;
     String message = "Failed to load resource: the server responded with a status of " + String::number(response.httpStatusCode()) + " (" + response.httpStatusText() + ')';
     RefPtrWillBeRawPtr<ConsoleMessage> consoleMessage = ConsoleMessage::create(NetworkMessageSource, ErrorMessageLevel, message, response.url().string());

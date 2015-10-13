@@ -11,8 +11,10 @@
 
 namespace blink {
 
+class Dictionary;
 class ScriptState;
 class ScriptValue;
+class WebPermissionClient;
 
 class Permissions final
     : public GarbageCollected<Permissions>
@@ -21,7 +23,13 @@ class Permissions final
 public:
     DEFINE_INLINE_TRACE() { }
 
-    ScriptPromise query(ScriptState*, const ScriptValue&);
+    // TODO(mlamouri): Find better place for this. https://crbug.com/510948
+    static WebPermissionClient* getClient(ExecutionContext*);
+
+    ScriptPromise query(ScriptState*, const Dictionary&);
+    ScriptPromise request(ScriptState*, const Dictionary&);
+    ScriptPromise request(ScriptState*, const Vector<Dictionary>&);
+    ScriptPromise revoke(ScriptState*, const Dictionary&);
 };
 
 } // namespace blink

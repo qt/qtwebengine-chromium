@@ -31,7 +31,6 @@ class CONTENT_EXPORT BrowserGpuChannelHostFactory
       int32 surface_id,
       const GPUCreateCommandBufferConfig& init_params,
       int32 route_id) override;
-  IPC::AttachmentBroker* GetAttachmentBroker() override;
 
   int GpuProcessHostId() { return gpu_host_id_; }
 #if !defined(OS_ANDROID)
@@ -62,8 +61,11 @@ class CONTENT_EXPORT BrowserGpuChannelHostFactory
                                        CreateCommandBufferResult result);
   static void AddFilterOnIO(int gpu_host_id,
                             scoped_refptr<IPC::MessageFilter> filter);
+  static void InitializeShaderDiskCacheOnIO(int gpu_client_id,
+                                            const base::FilePath& cache_dir);
 
   const int gpu_client_id_;
+  const uint64_t gpu_client_tracing_id_;
   scoped_ptr<base::WaitableEvent> shutdown_event_;
   scoped_refptr<GpuChannelHost> gpu_channel_;
   scoped_ptr<BrowserGpuMemoryBufferManager> gpu_memory_buffer_manager_;

@@ -19,8 +19,7 @@ DisplaySnapshot_Params::DisplaySnapshot_Params() {
 
 DisplaySnapshot_Params::~DisplaySnapshot_Params() {}
 
-OverlayCheck_Params::OverlayCheck_Params() {
-}
+OverlayCheck_Params::OverlayCheck_Params() {}
 
 OverlayCheck_Params::OverlayCheck_Params(
     const OverlayCandidatesOzone::OverlaySurfaceCandidate& candidate)
@@ -28,8 +27,9 @@ OverlayCheck_Params::OverlayCheck_Params(
       transform(candidate.transform),
       format(candidate.format),
       display_rect(gfx::ToNearestRect(candidate.display_rect)),
-      plane_z_order(candidate.plane_z_order) {
-}
+      crop_rect(candidate.crop_rect),
+      plane_z_order(candidate.plane_z_order),
+      weight(0) {}
 
 OverlayCheck_Params::~OverlayCheck_Params() {
 }

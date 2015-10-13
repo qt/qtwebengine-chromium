@@ -107,7 +107,8 @@ void NotifyPluginsOfActivation() {
 }
 #endif
 
-#if defined(OS_POSIX) && !defined(OS_OPENBSD) && !defined(OS_ANDROID)
+#if defined(OS_POSIX)
+#if !defined(OS_OPENBSD) && !defined(OS_ANDROID)
 void NotifyPluginDirChanged(const base::FilePath& path, bool error) {
   if (error) {
     // TODO(pastarmovj): Add some sensible error handling. Maybe silently
@@ -123,13 +124,14 @@ void NotifyPluginDirChanged(const base::FilePath& path, bool error) {
       base::Bind(&PluginService::PurgePluginListCache,
                  static_cast<BrowserContext*>(NULL), false));
 }
-#endif
+#endif  // !defined(OS_OPENBSD) && !defined(OS_ANDROID)
 
 void ForwardCallback(base::SingleThreadTaskRunner* target_task_runner,
                      const PluginService::GetPluginsCallback& callback,
                      const std::vector<WebPluginInfo>& plugins) {
   target_task_runner->PostTask(FROM_HERE, base::Bind(callback, plugins));
 }
+#endif  // defined(OS_POSIX)
 
 }  // namespace
 
@@ -150,7 +152,7 @@ void PluginService::PurgePluginListCache(BrowserContext* browser_context,
 
 // static
 PluginServiceImpl* PluginServiceImpl::GetInstance() {
-  return Singleton<PluginServiceImpl>::get();
+  return base::Singleton<PluginServiceImpl>::get();
 }
 
 PluginServiceImpl::PluginServiceImpl()
@@ -581,7 +583,8 @@ base::string16 PluginServiceImpl::GetPluginDisplayNameByPath(
     // Many plugins on the Mac have .plugin in the actual name, which looks
     // terrible, so look for that and strip it off if present.
     const std::string kPluginExtension = ".plugin";
-    if (base::EndsWith(plugin_name, base::ASCIIToUTF16(kPluginExtension), true))
+    if (base::EndsWith(plugin_name, base::ASCIIToUTF16(kPluginExtension),
+                       base::CompareCase::SENSITIVE))
       plugin_name.erase(plugin_name.length() - kPluginExtension.length());
 #endif  // OS_MACOSX
   }

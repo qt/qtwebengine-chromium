@@ -34,6 +34,7 @@ class X11_WINDOW_EXPORT X11Window : public PlatformWindow,
   void Close() override;
   void SetBounds(const gfx::Rect& bounds) override;
   gfx::Rect GetBounds() override;
+  void SetTitle(const base::string16& title) override;
   void SetCapture() override;
   void ReleaseCapture() override;
   void ToggleFullscreen() override;
@@ -43,6 +44,7 @@ class X11_WINDOW_EXPORT X11Window : public PlatformWindow,
   void SetCursor(PlatformCursor cursor) override;
   void MoveCursorTo(const gfx::Point& location) override;
   void ConfineCursorToBounds(const gfx::Rect& bounds) override;
+  PlatformImeController* GetPlatformImeController() override;
 
   // PlatformEventDispatcher:
   bool CanDispatchEvent(const PlatformEvent& event) override;
@@ -65,6 +67,18 @@ class X11_WINDOW_EXPORT X11Window : public PlatformWindow,
 
   DISALLOW_COPY_AND_ASSIGN(X11Window);
 };
+
+namespace test {
+
+// Sets the value of the |override_redirect| flag when creating an X11 window.
+// It is necessary to set this flag on for various tests, otherwise the call to
+// X11Window::Show() blocks because it never receives the MapNotify event. It is
+// unclear why this is necessary, but might be related to calls to
+// XInitThreads().
+X11_WINDOW_EXPORT void SetUseOverrideRedirectWindowByDefault(
+    bool override_redirect);
+
+}  // namespace test
 
 }  // namespace ui
 

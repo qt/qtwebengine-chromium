@@ -242,9 +242,9 @@ MockNetworkTransaction::MockNetworkTransaction(RequestPriority priority,
       websocket_handshake_stream_create_helper_(NULL),
       transaction_factory_(factory->AsWeakPtr()),
       received_bytes_(0),
+      sent_bytes_(0),
       socket_log_id_(NetLog::Source::kInvalidId),
-      weak_factory_(this) {
-}
+      weak_factory_(this) {}
 
 MockNetworkTransaction::~MockNetworkTransaction() {}
 
@@ -325,8 +325,12 @@ bool MockNetworkTransaction::GetFullRequestHeaders(
   return false;
 }
 
-int64 MockNetworkTransaction::GetTotalReceivedBytes() const {
+int64_t MockNetworkTransaction::GetTotalReceivedBytes() const {
   return received_bytes_;
+}
+
+int64_t MockNetworkTransaction::GetTotalSentBytes() const {
+  return sent_bytes_;
 }
 
 void MockNetworkTransaction::DoneReading() {
@@ -374,6 +378,16 @@ bool MockNetworkTransaction::GetLoadTimingInfo(
   return true;
 }
 
+bool MockNetworkTransaction::GetRemoteEndpoint(IPEndPoint* endpoint) const {
+  IPAddressNumber number;
+  number.push_back(127);
+  number.push_back(0);
+  number.push_back(0);
+  number.push_back(1);
+  *endpoint = IPEndPoint(number, 80);
+  return true;
+}
+
 void MockNetworkTransaction::SetPriority(RequestPriority priority) {
   priority_ = priority;
 }
@@ -382,6 +396,12 @@ void MockNetworkTransaction::SetWebSocketHandshakeStreamCreateHelper(
     WebSocketHandshakeStreamBase::CreateHelper* create_helper) {
   websocket_handshake_stream_create_helper_ = create_helper;
 }
+
+// static
+const int64_t MockNetworkTransaction::kTotalReceivedBytes = 1000;
+
+// static
+const int64_t MockNetworkTransaction::kTotalSentBytes = 100;
 
 int MockNetworkTransaction::StartInternal(const HttpRequestInfo* request,
                                           const CompletionCallback& callback,
@@ -400,10 +420,12 @@ int MockNetworkTransaction::StartInternal(const HttpRequestInfo* request,
     return ERR_IO_PENDING;
   }
 
+  sent_bytes_ = kTotalSentBytes;
+  received_bytes_ = kTotalReceivedBytes;
+
   std::string resp_status = t->status;
   std::string resp_headers = t->response_headers;
   std::string resp_data = t->data;
-  received_bytes_ = resp_status.size() + resp_headers.size() + resp_data.size();
   if (t->handler)
     (t->handler)(request, &resp_status, &resp_headers, &resp_data);
 

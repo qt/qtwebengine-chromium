@@ -72,16 +72,17 @@
     [RuntimeEnabled=ApplicationCache, LogActivity=GetterOnly] readonly attribute ApplicationCache applicationCache;
 
     // user prompts
-    void alert();
-    void alert(DOMString message);
-    boolean confirm(optional DOMString message = "");
-    DOMString? prompt(optional DOMString message = "", optional DOMString defaultValue = "");
-    void print();
+    [Measure] void alert();
+    [Measure] void alert(DOMString message);
+    [Measure] boolean confirm(optional DOMString message = "");
+    [Measure] DOMString? prompt(optional DOMString message = "", optional DOMString defaultValue = "");
+    [Measure] void print();
 
-    // FIXME: requestAnimationFrame should take a FrameRequestCallback:
-    // https://www.w3.org/Bugs/Public/show_bug.cgi?id=28152
     [MeasureAs=UnprefixedRequestAnimationFrame] long requestAnimationFrame(FrameRequestCallback callback);
     void cancelAnimationFrame(long handle);
+
+    [Measure, RuntimeEnabled=RequestIdleCallback] long requestIdleCallback(IdleRequestCallback callback, optional IdleRequestOptions options);
+    [RuntimeEnabled=RequestIdleCallback] void cancelIdleCallback(long handle);
 
     [DoNotCheckSecurity, Custom, RaisesException] void postMessage(any message, DOMString targetOrigin, optional sequence<Transferable> transfer);
 
@@ -183,6 +184,9 @@
     attribute EventHandler onwebkitanimationstart;
     attribute EventHandler onwebkittransitionend;
     attribute EventHandler onwheel;
+
+    // https://w3c.github.io/webappsec/specs/powerfulfeatures/#monkey-patching-global-object
+    readonly attribute boolean isSecureContext;
 
     // window.toString() requires special handling in V8
     [DoNotCheckSignature, DoNotCheckSecurity, Custom, NotEnumerable] stringifier;

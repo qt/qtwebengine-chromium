@@ -30,7 +30,7 @@
 #include "core/clipboard/DataObject.h"
 #include "core/dom/DocumentFragment.h"
 #include "core/dom/Range.h"
-#include "core/editing/markup.h"
+#include "core/editing/serializers/Serialization.h"
 #include "core/frame/LocalFrame.h"
 #include "platform/FileMetadata.h"
 #include "platform/clipboard/ClipboardMimeTypes.h"
@@ -117,7 +117,7 @@ bool DragData::containsCompatibleContent() const
         || containsFiles();
 }
 
-PassRefPtrWillBeRawPtr<DocumentFragment> DragData::asFragment(LocalFrame* frame, PassRefPtrWillBeRawPtr<Range>, bool, bool&) const
+PassRefPtrWillBeRawPtr<DocumentFragment> DragData::asFragment(LocalFrame* frame) const
 {
     /*
      * Order is richest format first. On OSX this is:

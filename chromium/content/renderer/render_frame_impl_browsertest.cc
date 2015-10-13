@@ -6,9 +6,9 @@
 #include "base/debug/leak_annotations.h"
 #include "content/common/frame_messages.h"
 #include "content/common/view_messages.h"
-#include "content/public/common/content_switches.h"
 #include "content/public/test/frame_load_waiter.h"
 #include "content/public/test/render_view_test.h"
+#include "content/public/test/test_utils.h"
 #include "content/renderer/render_frame_impl.h"
 #include "content/renderer/render_view_impl.h"
 #include "content/test/fake_compositor_dependencies.h"
@@ -20,7 +20,6 @@ namespace {
 const int32 kSubframeRouteId = 20;
 const int32 kSubframeWidgetRouteId = 21;
 const int32 kFrameProxyRouteId = 22;
-const int32 kSubframeSurfaceId = 43;
 }  // namespace
 
 namespace content {
@@ -34,18 +33,14 @@ class RenderFrameImplTest : public RenderViewTest {
 
   void SetUp() override {
     RenderViewTest::SetUp();
-    EXPECT_FALSE(static_cast<RenderFrameImpl*>(view_->GetMainRenderFrame())
-                     ->is_subframe_);
+    EXPECT_TRUE(static_cast<RenderFrameImpl*>(view_->GetMainRenderFrame())
+                    ->is_main_frame_);
 
     FrameMsg_NewFrame_WidgetParams widget_params;
     widget_params.routing_id = kSubframeWidgetRouteId;
-    widget_params.surface_id = kSubframeSurfaceId;
     widget_params.hidden = false;
 
-    compositor_deps_.reset(new FakeCompositorDependencies);
-
-    base::CommandLine::ForCurrentProcess()->AppendSwitch(
-        switches::kSitePerProcess);
+    IsolateAllSitesForTesting(base::CommandLine::ForCurrentProcess());
 
     LoadHTML("Parent frame <iframe name='frame'></iframe>");
 
@@ -53,13 +48,13 @@ class RenderFrameImplTest : public RenderViewTest {
         view_->GetMainRenderFrame()->GetWebFrame()->firstChild())
         ->OnSwapOut(kFrameProxyRouteId, false, FrameReplicationState());
 
-    RenderFrameImpl::CreateFrame(kSubframeRouteId, kFrameProxyRouteId,
-                                 MSG_ROUTING_NONE, MSG_ROUTING_NONE,
-                                 FrameReplicationState(),
-                                 compositor_deps_.get(), widget_params);
+    RenderFrameImpl::CreateFrame(kSubframeRouteId, MSG_ROUTING_NONE,
+                                 MSG_ROUTING_NONE, kFrameProxyRouteId,
+                                 MSG_ROUTING_NONE, FrameReplicationState(),
+                                 &compositor_deps_, widget_params);
 
     frame_ = RenderFrameImpl::FromRoutingID(kSubframeRouteId);
-    EXPECT_TRUE(frame_->is_subframe_);
+    EXPECT_FALSE(frame_->is_main_frame_);
   }
 
   void TearDown() override {
@@ -71,30 +66,20 @@ class RenderFrameImplTest : public RenderViewTest {
      RenderViewTest::TearDown();
   }
 
-  // Loads the given HTML into the frame as a data: URL and blocks until
-  // the navigation is committed.
-  void LoadHTMLInFrame(const char* html) {
-    std::string url_str = "data:text/html;charset=utf-8,";
-    url_str.append(html);
-    GURL url(url_str);
-    frame_->GetWebFrame()->loadRequest(blink::WebURLRequest(url));
-    // The load actually happens asynchronously, so we pump messages to process
-    // the pending continuation.
-    FrameLoadWaiter(frame_).Wait();
-  }
-
   RenderFrameImpl* frame() { return frame_; }
 
-  content::RenderWidget* FrameWidget() { return frame_->render_widget_.get(); }
+  content::RenderWidget* frame_widget() const {
+    return frame_->render_widget_.get();
+  }
 
  private:
   RenderFrameImpl* frame_;
-  scoped_ptr<CompositorDependencies> compositor_deps_;
+  FakeCompositorDependencies compositor_deps_;
 };
 
 class RenderFrameTestObserver : public RenderFrameObserver {
  public:
-  RenderFrameTestObserver(RenderFrame* render_frame)
+  explicit RenderFrameTestObserver(RenderFrame* render_frame)
       : RenderFrameObserver(render_frame), visible_(false) {}
 
   ~RenderFrameTestObserver() override {}
@@ -122,8 +107,21 @@ class RenderFrameTestObserver : public RenderFrameObserver {
 // Verify that a frame with a RenderFrameProxy as a parent has its own
 // RenderWidget.
 TEST_F(RenderFrameImplTest, MAYBE_SubframeWidget) {
-  EXPECT_TRUE(FrameWidget());
-  EXPECT_NE(FrameWidget(), (content::RenderWidget*)view_);
+  EXPECT_TRUE(frame_widget());
+  // We can't convert to RenderWidget* directly, because
+  // it and RenderView are two unrelated base classes
+  // of RenderViewImpl. If a class has multiple base classes,
+  // each base class pointer will be distinct, and direct casts
+  // between unrelated base classes are undefined, even if they share
+  // a common derived class. The compiler has no way in general of
+  // determining the displacement between the two classes, so these
+  // types of casts cannot be implemented in a type safe way.
+  // To overcome this, we make two legal static casts:
+  // first, downcast from RenderView* to RenderViewImpl*,
+  // then upcast from RenderViewImpl* to RenderWidget*.
+  EXPECT_NE(frame_widget(),
+            static_cast<content::RenderWidget*>(
+                static_cast<content::RenderViewImpl*>((view_))));
 }
 
 // Verify a subframe RenderWidget properly processes its viewport being
@@ -139,21 +137,20 @@ TEST_F(RenderFrameImplTest, MAYBE_FrameResize) {
   resize_params.resizer_rect = gfx::Rect();
   resize_params.is_fullscreen_granted = false;
 
-  scoped_ptr<IPC::Message> resize_message(new ViewMsg_Resize(0, resize_params));
-  FrameWidget()->OnMessageReceived(*resize_message);
+  ViewMsg_Resize resize_message(0, resize_params);
+  frame_widget()->OnMessageReceived(resize_message);
 
-  EXPECT_EQ(FrameWidget()->webwidget()->size(), blink::WebSize(size));
+  EXPECT_EQ(frame_widget()->webwidget()->size(), blink::WebSize(size));
 }
 
 // Verify a subframe RenderWidget properly processes a WasShown message.
 TEST_F(RenderFrameImplTest, MAYBE_FrameWasShown) {
   RenderFrameTestObserver observer(frame());
 
-  scoped_ptr<IPC::Message> was_shown_message(
-      new ViewMsg_WasShown(0, true, ui::LatencyInfo()));
-  FrameWidget()->OnMessageReceived(*was_shown_message);
+  ViewMsg_WasShown was_shown_message(0, true, ui::LatencyInfo());
+  frame_widget()->OnMessageReceived(was_shown_message);
 
-  EXPECT_FALSE(FrameWidget()->is_hidden());
+  EXPECT_FALSE(frame_widget()->is_hidden());
   EXPECT_TRUE(observer.visible());
 }
 

@@ -95,17 +95,15 @@ class VoEWrapper {
  public:
   VoEWrapper()
       : engine_(webrtc::VoiceEngine::Create()), processing_(engine_),
-        base_(engine_), codec_(engine_), dtmf_(engine_), file_(engine_),
-        hw_(engine_), media_(engine_), neteq_(engine_), network_(engine_),
+        base_(engine_), codec_(engine_), dtmf_(engine_),
+        hw_(engine_), neteq_(engine_), network_(engine_),
         rtp_(engine_), sync_(engine_), volume_(engine_) {
   }
   VoEWrapper(webrtc::VoEAudioProcessing* processing,
              webrtc::VoEBase* base,
              webrtc::VoECodec* codec,
              webrtc::VoEDtmf* dtmf,
-             webrtc::VoEFile* file,
              webrtc::VoEHardware* hw,
-             webrtc::VoEExternalMedia* media,
              webrtc::VoENetEqStats* neteq,
              webrtc::VoENetwork* network,
              webrtc::VoERTP_RTCP* rtp,
@@ -116,9 +114,7 @@ class VoEWrapper {
         base_(base),
         codec_(codec),
         dtmf_(dtmf),
-        file_(file),
         hw_(hw),
-        media_(media),
         neteq_(neteq),
         network_(network),
         rtp_(rtp),
@@ -131,9 +127,7 @@ class VoEWrapper {
   webrtc::VoEBase* base() const { return base_.get(); }
   webrtc::VoECodec* codec() const { return codec_.get(); }
   webrtc::VoEDtmf* dtmf() const { return dtmf_.get(); }
-  webrtc::VoEFile* file() const { return file_.get(); }
   webrtc::VoEHardware* hw() const { return hw_.get(); }
-  webrtc::VoEExternalMedia* media() const { return media_.get(); }
   webrtc::VoENetEqStats* neteq() const { return neteq_.get(); }
   webrtc::VoENetwork* network() const { return network_.get(); }
   webrtc::VoERTP_RTCP* rtp() const { return rtp_.get(); }
@@ -147,9 +141,7 @@ class VoEWrapper {
   scoped_voe_ptr<webrtc::VoEBase> base_;
   scoped_voe_ptr<webrtc::VoECodec> codec_;
   scoped_voe_ptr<webrtc::VoEDtmf> dtmf_;
-  scoped_voe_ptr<webrtc::VoEFile> file_;
   scoped_voe_ptr<webrtc::VoEHardware> hw_;
-  scoped_voe_ptr<webrtc::VoEExternalMedia> media_;
   scoped_voe_ptr<webrtc::VoENetEqStats> neteq_;
   scoped_voe_ptr<webrtc::VoENetwork> network_;
   scoped_voe_ptr<webrtc::VoERTP_RTCP> rtp_;

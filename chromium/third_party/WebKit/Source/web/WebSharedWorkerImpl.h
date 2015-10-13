@@ -88,7 +88,7 @@ public:
     // WebFrameClient methods to support resource loading thru the 'shadow page'.
     WebApplicationCacheHost* createApplicationCacheHost(WebLocalFrame*, WebApplicationCacheHostClient*) override;
     void willSendRequest(WebLocalFrame*, unsigned identifier, WebURLRequest&, const WebURLResponse& redirectResponse) override;
-    void didFinishDocumentLoad(WebLocalFrame*) override;
+    void didFinishDocumentLoad(WebLocalFrame*, bool documentIsEmpty) override;
     bool isControlledByServiceWorker(WebDataSource&) override;
     int64_t serviceWorkerID(WebDataSource&) override;
 
@@ -137,13 +137,13 @@ private:
     // 'shadow page' - created to proxy loading requests from the worker.
     RefPtrWillBePersistent<ExecutionContext> m_loadingDocument;
     WebView* m_webView;
-    WebLocalFrameImpl* m_mainFrame;
+    RefPtrWillBePersistent<WebLocalFrameImpl> m_mainFrame;
     bool m_askedToTerminate;
 
     // This one is bound to and used only on the main thread.
     OwnPtr<WebServiceWorkerNetworkProvider> m_networkProvider;
 
-    OwnPtr<WorkerInspectorProxy> m_workerInspectorProxy;
+    OwnPtrWillBePersistent<WorkerInspectorProxy> m_workerInspectorProxy;
 
     RefPtr<WorkerThread> m_workerThread;
 
@@ -153,7 +153,7 @@ private:
     bool m_isPausedOnStart;
 
     // Kept around only while main script loading is ongoing.
-    OwnPtr<WorkerScriptLoader> m_mainScriptLoader;
+    RefPtr<WorkerScriptLoader> m_mainScriptLoader;
 
     RefPtr<WorkerLoaderProxy> m_loaderProxy;
 

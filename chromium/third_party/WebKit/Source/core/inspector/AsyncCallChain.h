@@ -5,35 +5,36 @@
 #ifndef AsyncCallChain_h
 #define AsyncCallChain_h
 
-#include "bindings/core/v8/ScriptValue.h"
 #include "wtf/Deque.h"
 #include "wtf/Forward.h"
+#include "wtf/RefCounted.h"
+#include "wtf/text/WTFString.h"
+#include <v8.h>
 
 namespace blink {
 
-class AsyncCallStack final : public RefCountedWillBeGarbageCollectedFinalized<AsyncCallStack> {
+class AsyncCallStack final : public RefCounted<AsyncCallStack> {
 public:
-    AsyncCallStack(const String&, const ScriptValue&);
+    AsyncCallStack(const String&, v8::Local<v8::Object>);
     ~AsyncCallStack();
-    DEFINE_INLINE_TRACE() { }
+
     String description() const { return m_description; }
-    ScriptValue callFrames() const { return m_callFrames; }
+    v8::Local<v8::Object> callFrames(v8::Isolate* isolate) const { return v8::Local<v8::Object>::New(isolate, m_callFrames); }
 private:
     String m_description;
-    ScriptValue m_callFrames;
+    v8::Global<v8::Object> m_callFrames;
 };
 
-using AsyncCallStackVector = WillBeHeapDeque<RefPtrWillBeMember<AsyncCallStack>, 4>;
+using AsyncCallStackVector = Deque<RefPtr<AsyncCallStack>, 4>;
 
-class AsyncCallChain final : public RefCountedWillBeGarbageCollectedFinalized<AsyncCallChain> {
+class AsyncCallChain final : public RefCounted<AsyncCallChain> {
 public:
-    static PassRefPtrWillBeRawPtr<AsyncCallChain> create(PassRefPtrWillBeRawPtr<AsyncCallStack>, AsyncCallChain* prevChain, unsigned asyncCallChainMaxLength);
+    static PassRefPtr<AsyncCallChain> create(PassRefPtr<AsyncCallStack>, AsyncCallChain* prevChain, unsigned asyncCallChainMaxLength);
     ~AsyncCallChain();
     const AsyncCallStackVector& callStacks() const { return m_callStacks; }
-    DECLARE_TRACE();
 
 private:
-    AsyncCallChain(PassRefPtrWillBeRawPtr<AsyncCallStack>, AsyncCallChain* prevChain, unsigned asyncCallChainMaxLength);
+    AsyncCallChain(PassRefPtr<AsyncCallStack>, AsyncCallChain* prevChain, unsigned asyncCallChainMaxLength);
 
     AsyncCallStackVector m_callStacks;
 };

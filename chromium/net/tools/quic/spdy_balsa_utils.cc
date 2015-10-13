@@ -10,6 +10,8 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/string_util.h"
+#include "net/base/linked_hash_map.h"
+#include "net/quic/quic_flags.h"
 #include "net/quic/spdy_utils.h"
 #include "net/spdy/spdy_frame_builder.h"
 #include "net/spdy/spdy_framer.h"
@@ -38,6 +40,11 @@ const char kV3Version[] = ":version";
 void PopulateSpdyHeaderBlock(const BalsaHeaders& headers,
                              SpdyHeaderBlock* block,
                              bool allow_empty_values) {
+  using HeaderValuesMap =
+      linked_hash_map<StringPiece, std::vector<StringPiece>>;
+  std::deque<string> names;
+  HeaderValuesMap header_values_map;
+  // First, gather references to all values for each name.
   for (BalsaHeaders::const_header_lines_iterator hi =
            headers.header_lines_begin();
        hi != headers.header_lines_end(); ++hi) {
@@ -46,18 +53,25 @@ void PopulateSpdyHeaderBlock(const BalsaHeaders& headers,
                << " from headers";
       continue;
     }
-
-    // This unfortunately involves loads of copying, but its the simplest way
-    // to sort the headers and leverage the framer.
-    string name = hi->first.as_string();
-    base::StringToLowerASCII(&name);
-    SpdyHeaderBlock::iterator it = block->find(name);
-    if (it != block->end()) {
-      it->second.reserve(it->second.size() + 1 + hi->second.size());
-      it->second.append("\0", 1);
-      it->second.append(hi->second.data(), hi->second.size());
+    const string name = base::ToLowerASCII(hi->first.as_string());
+    names.push_back(name);
+    header_values_map[name].push_back(hi->second);
+  }
+  // Then, write joined representations to the header block.
+  for (const auto& header : header_values_map) {
+    if (header.second.size() == 1) {
+      // Avoid string allocation for the single value case.
+      block->ReplaceOrAppendHeader(header.first, header.second[0]);
     } else {
-      block->insert(make_pair(name, hi->second.as_string()));
+      StringPiece separator("\0", 1);
+      auto it = header.second.begin();
+      string value = it->as_string();
+      ++it;
+      for (; it != header.second.end(); ++it) {
+        separator.AppendToString(&value);
+        value.append(it->data(), it->size());
+      }
+      block->ReplaceOrAppendHeader(header.first, value);
     }
   }
 }
@@ -71,7 +85,7 @@ void PopulateSpdy3RequestHeaderBlock(const BalsaHeaders& headers,
   StringPiece host_header = headers.GetHeader("Host");
   if (!host_header.empty()) {
     DCHECK(host_and_port.empty() || host_header == host_and_port);
-    block->insert(make_pair(kV3Host, host_header.as_string()));
+    block->insert(make_pair(kV3Host, host_header));
   } else {
     block->insert(make_pair(kV3Host, host_and_port));
   }
@@ -79,11 +93,11 @@ void PopulateSpdy3RequestHeaderBlock(const BalsaHeaders& headers,
   block->insert(make_pair(kV3Scheme, scheme));
 
   if (!headers.request_method().empty()) {
-    block->insert(make_pair(kV3Method, headers.request_method().as_string()));
+    block->insert(make_pair(kV3Method, headers.request_method()));
   }
 
   if (!headers.request_version().empty()) {
-    (*block)[kV3Version] = headers.request_version().as_string();
+    (*block)[kV3Version] = headers.request_version();
   }
 }
 
@@ -96,7 +110,7 @@ void PopulateSpdy4RequestHeaderBlock(const BalsaHeaders& headers,
   StringPiece host_header = headers.GetHeader("Host");
   if (!host_header.empty()) {
     DCHECK(host_and_port.empty() || host_header == host_and_port);
-    block->insert(make_pair(kV4Host, host_header.as_string()));
+    block->insert(make_pair(kV4Host, host_header));
     // PopulateSpdyHeaderBlock already added the "host" header,
     // which is invalid for SPDY4.
     block->erase("host");
@@ -107,7 +121,7 @@ void PopulateSpdy4RequestHeaderBlock(const BalsaHeaders& headers,
   block->insert(make_pair(kV3Scheme, scheme));
 
   if (!headers.request_method().empty()) {
-    block->insert(make_pair(kV3Method, headers.request_method().as_string()));
+    block->insert(make_pair(kV3Method, headers.request_method()));
   }
 }
 
@@ -119,9 +133,9 @@ void PopulateSpdyResponseHeaderBlock(SpdyMajorVersion version,
     status.append(" ");
     status.append(headers.response_reason_phrase().as_string());
     (*block)[kV3Status] = status;
-    (*block)[kV3Version] = headers.response_version().as_string();
+    (*block)[kV3Version] = headers.response_version();
   } else {
-    (*block)[kV3Status] = headers.response_code().as_string();
+    (*block)[kV3Status] = headers.response_code();
   }
 
   PopulateSpdyHeaderBlock(headers, block, true);
@@ -129,11 +143,8 @@ void PopulateSpdyResponseHeaderBlock(SpdyMajorVersion version,
 
 bool IsSpecialSpdyHeader(SpdyHeaderBlock::const_iterator header,
                          BalsaHeaders* headers) {
-  if (header->first.empty() || header->second.empty()) {
-    return true;
-  }
-  const string& header_name = header->first;
-  return header_name.c_str()[0] == ':';
+  return header->first.empty() || header->second.empty() ||
+         header->first[0] == ':';
 }
 
 // The reason phrase should match regexp [\d\d\d [^\r\n]+].  If not, we will
@@ -172,6 +183,97 @@ bool ParseReasonAndStatus(StringPiece status_and_reason,
 
   headers->SetResponseReasonPhrase(reason);
   return true;
+}
+
+// static
+void SpdyHeadersToResponseHeaders(const SpdyHeaderBlock& header_block,
+                                  BalsaHeaders* request_headers,
+                                  QuicVersion quic_version) {
+  typedef SpdyHeaderBlock::const_iterator BlockIt;
+
+  BlockIt status_it = header_block.find(kV3Status);
+  BlockIt version_it = header_block.find(kV3Version);
+  BlockIt end_it = header_block.end();
+  if (quic_version > QUIC_VERSION_24) {
+    if (status_it == end_it) {
+      return;
+    }
+  } else {
+    if (status_it == end_it || version_it == end_it) {
+      return;
+    }
+  }
+
+  if (!ParseReasonAndStatus(status_it->second, request_headers, quic_version)) {
+    return;
+  }
+
+  if (quic_version <= QUIC_VERSION_24) {
+    request_headers->SetResponseVersion(version_it->second);
+  }
+  for (BlockIt it = header_block.begin(); it != header_block.end(); ++it) {
+    if (!IsSpecialSpdyHeader(it, request_headers)) {
+      request_headers->AppendHeader(it->first, it->second);
+    }
+  }
+}
+
+// static
+void SpdyHeadersToRequestHeaders(const SpdyHeaderBlock& header_block,
+                                 BalsaHeaders* request_headers,
+                                 QuicVersion quic_version) {
+  typedef SpdyHeaderBlock::const_iterator BlockIt;
+
+  BlockIt authority_it = header_block.find(kV4Host);
+  BlockIt host_it = header_block.find(kV3Host);
+  BlockIt method_it = header_block.find(kV3Method);
+  BlockIt path_it = header_block.find(kV3Path);
+  BlockIt scheme_it = header_block.find(kV3Scheme);
+  BlockIt end_it = header_block.end();
+
+  string method;
+  if (method_it == end_it) {
+    method = "GET";
+  } else {
+    method = method_it->second.as_string();
+  }
+  string uri;
+  if (path_it == end_it) {
+    uri = "/";
+  } else {
+    uri = path_it->second.as_string();
+  }
+  request_headers->SetRequestFirstlineFromStringPieces(
+      method, uri, net::kHttp2VersionString);
+
+  if (scheme_it == end_it) {
+    request_headers->AppendHeader("Scheme", "https");
+  } else {
+    request_headers->AppendHeader("Scheme", scheme_it->second);
+  }
+  if (authority_it != end_it) {
+    request_headers->AppendHeader("host", authority_it->second);
+  } else if (host_it != end_it) {
+    request_headers->AppendHeader("host", host_it->second);
+  }
+
+  for (BlockIt it = header_block.begin(); it != header_block.end(); ++it) {
+    if (!IsSpecialSpdyHeader(it, request_headers)) {
+      request_headers->AppendHeader(it->first, it->second);
+    }
+  }
+}
+
+// static
+void SpdyHeadersToBalsaHeaders(const SpdyHeaderBlock& block,
+                               BalsaHeaders* headers,
+                               QuicVersion quic_version,
+                               SpdyHeaderValidatorType type) {
+  if (type == SpdyHeaderValidatorType::RESPONSE_HEADER) {
+    SpdyHeadersToResponseHeaders(block, headers, quic_version);
+    return;
+  }
+  SpdyHeadersToRequestHeaders(block, headers, quic_version);
 }
 
 }  // namespace
@@ -213,9 +315,6 @@ SpdyHeaderBlock SpdyBalsaUtils::RequestHeadersToSpdyHeaders(
     PopulateSpdy4RequestHeaderBlock(request_headers, scheme, host_and_port,
                                     path, &block);
   }
-  if (block.find("host") != block.end()) {
-    block.erase(block.find("host"));
-  }
   return block;
 }
 
@@ -241,37 +340,19 @@ string SpdyBalsaUtils::SerializeResponseHeaders(
 }
 
 // static
-void SpdyBalsaUtils::SpdyHeadersToResponseHeaders(
-    const SpdyHeaderBlock& header_block,
-    BalsaHeaders* request_headers,
-    QuicVersion quic_version) {
-  typedef SpdyHeaderBlock::const_iterator BlockIt;
+void SpdyBalsaUtils::SpdyHeadersToResponseHeaders(const SpdyHeaderBlock& block,
+                                                  BalsaHeaders* headers,
+                                                  QuicVersion quic_version) {
+  SpdyHeadersToBalsaHeaders(block, headers, quic_version,
+                            SpdyHeaderValidatorType::RESPONSE_HEADER);
+}
 
-  BlockIt status_it = header_block.find(kV3Status);
-  BlockIt version_it = header_block.find(kV3Version);
-  BlockIt end_it = header_block.end();
-  if (quic_version > QUIC_VERSION_24) {
-    if (status_it == end_it) {
-      return;
-    }
-  } else {
-    if (status_it == end_it || version_it == end_it) {
-      return;
-    }
-  }
-
-  if (!ParseReasonAndStatus(status_it->second, request_headers, quic_version)) {
-    return;
-  }
-
-  if (quic_version <= QUIC_VERSION_24) {
-    request_headers->SetResponseVersion(version_it->second);
-  }
-  for (BlockIt it = header_block.begin(); it != header_block.end(); ++it) {
-    if (!IsSpecialSpdyHeader(it, request_headers)) {
-      request_headers->AppendHeader(it->first, it->second);
-    }
-  }
+// static
+void SpdyBalsaUtils::SpdyHeadersToRequestHeaders(const SpdyHeaderBlock& block,
+                                                 BalsaHeaders* headers,
+                                                 QuicVersion quic_version) {
+  SpdyHeadersToBalsaHeaders(block, headers, quic_version,
+                            SpdyHeaderValidatorType::REQUEST);
 }
 
 }  // namespace tools

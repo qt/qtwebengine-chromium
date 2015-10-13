@@ -11,7 +11,7 @@
 #include "modules/fetch/DataConsumerHandleUtil.h"
 #include "modules/fetch/DataConsumerTee.h"
 #include "modules/fetch/FetchHeaderList.h"
-#include "public/platform/WebServiceWorkerResponse.h"
+#include "public/platform/modules/serviceworker/WebServiceWorkerResponse.h"
 
 namespace blink {
 
@@ -35,6 +35,9 @@ WebServiceWorkerResponseType fetchTypeToWebType(FetchResponseData::Type fetchTyp
         break;
     case FetchResponseData::OpaqueType:
         webType = WebServiceWorkerResponseTypeOpaque;
+        break;
+    case FetchResponseData::OpaqueRedirectType:
+        webType = WebServiceWorkerResponseTypeOpaqueRedirect;
         break;
     }
     return webType;
@@ -120,6 +123,17 @@ FetchResponseData* FetchResponseData::createOpaqueFilteredResponse()
     return response;
 }
 
+FetchResponseData* FetchResponseData::createOpaqueRedirectFilteredResponse()
+{
+    // "An opaque-redirect filtered response is a filtered response whose type
+    // is |opaqueredirect|, status is 0, status message is the empty byte
+    // sequence, header list is the empty list, body is null, and cache state is
+    // |none|.
+    FetchResponseData* response = new FetchResponseData(OpaqueRedirectType, 0, "");
+    response->m_internalResponse = this;
+    return response;
+}
+
 String FetchResponseData::mimeType() const
 {
     return m_mimeType;
@@ -167,14 +181,13 @@ FetchResponseData* FetchResponseData::clone(ExecutionContext* executionContext)
         break;
     case DefaultType: {
         ASSERT(!m_internalResponse);
-        if (!m_buffer)
-            return newResponse;
-
-        OwnPtr<WebDataConsumerHandle> handle1;
-        OwnPtr<WebDataConsumerHandle> handle2;
-        DataConsumerTee::create(executionContext, m_buffer->releaseHandle(), &handle1, &handle2);
-        m_buffer = BodyStreamBuffer::create(createFetchDataConsumerHandleFromWebHandle(handle1.release()));
-        newResponse->m_buffer = BodyStreamBuffer::create(createFetchDataConsumerHandleFromWebHandle(handle2.release()));
+        if (m_buffer) {
+            OwnPtr<WebDataConsumerHandle> handle1, handle2;
+            // TODO(yhirano): unlock the buffer appropriately.
+            DataConsumerTee::create(executionContext, m_buffer->lock(executionContext), &handle1, &handle2);
+            m_buffer = new BodyStreamBuffer(createFetchDataConsumerHandleFromWebHandle(handle1.release()));
+            newResponse->m_buffer = new BodyStreamBuffer(createFetchDataConsumerHandleFromWebHandle(handle2.release()));
+        }
         break;
     }
     case ErrorType:
@@ -182,6 +195,7 @@ FetchResponseData* FetchResponseData::clone(ExecutionContext* executionContext)
         ASSERT(!m_buffer);
         break;
     case OpaqueType:
+    case OpaqueRedirectType:
         ASSERT(m_internalResponse);
         ASSERT(!m_buffer);
         ASSERT(m_internalResponse->m_type == DefaultType);

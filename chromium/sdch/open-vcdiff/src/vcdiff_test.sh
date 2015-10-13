@@ -1,7 +1,6 @@
 #!/bin/bash
 #
-# Copyright 2008 Google Inc.
-# Author: Lincoln Smith
+# Copyright 2008 The open-vcdiff Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -35,6 +34,10 @@ TEST_TMPDIR=${TMPDIR-/tmp}
 DELTA_FILE=$TEST_TMPDIR/configure.ac.vcdiff
 OUTPUT_TARGET_FILE=$TEST_TMPDIR/configure.ac.output
 MALICIOUS_ENCODING=$srcdir/testdata/allocates_4gb.vcdiff
+OVERFLOW_DELTA_FILE=$srcdir/testdata/size-overflow-delta
+OVERFLOW_DICTIONARY_FILE=$srcdir/testdata/size-overflow-dictionary
+OVERFLOW_ERROR_32=$srcdir/testdata/size-overflow-error-32
+OVERFLOW_ERROR_64=$srcdir/testdata/size-overflow-error-64
 
 # vcdiff with no arguments shows usage information & error result
 $VCDIFF \
@@ -430,7 +433,7 @@ $VCDIFF $VCD_OPTIONS \
      exit 1; }
 echo "Test 33 ok";
 
-# open-vcdiff bug 8 (http://code.google.com/p/open-vcdiff/issues/detail?id=8)
+# open-vcdiff bug 8 (https://github.com/google/open-vcdiff/issues/8)
 # A malicious encoding that tries to produce a 4GB target file made up of 64
 # windows, each window having a size of 64MB.
 # Limit memory usage to 256MB per process, so the test doesn't take forever
@@ -524,5 +527,19 @@ cmp $TARGET_FILE $OUTPUT_TARGET_FILE \
 || { echo "Decoded target does not match original"; \
      exit 1; }
 echo "Test 39 ok";
+
+# Test for overflow in size parsing. Check for the specific overflow error
+# message and make sure that it's emitted.
+$VCDIFF $VCD_OPTIONS \
+        decode -dictionary $OVERFLOW_DICTIONARY_FILE \
+               -delta $OVERFLOW_DELTA_FILE \
+               -target $OUTPUT_TARGET_FILE 2>$TEST_TMPDIR/overflow-err\
+&& { echo "Size overflow didn't crash or error vcdiff"; \
+     exit 1; }
+cmp $TEST_TMPDIR/overflow-err $OVERFLOW_ERROR_32 \
+|| cmp $TEST_TMPDIR/overflow-err $OVERFLOW_ERROR_64 \
+|| { echo "Overflow error message does not match"; \
+     exit 1; }
+echo "Test 40 ok"
 
 echo "PASS"

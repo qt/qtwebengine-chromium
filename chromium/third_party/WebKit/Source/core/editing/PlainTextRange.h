@@ -27,7 +27,9 @@
 #define PlainTextRange_h
 
 #include "core/CoreExport.h"
+#include "core/editing/EphemeralRange.h"
 #include "platform/heap/Handle.h"
+#include "wtf/Allocator.h"
 #include "wtf/NotFound.h"
 #include "wtf/PassRefPtr.h"
 
@@ -37,6 +39,7 @@ class ContainerNode;
 class Range;
 
 class CORE_EXPORT PlainTextRange {
+    STACK_ALLOCATED();
 public:
     PlainTextRange();
     PlainTextRange(const PlainTextRange&);
@@ -49,16 +52,17 @@ public:
     bool isNotNull() const { return m_start != kNotFound; }
     size_t length() const { ASSERT(!isNull()); return m_end - m_start; }
 
-    PassRefPtrWillBeRawPtr<Range> createRange(const ContainerNode& scope) const;
-    PassRefPtrWillBeRawPtr<Range> createRangeForSelection(const ContainerNode& scope) const;
+    EphemeralRange createRange(const ContainerNode& scope) const;
+    EphemeralRange createRangeForSelection(const ContainerNode& scope) const;
 
+    static PlainTextRange create(const ContainerNode& scope, const EphemeralRange&);
     static PlainTextRange create(const ContainerNode& scope, const Range&);
 
 private:
     PlainTextRange& operator=(const PlainTextRange&) = delete;
 
     enum GetRangeFor { ForGeneric, ForSelection };
-    PassRefPtrWillBeRawPtr<Range> createRangeFor(const ContainerNode& scope, GetRangeFor) const;
+    EphemeralRange createRangeFor(const ContainerNode& scope, GetRangeFor) const;
 
     const size_t m_start;
     const size_t m_end;

@@ -6,7 +6,7 @@
 #define MANDOLINE_UI_AURA_WINDOW_TREE_HOST_MOJO_H_
 
 #include "base/macros.h"
-#include "components/view_manager/public/cpp/view_observer.h"
+#include "components/mus/public/cpp/view_observer.h"
 #include "ui/aura/window_tree_host.h"
 #include "ui/events/event_source.h"
 #include "ui/gfx/geometry/rect.h"
@@ -23,12 +23,13 @@ class Shell;
 
 namespace mandoline {
 
+class InputMethodMandoline;
 class SurfaceContextFactory;
 
 class WindowTreeHostMojo : public aura::WindowTreeHost,
-                           public mojo::ViewObserver {
+                           public mus::ViewObserver {
  public:
-  WindowTreeHostMojo(mojo::Shell* shell, mojo::View* view);
+  WindowTreeHostMojo(mojo::Shell* shell, mus::View* view);
   ~WindowTreeHostMojo() override;
 
   const gfx::Rect& bounds() const { return bounds_; }
@@ -52,14 +53,16 @@ class WindowTreeHostMojo : public aura::WindowTreeHost,
   void MoveCursorToNative(const gfx::Point& location) override;
   void OnCursorVisibilityChangedNative(bool show) override;
 
-  // mojo::ViewObserver:
-  void OnViewBoundsChanged(mojo::View* view,
+  // mus::ViewObserver:
+  void OnViewBoundsChanged(mus::View* view,
                            const mojo::Rect& old_bounds,
                            const mojo::Rect& new_bounds) override;
 
-  mojo::View* view_;
+  mus::View* view_;
 
   gfx::Rect bounds_;
+
+  scoped_ptr<InputMethodMandoline> input_method_;
 
   scoped_ptr<SurfaceContextFactory> context_factory_;
 

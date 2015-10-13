@@ -7,6 +7,7 @@
     # Intermediate target grouping the android tools needed to run native
     # unittests and instrumentation test apks.
     {
+      # GN: //tools/android:android_tools
       'target_name': 'android_tools',
       'type': 'none',
       'dependencies': [
@@ -46,6 +47,13 @@
       'type': 'none',
       'dependencies': [
         'ps_ext/ps_ext.gyp:ps_ext',
+      ],
+    },
+    {
+      'target_name': 'customtabs_benchmark',
+      'type': 'none',
+      'dependencies': [
+        'customtabs_benchmark/customtabs_benchmark.gyp:customtabs_benchmark_apk',
       ],
     },
   ],

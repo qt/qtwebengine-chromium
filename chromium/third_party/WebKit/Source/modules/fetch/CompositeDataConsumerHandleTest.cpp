@@ -47,144 +47,170 @@ public:
     static PassOwnPtr<StrictMock<MockHandle>> create() { return adoptPtr(new StrictMock<MockHandle>); }
 
     MOCK_METHOD1(obtainReaderInternal, Reader*(Client*));
+
+private:
+    const char* debugName() const override { return "MockHandle in CompositeDataConsumerHandleTest"; }
 };
 
 class ThreadingRegistrationTest : public DataConsumerHandleTestUtil::ThreadingTestBase {
 public:
     using Self = ThreadingRegistrationTest;
+    static PassRefPtr<Self> create() { return adoptRef(new Self); }
+
     void run()
     {
-        m_context = Context::create();
+        ThreadHolder holder(this);
         m_waitableEvent = adoptPtr(Platform::current()->createWaitableEvent());
 
-        postTaskAndWait(updatingThread(), FROM_HERE, new Task(threadSafeBind(&Self::createHandle, this)));
-        postTaskAndWait(readingThread(), FROM_HERE, new Task(threadSafeBind(&Self::obtainReader, this)));
+        postTaskToUpdatingThreadAndWait(FROM_HERE, new Task(threadSafeBind(&Self::createHandle, this)));
+        postTaskToReadingThreadAndWait(FROM_HERE, new Task(threadSafeBind(&Self::obtainReader, this)));
     }
 
 private:
+    ThreadingRegistrationTest() = default;
+
     void createHandle()
     {
-        m_handle = CompositeDataConsumerHandle::create(adoptPtr(new DataConsumerHandle("handle1", m_context)));
+        m_handle = CompositeDataConsumerHandle::create(DataConsumerHandle::create("handle1", m_context), &m_updater);
         m_waitableEvent->signal();
     }
     void obtainReader()
     {
         m_reader = m_handle->obtainReader(&m_client);
-        updatingThread()->postTask(FROM_HERE, new Task(threadSafeBind(&Self::update, this)));
+        postTaskToUpdatingThread(FROM_HERE, new Task(threadSafeBind(&Self::update, this)));
     }
     void update()
     {
-        m_handle->update(adoptPtr(new DataConsumerHandle("handle2", m_context)));
-        readingThread()->postTask(FROM_HERE, new Task(threadSafeBind(&Self::resetReader, this)));
-        readingThread()->postTask(FROM_HERE, new Task(threadSafeBind(&Self::signalDone, this)));
+        m_updater->update(DataConsumerHandle::create("handle2", m_context));
+        m_updater.clear();
+        postTaskToReadingThread(FROM_HERE, new Task(threadSafeBind(&Self::resetReader, this)));
+        postTaskToReadingThread(FROM_HERE, new Task(threadSafeBind(&Self::signalDone, this)));
     }
 
-    OwnPtr<CompositeDataConsumerHandle> m_handle;
+    OwnPtr<WebDataConsumerHandle> m_handle;
+    CrossThreadPersistent<CompositeDataConsumerHandle::Updater> m_updater;
 };
 
 class ThreadingRegistrationDeleteHandleTest : public DataConsumerHandleTestUtil::ThreadingTestBase {
 public:
     using Self = ThreadingRegistrationDeleteHandleTest;
+    static PassRefPtr<Self> create() { return adoptRef(new Self); }
+
     void run()
     {
-        m_context = Context::create();
+        ThreadHolder holder(this);
         m_waitableEvent = adoptPtr(Platform::current()->createWaitableEvent());
 
-        postTaskAndWait(updatingThread(), FROM_HERE, new Task(threadSafeBind(&Self::createHandle, this)));
-        postTaskAndWait(readingThread(), FROM_HERE, new Task(threadSafeBind(&Self::obtainReader, this)));
+        postTaskToUpdatingThreadAndWait(FROM_HERE, new Task(threadSafeBind(&Self::createHandle, this)));
+        postTaskToReadingThreadAndWait(FROM_HERE, new Task(threadSafeBind(&Self::obtainReader, this)));
     }
 
 private:
+    ThreadingRegistrationDeleteHandleTest() = default;
+
     void createHandle()
     {
-        m_handle = CompositeDataConsumerHandle::create(adoptPtr(new DataConsumerHandle("handle1", m_context)));
+        m_handle = CompositeDataConsumerHandle::create(DataConsumerHandle::create("handle1", m_context), &m_updater);
         m_waitableEvent->signal();
     }
 
     void obtainReader()
     {
         m_reader = m_handle->obtainReader(&m_client);
-        updatingThread()->postTask(FROM_HERE, new Task(threadSafeBind(&Self::update, this)));
+        postTaskToUpdatingThread(FROM_HERE, new Task(threadSafeBind(&Self::update, this)));
     }
     void update()
     {
-        m_handle->update(adoptPtr(new DataConsumerHandle("handle2", m_context)));
+        m_updater->update(DataConsumerHandle::create("handle2", m_context));
+        m_updater.clear();
         m_handle = nullptr;
-        readingThread()->postTask(FROM_HERE, new Task(threadSafeBind(&Self::resetReader, this)));
-        readingThread()->postTask(FROM_HERE, new Task(threadSafeBind(&Self::signalDone, this)));
+        postTaskToReadingThread(FROM_HERE, new Task(threadSafeBind(&Self::resetReader, this)));
+        postTaskToReadingThread(FROM_HERE, new Task(threadSafeBind(&Self::signalDone, this)));
     }
 
-    OwnPtr<CompositeDataConsumerHandle> m_handle;
+    OwnPtr<WebDataConsumerHandle> m_handle;
+    CrossThreadPersistent<CompositeDataConsumerHandle::Updater> m_updater;
 };
 
 class ThreadingRegistrationDeleteReaderTest : public DataConsumerHandleTestUtil::ThreadingTestBase {
 public:
     using Self = ThreadingRegistrationDeleteReaderTest;
+    static PassRefPtr<Self> create() { return adoptRef(new Self); }
+
     void run()
     {
-        m_context = Context::create();
+        ThreadHolder holder(this);
         m_waitableEvent = adoptPtr(Platform::current()->createWaitableEvent());
 
-        postTaskAndWait(updatingThread(), FROM_HERE, new Task(threadSafeBind(&Self::createHandle, this)));
-        postTaskAndWait(readingThread(), FROM_HERE, new Task(threadSafeBind(&Self::obtainReader, this)));
+        postTaskToUpdatingThreadAndWait(FROM_HERE, new Task(threadSafeBind(&Self::createHandle, this)));
+        postTaskToReadingThreadAndWait(FROM_HERE, new Task(threadSafeBind(&Self::obtainReader, this)));
     }
 
 private:
+    ThreadingRegistrationDeleteReaderTest() = default;
+
     void createHandle()
     {
-        m_handle = CompositeDataConsumerHandle::create(adoptPtr(new DataConsumerHandle("handle1", m_context)));
+        m_handle = CompositeDataConsumerHandle::create(DataConsumerHandle::create("handle1", m_context), &m_updater);
         m_waitableEvent->signal();
     }
 
     void obtainReader()
     {
         m_reader = m_handle->obtainReader(&m_client);
-        updatingThread()->postTask(FROM_HERE, new Task(threadSafeBind(&Self::update, this)));
+        postTaskToUpdatingThread(FROM_HERE, new Task(threadSafeBind(&Self::update, this)));
     }
     void update()
     {
-        readingThread()->postTask(FROM_HERE, new Task(threadSafeBind(&Self::resetReader, this)));
-        m_handle->update(adoptPtr(new DataConsumerHandle("handle2", m_context)));
-        readingThread()->postTask(FROM_HERE, new Task(threadSafeBind(&Self::resetReader, this)));
-        readingThread()->postTask(FROM_HERE, new Task(threadSafeBind(&Self::signalDone, this)));
+        postTaskToReadingThread(FROM_HERE, new Task(threadSafeBind(&Self::resetReader, this)));
+        m_updater->update(DataConsumerHandle::create("handle2", m_context));
+        m_updater.clear();
+        postTaskToReadingThread(FROM_HERE, new Task(threadSafeBind(&Self::resetReader, this)));
+        postTaskToReadingThread(FROM_HERE, new Task(threadSafeBind(&Self::signalDone, this)));
     }
 
-    OwnPtr<CompositeDataConsumerHandle> m_handle;
+    OwnPtr<WebDataConsumerHandle> m_handle;
+    CrossThreadPersistent<CompositeDataConsumerHandle::Updater> m_updater;
 };
 
 class ThreadingUpdatingReaderWhileUpdatingTest : public DataConsumerHandleTestUtil::ThreadingTestBase {
 public:
     using Self = ThreadingUpdatingReaderWhileUpdatingTest;
+    static PassRefPtr<Self> create() { return adoptRef(new Self); }
+
     void run()
     {
-        m_context = Context::create();
+        ThreadHolder holder(this);
         m_waitableEvent = adoptPtr(Platform::current()->createWaitableEvent());
         m_updateEvent = adoptPtr(Platform::current()->createWaitableEvent());
 
-        postTaskAndWait(updatingThread(), FROM_HERE, new Task(threadSafeBind(&Self::createHandle, this)));
-        postTaskAndWait(readingThread(), FROM_HERE, new Task(threadSafeBind(&Self::obtainReader, this)));
+        postTaskToUpdatingThreadAndWait(FROM_HERE, new Task(threadSafeBind(&Self::createHandle, this)));
+        postTaskToReadingThreadAndWait(FROM_HERE, new Task(threadSafeBind(&Self::obtainReader, this)));
     }
 
 private:
+    ThreadingUpdatingReaderWhileUpdatingTest() = default;
+
     void createHandle()
     {
-        m_handle = CompositeDataConsumerHandle::create(adoptPtr(new DataConsumerHandle("handle1", m_context)));
+        m_handle = CompositeDataConsumerHandle::create(DataConsumerHandle::create("handle1", m_context), &m_updater);
         m_waitableEvent->signal();
     }
 
     void obtainReader()
     {
         m_reader = m_handle->obtainReader(&m_client);
-        updatingThread()->postTask(FROM_HERE, new Task(threadSafeBind(&Self::update, this)));
+        postTaskToUpdatingThread(FROM_HERE, new Task(threadSafeBind(&Self::update, this)));
         m_updateEvent->wait();
     }
 
     void update()
     {
-        readingThread()->postTask(FROM_HERE, new Task(threadSafeBind(&Self::reobtainReader, this)));
-        m_handle->update(adoptPtr(new DataConsumerHandle("handle2", m_context)));
-        readingThread()->postTask(FROM_HERE, new Task(threadSafeBind(&Self::resetReader, this)));
-        readingThread()->postTask(FROM_HERE, new Task(threadSafeBind(&Self::signalDone, this)));
+        postTaskToReadingThread(FROM_HERE, new Task(threadSafeBind(&Self::reobtainReader, this)));
+        m_updater->update(DataConsumerHandle::create("handle2", m_context));
+        m_updater.clear();
+        postTaskToReadingThread(FROM_HERE, new Task(threadSafeBind(&Self::resetReader, this)));
+        postTaskToReadingThread(FROM_HERE, new Task(threadSafeBind(&Self::signalDone, this)));
         m_updateEvent->signal();
     }
 
@@ -194,43 +220,55 @@ private:
         m_reader = m_handle->obtainReader(&m_client);
     }
 
-    OwnPtr<CompositeDataConsumerHandle> m_handle;
+    OwnPtr<WebDataConsumerHandle> m_handle;
+    CrossThreadPersistent<CompositeDataConsumerHandle::Updater> m_updater;
     OwnPtr<WebWaitableEvent> m_updateEvent;
 };
 
 class ThreadingRegistrationUpdateTwiceAtOneTimeTest : public DataConsumerHandleTestUtil::ThreadingTestBase {
 public:
     using Self = ThreadingRegistrationUpdateTwiceAtOneTimeTest;
+    static PassRefPtr<Self> create() { return adoptRef(new Self); }
+
     void run()
     {
-        m_context = Context::create();
+        ThreadHolder holder(this);
         m_waitableEvent = adoptPtr(Platform::current()->createWaitableEvent());
+        m_updateEvent = adoptPtr(Platform::current()->createWaitableEvent());
 
-        postTaskAndWait(updatingThread(), FROM_HERE, new Task(threadSafeBind(&Self::createHandle, this)));
-        postTaskAndWait(readingThread(), FROM_HERE, new Task(threadSafeBind(&Self::obtainReader, this)));
+        postTaskToUpdatingThreadAndWait(FROM_HERE, new Task(threadSafeBind(&Self::createHandle, this)));
+        postTaskToReadingThreadAndWait(FROM_HERE, new Task(threadSafeBind(&Self::obtainReader, this)));
     }
 
 private:
+    ThreadingRegistrationUpdateTwiceAtOneTimeTest() = default;
+
     void createHandle()
     {
-        m_handle = CompositeDataConsumerHandle::create(adoptPtr(new DataConsumerHandle("handle1", m_context)));
+        m_handle = CompositeDataConsumerHandle::create(DataConsumerHandle::create("handle1", m_context), &m_updater);
         m_waitableEvent->signal();
     }
 
     void obtainReader()
     {
         m_reader = m_handle->obtainReader(&m_client);
-        updatingThread()->postTask(FROM_HERE, new Task(threadSafeBind(&Self::update, this)));
+        postTaskToUpdatingThread(FROM_HERE, new Task(threadSafeBind(&Self::update, this)));
+        // Stalls this thread while updating handles.
+        m_updateEvent->wait();
     }
     void update()
     {
-        m_handle->update(adoptPtr(new DataConsumerHandle("handle2", m_context)));
-        m_handle->update(adoptPtr(new DataConsumerHandle("handle3", m_context)));
-        readingThread()->postTask(FROM_HERE, new Task(threadSafeBind(&Self::resetReader, this)));
-        readingThread()->postTask(FROM_HERE, new Task(threadSafeBind(&Self::signalDone, this)));
+        m_updater->update(DataConsumerHandle::create("handle2", m_context));
+        m_updater->update(DataConsumerHandle::create("handle3", m_context));
+        m_updateEvent->signal();
+        m_updater.clear();
+        postTaskToReadingThread(FROM_HERE, new Task(threadSafeBind(&Self::resetReader, this)));
+        postTaskToReadingThread(FROM_HERE, new Task(threadSafeBind(&Self::signalDone, this)));
     }
 
-    OwnPtr<CompositeDataConsumerHandle> m_handle;
+    OwnPtr<WebDataConsumerHandle> m_handle;
+    CrossThreadPersistent<CompositeDataConsumerHandle::Updater> m_updater;
+    OwnPtr<WebWaitableEvent> m_updateEvent;
 };
 
 TEST(CompositeDataConsumerHandleTest, Read)
@@ -260,13 +298,14 @@ TEST(CompositeDataConsumerHandleTest, Read)
     ASSERT_TRUE(reader1.leakPtr());
     ASSERT_TRUE(reader2.leakPtr());
 
-    OwnPtr<CompositeDataConsumerHandle> handle = CompositeDataConsumerHandle::create(handle1.release());
+    CompositeDataConsumerHandle::Updater* updater = nullptr;
+    OwnPtr<WebDataConsumerHandle> handle = CompositeDataConsumerHandle::create(handle1.release(), &updater);
     checkpoint.Call(0);
-    OwnPtr<CompositeDataConsumerHandle::Reader> reader = handle->obtainReader(&client);
+    OwnPtr<WebDataConsumerHandle::Reader> reader = handle->obtainReader(&client);
     checkpoint.Call(1);
     EXPECT_EQ(kOk, reader->read(buffer, sizeof(buffer), kNone, &size));
     checkpoint.Call(2);
-    handle->update(handle2.release());
+    updater->update(handle2.release());
     checkpoint.Call(3);
     EXPECT_EQ(kOk, reader->read(buffer, sizeof(buffer), kNone, &size));
     checkpoint.Call(4);
@@ -302,15 +341,16 @@ TEST(CompositeDataConsumerHandleTest, TwoPhaseRead)
     ASSERT_TRUE(reader1.leakPtr());
     ASSERT_TRUE(reader2.leakPtr());
 
-    OwnPtr<CompositeDataConsumerHandle> handle = CompositeDataConsumerHandle::create(handle1.release());
+    CompositeDataConsumerHandle::Updater* updater = nullptr;
+    OwnPtr<WebDataConsumerHandle> handle = CompositeDataConsumerHandle::create(handle1.release(), &updater);
     checkpoint.Call(0);
-    OwnPtr<CompositeDataConsumerHandle::Reader> reader = handle->obtainReader(nullptr);
+    OwnPtr<WebDataConsumerHandle::Reader> reader = handle->obtainReader(nullptr);
     checkpoint.Call(1);
     EXPECT_EQ(kOk, reader->beginRead(&p, kNone, &size));
     checkpoint.Call(2);
     EXPECT_EQ(kOk, reader->endRead(0));
     checkpoint.Call(3);
-    handle->update(handle2.release());
+    updater->update(handle2.release());
     checkpoint.Call(4);
     EXPECT_EQ(kOk, reader->beginRead(&p, kNone, &size));
     checkpoint.Call(5);
@@ -355,19 +395,20 @@ TEST(CompositeDataConsumerHandleTest, HangingTwoPhaseRead)
     ASSERT_TRUE(reader2.leakPtr());
     ASSERT_TRUE(reader3.leakPtr());
 
-    OwnPtr<CompositeDataConsumerHandle> handle = CompositeDataConsumerHandle::create(handle1.release());
+    CompositeDataConsumerHandle::Updater* updater = nullptr;
+    OwnPtr<WebDataConsumerHandle> handle = CompositeDataConsumerHandle::create(handle1.release(), &updater);
     checkpoint.Call(0);
-    OwnPtr<CompositeDataConsumerHandle::Reader> reader = handle->obtainReader(nullptr);
+    OwnPtr<WebDataConsumerHandle::Reader> reader = handle->obtainReader(nullptr);
     checkpoint.Call(1);
     EXPECT_EQ(kOk, reader->beginRead(&p, kNone, &size));
     checkpoint.Call(2);
-    handle->update(handle2.release());
+    updater->update(handle2.release());
     checkpoint.Call(3);
     EXPECT_EQ(kOk, reader->endRead(0));
     checkpoint.Call(4);
     EXPECT_EQ(kShouldWait, reader->beginRead(&p, kNone, &size));
     checkpoint.Call(5);
-    handle->update(handle3.release());
+    updater->update(handle3.release());
     checkpoint.Call(6);
     EXPECT_EQ(kOk, reader->beginRead(&p, kNone, &size));
     checkpoint.Call(7);
@@ -377,85 +418,81 @@ TEST(CompositeDataConsumerHandleTest, HangingTwoPhaseRead)
 
 TEST(CompositeDataConsumerHandleTest, RegisterClientOnDifferentThreads)
 {
-    ThreadingRegistrationTest test;
-    test.run();
+    RefPtr<ThreadingRegistrationTest> test = ThreadingRegistrationTest::create();
+    test->run();
 
     EXPECT_EQ(
         "A reader is attached to handle1 on the reading thread.\n"
         "A reader is detached from handle1 on the reading thread.\n"
         "A reader is attached to handle2 on the reading thread.\n"
         "A reader is detached from handle2 on the reading thread.\n",
-        test.result());
+        test->result());
 }
 
 TEST(CompositeDataConsumerHandleTest, DeleteHandleWhileUpdating)
 {
-    ThreadingRegistrationDeleteHandleTest test;
-    test.run();
+    RefPtr<ThreadingRegistrationDeleteHandleTest> test = ThreadingRegistrationDeleteHandleTest::create();
+    test->run();
 
     EXPECT_EQ(
         "A reader is attached to handle1 on the reading thread.\n"
         "A reader is detached from handle1 on the reading thread.\n"
         "A reader is attached to handle2 on the reading thread.\n"
         "A reader is detached from handle2 on the reading thread.\n",
-        test.result());
+        test->result());
 }
 
 TEST(CompositeDataConsumerHandleTest, DeleteReaderWhileUpdating)
 {
-    ThreadingRegistrationDeleteReaderTest test;
-    test.run();
+    RefPtr<ThreadingRegistrationDeleteReaderTest> test = ThreadingRegistrationDeleteReaderTest::create();
+    test->run();
 
     EXPECT_EQ(
         "A reader is attached to handle1 on the reading thread.\n"
         "A reader is detached from handle1 on the reading thread.\n",
-        test.result());
+        test->result());
 }
 
 TEST(CompositeDataConsumerHandleTest, UpdateReaderWhileUpdating)
 {
-    ThreadingUpdatingReaderWhileUpdatingTest test;
-    test.run();
+    RefPtr<ThreadingUpdatingReaderWhileUpdatingTest> test = ThreadingUpdatingReaderWhileUpdatingTest::create();
+    test->run();
 
     EXPECT_EQ(
         "A reader is attached to handle1 on the reading thread.\n"
         "A reader is detached from handle1 on the reading thread.\n"
         "A reader is attached to handle2 on the reading thread.\n"
         "A reader is detached from handle2 on the reading thread.\n",
-        test.result());
+        test->result());
 }
 
-// Disabled on Android due to flakiness (https://crbug.com/506261).
-#if OS(ANDROID)
-#define MAYBE_UpdateTwiceAtOnce DISABLED_UpdateTwiceAtOnce
-#else
-#define MAYBE_UpdateTwiceAtOnce UpdateTwiceAtOnce
-#endif
-TEST(CompositeDataConsumerHandleTest, MAYBE_UpdateTwiceAtOnce)
+TEST(CompositeDataConsumerHandleTest, UpdateTwiceAtOnce)
 {
-    ThreadingRegistrationUpdateTwiceAtOneTimeTest test;
-    test.run();
+    RefPtr<ThreadingRegistrationUpdateTwiceAtOneTimeTest> test = ThreadingRegistrationUpdateTwiceAtOneTimeTest::create();
+    test->run();
 
     EXPECT_EQ(
         "A reader is attached to handle1 on the reading thread.\n"
         "A reader is detached from handle1 on the reading thread.\n"
         "A reader is attached to handle3 on the reading thread.\n"
         "A reader is detached from handle3 on the reading thread.\n",
-        test.result());
+        test->result());
 }
 
 TEST(CompositeDataConsumerHandleTest, DoneHandleNotification)
 {
-    DataConsumerHandleTestUtil::ThreadingHandleNotificationTest test;
+    RefPtr<DataConsumerHandleTestUtil::ThreadingHandleNotificationTest> test = DataConsumerHandleTestUtil::ThreadingHandleNotificationTest::create();
+    CompositeDataConsumerHandle::Updater* updater = nullptr;
     // Test this function returns.
-    test.run(CompositeDataConsumerHandle::create(createDoneDataConsumerHandle()));
+    test->run(CompositeDataConsumerHandle::create(createDoneDataConsumerHandle(), &updater));
 }
 
 TEST(CompositeDataConsumerHandleTest, DoneHandleNoNotification)
 {
-    DataConsumerHandleTestUtil::ThreadingHandleNoNotificationTest test;
+    RefPtr<DataConsumerHandleTestUtil::ThreadingHandleNoNotificationTest> test = DataConsumerHandleTestUtil::ThreadingHandleNoNotificationTest::create();
+    CompositeDataConsumerHandle::Updater* updater = nullptr;
     // Test this function doesn't crash.
-    test.run(CompositeDataConsumerHandle::create(createDoneDataConsumerHandle()));
+    test->run(CompositeDataConsumerHandle::create(createDoneDataConsumerHandle(), &updater));
 }
 
 } // namespace

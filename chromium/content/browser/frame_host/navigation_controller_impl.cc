@@ -59,6 +59,8 @@
 #include "content/browser/renderer_host/render_view_host_impl.h"  // Temporary
 #include "content/browser/site_instance_impl.h"
 #include "content/common/frame_messages.h"
+#include "content/common/site_isolation_policy.h"
+#include "content/common/ssl_status_serialization.h"
 #include "content/common/view_messages.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/content_browser_client.h"
@@ -72,7 +74,6 @@
 #include "content/public/browser/user_metrics.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_constants.h"
-#include "content/public/common/content_switches.h"
 #include "media/base/mime_util.h"
 #include "net/base/escape.h"
 #include "net/base/net_util.h"
@@ -353,9 +354,7 @@ void NavigationControllerImpl::ReloadInternal(bool check_for_repost,
     if (!is_for_guests_only && site_instance &&
         site_instance->HasWrongProcessForURL(entry->GetURL())) {
       // Create a navigation entry that resembles the current one, but do not
-      // copy page id, site instance, content state, or timestamp. TODO(avi):
-      // This seems wrong. We're setting |pending_entry_| to a different value
-      // than what |pending_entry_index_| points to. Doesn't this leak?
+      // copy page id, site instance, content state, or timestamp.
       NavigationEntryImpl* nav_entry = NavigationEntryImpl::FromNavigationEntry(
           CreateNavigationEntry(
               entry->GetURL(), entry->GetReferrer(), entry->GetTransitionType(),
@@ -367,6 +366,7 @@ void NavigationControllerImpl::ReloadInternal(bool check_for_repost,
 
       nav_entry->set_should_replace_entry(true);
       pending_entry_ = nav_entry;
+      DCHECK_EQ(-1, pending_entry_index_);
     } else {
       pending_entry_ = entry;
       pending_entry_index_ = current_index;
@@ -412,12 +412,6 @@ NavigationEntryImpl*
 NavigationControllerImpl::GetEntryWithUniqueID(int nav_entry_id) const {
   int index = GetEntryIndexWithUniqueID(nav_entry_id);
   return (index != -1) ? entries_[index] : nullptr;
-}
-
-bool NavigationControllerImpl::HasCommittedRealLoad(
-    FrameTreeNode* frame_tree_node) const {
-  NavigationEntryImpl* last_committed = GetLastCommittedEntry();
-  return last_committed && last_committed->GetFrameEntry(frame_tree_node);
 }
 
 void NavigationControllerImpl::LoadEntry(
@@ -535,18 +529,19 @@ void NavigationControllerImpl::TakeScreenshot() {
 }
 
 void NavigationControllerImpl::SetScreenshotManager(
-    NavigationEntryScreenshotManager* manager) {
-  screenshot_manager_.reset(manager ? manager :
-                            new NavigationEntryScreenshotManager(this));
+    scoped_ptr<NavigationEntryScreenshotManager> manager) {
+  if (manager.get())
+    screenshot_manager_ = manager.Pass();
+  else
+    screenshot_manager_.reset(new NavigationEntryScreenshotManager(this));
 }
 
 bool NavigationControllerImpl::CanGoBack() const {
-  return entries_.size() > 1 && GetCurrentEntryIndex() > 0;
+  return CanGoToOffset(-1);
 }
 
 bool NavigationControllerImpl::CanGoForward() const {
-  int index = GetCurrentEntryIndex();
-  return index >= 0 && index < (static_cast<int>(entries_.size()) - 1);
+  return CanGoToOffset(1);
 }
 
 bool NavigationControllerImpl::CanGoToOffset(int offset) const {
@@ -675,16 +670,6 @@ void NavigationControllerImpl::LoadURLWithParams(const LoadURLParams& params) {
       return;
   }
 
-  // Any renderer-side debug URLs or javascript: URLs should be ignored if the
-  // renderer process is not live, unless it is the initial navigation of the
-  // tab.
-  if (IsRendererDebugURL(params.url)) {
-    // TODO(creis): Find the RVH for the correct frame.
-    if (!delegate_->GetRenderViewHost()->IsRenderViewLive() &&
-        !IsInitialNavigation())
-      return;
-  }
-
   // Checks based on params.load_type.
   switch (params.load_type) {
     case LOAD_TYPE_DEFAULT:
@@ -743,8 +728,7 @@ void NavigationControllerImpl::LoadURLWithParams(const LoadURLParams& params) {
 
       // In --site-per-process, create an identical NavigationEntry with a
       // new FrameNavigationEntry for the target subframe.
-      if (base::CommandLine::ForCurrentProcess()->HasSwitch(
-              switches::kSitePerProcess)) {
+      if (SiteIsolationPolicy::UseSubframeNavigationEntries()) {
         entry = GetLastCommittedEntry()->Clone();
         entry->SetPageID(-1);
         entry->AddOrUpdateFrameEntry(node, -1, -1, nullptr, params.url,
@@ -780,6 +764,7 @@ void NavigationControllerImpl::LoadURLWithParams(const LoadURLParams& params) {
         base::TimeTicks() +
         base::TimeDelta::FromMilliseconds(params.intent_received_timestamp));
   }
+  entry->set_has_user_gesture(params.has_user_gesture);
 #endif
 
   switch (params.load_type) {
@@ -818,10 +803,14 @@ bool NavigationControllerImpl::RendererDidNavigate(
     details->previous_entry_index = -1;
   }
 
-  // If we have a pending entry at this point, it should have a SiteInstance.
-  // Restored entries start out with a null SiteInstance, but we should have
-  // assigned one in NavigateToPendingEntry.
-  DCHECK(pending_entry_index_ == -1 || pending_entry_->site_instance());
+  // If there is a pending entry at this point, it should have a SiteInstance,
+  // except for restored entries.
+  DCHECK(pending_entry_index_ == -1 ||
+         pending_entry_->site_instance() ||
+         pending_entry_->restore_type() != NavigationEntryImpl::RESTORE_NONE);
+  if (pending_entry_ &&
+      pending_entry_->restore_type() != NavigationEntryImpl::RESTORE_NONE)
+    pending_entry_->set_restore_type(NavigationEntryImpl::RESTORE_NONE);
 
   // If we are doing a cross-site reload, we need to replace the existing
   // navigation entry, not add another entry to the history. This has the side
@@ -897,12 +886,14 @@ bool NavigationControllerImpl::RendererDidNavigate(
   NavigationEntryImpl* active_entry = GetLastCommittedEntry();
   active_entry->SetTimestamp(timestamp);
   active_entry->SetHttpStatusCode(params.http_status_code);
-  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kSitePerProcess)) {
+  if (SiteIsolationPolicy::UseSubframeNavigationEntries()) {
     // Update the frame-specific PageState.
     FrameNavigationEntry* frame_entry =
         active_entry->GetFrameEntry(rfh->frame_tree_node());
-    frame_entry->set_page_state(params.page_state);
+    // We may not find a frame_entry in some cases; ignore the PageState if so.
+    // TODO(creis): Remove the "if" once https://crbug.com/522193 is fixed.
+    if (frame_entry)
+      frame_entry->set_page_state(params.page_state);
   } else {
     active_entry->SetPageState(params.page_state);
   }
@@ -924,7 +915,7 @@ bool NavigationControllerImpl::RendererDidNavigate(
   // TODO(creis): This check won't pass for subframes until we create entries
   // for subframe navigations.
   if (!rfh->GetParent())
-    CHECK(active_entry->site_instance() == rfh->GetSiteInstance());
+    CHECK_EQ(active_entry->site_instance(), rfh->GetSiteInstance());
 
   // Remember the bindings the renderer process has at this point, so that
   // we do not grant this entry additional bindings if we come back to it.
@@ -933,9 +924,25 @@ bool NavigationControllerImpl::RendererDidNavigate(
   // Now prep the rest of the details for the notification and broadcast.
   details->entry = active_entry;
   details->is_main_frame = !rfh->GetParent();
-  details->serialized_security_info = params.security_info;
   details->http_status_code = params.http_status_code;
+
+  // Deserialize the security info and kill the renderer if
+  // deserialization fails. The navigation will continue with default
+  // SSLStatus values.
+  if (!DeserializeSecurityInfo(params.security_info, &details->ssl_status)) {
+    bad_message::ReceivedBadMessage(
+        rfh->GetProcess(),
+        bad_message::WC_RENDERER_DID_NAVIGATE_BAD_SECURITY_INFO);
+  }
+
   NotifyNavigationEntryCommitted(details);
+
+  // Update the RenderViewHost of the top-level RenderFrameHost's notion of what
+  // entry it's showing for use later.
+  RenderFrameHostImpl* main_frame =
+      rfh->frame_tree_node()->frame_tree()->root()->current_frame_host();
+  static_cast<RenderViewHostImpl*>(main_frame->GetRenderViewHost())->
+      set_nav_entry_id(active_entry->GetUniqueID());
 
   return true;
 }
@@ -996,12 +1003,20 @@ NavigationType NavigationControllerImpl::ClassifyNavigation(
   if (pending_entry_ && pending_entry_index_ == -1 &&
       pending_entry_->GetUniqueID() == params.nav_entry_id) {
     // In this case, we have a pending entry for a load of a new URL but Blink
-    // didn't do a new navigation (params.did_create_new_entry). This happens
-    // when you press enter in the URL bar to reload. We will create a pending
-    // entry, but Blink will convert it to a reload since it's the same page and
-    // not create a new entry for it (the user doesn't want to have a new
-    // back/forward entry when they do this). Therefore we want to just ignore
-    // the pending entry and go back to where we were (the "existing entry").
+    // didn't do a new navigation (params.did_create_new_entry). First check to
+    // make sure Blink didn't treat a new cross-process navigation as inert, and
+    // thus set params.did_create_new_entry to false. In that case, we must
+    // treat it as NEW since the SiteInstance doesn't match the entry.
+    if (GetLastCommittedEntry()->site_instance() != rfh->GetSiteInstance())
+      return NAVIGATION_TYPE_NEW_PAGE;
+
+    // Otherwise, this happens when you press enter in the URL bar to reload. We
+    // will create a pending entry, but Blink will convert it to a reload since
+    // it's the same page and not create a new entry for it (the user doesn't
+    // want to have a new back/forward entry when they do this). Therefore we
+    // want to just ignore the pending entry and go back to where we were (the
+    // "existing entry").
+    // TODO(creis,avi): Eliminate SAME_PAGE in https://crbug.com/536102.
     return NAVIGATION_TYPE_SAME_PAGE;
   }
 
@@ -1154,7 +1169,7 @@ void NavigationControllerImpl::RendererDidNavigateToExistingPage(
 
   // The site instance will normally be the same except during session restore,
   // when no site instance will be assigned.
-  DCHECK(entry->site_instance() == NULL ||
+  DCHECK(entry->site_instance() == nullptr ||
          entry->site_instance() == rfh->GetSiteInstance());
   entry->set_site_instance(
       static_cast<SiteInstanceImpl*>(rfh->GetSiteInstance()));
@@ -1186,9 +1201,13 @@ void NavigationControllerImpl::RendererDidNavigateToSamePage(
   // ClassifyNavigation. All we need to do is update the existing entry.
   NavigationEntryImpl* existing_entry = GetLastCommittedEntry();
 
+  // If we classified this correctly, the SiteInstance should not have changed.
+  CHECK_EQ(existing_entry->site_instance(), rfh->GetSiteInstance());
+
   // We assign the entry's unique ID to be that of the new one. Since this is
   // always the result of a user action, we want to dismiss infobars, etc. like
   // a regular user-initiated navigation.
+  DCHECK_EQ(pending_entry_->GetUniqueID(), params.nav_entry_id);
   existing_entry->set_unique_id(pending_entry_->GetUniqueID());
 
   // The URL may have changed due to redirects.
@@ -1209,27 +1228,8 @@ void NavigationControllerImpl::RendererDidNavigateToSamePage(
 void NavigationControllerImpl::RendererDidNavigateNewSubframe(
     RenderFrameHostImpl* rfh,
     const FrameHostMsg_DidCommitProvisionalLoad_Params& params) {
-  if (!ui::PageTransitionCoreTypeIs(params.transition,
-                                    ui::PAGE_TRANSITION_MANUAL_SUBFRAME)) {
-    // There was a comment here that said, "This is not user-initiated. Ignore."
-    // But this makes no sense; non-user-initiated navigations should be
-    // determined to be of type NAVIGATION_TYPE_AUTO_SUBFRAME and sent to
-    // RendererDidNavigateAutoSubframe below.
-    //
-    // This if clause dates back to https://codereview.chromium.org/115919 and
-    // the handling of immediate redirects. TODO(avi): Is this still valid? I'm
-    // pretty sure that's there's nothing left of that code and that we should
-    // take this out.
-    //
-    // Except for cross-process iframes; this doesn't work yet for them.
-    if (!base::CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kSitePerProcess)) {
-      NOTREACHED();
-    }
-
-    DiscardNonCommittedEntriesInternal();
-    return;
-  }
+  DCHECK(ui::PageTransitionCoreTypeIs(params.transition,
+                                      ui::PAGE_TRANSITION_MANUAL_SUBFRAME));
 
   // Manual subframe navigations just get the current entry cloned so the user
   // can go back or forward to it. The actual subframe information will be
@@ -1239,8 +1239,7 @@ void NavigationControllerImpl::RendererDidNavigateNewSubframe(
                                   << "that a last committed entry exists.";
 
   scoped_ptr<NavigationEntryImpl> new_entry;
-  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kSitePerProcess)) {
+  if (SiteIsolationPolicy::UseSubframeNavigationEntries()) {
     // Make sure new_entry takes ownership of frame_entry in a scoped_refptr.
     FrameNavigationEntry* frame_entry = new FrameNavigationEntry(
         rfh->frame_tree_node()->frame_tree_node_id(),
@@ -1248,7 +1247,11 @@ void NavigationControllerImpl::RendererDidNavigateNewSubframe(
         rfh->GetSiteInstance(), params.url, params.referrer);
     new_entry = GetLastCommittedEntry()->CloneAndReplace(rfh->frame_tree_node(),
                                                          frame_entry);
-    CHECK(frame_entry->HasOneRef());
+
+    // TODO(creis): Make sure the last committed entry always has the subframe
+    // entry to replace, and CHECK(frame_entry->HasOneRef).  For now, we might
+    // not find the entry to replace, and new_entry will be deleted when it goes
+    // out of scope.  See https://crbug.com/522193.
   } else {
     new_entry = GetLastCommittedEntry()->Clone();
   }
@@ -1295,8 +1298,7 @@ bool NavigationControllerImpl::RendererDidNavigateAutoSubframe(
     }
   }
 
-  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kSitePerProcess)) {
+  if (SiteIsolationPolicy::UseSubframeNavigationEntries()) {
     // This may be a "new auto" case where we add a new FrameNavigationEntry, or
     // it may be a "history auto" case where we update an existing one.
     NavigationEntryImpl* last_committed = GetLastCommittedEntry();
@@ -1641,17 +1643,30 @@ void NavigationControllerImpl::InsertOrReplaceEntry(
   DiscardNonCommittedEntriesInternal();
 
   int current_size = static_cast<int>(entries_.size());
-  DCHECK_IMPLIES(replace, current_size > 0);
+
+  // When replacing, don't prune the forward history.
+  if (replace && current_size > 0) {
+    int32 page_id = entry->GetPageID();
+
+    // ScopedVectors don't automatically delete the replaced value, so make sure
+    // the previous value gets deleted.
+    scoped_ptr<NavigationEntryImpl> old_entry(
+        entries_[last_committed_entry_index_]);
+    entries_[last_committed_entry_index_] = entry.release();
+
+    // This is a new page ID, so we need everybody to know about it.
+    delegate_->UpdateMaxPageID(page_id);
+    return;
+  }
+
+  // We shouldn't see replace == true when there's no committed entries.
+  DCHECK(!replace);
 
   if (current_size > 0) {
     // Prune any entries which are in front of the current entry.
-    // Also prune the current entry if we are to replace the current entry.
     // last_committed_entry_index_ must be updated here since calls to
     // NotifyPrunedEntries() below may re-enter and we must make sure
     // last_committed_entry_index_ is not left in an invalid state.
-    if (replace)
-      --last_committed_entry_index_;
-
     int num_pruned = 0;
     while (last_committed_entry_index_ < (current_size - 1)) {
       num_pruned++;
@@ -1718,8 +1733,20 @@ void NavigationControllerImpl::NavigateToPendingEntry(ReloadType reload_type) {
 
   // For session history navigations only the pending_entry_index_ is set.
   if (!pending_entry_) {
-    DCHECK_NE(pending_entry_index_, -1);
+    CHECK_NE(pending_entry_index_, -1);
     pending_entry_ = entries_[pending_entry_index_];
+  }
+
+  // Any renderer-side debug URLs or javascript: URLs should be ignored if the
+  // renderer process is not live, unless it is the initial navigation of the
+  // tab.
+  if (IsRendererDebugURL(pending_entry_->GetURL())) {
+    // TODO(creis): Find the RVH for the correct frame.
+    if (!delegate_->GetRenderViewHost()->IsRenderViewLive() &&
+        !IsInitialNavigation()) {
+      DiscardNonCommittedEntries();
+      return;
+    }
   }
 
   // This call does not support re-entrancy.  See http://crbug.com/347742.
@@ -1730,15 +1757,6 @@ void NavigationControllerImpl::NavigateToPendingEntry(ReloadType reload_type) {
 
   if (!success)
     DiscardNonCommittedEntries();
-
-  // If the entry is being restored and doesn't have a SiteInstance yet, fill
-  // it in now that we know. This allows us to find the entry when it commits.
-  if (pending_entry_ && !pending_entry_->site_instance() &&
-      pending_entry_->restore_type() != NavigationEntryImpl::RESTORE_NONE) {
-    pending_entry_->set_site_instance(static_cast<SiteInstanceImpl*>(
-        delegate_->GetPendingSiteInstance()));
-    pending_entry_->set_restore_type(NavigationEntryImpl::RESTORE_NONE);
-  }
 }
 
 bool NavigationControllerImpl::NavigateToPendingEntryInternal(
@@ -1749,8 +1767,7 @@ bool NavigationControllerImpl::NavigateToPendingEntryInternal(
   // In default Chrome, there are no subframe FrameNavigationEntries.  Either
   // navigate the main frame or use the main frame's FrameNavigationEntry to
   // tell the indicated frame where to go.
-  if (!base::CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kSitePerProcess)) {
+  if (!SiteIsolationPolicy::UseSubframeNavigationEntries()) {
     FrameNavigationEntry* frame_entry = GetPendingEntry()->GetFrameEntry(root);
     FrameTreeNode* frame = root;
     int ftn_id = GetPendingEntry()->frame_tree_node_id();
@@ -1872,8 +1889,16 @@ void NavigationControllerImpl::LoadIfNecessary() {
   // Calling Reload() results in ignoring state, and not loading.
   // Explicitly use NavigateToPendingEntry so that the renderer uses the
   // cached state.
-  pending_entry_index_ = last_committed_entry_index_;
-  NavigateToPendingEntry(NO_RELOAD);
+  if (pending_entry_) {
+    NavigateToPendingEntry(NO_RELOAD);
+  } else if (last_committed_entry_index_ != -1) {
+    pending_entry_index_ = last_committed_entry_index_;
+    NavigateToPendingEntry(NO_RELOAD);
+  } else {
+    // If there is something to reload, the successful reload will clear the
+    // |needs_reload_| flag. Otherwise, just do it here.
+    needs_reload_ = false;
+  }
 }
 
 void NavigationControllerImpl::NotifyEntryChanged(

@@ -41,10 +41,10 @@ protected:
         // Setup our random scaler context
         SkAutoTUnref<SkTypeface> orig(sk_tool_utils::create_portable_typeface("sans-serif",
                                                                               SkTypeface::kBold));
-        if (NULL == orig) {
+        if (nullptr == orig) {
             orig.reset(SkTypeface::RefDefault());
         }
-        SkAutoTUnref<SkTypeface> random(SkNEW_ARGS(SkRandomTypeface, (orig, paint, false)));
+        SkAutoTUnref<SkTypeface> random(new SkRandomTypeface(orig, paint, false));
         paint.setTypeface(random);
 
         SkRect bounds;
@@ -65,6 +65,20 @@ protected:
         offset += bounds.height();
         sk_tool_utils::add_to_text_blob(&builder, bigtext2, paint, 0, offset);
 
+        // color emoji
+        SkAutoTUnref<SkTypeface> origEmoji;
+        sk_tool_utils::emoji_typeface(&origEmoji);
+        const char* osName = sk_tool_utils::platform_os_name();
+        // The mac emoji string will break us
+        if (origEmoji && (!strcmp(osName, "Android") || !strcmp(osName, "Ubuntu"))) {
+            const char* emojiText = sk_tool_utils::emoji_sample_text();
+            paint.measureText(emojiText, strlen(emojiText), &bounds);
+            offset += bounds.height();
+            SkAutoTUnref<SkTypeface> randomEmoji(new SkRandomTypeface(orig, paint, false));
+            paint.setTypeface(randomEmoji);
+            sk_tool_utils::add_to_text_blob(&builder, emojiText, paint, 0, offset);
+        }
+
         // build
         fBlob.reset(builder.build());
     }
@@ -79,8 +93,8 @@ protected:
 
     void onDraw(SkCanvas* canvas) override {
         // This GM exists to test a specific feature of the GPU backend.
-        if (NULL == canvas->getGrContext()) {
-            this->drawGpuOnlyMessage(canvas);
+        if (nullptr == canvas->getGrContext()) {
+            skiagm::GM::DrawGpuOnlyMessage(canvas);
             return;
         }
 
@@ -134,6 +148,6 @@ private:
 
 //////////////////////////////////////////////////////////////////////////////
 
-DEF_GM( return SkNEW(TextBlobRandomFont); )
+DEF_GM(return new TextBlobRandomFont;)
 }
 #endif

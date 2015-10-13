@@ -28,7 +28,7 @@
 #include "core/HTMLNames.h"
 #include "core/dom/NodeComputedStyle.h"
 #include "core/dom/Text.h"
-#include "core/editing/htmlediting.h"
+#include "core/editing/EditingUtilities.h"
 #include "core/html/HTMLContentElement.h"
 #include "core/html/HTMLDivElement.h"
 #include "core/html/HTMLSelectElement.h"
@@ -164,7 +164,7 @@ void HTMLOptGroupElement::didAddUserAgentShadowRoot(ShadowRoot& root)
     root.appendChild(label);
 
     RefPtrWillBeRawPtr<HTMLContentElement> content = HTMLContentElement::create(document());
-    content->setAttribute(selectAttr, "option,optgroup,hr");
+    content->setAttribute(selectAttr, "option,hr");
     root.appendChild(content);
 }
 

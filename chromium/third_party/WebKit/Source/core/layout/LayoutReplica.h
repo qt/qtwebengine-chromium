@@ -36,22 +36,21 @@ namespace blink {
 class LayoutReplica final : public LayoutBox {
 public:
     static LayoutReplica* createAnonymous(Document*);
+    ~LayoutReplica() override;
 
-    virtual ~LayoutReplica();
+    const char* name() const override { return "LayoutReplica"; }
 
-    virtual const char* name() const override { return "LayoutReplica"; }
+    PaintLayerType layerTypeRequired() const override { return NormalPaintLayer; }
 
-    virtual DeprecatedPaintLayerType layerTypeRequired() const override { return NormalDeprecatedPaintLayer; }
+    void layout() override;
 
-    virtual void layout() override;
-
-    virtual void paint(const PaintInfo&, const LayoutPoint&) override;
+    void paint(const PaintInfo&, const LayoutPoint&) const override;
 
 private:
     LayoutReplica();
 
-    virtual bool isOfType(LayoutObjectType type) const override { return type == LayoutObjectReplica || LayoutBox::isOfType(type); }
-    virtual void computePreferredLogicalWidths() override;
+    bool isOfType(LayoutObjectType type) const override { return type == LayoutObjectReplica || LayoutBox::isOfType(type); }
+    void computePreferredLogicalWidths() override;
 
 };
 

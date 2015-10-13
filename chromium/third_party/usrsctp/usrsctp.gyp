@@ -9,6 +9,7 @@
     'defines': [
       'SCTP_PROCESS_LEVEL_LOCKS',
       'SCTP_SIMPLE_ALLOCATOR',
+      'SCTP_USE_OPENSSL_SHA1',
       '__Userspace__',
       # 'SCTP_DEBUG', # Uncomment for SCTP debugging.
     ],
@@ -16,40 +17,15 @@
       'usrsctplib/',
       'usrsctplib/netinet',
     ],
+    'dependencies': [
+      '<(DEPTH)/third_party/boringssl/boringssl.gyp:boringssl',
+    ],
     'direct_dependent_settings': {
       'include_dirs': [
         'usrsctplib/',
         'usrsctplib/netinet',
       ],
     },
-    'conditions': [
-      ['use_openssl==1', {
-        'defines': [
-          'SCTP_USE_OPENSSL_SHA1',
-        ],
-        'dependencies': [
-          '<(DEPTH)/third_party/boringssl/boringssl.gyp:boringssl',
-        ],
-      },
-      {  # else use_openssl==0, use NSS.
-        'defines' : [
-          'SCTP_USE_NSS_SHA1',
-        ],
-        'conditions': [
-          ['os_posix == 1 and OS != "mac" and OS != "ios" and OS != "android"', {
-            'dependencies': [  # The system.gyp:ssl dependency includes nss
-              '<(DEPTH)/build/linux/system.gyp:ssl',
-            ],
-          }],
-          ['OS == "mac" or OS == "ios" or OS == "win"', {
-            'dependencies': [
-              '<(DEPTH)/third_party/nss/nss.gyp:nspr',
-              '<(DEPTH)/third_party/nss/nss.gyp:nss',
-            ],
-          }],
-        ],
-      }],
-    ],
   },
   'targets': [
     {
@@ -120,6 +96,12 @@
         'usrsctplib/user_uma.h',
         'usrsctplib/usrsctp.h'
       ],  # sources
+      'variables': {
+        'clang_warning_flags': [
+          # atomic_init in user_atomic.h is a static function in a header.
+          '-Wno-unused-function',
+        ],
+      },
       'conditions': [
         ['OS=="linux" or OS=="android"', {
           'defines': [
@@ -162,7 +144,7 @@
           'cflags': [ '/w' ],
           # TODO(ldixon) : Remove this disabling of warnings by pushing a
           # fix upstream to usrsctp
-          'msvs_disabled_warnings': [ 4002, 4013, 4018, 4133, 4267, 4313, 4700 ],
+          'msvs_disabled_warnings': [ 4002, 4013, 4133, 4267, 4313, 4700 ],
         }, {  # OS != "win",
           'defines': [
             'NON_WINDOWS_DEFINE',

@@ -51,6 +51,7 @@
           '../base/test/data/',
           '../components/test/data/',
           '../extensions/test/data/',
+          '../google_apis/test/data/',
           '../net/data/',
           '../third_party/accessibility-audit/axs_testing.js',
           '../third_party/hunspell_dictionaries/',
@@ -87,7 +88,6 @@
           '../third_party/pywebsocket/',
           '../third_party/tlslite/',
           '<(PRODUCT_DIR)/pyproto/google/',
-          '<(PRODUCT_DIR)/unit_tests<(EXECUTABLE_SUFFIX)',
         ],
       },
     }],
@@ -102,6 +102,7 @@
           '<(PRODUCT_DIR)/<(mac_product_name) Framework.framework/',
           '<(PRODUCT_DIR)/exif.so',
           '<(PRODUCT_DIR)/osmesa.so',
+          '<(PRODUCT_DIR)/test_data/chrome/safe_browsing_dmg/',
         ],
       },
     }],
@@ -160,6 +161,6 @@
   'includes': [
     '../base/base.isolate',
     '../gin/v8.isolate',
-    '../third_party/angle/angle.isolate',
+    '../ui/gl/gl.isolate',
   ],
 }

@@ -26,9 +26,9 @@
 #include "core/dom/DOMImplementation.h"
 #include "core/dom/DocumentEncodingData.h"
 #include "core/dom/DocumentFragment.h"
-#include "core/editing/markup.h"
-#include "core/frame/LocalDOMWindow.h"
+#include "core/editing/serializers/Serialization.h"
 #include "core/frame/FrameView.h"
+#include "core/frame/LocalDOMWindow.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/csp/ContentSecurityPolicy.h"
 #include "core/loader/FrameLoaderClient.h"
@@ -92,7 +92,7 @@ PassRefPtrWillBeRawPtr<Document> XSLTProcessor::createDocumentFromSource(const S
             result->updateSecurityOrigin(oldDocument->securityOrigin());
             result->setCookieURL(oldDocument->cookieURL());
 
-            RefPtr<ContentSecurityPolicy> csp = ContentSecurityPolicy::create();
+            RefPtrWillBeRawPtr<ContentSecurityPolicy> csp = ContentSecurityPolicy::create();
             csp->copyStateFrom(oldDocument->contentSecurityPolicy());
             result->initContentSecurityPolicy(csp);
         }

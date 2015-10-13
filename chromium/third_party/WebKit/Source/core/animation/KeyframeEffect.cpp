@@ -44,31 +44,31 @@
 #include "core/dom/Element.h"
 #include "core/dom/NodeComputedStyle.h"
 #include "core/frame/UseCounter.h"
-#include "core/paint/DeprecatedPaintLayer.h"
+#include "core/paint/PaintLayer.h"
 #include "core/svg/SVGElement.h"
 
 namespace blink {
 
-PassRefPtrWillBeRawPtr<KeyframeEffect> KeyframeEffect::create(Element* target, PassRefPtrWillBeRawPtr<EffectModel> model, const Timing& timing, Priority priority, PassOwnPtrWillBeRawPtr<EventDelegate> eventDelegate)
+KeyframeEffect* KeyframeEffect::create(Element* target, EffectModel* model, const Timing& timing, Priority priority, EventDelegate* eventDelegate)
 {
-    return adoptRefWillBeNoop(new KeyframeEffect(target, model, timing, priority, eventDelegate));
+    return new KeyframeEffect(target, model, timing, priority, eventDelegate);
 }
 
-PassRefPtrWillBeRawPtr<KeyframeEffect> KeyframeEffect::create(Element* element, const Vector<Dictionary>& keyframeDictionaryVector, double duration, ExceptionState& exceptionState)
+KeyframeEffect* KeyframeEffect::create(Element* element, const Vector<Dictionary>& keyframeDictionaryVector, double duration, ExceptionState& exceptionState)
 {
     ASSERT(RuntimeEnabledFeatures::webAnimationsAPIEnabled());
     if (element)
         UseCounter::count(element->document(), UseCounter::AnimationConstructorKeyframeListEffectObjectTiming);
     return create(element, EffectInput::convert(element, keyframeDictionaryVector, exceptionState), TimingInput::convert(duration));
 }
-PassRefPtrWillBeRawPtr<KeyframeEffect> KeyframeEffect::create(Element* element, const Vector<Dictionary>& keyframeDictionaryVector, const KeyframeEffectOptions& timingInput, ExceptionState& exceptionState)
+KeyframeEffect* KeyframeEffect::create(Element* element, const Vector<Dictionary>& keyframeDictionaryVector, const KeyframeEffectOptions& timingInput, ExceptionState& exceptionState)
 {
     ASSERT(RuntimeEnabledFeatures::webAnimationsAPIEnabled());
     if (element)
         UseCounter::count(element->document(), UseCounter::AnimationConstructorKeyframeListEffectObjectTiming);
     return create(element, EffectInput::convert(element, keyframeDictionaryVector, exceptionState), TimingInput::convert(timingInput));
 }
-PassRefPtrWillBeRawPtr<KeyframeEffect> KeyframeEffect::create(Element* element, const Vector<Dictionary>& keyframeDictionaryVector, ExceptionState& exceptionState)
+KeyframeEffect* KeyframeEffect::create(Element* element, const Vector<Dictionary>& keyframeDictionaryVector, ExceptionState& exceptionState)
 {
     ASSERT(RuntimeEnabledFeatures::webAnimationsAPIEnabled());
     if (element)
@@ -76,7 +76,7 @@ PassRefPtrWillBeRawPtr<KeyframeEffect> KeyframeEffect::create(Element* element, 
     return create(element, EffectInput::convert(element, keyframeDictionaryVector, exceptionState), Timing());
 }
 
-KeyframeEffect::KeyframeEffect(Element* target, PassRefPtrWillBeRawPtr<EffectModel> model, const Timing& timing, Priority priority, PassOwnPtrWillBeRawPtr<EventDelegate> eventDelegate)
+KeyframeEffect::KeyframeEffect(Element* target, EffectModel* model, const Timing& timing, Priority priority, EventDelegate* eventDelegate)
     : AnimationEffect(timing, eventDelegate)
     , m_target(target)
     , m_model(model)
@@ -91,10 +91,6 @@ KeyframeEffect::KeyframeEffect(Element* target, PassRefPtrWillBeRawPtr<EffectMod
 
 KeyframeEffect::~KeyframeEffect()
 {
-#if !ENABLE(OILPAN)
-    if (m_target)
-        m_target->elementAnimations()->notifyEffectDestroyed(this);
-#endif
 }
 
 void KeyframeEffect::attach(Animation* animation)
@@ -180,20 +176,22 @@ void KeyframeEffect::applyEffects()
 
     double iteration = currentIteration();
     ASSERT(iteration >= 0);
-    OwnPtrWillBeRawPtr<WillBeHeapVector<RefPtrWillBeMember<Interpolation>>> interpolations = m_sampledEffect ? m_sampledEffect->mutableInterpolations() : nullptr;
-    // FIXME: Handle iteration values which overflow int.
-    m_model->sample(static_cast<int>(iteration), timeFraction(), iterationDuration(), interpolations);
+    OwnPtr<Vector<RefPtr<Interpolation>>> interpolations = m_sampledEffect ? m_sampledEffect->mutableInterpolations() : nullptr;
+    bool changed = m_model->sample(clampTo<int>(iteration, 0), timeFraction(), iterationDuration(), interpolations);
     if (m_sampledEffect) {
         m_sampledEffect->setInterpolations(interpolations.release());
     } else if (interpolations && !interpolations->isEmpty()) {
-        OwnPtrWillBeRawPtr<SampledEffect> sampledEffect = SampledEffect::create(this, interpolations.release());
-        m_sampledEffect = sampledEffect.get();
-        ensureAnimationStack(m_target).add(sampledEffect.release());
+        SampledEffect* sampledEffect = SampledEffect::create(this, interpolations.release());
+        m_sampledEffect = sampledEffect;
+        ensureAnimationStack(m_target).add(sampledEffect);
+        changed = true;
     } else {
         return;
     }
 
-    m_target->setNeedsAnimationStyleRecalc();
+    if (changed)
+        m_target->setNeedsAnimationStyleRecalc();
+
     if (m_target->isSVGElement())
         m_sampledEffect->applySVGUpdate(toSVGElement(*m_target));
 }

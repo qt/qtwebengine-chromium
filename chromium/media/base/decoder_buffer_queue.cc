@@ -6,8 +6,8 @@
 
 #include "base/logging.h"
 #include "base/numerics/safe_conversions.h"
-#include "media/base/buffers.h"
 #include "media/base/decoder_buffer.h"
+#include "media/base/timestamp_constants.h"
 
 namespace media {
 
@@ -39,7 +39,7 @@ void DecoderBufferQueue::Push(const scoped_refptr<DecoderBuffer>& buffer) {
   }
 
   if (buffer->timestamp() < earliest_valid_timestamp_) {
-    DVLOG(1)
+    DVLOG(2)
         << "Out of order timestamps: "
         << buffer->timestamp().InMicroseconds()
         << " vs. "

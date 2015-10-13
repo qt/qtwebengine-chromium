@@ -35,7 +35,6 @@
 #include "core/CoreExport.h"
 #include "core/inspector/InspectorBaseAgent.h"
 #include "core/inspector/InspectorDOMAgent.h"
-#include "core/inspector/InspectorDebuggerAgent.h"
 #include "wtf/HashMap.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/text/WTFString.h"
@@ -47,24 +46,20 @@ class Event;
 class EventListener;
 class EventTarget;
 class InjectedScriptManager;
-class InspectorDebuggerAgent;
 class InspectorDOMAgent;
 class JSONObject;
-class LocalFrame;
 class Node;
 class RegisteredEventListener;
+class V8DebuggerAgent;
 
 typedef String ErrorString;
 
 class CORE_EXPORT InspectorDOMDebuggerAgent final
     : public InspectorBaseAgent<InspectorDOMDebuggerAgent, InspectorFrontend::DOMDebugger>
-    , public InspectorDebuggerAgent::Listener
-    , public InspectorDOMAgent::Listener
     , public InspectorBackendDispatcher::DOMDebuggerCommandHandler {
     WTF_MAKE_NONCOPYABLE(InspectorDOMDebuggerAgent);
-    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(InspectorDOMDebuggerAgent);
 public:
-    static PassOwnPtrWillBeRawPtr<InspectorDOMDebuggerAgent> create(InjectedScriptManager*, InspectorDOMAgent*, InspectorDebuggerAgent*);
+    static PassOwnPtrWillBeRawPtr<InspectorDOMDebuggerAgent> create(InjectedScriptManager*, InspectorDOMAgent*, V8DebuggerAgent*);
 
     ~InspectorDOMDebuggerAgent() override;
     DECLARE_VIRTUAL_TRACE();
@@ -91,37 +86,27 @@ public:
     void didInstallTimer(ExecutionContext*, int timerId, int timeout, bool singleShot);
     void didRemoveTimer(ExecutionContext*, int timerId);
     void willFireTimer(ExecutionContext*, int timerId);
+    void didFireTimer();
     void didRequestAnimationFrame(ExecutionContext*, int callbackId);
     void didCancelAnimationFrame(ExecutionContext*, int callbackId);
     void willFireAnimationFrame(ExecutionContext*, int callbackId);
     void willHandleEvent(EventTarget*, Event*, EventListener*, bool useCapture);
-    void willEvaluateScript(LocalFrame*, const String& url, int lineNumber);
+    void didHandleEvent();
+    void willEvaluateScript();
     void didFireWebGLError(const String& errorName);
     void didFireWebGLWarning();
     void didFireWebGLErrorOrWarning(const String& message);
     void willCloseWindow();
 
     void disable(ErrorString*) override;
-    void discardAgent() override;
+    void restore() override;
+    void didCommitLoadForLocalFrame(LocalFrame*) override;
 
 private:
-    InspectorDOMDebuggerAgent(InjectedScriptManager*, InspectorDOMAgent*, InspectorDebuggerAgent*);
-    bool checkEnabled(ErrorString*);
+    InspectorDOMDebuggerAgent(InjectedScriptManager*, InspectorDOMAgent*, V8DebuggerAgent*);
 
     void pauseOnNativeEventIfNeeded(PassRefPtr<JSONObject> eventData, bool synchronous);
     PassRefPtr<JSONObject> preparePauseOnNativeEventData(const String& eventName, const String* targetName);
-
-    // InspectorDOMAgent::Listener implementation.
-    void domAgentWasEnabled() override;
-    void domAgentWasDisabled() override;
-
-    // InspectorDebuggerAgent::Listener implementation.
-    void debuggerWasEnabled() override;
-    void debuggerWasDisabled() override;
-    bool canPauseOnPromiseEvent() override;
-    void didCreatePromise() override;
-    void didResolvePromise() override;
-    void didRejectPromise() override;
 
     void descriptionForDOMEvent(Node* target, int breakpointType, bool insertion, JSONObject* description);
     void updateSubtreeBreakpoints(Node*, uint32_t rootMask, bool set);
@@ -129,13 +114,16 @@ private:
     void setBreakpoint(ErrorString*, const String& eventName, const String* targetName);
     void removeBreakpoint(ErrorString*, const String& eventName, const String* targetName);
 
-    PassRefPtr<TypeBuilder::DOMDebugger::EventListener> buildObjectForEventListener(const RegisteredEventListener&, const AtomicString& eventType, EventTarget*, const String& objectGroupId);
+    void didAddBreakpoint();
+    void didRemoveBreakpoint();
+    void setEnabled(bool);
 
-    void clear();
+    void eventListeners(InjectedScript&, v8::Local<v8::Value>, const String& objectGroup, RefPtr<TypeBuilder::Array<TypeBuilder::DOMDebugger::EventListener>>& listenersArray);
+    PassRefPtr<TypeBuilder::DOMDebugger::EventListener> buildObjectForEventListener(InjectedScript&, v8::Local<v8::Object> handler, bool useCapture, const String& type, const String& objectGroupId);
 
     RawPtrWillBeMember<InjectedScriptManager> m_injectedScriptManager;
     RawPtrWillBeMember<InspectorDOMAgent> m_domAgent;
-    RawPtrWillBeMember<InspectorDebuggerAgent> m_debuggerAgent;
+    V8DebuggerAgent* m_debuggerAgent;
     WillBeHeapHashMap<RawPtrWillBeMember<Node>, uint32_t> m_domBreakpoints;
 };
 

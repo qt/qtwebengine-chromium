@@ -6,10 +6,12 @@
 
 #include <string.h>
 
+#include "base/bind.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/lazy_instance.h"
 #include "base/logging.h"
+#include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
 #include "base/metrics/sparse_histogram.h"
 #include "base/strings/string_split.h"
@@ -111,6 +113,26 @@ bool ValidAttachmentPoint(const char* attachment_point) {
   return true;
 }
 
+void RecordSqliteMemory10Min() {
+  const int64 used = sqlite3_memory_used();
+  UMA_HISTOGRAM_COUNTS("Sqlite.MemoryKB.TenMinutes", used / 1024);
+}
+
+void RecordSqliteMemoryHour() {
+  const int64 used = sqlite3_memory_used();
+  UMA_HISTOGRAM_COUNTS("Sqlite.MemoryKB.OneHour", used / 1024);
+}
+
+void RecordSqliteMemoryDay() {
+  const int64 used = sqlite3_memory_used();
+  UMA_HISTOGRAM_COUNTS("Sqlite.MemoryKB.OneDay", used / 1024);
+}
+
+void RecordSqliteMemoryWeek() {
+  const int64 used = sqlite3_memory_used();
+  UMA_HISTOGRAM_COUNTS("Sqlite.MemoryKB.OneWeek", used / 1024);
+}
+
 // SQLite automatically calls sqlite3_initialize() lazily, but
 // sqlite3_initialize() uses double-checked locking and thus can have
 // data races.
@@ -122,7 +144,29 @@ base::LazyInstance<base::Lock>::Leaky
     g_sqlite_init_lock = LAZY_INSTANCE_INITIALIZER;
 void InitializeSqlite() {
   base::AutoLock lock(g_sqlite_init_lock.Get());
-  sqlite3_initialize();
+  static bool first_call = true;
+  if (first_call) {
+    sqlite3_initialize();
+
+    // Schedule callback to record memory footprint histograms at 10m, 1h, and
+    // 1d.  There may not be a message loop in tests.
+    if (base::MessageLoop::current()) {
+      base::MessageLoop::current()->PostDelayedTask(
+          FROM_HERE, base::Bind(&RecordSqliteMemory10Min),
+          base::TimeDelta::FromMinutes(10));
+      base::MessageLoop::current()->PostDelayedTask(
+          FROM_HERE, base::Bind(&RecordSqliteMemoryHour),
+          base::TimeDelta::FromHours(1));
+      base::MessageLoop::current()->PostDelayedTask(
+          FROM_HERE, base::Bind(&RecordSqliteMemoryDay),
+          base::TimeDelta::FromDays(1));
+      base::MessageLoop::current()->PostDelayedTask(
+          FROM_HERE, base::Bind(&RecordSqliteMemoryWeek),
+          base::TimeDelta::FromDays(7));
+    }
+
+    first_call = false;
+  }
 }
 
 // Helper to get the sqlite3_file* associated with the "main" database.
@@ -632,6 +676,9 @@ bool Connection::Delete(const base::FilePath& path) {
   std::string wal_str = AsUTF8ForSQL(wal_path);
   std::string path_str = AsUTF8ForSQL(path);
 
+  // Make sure sqlite3_initialize() is called before anything else.
+  InitializeSqlite();
+
   sqlite3_vfs* vfs = sqlite3_vfs_find(NULL);
   CHECK(vfs);
   CHECK(vfs->xDelete);
@@ -992,7 +1039,8 @@ bool Connection::DoesColumnExist(const char* table_name,
     return false;
 
   while (statement.Step()) {
-    if (!base::strcasecmp(statement.ColumnString(1).c_str(), column_name))
+    if (base::EqualsCaseInsensitiveASCII(statement.ColumnString(1),
+                                         column_name))
       return true;
   }
   return false;
@@ -1326,7 +1374,8 @@ bool Connection::IntegrityCheckHelper(
     // it could return separate lines, so loop _and_ split.
     while (stmt.Step()) {
       std::string result(stmt.ColumnString(0));
-      base::SplitString(result, '\n', messages);
+      *messages = base::SplitString(result, "\n", base::TRIM_WHITESPACE,
+                                    base::SPLIT_WANT_ALL);
     }
     ret = stmt.Succeeded();
   }

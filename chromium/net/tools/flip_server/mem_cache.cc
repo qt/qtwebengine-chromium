@@ -19,8 +19,8 @@
 #include "base/strings/string_util.h"
 #include "net/tools/balsa/balsa_frame.h"
 #include "net/tools/balsa/balsa_headers.h"
-#include "net/tools/dump_cache/url_to_filename_encoder.h"
-#include "net/tools/dump_cache/url_utilities.h"
+#include "net/tools/flip_server/url_to_filename_encoder.h"
+#include "net/tools/flip_server/url_utilities.h"
 
 namespace {
 // The directory where cache locates);
@@ -204,7 +204,7 @@ void MemoryCache::ReadAndStoreFileContents(const char* filename) {
 
 FileData* MemoryCache::GetFileData(const std::string& filename) {
   Files::iterator fi = files_.end();
-  if (base::EndsWith(filename, ".html", true)) {
+  if (base::EndsWith(filename, ".html", base::CompareCase::SENSITIVE)) {
     fi = files_.find(filename.substr(0, filename.size() - 5) + ".http");
   }
   if (fi == files_.end())

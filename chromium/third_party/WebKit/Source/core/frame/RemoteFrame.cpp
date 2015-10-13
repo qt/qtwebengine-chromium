@@ -14,7 +14,7 @@
 #include "core/html/HTMLFrameOwnerElement.h"
 #include "core/layout/LayoutPart.h"
 #include "core/loader/FrameLoadRequest.h"
-#include "core/paint/DeprecatedPaintLayer.h"
+#include "core/paint/PaintLayer.h"
 #include "platform/PluginScriptForbiddenScope.h"
 #include "platform/UserGestureIndicator.h"
 #include "platform/graphics/GraphicsLayer.h"
@@ -44,6 +44,7 @@ RemoteFrame::~RemoteFrame()
 DEFINE_TRACE(RemoteFrame)
 {
     visitor->trace(m_view);
+    visitor->trace(m_securityContext);
     visitor->trace(m_domWindow);
     visitor->trace(m_windowProxyManager);
     Frame::trace(visitor);
@@ -62,20 +63,20 @@ WindowProxy* RemoteFrame::windowProxy(DOMWrapperWorld& world)
     return windowProxy;
 }
 
-void RemoteFrame::navigate(Document& originDocument, const KURL& url, bool lockBackForwardList, UserGestureStatus userGestureStatus)
+void RemoteFrame::navigate(Document& originDocument, const KURL& url, bool replaceCurrentItem, UserGestureStatus userGestureStatus)
 {
     // The process where this frame actually lives won't have sufficient information to determine
     // correct referrer, since it won't have access to the originDocument. Set it now.
     ResourceRequest request(url);
     request.setHTTPReferrer(SecurityPolicy::generateReferrer(originDocument.referrerPolicy(), url, originDocument.outgoingReferrer()));
     request.setHasUserGesture(userGestureStatus == UserGestureStatus::Active);
-    remoteFrameClient()->navigate(request, lockBackForwardList);
+    remoteFrameClient()->navigate(request, replaceCurrentItem);
 }
 
 void RemoteFrame::navigate(const FrameLoadRequest& passedRequest)
 {
     UserGestureStatus gesture = UserGestureIndicator::processingUserGesture() ? UserGestureStatus::Active : UserGestureStatus::None;
-    navigate(*passedRequest.originDocument(), passedRequest.resourceRequest().url(), passedRequest.lockBackForwardList(), gesture);
+    navigate(*passedRequest.originDocument(), passedRequest.resourceRequest().url(), passedRequest.replacesCurrentItem(), gesture);
 }
 
 void RemoteFrame::reload(FrameLoadType frameLoadType, ClientRedirectPolicy clientRedirectPolicy)
@@ -132,6 +133,11 @@ void RemoteFrame::forwardInputEvent(Event* event)
     remoteFrameClient()->forwardInputEvent(event);
 }
 
+void RemoteFrame::frameRectsChanged(const IntRect& frameRect)
+{
+    remoteFrameClient()->frameRectsChanged(frameRect);
+}
+
 void RemoteFrame::setView(PassRefPtrWillBeRawPtr<RemoteFrameView> view)
 {
     // Oilpan: as RemoteFrameView performs no finalization actions,
@@ -180,8 +186,6 @@ void RemoteFrame::setRemotePlatformLayer(WebLayer* layer)
 
     ASSERT(owner());
     toHTMLFrameOwnerElement(owner())->setNeedsCompositingUpdate();
-    if (LayoutPart* layoutObject = ownerLayoutObject())
-        layoutObject->layer()->updateSelfPaintingLayer();
 }
 
 } // namespace blink

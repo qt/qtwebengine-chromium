@@ -6,6 +6,8 @@
  * important as there are some rules with equal specificity that rely on order
  * as a tiebreaker. These are marked with OVERRIDE. */
 
+@import url(action_link.css);
+
 /* Default state **************************************************************/
 
 :-webkit-any(button,
@@ -239,34 +241,6 @@ input:disabled:-webkit-any([type='password'],
   /* We use border color because it follows the border radius (unlike outline).
    * This is particularly noticeable on mac. */
   border-color: rgb(77, 144, 254);
-  outline: none;
-}
-
-/* Action links ***************************************************************/
-
-[is='action-link'] {
-  cursor: pointer;
-  display: inline-block;
-  text-decoration: none;
-}
-
-[is='action-link']:hover {
-  text-decoration: underline;
-}
-
-[is='action-link']:active {
-  color: rgb(5, 37, 119);
-  text-decoration: underline;
-}
-
-[is='action-link'][disabled] {
-  color: #999;
-  cursor: default;
-  pointer-events: none;
-  text-decoration: none;
-}
-
-[is='action-link'].no-outline {
   outline: none;
 }
 

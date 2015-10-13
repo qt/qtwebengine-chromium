@@ -47,11 +47,14 @@ def fake_sys(platform_str='darwin', windows_version_tuple=None):
     return FakeSysModule()
 
 
-def fake_platform(mac_version_string='10.6.3', release_string='bar'):
+def fake_platform(mac_version_string='10.6.3', release_string='bar', linux_version='trusty'):
 
     class FakePlatformModule(object):
         def mac_ver(self):
             return tuple([mac_version_string, tuple(['', '', '']), 'i386'])
+
+        def linux_distribution(self):
+            return tuple([None, None, linux_version])
 
         def platform(self):
             return 'foo'
@@ -142,19 +145,35 @@ class TestPlatformInfo(unittest.TestCase):
         self.assertEqual(self.make_info(fake_sys('darwin'), fake_platform('10.10.0')).os_version, 'yosemite')
         self.assertEqual(self.make_info(fake_sys('darwin'), fake_platform('10.11.0')).os_version, 'future')
 
-        self.assertEqual(self.make_info(fake_sys('linux2')).os_version, 'lucid')
+        self.assertEqual(self.make_info(fake_sys('linux2')).os_version, 'trusty')
+        info = self.make_info(fake_sys('linux2'), fake_platform(linux_version='precise'))
+        self.assertEqual(info.os_version, 'precise')
+        info = self.make_info(fake_sys('linux2'), fake_platform(linux_version='utopic'))
+        self.assertEqual(info.os_version, 'trusty')
 
         self.assertEqual(self.make_info(fake_sys('freebsd8'), fake_platform('', '8.3-PRERELEASE')).os_version, '8.3-PRERELEASE')
         self.assertEqual(self.make_info(fake_sys('freebsd9'), fake_platform('', '9.0-RELEASE')).os_version, '9.0-RELEASE')
 
         self.assertRaises(AssertionError, self.make_info, fake_sys('win32', tuple([5, 0, 1234])))
-        self.assertEqual(self.make_info(fake_sys('win32', tuple([6, 2, 1234]))).os_version, 'future')
+        self.assertRaises(AssertionError, self.make_info, fake_sys('win32', tuple([6, 1, 1234])))
+        self.assertEqual(self.make_info(fake_sys('win32', tuple([10, 1, 1234]))).os_version, 'future')
+        self.assertEqual(self.make_info(fake_sys('win32', tuple([10, 0, 1234]))).os_version, '10')
+        self.assertEqual(self.make_info(fake_sys('win32', tuple([6, 3, 1234]))).os_version, '8.1')
+        self.assertEqual(self.make_info(fake_sys('win32', tuple([6, 2, 1234]))).os_version, '8')
+        self.assertEqual(self.make_info(fake_sys('win32', tuple([6, 1, 7601]))).os_version, '7sp1')
         self.assertEqual(self.make_info(fake_sys('win32', tuple([6, 1, 7600]))).os_version, '7sp0')
         self.assertEqual(self.make_info(fake_sys('win32', tuple([6, 0, 1234]))).os_version, 'vista')
         self.assertEqual(self.make_info(fake_sys('win32', tuple([5, 1, 1234]))).os_version, 'xp')
 
-        self.assertRaises(AssertionError, self.make_info, fake_sys('win32'), executive=fake_executive('5.0.1234'))
-        self.assertEqual(self.make_info(fake_sys('cygwin'), executive=fake_executive('6.2.1234')).os_version, 'future')
+        self.assertRaises(AssertionError, self.make_info, fake_sys('win32'),
+                          executive=fake_executive('5.0.1234'))
+        self.assertRaises(AssertionError, self.make_info, fake_sys('win32'),
+                          executive=fake_executive('6.1.1234'))
+        self.assertEqual(self.make_info(fake_sys('cygwin'), executive=fake_executive('10.1.1234')).os_version, 'future')
+        self.assertEqual(self.make_info(fake_sys('cygwin'), executive=fake_executive('10.0.1234')).os_version, '10')
+        self.assertEqual(self.make_info(fake_sys('cygwin'), executive=fake_executive('6.3.1234')).os_version, '8.1')
+        self.assertEqual(self.make_info(fake_sys('cygwin'), executive=fake_executive('6.2.1234')).os_version, '8')
+        self.assertEqual(self.make_info(fake_sys('cygwin'), executive=fake_executive('6.1.7601')).os_version, '7sp1')
         self.assertEqual(self.make_info(fake_sys('cygwin'), executive=fake_executive('6.1.7600')).os_version, '7sp0')
         self.assertEqual(self.make_info(fake_sys('cygwin'), executive=fake_executive('6.0.1234')).os_version, 'vista')
         self.assertEqual(self.make_info(fake_sys('cygwin'), executive=fake_executive('5.1.1234')).os_version, 'xp')

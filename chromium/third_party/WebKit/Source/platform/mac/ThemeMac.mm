@@ -30,6 +30,7 @@
 #import "platform/graphics/GraphicsContextStateSaver.h"
 #import "platform/mac/BlockExceptions.h"
 #import "platform/mac/LocalCurrentGraphicsContext.h"
+#import "platform/mac/VersionUtilMac.h"
 #import "platform/mac/WebCoreNSCellExtras.h"
 #import "platform/scroll/ScrollableArea.h"
 #include "wtf/StdLibExtras.h"
@@ -53,18 +54,6 @@
 - (BOOL)_automaticFocusRingDisabled
 {
     return YES;
-}
-
-@end
-
-@implementation NSFont (WebCoreTheme)
-
-- (NSString*)webCoreFamilyName
-{
-    if ([[self familyName] hasPrefix:@"."])
-        return [self fontName];
-
-    return [self familyName];
 }
 
 @end
@@ -214,20 +203,16 @@ IntRect ThemeMac::inflateRectForAA(const IntRect& rect) {
 
 // static
 IntRect ThemeMac::inflateRectForFocusRing(const IntRect& rect) {
-    if (ThemeMac::drawWithFrameDrawsFocusRing()) {
-        // Just put a margin of 16 units around the rect. The UI elements that use this don't appropriately
-        // scale their focus rings appropriately (e.g, paint pickers), or switch to non-native widgets when
-        // scaled (e.g, check boxes and radio buttons).
-        const int margin = 16;
-        IntRect result;
-        result.setX(rect.x() - margin);
-        result.setY(rect.y() - margin);
-        result.setWidth(rect.width() + 2 * margin);
-        result.setHeight(rect.height() + 2 * margin);
-        return result;
-    } else {
-        return rect;
-    }
+    // Just put a margin of 16 units around the rect. The UI elements that use this don't appropriately
+    // scale their focus rings appropriately (e.g, paint pickers), or switch to non-native widgets when
+    // scaled (e.g, check boxes and radio buttons).
+    const int margin = 16;
+    IntRect result;
+    result.setX(rect.x() - margin);
+    result.setY(rect.y() - margin);
+    result.setWidth(rect.width() + 2 * margin);
+    result.setHeight(rect.height() + 2 * margin);
+    return result;
 }
 
 // Checkboxes
@@ -562,7 +547,7 @@ FontDescription ThemeMac::controlFont(ControlPart part, const FontDescription& f
             result.setGenericFamily(FontDescription::SerifFamily);
 
             NSFont* nsFont = [NSFont systemFontOfSize:[NSFont systemFontSizeForControlSize:controlSizeForFont(fontDescription)]];
-            result.firstFamily().setFamily([nsFont webCoreFamilyName]);
+            result.firstFamily().setFamily(@"BlinkMacSystemFont");
             result.setComputedSize([nsFont pointSize] * zoomFactor);
             result.setSpecifiedSize([nsFont pointSize] * zoomFactor);
             return result;
@@ -712,14 +697,17 @@ void ThemeMac::paint(ControlPart part, ControlStates states, GraphicsContext* co
     }
 }
 
-#ifndef NSAppKitVersionNumber10_9
-#define NSAppKitVersionNumber10_9 1265
-#endif
-
 bool ThemeMac::drawWithFrameDrawsFocusRing()
 {
-    // drawWithFrame has changed in 10.10 Yosemite and it does not draw the focus ring.
-    return floor(NSAppKitVersionNumber) <= NSAppKitVersionNumber10_9;
+#if defined(MAC_OS_X_VERSION_10_8) && MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_10_8
+// If compiling against an OSX 10.8+ SDK, only 10.7 and older OSes will draw a
+// focus ring with the frame.
+    return IsOSLionOrEarlier();
+#else
+// If compiling an OSX 10.7 or older SDK, OSes up through 10.9 will draw a focus
+// ring with the frame.
+    return IsOSMavericksOrEarlier();
+#endif
 }
 
 }

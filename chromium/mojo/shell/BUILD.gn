@@ -8,32 +8,31 @@ import("//testing/test.gni")
 source_set("shell") {
   output_name = "mojo_shell"
   sources = [
+    "application_instance.cc",
+    "application_instance.h",
     "application_loader.h",
     "application_manager.cc",
     "application_manager.h",
-    "content_handler_connection.cc",
-    "content_handler_connection.h",
+    "capability_filter.cc",
+    "capability_filter.h",
+    "connect_to_application_params.cc",
+    "connect_to_application_params.h",
+    "connect_util.cc",
+    "connect_util.h",
     "data_pipe_peek.cc",
     "data_pipe_peek.h",
     "fetcher.cc",
     "fetcher.h",
     "identity.cc",
     "identity.h",
-    "local_fetcher.cc",
-    "local_fetcher.h",
     "native_runner.h",
-    "network_fetcher.cc",
-    "network_fetcher.h",
+    "package_manager.h",
     "query_util.cc",
     "query_util.h",
-    "shell_impl.cc",
-    "shell_impl.h",
     "static_application_loader.cc",
     "static_application_loader.h",
     "switches.cc",
     "switches.h",
-    "update_fetcher.cc",
-    "update_fetcher.h",
   ]
 
   public_deps = [
@@ -48,6 +47,7 @@ source_set("shell") {
   deps = [
     "//base/third_party/dynamic_annotations",
     "//crypto:crypto",
+    "//mojo/application/public/cpp:sources",
     "//url",
     "//third_party/mojo/src/mojo/edk/system",
     "//mojo/environment:chromium",
@@ -55,15 +55,35 @@ source_set("shell") {
   ]
 }
 
+source_set("test_support") {
+  testonly = true
+  sources = [
+    "capability_filter_test.cc",
+    "capability_filter_test.h",
+    "test_package_manager.cc",
+    "test_package_manager.h",
+  ]
+
+  deps = [
+    ":shell",
+    ":test_bindings",
+    "//mojo/application/public/cpp",
+    "//mojo/application/public/interfaces",
+    "//testing/gtest",
+  ]
+}
+
 test("mojo_shell_unittests") {
   sources = [
     "application_manager_unittest.cc",
+    "capability_filter_unittest.cc",
     "query_util_unittest.cc",
   ]
 
   deps = [
     ":shell",
     ":test_bindings",
+    ":test_support",
     "//base",
     "//mojo/application/public/cpp",
     "//third_party/mojo/src/mojo/edk/test:run_all_unittests",
@@ -74,6 +94,7 @@ test("mojo_shell_unittests") {
 
 mojom("test_bindings") {
   sources = [
+    "capability_filter_unittest.mojom",
     "test.mojom",
   ]
 }

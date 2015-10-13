@@ -11,6 +11,7 @@
 
 #include "base/callback.h"
 #include "base/compiler_specific.h"
+#include "base/gtest_prod_util.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/process/kill.h"
@@ -114,8 +115,8 @@ class CONTENT_EXPORT RenderViewHostImpl
   RenderViewHostImpl(SiteInstance* instance,
                      RenderViewHostDelegate* delegate,
                      RenderWidgetHostDelegate* widget_delegate,
-                     int routing_id,
-                     int main_frame_routing_id,
+                     int32 routing_id,
+                     int32 main_frame_routing_id,
                      bool swapped_out,
                      bool hidden,
                      bool has_initialized_audio_host);
@@ -184,6 +185,7 @@ class CONTENT_EXPORT RenderViewHostImpl
 #endif
 
   // RenderProcessHostObserver implementation
+  void RenderProcessReady(RenderProcessHost* host) override;
   void RenderProcessExited(RenderProcessHost* host,
                            base::TerminationStatus status,
                            int exit_code) override;
@@ -220,6 +222,16 @@ class CONTENT_EXPORT RenderViewHostImpl
   bool is_active() const { return is_active_; }
   void set_is_active(bool is_active) { is_active_ = is_active; }
 
+  // Tracks whether this RenderViewHost is pending deletion.  This is tracked
+  // separately from the main frame pending deletion state, because the
+  // RenderViewHost's main frame is cleared when the main frame's
+  // RenderFrameHost is marked for deletion.
+  //
+  // TODO(nasko,alexmos): This should not be necessary once swapped-out is
+  // removed.
+  bool is_pending_deletion() const { return is_pending_deletion_; }
+  void set_pending_deletion() { is_pending_deletion_ = true; }
+
   // Tracks whether this RenderViewHost is swapped out, according to its main
   // frame RenderFrameHost.
   void set_is_swapped_out(bool is_swapped_out) {
@@ -246,18 +258,6 @@ class CONTENT_EXPORT RenderViewHostImpl
 
   // Tells the renderer view to focus the first (last if reverse is true) node.
   void SetInitialFocus(bool reverse);
-
-  // Get html data by serializing all frames of current page with lists
-  // which contain all resource links that have local copy.
-  // The parameter links contain original URLs of all saved links.
-  // The parameter local_paths contain corresponding local file paths of
-  // all saved links, which matched with vector:links one by one.
-  // The parameter local_directory_name is relative path of directory which
-  // contain all saved auxiliary files included all sub frames and resouces.
-  void GetSerializedHtmlDataForCurrentPageWithLocalLinks(
-      const std::vector<GURL>& links,
-      const std::vector<base::FilePath>& local_paths,
-      const base::FilePath& local_directory_name);
 
   // Notifies the RenderViewHost that its load state changed.
   void LoadStateChanged(const GURL& url,
@@ -294,14 +294,12 @@ class CONTENT_EXPORT RenderViewHostImpl
 
   // Creates a new RenderWidget with the given route id.  |popup_type| indicates
   // if this widget is a popup and what kind of popup it is (select, autofill).
-  void CreateNewWidget(int route_id, blink::WebPopupType popup_type);
+  void CreateNewWidget(int32 route_id,
+                       blink::WebPopupType popup_type);
 
   // Creates a full screen RenderWidget.
-  void CreateNewFullscreenWidget(int route_id);
+  void CreateNewFullscreenWidget(int32 route_id);
 
-  int main_frame_routing_id() const {
-    return main_frame_routing_id_;
-  }
   void set_main_frame_routing_id(int routing_id) {
     main_frame_routing_id_ = routing_id;
   }
@@ -321,6 +319,11 @@ class CONTENT_EXPORT RenderViewHostImpl
   // Returns the refcount on this RVH, that is the number of RenderFrameHosts
   // currently using it.
   int ref_count() { return frames_ref_count_; }
+
+  // TODO(avi): Move to RenderFrameHost once PageState is broken up into
+  // FrameStates.
+  int nav_entry_id() const { return nav_entry_id_; }
+  void set_nav_entry_id(int nav_entry_id) { nav_entry_id_ = nav_entry_id; }
 
   // NOTE: Do not add functions that just send an IPC message that are called in
   // one or two places. Have the caller send the IPC message directly (unless
@@ -347,7 +350,6 @@ class CONTENT_EXPORT RenderViewHostImpl
                   bool user_gesture);
   void OnShowWidget(int route_id, const gfx::Rect& initial_rect);
   void OnShowFullscreenWidget(int route_id);
-  void OnRenderViewReady();
   void OnRenderProcessGone(int status, int error_code);
   void OnUpdateState(int32 page_id, const PageState& state);
   void OnUpdateTargetURL(const GURL& url);
@@ -363,7 +365,6 @@ class CONTENT_EXPORT RenderViewHostImpl
                        const gfx::Vector2d& bitmap_offset_in_dip,
                        const DragEventSourceInfo& event_info);
   void OnUpdateDragCursor(blink::WebDragOperation drag_operation);
-  void OnTargetDropACK();
   void OnTakeFocus(bool reverse);
   void OnFocusedNodeChanged(bool is_editable_node,
                             const gfx::Rect& node_bounds_in_viewport);
@@ -383,6 +384,10 @@ class CONTENT_EXPORT RenderViewHostImpl
   FRIEND_TEST_ALL_PREFIXES(RenderViewHostTest, RoutingIdSane);
   FRIEND_TEST_ALL_PREFIXES(RenderFrameHostManagerTest,
                            CleanUpSwappedOutRVHOnProcessCrash);
+  // Send RenderViewReady to observers once the process is launched, but not
+  // re-entrantly.
+  void PostRenderViewReady();
+  void RenderViewReady();
 
   // TODO(creis): Move to a private namespace on RenderFrameHostImpl.
   // Delay to wait on closing the WebContents for a beforeunload/unload handler
@@ -429,10 +434,18 @@ class CONTENT_EXPORT RenderViewHostImpl
   // TODO(creis): Allocate this in WebContents/NavigationController instead.
   int32 page_id_;
 
+  // The unique ID of the latest NavigationEntry that this RenderViewHost is
+  // showing. TODO(avi): Move to RenderFrameHost once PageState is broken up
+  // into FrameStates.
+  int nav_entry_id_;
+
   // Tracks whether this RenderViewHost is in an active state.  False if the
   // main frame is pending swap out, pending deletion, or swapped out, because
   // it is not visible to the user in any of these cases.
   bool is_active_;
+
+  // True if this RenderViewHost is pending deletion.
+  bool is_pending_deletion_;
 
   // Tracks whether the main frame RenderFrameHost is swapped out.  Unlike
   // is_active_, this is false when the frame is pending swap out or deletion.
@@ -466,6 +479,8 @@ class CONTENT_EXPORT RenderViewHostImpl
   scoped_ptr<WebPreferences> web_preferences_;
 
   bool updating_web_preferences_;
+
+  bool render_view_ready_on_process_launch_;
 
   base::WeakPtrFactory<RenderViewHostImpl> weak_factory_;
 

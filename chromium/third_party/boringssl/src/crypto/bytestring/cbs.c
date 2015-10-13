@@ -137,6 +137,15 @@ int CBS_get_bytes(CBS *cbs, CBS *out, size_t len) {
   return 1;
 }
 
+int CBS_copy_bytes(CBS *cbs, uint8_t *out, size_t len) {
+  const uint8_t *v;
+  if (!cbs_get(cbs, &v, len)) {
+    return 0;
+  }
+  memcpy(out, v, len);
+  return 1;
+}
+
 static int cbs_get_length_prefixed(CBS *cbs, CBS *out, size_t len_len) {
   uint32_t len;
   if (!cbs_get_u(cbs, &len, len_len)) {
@@ -320,14 +329,19 @@ int CBS_get_asn1_uint64(CBS *cbs, uint64_t *out) {
 }
 
 int CBS_get_optional_asn1(CBS *cbs, CBS *out, int *out_present, unsigned tag) {
+  int present = 0;
+
   if (CBS_peek_asn1_tag(cbs, tag)) {
     if (!CBS_get_asn1(cbs, out, tag)) {
       return 0;
     }
-    *out_present = 1;
-  } else {
-    *out_present = 0;
+    present = 1;
   }
+
+  if (out_present != NULL) {
+    *out_present = present;
+  }
+
   return 1;
 }
 

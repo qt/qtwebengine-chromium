@@ -5,10 +5,13 @@
 /* We introduce a wrapper aligner element as setting the relevant attributes
  * (horizontal justified layout center) have no effect on the core-toolbar. */
 #aligner {
+  padding: 0 16px;
   width: 100%;
 }
 
 #title {
+  font-size: 77.8%;
+  font-weight: 500;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -23,37 +26,32 @@
 }
 
 #buttons {
-  text-align: right;
+  -webkit-user-select: none;
+  text-align: end;
 }
 
-#buttons > paper-icon-button {
-  margin-right: 8px;
+paper-icon-button {
+  -webkit-margin-end: 12px;
 }
 
 viewer-toolbar-dropdown {
-  margin-right: 4px;
+  -webkit-margin-end: 4px;
 }
 
 paper-progress {
-  height: 56px;
-  position: absolute;
+  --paper-progress-active-color: var(--google-blue-300);
+  --paper-progress-container-color: transparent;
+  --paper-progress-height: 3px;
+  transition: opacity 150ms;
   width: 100%;
-  z-index: 3;
-}
-
-paper-progress {
-  --paper-progress-active-color: rgb(50, 54, 57);
-  --paper-progress-container-color: rgb(34, 36, 38);
 }
 
 paper-toolbar {
-  background-color: transparent;
+  --paper-toolbar-background: rgb(50, 54, 57);
+  @apply(--shadow-elevation-2dp);
   color: rgb(241, 241, 241);
   font-size: 1.5em;
-  height: 56px;
-  padding-left: 1em;
-  padding-right: 1em;
-  z-index: 3;
+  height: 48px;
 }
 
 paper-toolbar /deep/ ::selection {
@@ -61,9 +59,33 @@ paper-toolbar /deep/ ::selection {
 }
 
 paper-toolbar /deep/ .toolbar-tools {
-  height: 56px;
+  height: 48px;
 }
 
 .invisible {
   visibility: hidden;
+}
+
+@media(max-width: 675px) {
+  #bookmarks,
+  #rotate-left {
+    display: none;
+  }
+
+  #pageselector-container {
+    flex: 2;
+  }
+}
+
+@media(max-width: 450px) {
+  #rotate-right {
+    display: none;
+  }
+}
+
+@media(max-width: 400px) {
+  #buttons,
+  #pageselector-container {
+    display: none;
+  }
 }

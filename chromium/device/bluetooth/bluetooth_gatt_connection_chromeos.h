@@ -9,9 +9,9 @@
 
 #include "base/callback.h"
 #include "base/memory/weak_ptr.h"
-#include "chromeos/dbus/bluetooth_device_client.h"
 #include "dbus/object_path.h"
 #include "device/bluetooth/bluetooth_gatt_connection.h"
+#include "device/bluetooth/dbus/bluetooth_device_client.h"
 
 namespace device {
 
@@ -25,7 +25,7 @@ namespace chromeos {
 // Chrome OS platform.
 class BluetoothGattConnectionChromeOS
     : public device::BluetoothGattConnection,
-      public BluetoothDeviceClient::Observer {
+      public bluez::BluetoothDeviceClient::Observer {
  public:
   explicit BluetoothGattConnectionChromeOS(
       scoped_refptr<device::BluetoothAdapter> adapter,
@@ -34,25 +34,17 @@ class BluetoothGattConnectionChromeOS
   ~BluetoothGattConnectionChromeOS() override;
 
   // BluetoothGattConnection overrides.
-  std::string GetDeviceAddress() const override;
   bool IsConnected() override;
-  void Disconnect(const base::Closure& callback) override;
+  void Disconnect() override;
 
  private:
-
-  // chromeos::BluetoothDeviceClient::Observer overrides.
+  // bluez::Bluetooth$1Client::Observer overrides.
   void DeviceRemoved(const dbus::ObjectPath& object_path) override;
   void DevicePropertyChanged(const dbus::ObjectPath& object_path,
                              const std::string& property_name) override;
 
   // True, if the connection is currently active.
   bool connected_;
-
-  // The Bluetooth adapter that this connection is associated with.
-  scoped_refptr<device::BluetoothAdapter> adapter_;
-
-  // Bluetooth address of the underlying device.
-  std::string device_address_;
 
   // D-Bus object path of the underlying device. This is used to filter observer
   // events.

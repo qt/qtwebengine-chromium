@@ -46,11 +46,11 @@ protected:
         return SkIPoint::Make(640, 100);
     }
 
-    void onPreDraw() override {
+    void onDelayedSetup() override {
         make_path(fPath);
     }
 
-    void onDraw(const int loops, SkCanvas* canvas) override {
+    void onDraw(int loops, SkCanvas* canvas) override {
         SkPaint paint;
         paint.setAntiAlias(true);
         paint.setStyle(SkPaint::kStroke_Style);

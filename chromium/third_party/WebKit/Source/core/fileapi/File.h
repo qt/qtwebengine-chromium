@@ -68,6 +68,8 @@ public:
         return new File(name, modificationTime, blobDataHandle);
     }
 
+    static File* create(const char* data, size_t bytes, const String& mimeType);
+
     // For deserialization.
     static File* createFromSerialization(const String& path, const String& name, const String& relativePath, UserVisibility userVisibility, bool hasSnaphotData, uint64_t size, double lastModified, PassRefPtr<BlobDataHandle> blobDataHandle)
     {
@@ -112,17 +114,17 @@ public:
 
     File* clone(const String& name = String()) const;
 
-    virtual unsigned long long size() const override;
-    virtual Blob* slice(long long start, long long end, const String& contentType, ExceptionState&) const override;
-    virtual void close(ExecutionContext*, ExceptionState&) override;
+    unsigned long long size() const override;
+    Blob* slice(long long start, long long end, const String& contentType, ExceptionState&) const override;
+    void close(ExecutionContext*, ExceptionState&) override;
 
-    virtual bool isFile() const override { return true; }
-    virtual bool hasBackingFile() const override { return m_hasBackingFile; }
+    bool isFile() const override { return true; }
+    bool hasBackingFile() const override { return m_hasBackingFile; }
 
-    virtual void appendTo(BlobData&) const override;
+    void appendTo(BlobData&) const override;
 
     const String& path() const { ASSERT(hasValidFilePath()); return m_path; }
-    const String name() const { return m_name; }
+    const String& name() const { return m_name; }
 
     // Getter for the lastModified IDL attribute,
     // http://dev.w3.org/2006/webapi/FileAPI/#file-attrs

@@ -229,6 +229,7 @@ executable("demo") {
     ":aura",
     ":test_support",
     "//base",
+    "//build/config/sanitizers:deps",
     "//base:i18n",
     "//skia",
     "//third_party/icu",
@@ -258,6 +259,7 @@ executable("bench") {
     ":test_support",
     "//base",
     "//base:i18n",
+    "//build/config/sanitizers:deps",
     "//cc",
     "//gpu/command_buffer/client:gles2_interface",
     "//skia",
@@ -274,6 +276,15 @@ executable("bench") {
   if (use_x11) {
     deps += [ "//ui/gfx/x" ]
   }
+}
+
+# TODO(GYP): Delete this after we've converted everything to GN.
+# The _run targets exist only for compatibility w/ GYP.
+group("aura_unittests_run") {
+  testonly = true
+  deps = [
+    ":aura_unittests",
+  ]
 }
 
 test("aura_unittests") {
@@ -303,4 +314,6 @@ test("aura_unittests") {
   if (is_linux) {
     deps += [ "//third_party/mesa" ]
   }
+
+  data_deps = [ "//third_party/mesa:osmesa" ]
 }

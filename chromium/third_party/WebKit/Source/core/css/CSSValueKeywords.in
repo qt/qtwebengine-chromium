@@ -542,9 +542,9 @@ min-intrinsic
 -webkit-max-content
 -webkit-fill-available
 -webkit-fit-content
-// Unprefixed for CSS Grid Layout.
 min-content
 max-content
+fit-content
 
 //
 // text-overflow
@@ -818,12 +818,6 @@ sideways-right
 upright
 vertical-right
 
-// -webkit-line-box-contain
-font
-glyphs
-inline-box
-replaced
-
 // -webkit-font-feature-settings
 on
 off
@@ -849,6 +843,9 @@ fullscreen
 standalone
 minimal-ui
 browser
+
+// position
+sticky
 
 // (pointer:) media feature
 // none
@@ -922,12 +919,6 @@ markers
 // isolation
 // auto
 isolate
-
-// scroll-blocks-on
-// none
-start-touch
-wheel-event
-scroll-event
 
 // touch-action
 pan-x
@@ -1055,3 +1046,4 @@ calc
 // none
 mandatory
 proximity
+from-image

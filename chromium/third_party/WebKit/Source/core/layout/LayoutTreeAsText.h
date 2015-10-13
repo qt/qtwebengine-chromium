@@ -28,12 +28,13 @@
 
 #include "core/CoreExport.h"
 #include "platform/text/TextStream.h"
+#include "wtf/Allocator.h"
 #include "wtf/Forward.h"
 
 namespace blink {
 
 class Color;
-class DeprecatedPaintLayer;
+class PaintLayer;
 class Element;
 class LayoutRect;
 class LocalFrame;
@@ -62,12 +63,13 @@ CORE_EXPORT String externalRepresentation(Element*, LayoutAsTextBehavior = Layou
 void write(TextStream&, const LayoutObject&, int indent = 0, LayoutAsTextBehavior = LayoutAsTextBehaviorNormal);
 
 class LayoutTreeAsText {
+    STATIC_ONLY(LayoutTreeAsText);
 // FIXME: This is a cheesy hack to allow easy access to ComputedStyle colors.  It won't be needed if we convert
 // it to use visitedDependentColor instead. (This just involves rebaselining many results though, so for now it's
 // not being done).
 public:
 static void writeLayoutObject(TextStream&, const LayoutObject&, LayoutAsTextBehavior);
-static void writeLayers(TextStream&, const DeprecatedPaintLayer* rootLayer, DeprecatedPaintLayer*, const LayoutRect& paintDirtyRect, int indent = 0, LayoutAsTextBehavior = LayoutAsTextBehaviorNormal);
+static void writeLayers(TextStream&, const PaintLayer* rootLayer, PaintLayer*, const LayoutRect& paintDirtyRect, int indent = 0, LayoutAsTextBehavior = LayoutAsTextBehaviorNormal);
 static void writeLineBoxTree(TextStream&, const LayoutBlockFlow&, int indent = 0);
 };
 

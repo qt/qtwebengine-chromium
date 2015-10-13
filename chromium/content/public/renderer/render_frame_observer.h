@@ -66,7 +66,6 @@ class CONTENT_EXPORT RenderFrameObserver : public IPC::Listener,
                                         int world_id) {}
   virtual void DidClearWindowObject() {}
   virtual void DidChangeManifest() {}
-  virtual void DidChangeDefaultPresentation() {}
   virtual void DidChangeScrollOffset() {}
   virtual void WillSendSubmitEvent(const blink::WebFormElement& form) {}
   virtual void WillSubmitForm(const blink::WebFormElement& form) {}
@@ -99,6 +98,9 @@ class CONTENT_EXPORT RenderFrameObserver : public IPC::Listener,
 
   // Called when a compositor frame has committed.
   virtual void DidCommitCompositorFrame() {}
+
+  // Notifications when |PerformanceTiming| data becomes available
+  virtual void DidChangePerformanceTiming() {}
 
   // Called when the focused node has changed to |node|.
   virtual void FocusedNodeChanged(const blink::WebNode& node) {}

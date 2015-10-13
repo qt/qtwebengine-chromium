@@ -5,8 +5,8 @@
   <include src="reset_profile_settings_banner.html">
   <include src="automatic_settings_reset_banner.html">
 <if expr="chromeos">
-  <link rel="import" href="chrome://resources/cr_elements/v1_0/cr_network_icon/cr_network_icon.html">
-  <link rel="import" href="chrome://resources/cr_elements/v1_0/cr_onc/cr_onc_types.html">
+  <link rel="import" href="chrome://resources/cr_elements/v1_0/network/cr_network_icon.html">
+  <link rel="import" href="chrome://resources/cr_elements/v1_0/network/cr_onc_types.html">
   <include src="secondary_user_banner.html">
   <section>
     <div id="network-section-header" class="section-header">
@@ -107,10 +107,6 @@
     <h3 i18n-content="sectionTitleDevice"></h3>
     <div>
       <span i18n-content="deviceGroupDescription"></span>
-      <div class="settings-row" id="power-row" hidden>
-        <a is="action-link" id="power-settings-button"
-            i18n-content="powerSettingsButton"></a>
-      </div>
       <div id="touchpad-settings" class="settings-row" hidden>
         <span class="option-name" i18n-content="touchpadSpeed"></span>
         <input id="touchpad-sensitivity-range" type="range" min="1" max="5"
@@ -134,6 +130,10 @@
           <button id="display-options" i18n-content="displayOptions" disabled>
           </button>
         </span>
+      </div>
+      <div id="power-row" hidden>
+        <a is="action-link" id="power-settings-link"
+            i18n-content="powerSettingsButton"></a>
       </div>
     </div>
   </section>
@@ -804,7 +804,8 @@
     <p id="accessibility-explanation" class="settings-row">
       <span i18n-content="accessibilityExplanation"></span>
       <a id="accessibility-learn-more" target="_blank"
-         i18n-content="learnMore"></a>
+          i18n-values="href:accessibilityLearnMoreURL"
+          i18n-content="learnMore"></a>
     </p>
     <div class="option-name">
       <div class="checkbox controlled-setting-with-label">
@@ -1006,7 +1007,11 @@
       <label>
         <input id="gpu-mode-checkbox"
             pref="hardware_acceleration_mode.enabled" type="checkbox">
-        <span i18n-content="gpuModeCheckbox">
+        <span>
+          <span i18n-content="gpuModeCheckbox"></span>
+          <span class="controlled-setting-indicator"
+              pref="hardware_acceleration_mode.enabled"></span>
+        </span>
       </label>
       <span id="gpu-mode-reset-restart"
           i18n-values=".innerHTML:gpuModeResetRestart"></span>

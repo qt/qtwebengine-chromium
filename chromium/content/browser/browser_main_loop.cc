@@ -26,6 +26,8 @@
 #include "base/timer/hi_res_timer_manager.h"
 #include "base/trace_event/memory_dump_manager.h"
 #include "base/trace_event/trace_event.h"
+#include "components/tracing/trace_config_file.h"
+#include "components/tracing/tracing_switches.h"
 #include "content/browser/browser_thread_impl.h"
 #include "content/browser/device_sensors/device_inertial_sensor_service.h"
 #include "content/browser/dom_storage/dom_storage_area.h"
@@ -67,6 +69,8 @@
 #include "net/base/network_change_notifier.h"
 #include "net/socket/client_socket_factory.h"
 #include "net/ssl/ssl_config_service.h"
+#include "ipc/mojo/scoped_ipc_support.h"
+#include "skia/ext/skia_memory_dump_provider.h"
 #include "ui/base/clipboard/clipboard.h"
 
 #if defined(USE_AURA) || (defined(OS_MACOSX) && !defined(OS_IOS))
@@ -99,12 +103,18 @@
 
 #if defined(OS_MACOSX) && !defined(OS_IOS)
 #include "base/memory/memory_pressure_monitor_mac.h"
-#include "content/browser/bootstrap_sandbox_mac.h"
+#include "content/browser/bootstrap_sandbox_manager_mac.h"
 #include "content/browser/browser_io_surface_manager_mac.h"
 #include "content/browser/cocoa/system_hotkey_helper_mac.h"
 #include "content/browser/compositor/browser_compositor_view_mac.h"
 #include "content/browser/in_process_io_surface_manager_mac.h"
 #include "content/browser/theme_helper_mac.h"
+#include "ui/accelerated_widget_mac/window_resize_helper_mac.h"
+#endif
+
+#if defined(USE_OZONE)
+#include "ui/ozone/public/client_native_pixmap_factory.h"
+#include "ui/ozone/public/ozone_platform.h"
 #endif
 
 #if defined(OS_WIN)
@@ -151,6 +161,10 @@
 #if defined(USE_X11)
 #include "ui/gfx/x/x11_connection.h"
 #include "ui/gfx/x/x11_types.h"
+#endif
+
+#if defined(USE_NSS_CERTS) || !defined(USE_OPENSSL)
+#include "crypto/nss_util.h"
 #endif
 
 // One of the linux specific headers defines this as a macro.
@@ -233,6 +247,8 @@ static void GLibLogHandler(const gchar* log_domain,
     LOG(ERROR) << message << " (http://bugs.chromium.org/329991)";
   } else if (strstr(message, "Cannot do system-bus activation with no user")) {
     LOG(ERROR) << message << " (http://crbug.com/431005)";
+  } else if (strstr(message, "deprecated")) {
+    LOG(ERROR) << message;
   } else {
     LOG(DFATAL) << log_domain << ": " << message;
   }
@@ -318,12 +334,10 @@ MSVC_ENABLE_OPTIMIZE();
 // specified on the command-line. Ownership is passed to the caller.
 base::win::MemoryPressureMonitor* CreateWinMemoryPressureMonitor(
     const base::CommandLine& parsed_command_line) {
-  std::vector<std::string> thresholds;
-  base::SplitString(
+  std::vector<std::string> thresholds = base::SplitString(
       parsed_command_line.GetSwitchValueASCII(
           switches::kMemoryPressureThresholdsMb),
-      ',',
-      &thresholds);
+      ",", base::TRIM_WHITESPACE, base::SPLIT_WANT_ALL);
 
   int moderate_threshold_mb = 0;
   int critical_threshold_mb = 0;
@@ -386,9 +400,11 @@ BrowserMainLoop::BrowserMainLoop(const MainFunctionParams& parameters)
       result_code_(RESULT_CODE_NORMAL_EXIT),
       created_threads_(false),
       // ContentMainRunner should have enabled tracing of the browser process
-      // when kTraceStartup is in the command line.
-      is_tracing_startup_(
-          parameters.command_line.HasSwitch(switches::kTraceStartup)) {
+      // when kTraceStartup or kTraceConfigFile is in the command line.
+      is_tracing_startup_for_duration_(
+          parameters.command_line.HasSwitch(switches::kTraceStartup) ||
+          (tracing::TraceConfigFile::GetInstance()->IsEnabled() &&
+           tracing::TraceConfigFile::GetInstance()->GetStartupDuration() > 0)) {
   DCHECK(!g_current_browser_main_loop);
   g_current_browser_main_loop = this;
 }
@@ -461,10 +477,10 @@ void BrowserMainLoop::EarlyInitialization() {
   net::EnsureWinsockInit();
 #endif
 
-#if !defined(USE_OPENSSL)
+#if defined(USE_NSS_CERTS) || !defined(USE_OPENSSL)
   // We want to be sure to init NSPR on the main thread.
   crypto::EnsureNSPRInit();
-#endif  // !defined(USE_OPENSSL)
+#endif
 
 #if !defined(OS_IOS)
   if (parsed_command_line_.HasSwitch(switches::kRendererProcessLimit)) {
@@ -574,9 +590,9 @@ void BrowserMainLoop::PostMainMessageLoopStart() {
   // Start tracing to a file if needed. Only do this after starting the main
   // message loop to avoid calling MessagePumpForUI::ScheduleWork() before
   // MessagePumpForUI::Start() as it will crash the browser.
-  if (is_tracing_startup_) {
-    TRACE_EVENT0("startup", "BrowserMainLoop::InitStartupTracing");
-    InitStartupTracing(parsed_command_line_);
+  if (is_tracing_startup_for_duration_) {
+    TRACE_EVENT0("startup", "BrowserMainLoop::InitStartupTracingForDuration");
+    InitStartupTracingForDuration(parsed_command_line_);
   }
 #endif  // !defined(OS_IOS)
 
@@ -611,6 +627,20 @@ void BrowserMainLoop::PostMainMessageLoopStart() {
       IOSurfaceManager::SetInstance(BrowserIOSurfaceManager::GetInstance());
     }
   }
+
+  if (BootstrapSandboxManager::ShouldEnable()) {
+    TRACE_EVENT0("startup",
+                 "BrowserMainLoop::Subsystem:BootstrapSandbox");
+    CHECK(BootstrapSandboxManager::GetInstance());
+  }
+#endif
+
+#if defined(USE_OZONE)
+  client_native_pixmap_factory_ = ui::ClientNativePixmapFactory::Create();
+  ui::ClientNativePixmapFactory::SetInstance(
+      client_native_pixmap_factory_.get());
+  ui::ClientNativePixmapFactory::GetInstance()->Initialize(
+      ui::OzonePlatform::GetInstance()->OpenClientNativePixmapDevice());
 #endif
 
   if (parsed_command_line_.HasSwitch(switches::kMemoryMetrics)) {
@@ -626,11 +656,11 @@ void BrowserMainLoop::PostMainMessageLoopStart() {
     DOMStorageArea::EnableAggressiveCommitDelay();
   }
 
-  base::trace_event::MemoryDumpManager::GetInstance()->Initialize();
-
-  // Enable the dump providers.
+  // Enable memory-infra dump providers.
   base::trace_event::MemoryDumpManager::GetInstance()->RegisterDumpProvider(
       HostSharedBitmapManager::current());
+  base::trace_event::MemoryDumpManager::GetInstance()->RegisterDumpProvider(
+      skia::SkiaMemoryDumpProvider::GetInstance());
 
 #if defined(TCMALLOC_TRACE_MEMORY_SUPPORTED)
   trace_memory_controller_.reset(new base::trace_event::TraceMemoryController(
@@ -641,14 +671,6 @@ void BrowserMainLoop::PostMainMessageLoopStart() {
 }
 
 int BrowserMainLoop::PreCreateThreads() {
-  // Need to initialize in-process GpuDataManager before creating threads.
-  // It's unsafe to append the gpu command line switches to the global
-  // CommandLine::ForCurrentProcess object after threads are created.
-  // Also need to initialize before BrowserMainParts::PreCreateThreads, so
-  // BrowserMainParts has a hook to set GpuDataManager strings before
-  // starting Gpu process.
-  GpuDataManagerImpl::GetInstance()->Initialize();
-
   if (parts_) {
     TRACE_EVENT0("startup",
         "BrowserMainLoop::CreateThreads:PreCreateThreads");
@@ -690,6 +712,19 @@ int BrowserMainLoop::PreCreateThreads() {
     AVFoundationGlue::InitializeAVFoundation();
   }
 #endif
+
+#if defined(OS_MACOSX) && !defined(OS_IOS)
+  // The WindowResizeHelper allows the UI thread to wait on specific renderer
+  // and GPU messages from the IO thread. Initializing it before the IO thread
+  // starts ensures the affected IO thread messages always have somewhere to go.
+  ui::WindowResizeHelperMac::Get()->Init(base::ThreadTaskRunnerHandle::Get());
+#endif
+
+  // 1) Need to initialize in-process GpuDataManager before creating threads.
+  // It's unsafe to append the gpu command line switches to the global
+  // CommandLine::ForCurrentProcess object after threads are created.
+  // 2) Must be after parts_->PreCreateThreads to pick up chrome://flags.
+  GpuDataManagerImpl::GetInstance()->Initialize();
 
 #if !defined(OS_IOS) && (!defined(GOOGLE_CHROME_BUILD) || defined(OS_ANDROID))
   // Single-process is an unsupported and not fully tested mode, so
@@ -897,6 +932,7 @@ void BrowserMainLoop::ShutdownThreadsAndCleanUp() {
       base::Bind(base::IgnoreResult(&base::ThreadRestrictions::SetIOAllowed),
                  true));
 
+  mojo_ipc_support_.reset();
   mojo_shell_context_.reset();
 
 #if !defined(OS_IOS)
@@ -909,6 +945,10 @@ void BrowserMainLoop::ShutdownThreadsAndCleanUp() {
                  "BrowserMainLoop::Subsystem:PostMainMessageLoopRun");
     parts_->PostMainMessageLoopRun();
   }
+
+#if defined(USE_AURA)
+  aura::Env::DeleteInstance();
+#endif
 
   trace_memory_controller_.reset();
   system_stats_monitor_.reset();
@@ -1063,10 +1103,12 @@ void BrowserMainLoop::ShutdownThreadsAndCleanUp() {
     TRACE_EVENT0("shutdown", "BrowserMainLoop::Subsystem:SensorService");
     DeviceInertialSensorService::GetInstance()->Shutdown();
   }
+#if !defined(OS_ANDROID)
   {
     TRACE_EVENT0("shutdown", "BrowserMainLoop::Subsystem:BatteryStatusService");
     device::BatteryStatusService::GetInstance()->Shutdown();
   }
+#endif
   {
     TRACE_EVENT0("shutdown", "BrowserMainLoop::Subsystem:DeleteDataSources");
     URLDataManager::DeleteDataSources();
@@ -1108,8 +1150,7 @@ int BrowserMainLoop::BrowserThreadsStarted() {
 
 #if defined(OS_ANDROID)
   // Up the priority of the UI thread.
-  base::PlatformThread::SetThreadPriority(base::PlatformThread::CurrentHandle(),
-                                          base::ThreadPriority::DISPLAY);
+  base::PlatformThread::SetCurrentThreadPriority(base::ThreadPriority::DISPLAY);
 #endif
 
   bool always_uses_gpu = true;
@@ -1202,8 +1243,8 @@ int BrowserMainLoop::BrowserThreadsStarted() {
   allowed_clipboard_threads.push_back(base::PlatformThread::CurrentId());
 #if defined(OS_WIN)
   // On Windows, clipboards are also used on the FILE or IO threads.
-  allowed_clipboard_threads.push_back(file_thread_->thread_id());
-  allowed_clipboard_threads.push_back(io_thread_->thread_id());
+  allowed_clipboard_threads.push_back(file_thread_->GetThreadId());
+  allowed_clipboard_threads.push_back(io_thread_->GetThreadId());
 #endif
   ui::Clipboard::SetAllowedThreads(allowed_clipboard_threads);
 
@@ -1226,16 +1267,14 @@ int BrowserMainLoop::BrowserThreadsStarted() {
 #if defined(OS_MACOSX)
   ThemeHelperMac::GetInstance();
   SystemHotkeyHelperMac::GetInstance()->DeferredLoadSystemHotkeys();
-  if (ShouldEnableBootstrapSandbox()) {
-    TRACE_EVENT0("startup",
-                 "BrowserMainLoop::BrowserThreadsStarted:BootstrapSandbox");
-    CHECK(GetBootstrapSandbox());
-  }
 #endif  // defined(OS_MACOSX)
 
 #endif  // !defined(OS_IOS)
 
   mojo_shell_context_.reset(new MojoShellContext);
+  mojo_ipc_support_.reset(new IPC::ScopedIPCSupport(
+      BrowserThread::UnsafeGetMessageLoopForThread(BrowserThread::IO)
+          ->task_runner()));
 
   return result_code_;
 }
@@ -1301,39 +1340,55 @@ void BrowserMainLoop::MainMessageLoopRun() {
 
 base::FilePath BrowserMainLoop::GetStartupTraceFileName(
     const base::CommandLine& command_line) const {
-  base::FilePath trace_file = command_line.GetSwitchValuePath(
-      switches::kTraceStartupFile);
-  // trace_file = "none" means that startup events will show up for the next
-  // begin/end tracing (via about:tracing or AutomationProxy::BeginTracing/
-  // EndTracing, for example).
-  if (trace_file == base::FilePath().AppendASCII("none"))
-    return trace_file;
+  base::FilePath trace_file;
+  if (command_line.HasSwitch(switches::kTraceStartup)) {
+    trace_file = command_line.GetSwitchValuePath(
+        switches::kTraceStartupFile);
+    // trace_file = "none" means that startup events will show up for the next
+    // begin/end tracing (via about:tracing or AutomationProxy::BeginTracing/
+    // EndTracing, for example).
+    if (trace_file == base::FilePath().AppendASCII("none"))
+      return trace_file;
 
-  if (trace_file.empty()) {
+    if (trace_file.empty()) {
+#if defined(OS_ANDROID)
+      TracingControllerAndroid::GenerateTracingFilePath(&trace_file);
+#else
+      // Default to saving the startup trace into the current dir.
+      trace_file = base::FilePath().AppendASCII("chrometrace.log");
+#endif
+    }
+  } else {
 #if defined(OS_ANDROID)
     TracingControllerAndroid::GenerateTracingFilePath(&trace_file);
 #else
-    // Default to saving the startup trace into the current dir.
-    trace_file = base::FilePath().AppendASCII("chrometrace.log");
+    trace_file = tracing::TraceConfigFile::GetInstance()->GetResultFile();
 #endif
   }
 
   return trace_file;
 }
 
-void BrowserMainLoop::InitStartupTracing(
+void BrowserMainLoop::InitStartupTracingForDuration(
     const base::CommandLine& command_line) {
-  DCHECK(is_tracing_startup_);
+  DCHECK(is_tracing_startup_for_duration_);
+
+  // Initialize the tracing controller, required for memory tracing.
+  TracingController::GetInstance();
 
   startup_trace_file_ = GetStartupTraceFileName(parsed_command_line_);
 
-  std::string delay_str = command_line.GetSwitchValueASCII(
-      switches::kTraceStartupDuration);
   int delay_secs = 5;
-  if (!delay_str.empty() && !base::StringToInt(delay_str, &delay_secs)) {
-    DLOG(WARNING) << "Could not parse --" << switches::kTraceStartupDuration
-        << "=" << delay_str << " defaulting to 5 (secs)";
-    delay_secs = 5;
+  if (command_line.HasSwitch(switches::kTraceStartup)) {
+    std::string delay_str = command_line.GetSwitchValueASCII(
+        switches::kTraceStartupDuration);
+    if (!delay_str.empty() && !base::StringToInt(delay_str, &delay_secs)) {
+      DLOG(WARNING) << "Could not parse --" << switches::kTraceStartupDuration
+          << "=" << delay_str << " defaulting to 5 (secs)";
+      delay_secs = 5;
+    }
+  } else {
+    delay_secs = tracing::TraceConfigFile::GetInstance()->GetStartupDuration();
   }
 
   startup_trace_timer_.Start(FROM_HERE,
@@ -1343,9 +1398,9 @@ void BrowserMainLoop::InitStartupTracing(
 }
 
 void BrowserMainLoop::EndStartupTracing() {
-  DCHECK(is_tracing_startup_);
+  DCHECK(is_tracing_startup_for_duration_);
 
-  is_tracing_startup_ = false;
+  is_tracing_startup_for_duration_ = false;
   TracingController::GetInstance()->DisableRecording(
       TracingController::CreateFileSink(
           startup_trace_file_,

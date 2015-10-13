@@ -17,9 +17,9 @@
 #include "content/browser/service_worker/service_worker_disk_cache_migrator.h"
 #include "content/browser/service_worker/service_worker_info.h"
 #include "content/browser/service_worker/service_worker_registration.h"
-#include "content/browser/service_worker/service_worker_utils.h"
 #include "content/browser/service_worker/service_worker_version.h"
 #include "content/common/service_worker/service_worker_types.h"
+#include "content/common/service_worker/service_worker_utils.h"
 #include "content/public/browser/browser_thread.h"
 #include "net/base/completion_callback.h"
 #include "net/base/io_buffer.h"
@@ -112,7 +112,7 @@ ServiceWorkerStorage::~ServiceWorkerStorage() {
 // static
 scoped_ptr<ServiceWorkerStorage> ServiceWorkerStorage::Create(
     const base::FilePath& path,
-    base::WeakPtr<ServiceWorkerContextCore> context,
+    const base::WeakPtr<ServiceWorkerContextCore>& context,
     scoped_ptr<ServiceWorkerDatabaseTaskManager> database_task_manager,
     const scoped_refptr<base::SingleThreadTaskRunner>& disk_cache_thread,
     storage::QuotaManagerProxy* quota_manager_proxy,
@@ -127,7 +127,7 @@ scoped_ptr<ServiceWorkerStorage> ServiceWorkerStorage::Create(
 
 // static
 scoped_ptr<ServiceWorkerStorage> ServiceWorkerStorage::Create(
-    base::WeakPtr<ServiceWorkerContextCore> context,
+    const base::WeakPtr<ServiceWorkerContextCore>& context,
     ServiceWorkerStorage* old_storage) {
   return make_scoped_ptr(
       new ServiceWorkerStorage(old_storage->path_,
@@ -145,7 +145,7 @@ void ServiceWorkerStorage::FindRegistrationForDocument(
   if (!LazyInitialize(base::Bind(
           &ServiceWorkerStorage::FindRegistrationForDocument,
           weak_factory_.GetWeakPtr(), document_url, callback))) {
-    if (state_ != INITIALIZING || !context_) {
+    if (state_ != INITIALIZING) {
       CompleteFindNow(scoped_refptr<ServiceWorkerRegistration>(),
                       SERVICE_WORKER_ERROR_FAILED, callback);
     }
@@ -163,8 +163,9 @@ void ServiceWorkerStorage::FindRegistrationForDocument(
     // Look for something currently being installed.
     scoped_refptr<ServiceWorkerRegistration> installing_registration =
         FindInstallingRegistrationForDocument(document_url);
-    ServiceWorkerStatusCode status = installing_registration.get() ?
-        SERVICE_WORKER_OK : SERVICE_WORKER_ERROR_NOT_FOUND;
+    ServiceWorkerStatusCode status = installing_registration
+                                         ? SERVICE_WORKER_OK
+                                         : SERVICE_WORKER_ERROR_NOT_FOUND;
     TRACE_EVENT_INSTANT2(
         "ServiceWorker",
         "ServiceWorkerStorage::FindRegistrationForDocument:CheckInstalling",
@@ -205,7 +206,7 @@ void ServiceWorkerStorage::FindRegistrationForPattern(
   if (!LazyInitialize(base::Bind(
           &ServiceWorkerStorage::FindRegistrationForPattern,
           weak_factory_.GetWeakPtr(), scope, callback))) {
-    if (state_ != INITIALIZING || !context_) {
+    if (state_ != INITIALIZING) {
       CompleteFindSoon(FROM_HERE, scoped_refptr<ServiceWorkerRegistration>(),
                        SERVICE_WORKER_ERROR_FAILED, callback);
     }
@@ -218,11 +219,9 @@ void ServiceWorkerStorage::FindRegistrationForPattern(
     // Look for something currently being installed.
     scoped_refptr<ServiceWorkerRegistration> installing_registration =
         FindInstallingRegistrationForPattern(scope);
-    CompleteFindSoon(FROM_HERE,
-                     installing_registration,
-                     installing_registration.get()
-                         ? SERVICE_WORKER_OK
-                         : SERVICE_WORKER_ERROR_NOT_FOUND,
+    CompleteFindSoon(FROM_HERE, installing_registration,
+                     installing_registration ? SERVICE_WORKER_OK
+                                             : SERVICE_WORKER_ERROR_NOT_FOUND,
                      callback);
     return;
   }
@@ -242,15 +241,15 @@ void ServiceWorkerStorage::FindRegistrationForPattern(
 
 ServiceWorkerRegistration* ServiceWorkerStorage::GetUninstallingRegistration(
     const GURL& scope) {
-  if (state_ != INITIALIZED || !context_)
-    return NULL;
+  if (state_ != INITIALIZED)
+    return nullptr;
   for (const auto& registration : uninstalling_registrations_) {
     if (registration.second->pattern() == scope) {
       DCHECK(registration.second->is_uninstalling());
       return registration.second.get();
     }
   }
-  return NULL;
+  return nullptr;
 }
 
 void ServiceWorkerStorage::FindRegistrationForId(
@@ -260,7 +259,7 @@ void ServiceWorkerStorage::FindRegistrationForId(
   if (!LazyInitialize(base::Bind(
           &ServiceWorkerStorage::FindRegistrationForId,
           weak_factory_.GetWeakPtr(), registration_id, origin, callback))) {
-    if (state_ != INITIALIZING || !context_) {
+    if (state_ != INITIALIZING) {
       CompleteFindNow(scoped_refptr<ServiceWorkerRegistration>(),
                       SERVICE_WORKER_ERROR_FAILED, callback);
     }
@@ -274,16 +273,15 @@ void ServiceWorkerStorage::FindRegistrationForId(
     scoped_refptr<ServiceWorkerRegistration> installing_registration =
         FindInstallingRegistrationForId(registration_id);
     CompleteFindNow(installing_registration,
-                    installing_registration.get()
-                        ? SERVICE_WORKER_OK
-                        : SERVICE_WORKER_ERROR_NOT_FOUND,
+                    installing_registration ? SERVICE_WORKER_OK
+                                            : SERVICE_WORKER_ERROR_NOT_FOUND,
                     callback);
     return;
   }
 
   scoped_refptr<ServiceWorkerRegistration> registration =
       context_->GetLiveRegistration(registration_id);
-  if (registration.get()) {
+  if (registration) {
     CompleteFindNow(registration, SERVICE_WORKER_OK, callback);
     return;
   }
@@ -306,7 +304,7 @@ void ServiceWorkerStorage::FindRegistrationForIdOnly(
   if (!LazyInitialize(
           base::Bind(&ServiceWorkerStorage::FindRegistrationForIdOnly,
                      weak_factory_.GetWeakPtr(), registration_id, callback))) {
-    if (state_ != INITIALIZING || !context_) {
+    if (state_ != INITIALIZING) {
       CompleteFindNow(nullptr, SERVICE_WORKER_ERROR_FAILED, callback);
     }
     return;
@@ -342,7 +340,7 @@ void ServiceWorkerStorage::GetRegistrationsForOrigin(
   if (!LazyInitialize(base::Bind(
           &ServiceWorkerStorage::GetRegistrationsForOrigin,
           weak_factory_.GetWeakPtr(), origin, callback))) {
-    if (state_ != INITIALIZING || !context_) {
+    if (state_ != INITIALIZING) {
       RunSoon(
           FROM_HERE,
           base::Bind(callback,
@@ -357,9 +355,8 @@ void ServiceWorkerStorage::GetRegistrationsForOrigin(
   PostTaskAndReplyWithResult(
       database_task_manager_->GetTaskRunner(), FROM_HERE,
       base::Bind(&ServiceWorkerDatabase::GetRegistrationsForOrigin,
-                 base::Unretained(database_.get()), origin,
-                 base::Unretained(registrations),
-                 base::Unretained(resource_lists)),
+                 base::Unretained(database_.get()), origin, registrations,
+                 resource_lists),
       base::Bind(&ServiceWorkerStorage::DidGetRegistrations,
                  weak_factory_.GetWeakPtr(), callback,
                  base::Owned(registrations), base::Owned(resource_lists),
@@ -371,7 +368,7 @@ void ServiceWorkerStorage::GetAllRegistrationsInfos(
   if (!LazyInitialize(
           base::Bind(&ServiceWorkerStorage::GetAllRegistrationsInfos,
                      weak_factory_.GetWeakPtr(), callback))) {
-    if (state_ != INITIALIZING || !context_) {
+    if (state_ != INITIALIZING) {
       RunSoon(FROM_HERE, base::Bind(
           callback, std::vector<ServiceWorkerRegistrationInfo>()));
     }
@@ -383,8 +380,7 @@ void ServiceWorkerStorage::GetAllRegistrationsInfos(
   PostTaskAndReplyWithResult(
       database_task_manager_->GetTaskRunner(), FROM_HERE,
       base::Bind(&ServiceWorkerDatabase::GetAllRegistrations,
-                 base::Unretained(database_.get()),
-                 base::Unretained(registrations)),
+                 base::Unretained(database_.get()), registrations),
       base::Bind(&ServiceWorkerStorage::DidGetRegistrationsInfos,
                  weak_factory_.GetWeakPtr(), callback,
                  base::Owned(registrations), GURL()));
@@ -398,7 +394,7 @@ void ServiceWorkerStorage::StoreRegistration(
   DCHECK(version);
 
   DCHECK(state_ == INITIALIZED || state_ == DISABLED) << state_;
-  if (IsDisabled() || !context_) {
+  if (IsDisabled()) {
     RunSoon(FROM_HERE, base::Bind(callback, SERVICE_WORKER_ERROR_FAILED));
     return;
   }
@@ -450,7 +446,7 @@ void ServiceWorkerStorage::UpdateToActiveState(
   DCHECK(registration);
 
   DCHECK(state_ == INITIALIZED || state_ == DISABLED) << state_;
-  if (IsDisabled() || !context_) {
+  if (IsDisabled()) {
     RunSoon(FROM_HERE, base::Bind(callback, SERVICE_WORKER_ERROR_FAILED));
     return;
   }
@@ -472,7 +468,7 @@ void ServiceWorkerStorage::UpdateLastUpdateCheckTime(
   DCHECK(registration);
 
   DCHECK(state_ == INITIALIZED || state_ == DISABLED) << state_;
-  if (IsDisabled() || !context_)
+  if (IsDisabled())
     return;
 
   database_task_manager_->GetTaskRunner()->PostTask(
@@ -490,7 +486,7 @@ void ServiceWorkerStorage::DeleteRegistration(
     const GURL& origin,
     const StatusCallback& callback) {
   DCHECK(state_ == INITIALIZED || state_ == DISABLED) << state_;
-  if (IsDisabled() || !context_) {
+  if (IsDisabled()) {
     RunSoon(FROM_HERE, base::Bind(callback, SERVICE_WORKER_ERROR_FAILED));
     return;
   }
@@ -573,7 +569,7 @@ void ServiceWorkerStorage::StoreUserData(
     const std::string& data,
     const StatusCallback& callback) {
   DCHECK(state_ == INITIALIZED || state_ == DISABLED) << state_;
-  if (IsDisabled() || !context_) {
+  if (IsDisabled()) {
     RunSoon(FROM_HERE, base::Bind(callback, SERVICE_WORKER_ERROR_FAILED));
     return;
   }
@@ -599,7 +595,7 @@ void ServiceWorkerStorage::GetUserData(
     const std::string& key,
     const GetUserDataCallback& callback) {
   DCHECK(state_ == INITIALIZED || state_ == DISABLED) << state_;
-  if (IsDisabled() || !context_) {
+  if (IsDisabled()) {
     RunSoon(FROM_HERE,
             base::Bind(callback, std::string(), SERVICE_WORKER_ERROR_FAILED));
     return;
@@ -628,7 +624,7 @@ void ServiceWorkerStorage::ClearUserData(
     const std::string& key,
     const StatusCallback& callback) {
   DCHECK(state_ == INITIALIZED || state_ == DISABLED) << state_;
-  if (IsDisabled() || !context_) {
+  if (IsDisabled()) {
     RunSoon(FROM_HERE, base::Bind(callback, SERVICE_WORKER_ERROR_FAILED));
     return;
   }
@@ -656,7 +652,7 @@ void ServiceWorkerStorage::GetUserDataForAllRegistrations(
   if (!LazyInitialize(
           base::Bind(&ServiceWorkerStorage::GetUserDataForAllRegistrations,
                      weak_factory_.GetWeakPtr(), key, callback))) {
-    if (state_ != INITIALIZING || !context_) {
+    if (state_ != INITIALIZING) {
       RunSoon(FROM_HERE,
               base::Bind(callback, std::vector<std::pair<int64, std::string>>(),
                          SERVICE_WORKER_ERROR_FAILED));
@@ -796,6 +792,7 @@ ServiceWorkerStorage::ServiceWorkerStorage(
       is_purge_pending_(false),
       has_checked_for_stale_resources_(false),
       weak_factory_(this) {
+  DCHECK(context_);
   database_.reset(new ServiceWorkerDatabase(GetDatabasePath()));
 }
 
@@ -821,9 +818,6 @@ base::FilePath ServiceWorkerStorage::GetOldDiskCachePath() {
 }
 
 bool ServiceWorkerStorage::LazyInitialize(const base::Closure& callback) {
-  if (!context_)
-    return false;
-
   switch (state_) {
     case INITIALIZED:
       return true;
@@ -849,7 +843,7 @@ bool ServiceWorkerStorage::LazyInitialize(const base::Closure& callback) {
 }
 
 void ServiceWorkerStorage::DidReadInitialData(
-    InitialData* data,
+    scoped_ptr<InitialData> data,
     ServiceWorkerDatabase::Status status) {
   DCHECK(data);
   DCHECK_EQ(INITIALIZING, state_);
@@ -894,8 +888,9 @@ void ServiceWorkerStorage::DidFindRegistrationForDocument(
     // Look for something currently being installed.
     scoped_refptr<ServiceWorkerRegistration> installing_registration =
         FindInstallingRegistrationForDocument(document_url);
-    ServiceWorkerStatusCode installing_status = installing_registration.get() ?
-        SERVICE_WORKER_OK : SERVICE_WORKER_ERROR_NOT_FOUND;
+    ServiceWorkerStatusCode installing_status =
+        installing_registration ? SERVICE_WORKER_OK
+                                : SERVICE_WORKER_ERROR_NOT_FOUND;
     callback.Run(installing_status, installing_registration);
     TRACE_EVENT_ASYNC_END2(
         "ServiceWorker",
@@ -933,8 +928,8 @@ void ServiceWorkerStorage::DidFindRegistrationForPattern(
   if (status == ServiceWorkerDatabase::STATUS_ERROR_NOT_FOUND) {
     scoped_refptr<ServiceWorkerRegistration> installing_registration =
         FindInstallingRegistrationForPattern(scope);
-    callback.Run(installing_registration.get() ? SERVICE_WORKER_OK
-                                               : SERVICE_WORKER_ERROR_NOT_FOUND,
+    callback.Run(installing_registration ? SERVICE_WORKER_OK
+                                         : SERVICE_WORKER_ERROR_NOT_FOUND,
                  installing_registration);
     return;
   }
@@ -1099,9 +1094,11 @@ void ServiceWorkerStorage::DidStoreRegistration(
 
   scoped_refptr<ServiceWorkerRegistration> registration =
       context_->GetLiveRegistration(new_version.registration_id);
-  registration->set_resources_total_size_bytes(
-      new_version.resources_total_size_bytes);
-  if (quota_manager_proxy_.get()) {
+  if (registration) {
+    registration->set_resources_total_size_bytes(
+        new_version.resources_total_size_bytes);
+  }
+  if (quota_manager_proxy_) {
     // Can be nullptr in tests.
     quota_manager_proxy_->NotifyStorageModified(
         storage::QuotaClient::kServiceWorker,
@@ -1113,7 +1110,7 @@ void ServiceWorkerStorage::DidStoreRegistration(
 
   callback.Run(SERVICE_WORKER_OK);
 
-  if (!context_ || !context_->GetLiveVersion(deleted_version.version_id))
+  if (!context_->GetLiveVersion(deleted_version.version_id))
     StartPurgingResources(newly_purgeable_resources);
 }
 
@@ -1139,7 +1136,7 @@ void ServiceWorkerStorage::DidDeleteRegistration(
     params.callback.Run(DatabaseStatusToStatusCode(status));
     return;
   }
-  if (quota_manager_proxy_.get()) {
+  if (quota_manager_proxy_) {
     // Can be nullptr in tests.
     quota_manager_proxy_->NotifyStorageModified(
         storage::QuotaClient::kServiceWorker,
@@ -1151,7 +1148,7 @@ void ServiceWorkerStorage::DidDeleteRegistration(
     registered_origins_.erase(params.origin);
   params.callback.Run(SERVICE_WORKER_OK);
 
-  if (!context_ || !context_->GetLiveVersion(deleted_version.version_id))
+  if (!context_->GetLiveVersion(deleted_version.version_id))
     StartPurgingResources(newly_purgeable_resources);
 }
 
@@ -1202,7 +1199,7 @@ ServiceWorkerStorage::GetOrCreateRegistration(
     const ResourceList& resources) {
   scoped_refptr<ServiceWorkerRegistration> registration =
       context_->GetLiveRegistration(data.registration_id);
-  if (registration.get())
+  if (registration)
     return registration;
 
   registration = new ServiceWorkerRegistration(
@@ -1215,7 +1212,7 @@ ServiceWorkerStorage::GetOrCreateRegistration(
   }
   scoped_refptr<ServiceWorkerVersion> version =
       context_->GetLiveVersion(data.version_id);
-  if (!version.get()) {
+  if (!version) {
     version = new ServiceWorkerVersion(
         registration.get(), data.script, data.version_id, context_);
     version->SetStatus(data.is_active ?
@@ -1239,7 +1236,7 @@ ServiceWorkerStorage::FindInstallingRegistrationForDocument(
   DCHECK(!document_url.has_ref());
 
   LongestScopeMatcher matcher(document_url);
-  ServiceWorkerRegistration* match = NULL;
+  ServiceWorkerRegistration* match = nullptr;
 
   // TODO(nhiroki): This searches over installing registrations linearly and it
   // couldn't be scalable. Maybe the regs should be partitioned by origin.
@@ -1250,21 +1247,19 @@ ServiceWorkerStorage::FindInstallingRegistrationForDocument(
 }
 
 ServiceWorkerRegistration*
-ServiceWorkerStorage::FindInstallingRegistrationForPattern(
-    const GURL& scope) {
+ServiceWorkerStorage::FindInstallingRegistrationForPattern(const GURL& scope) {
   for (const auto& registration : installing_registrations_)
     if (registration.second->pattern() == scope)
       return registration.second.get();
-  return NULL;
+  return nullptr;
 }
 
 ServiceWorkerRegistration*
-ServiceWorkerStorage::FindInstallingRegistrationForId(
-    int64 registration_id) {
+ServiceWorkerStorage::FindInstallingRegistrationForId(int64 registration_id) {
   RegistrationRefsById::const_iterator found =
       installing_registrations_.find(registration_id);
   if (found == installing_registrations_.end())
-    return NULL;
+    return nullptr;
   return found->second.get();
 }
 
@@ -1435,6 +1430,8 @@ void ServiceWorkerStorage::OnResourcePurged(int64 id, int rv) {
   DCHECK(is_purge_pending_);
   is_purge_pending_ = false;
 
+  ServiceWorkerMetrics::RecordPurgeResourceResult(rv);
+
   database_task_manager_->GetTaskRunner()->PostTask(
       FROM_HERE,
       base::Bind(base::IgnoreResult(
@@ -1442,6 +1439,7 @@ void ServiceWorkerStorage::OnResourcePurged(int64 id, int rv) {
           base::Unretained(database_.get()),
           std::set<int64>(&id, &id + 1)));
 
+  // Continue purging resources regardless of the previous result.
   ContinuePurgingResources();
 }
 
@@ -1470,7 +1468,7 @@ void ServiceWorkerStorage::DidCollectStaleResources(
 
 void ServiceWorkerStorage::ClearSessionOnlyOrigins() {
   // Can be null in tests.
-  if (!special_storage_policy_.get())
+  if (!special_storage_policy_)
     return;
 
   if (!special_storage_policy_->HasSessionOnlyOrigins())
@@ -1534,7 +1532,7 @@ void ServiceWorkerStorage::ReadInitialDataFromDB(
                                     &data->next_resource_id);
   if (status != ServiceWorkerDatabase::STATUS_OK) {
     original_task_runner->PostTask(
-        FROM_HERE, base::Bind(callback, base::Owned(data.release()), status));
+        FROM_HERE, base::Bind(callback, base::Passed(data.Pass()), status));
     return;
   }
 
@@ -1542,7 +1540,7 @@ void ServiceWorkerStorage::ReadInitialDataFromDB(
       database->IsDiskCacheMigrationNeeded(&data->disk_cache_migration_needed);
   if (status != ServiceWorkerDatabase::STATUS_OK) {
     original_task_runner->PostTask(
-        FROM_HERE, base::Bind(callback, base::Owned(data.release()), status));
+        FROM_HERE, base::Bind(callback, base::Passed(data.Pass()), status));
     return;
   }
 
@@ -1550,13 +1548,13 @@ void ServiceWorkerStorage::ReadInitialDataFromDB(
       &data->old_disk_cache_deletion_needed);
   if (status != ServiceWorkerDatabase::STATUS_OK) {
     original_task_runner->PostTask(
-        FROM_HERE, base::Bind(callback, base::Owned(data.release()), status));
+        FROM_HERE, base::Bind(callback, base::Passed(data.Pass()), status));
     return;
   }
 
   status = database->GetOriginsWithRegistrations(&data->origins);
   original_task_runner->PostTask(
-      FROM_HERE, base::Bind(callback, base::Owned(data.release()), status));
+      FROM_HERE, base::Bind(callback, base::Passed(data.Pass()), status));
 }
 
 void ServiceWorkerStorage::DeleteOldDiskCacheInDB(

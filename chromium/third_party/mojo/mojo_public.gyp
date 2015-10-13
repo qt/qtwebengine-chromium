@@ -104,8 +104,6 @@
         'src/mojo/public/cpp/bindings/array.h',
         'src/mojo/public/cpp/bindings/binding.h',
         'src/mojo/public/cpp/bindings/callback.h',
-        'src/mojo/public/cpp/bindings/error_handler.h',
-        'src/mojo/public/cpp/bindings/interface_impl.h',
         'src/mojo/public/cpp/bindings/interface_ptr.h',
         'src/mojo/public/cpp/bindings/interface_request.h',
         'src/mojo/public/cpp/bindings/message.h',
@@ -145,8 +143,6 @@
         'src/mojo/public/cpp/bindings/lib/message_header_validator.cc',
         'src/mojo/public/cpp/bindings/lib/message_header_validator.h',
         'src/mojo/public/cpp/bindings/lib/message_internal.h',
-        'src/mojo/public/cpp/bindings/lib/message_queue.cc',
-        'src/mojo/public/cpp/bindings/lib/message_queue.h',
         'src/mojo/public/cpp/bindings/lib/no_interface.cc',
         'src/mojo/public/cpp/bindings/lib/router.cc',
         'src/mojo/public/cpp/bindings/lib/router.h',
@@ -159,6 +155,7 @@
         'src/mojo/public/cpp/bindings/lib/validation_errors.h',
         'src/mojo/public/cpp/bindings/lib/validation_util.cc',
         'src/mojo/public/cpp/bindings/lib/validation_util.h',
+        'src/mojo/public/cpp/bindings/lib/value_traits.h',
         # This comes from the mojo_interface_bindings_cpp_sources dependency.
         '>@(mojom_generated_sources)',
       ],
@@ -266,7 +263,7 @@
     },
     {
       # GN version: //mojo/public/c/test_support
-      'target_name': 'mojo_test_support',
+      'target_name': 'mojo_public_test_support',
       'defines': [
         'MOJO_TEST_SUPPORT_IMPLEMENTATION',
       ],
@@ -306,7 +303,7 @@
       'dependencies': [
         '../../base/base.gyp:base',
         '../../testing/gtest.gyp:gtest',
-        'mojo_test_support',
+        'mojo_public_test_support',
       ],
       'sources': [
         'src/mojo/public/cpp/test_support/lib/test_support.cc',
@@ -333,6 +330,7 @@
         'mojom_files': [
           'src/mojo/public/interfaces/bindings/tests/math_calculator.mojom',
           'src/mojo/public/interfaces/bindings/tests/no_module.mojom',
+          'src/mojo/public/interfaces/bindings/tests/ping_service.mojom',
           'src/mojo/public/interfaces/bindings/tests/rect.mojom',
           'src/mojo/public/interfaces/bindings/tests/regression_tests.mojom',
           'src/mojo/public/interfaces/bindings/tests/sample_factory.mojom',
@@ -340,6 +338,7 @@
           'src/mojo/public/interfaces/bindings/tests/sample_import2.mojom',
           'src/mojo/public/interfaces/bindings/tests/sample_interfaces.mojom',
           'src/mojo/public/interfaces/bindings/tests/sample_service.mojom',
+          'src/mojo/public/interfaces/bindings/tests/scoping.mojom',
           'src/mojo/public/interfaces/bindings/tests/serialization_test_structs.mojom',
           'src/mojo/public/interfaces/bindings/tests/test_structs.mojom',
           'src/mojo/public/interfaces/bindings/tests/validation_test_interfaces.mojom',

@@ -5,10 +5,10 @@
  * found in the LICENSE file.
  */
 
-
 #include "gm.h"
-#include "SkCanvas.h"
 #include "SkAAClip.h"
+#include "SkCanvas.h"
+#include "SkPath.h"
 
 namespace skiagm {
 
@@ -68,10 +68,10 @@ protected:
     }
 
     void buildRgn(SkAAClip* clip, SkRegion::Op op) {
-        clip->setPath(fBasePath, NULL, true);
+        clip->setPath(fBasePath, nullptr, true);
 
         SkAAClip clip2;
-        clip2.setPath(fRectPath, NULL, true);
+        clip2.setPath(fRectPath, nullptr, true);
         clip->op(clip2, op);
     }
 
@@ -126,7 +126,7 @@ protected:
         canvas->restore();
     }
 
-    virtual SkString onShortName() {
+    SkString onShortName() override {
         SkString str;
         str.printf("simpleaaclip_%s",
                     kRect_GeomType == fGeomType ? "rect" :
@@ -135,11 +135,11 @@ protected:
         return str;
     }
 
-    virtual SkISize onISize() {
+    SkISize onISize() override {
         return SkISize::Make(640, 480);
     }
 
-    virtual void onDraw(SkCanvas* canvas) {
+    void onDraw(SkCanvas* canvas) override {
 
         static const struct {
             SkColor         fColor;
@@ -148,7 +148,7 @@ protected:
         } gOps[] = {
             { SK_ColorBLACK,    "Difference", SkRegion::kDifference_Op    },
             { SK_ColorRED,      "Intersect",  SkRegion::kIntersect_Op     },
-            { 0xFF008800,       "Union",      SkRegion::kUnion_Op         },
+            { sk_tool_utils::color_to_565(0xFF008800), "Union", SkRegion::kUnion_Op },
             { SK_ColorGREEN,    "Rev Diff",   SkRegion::kReverseDifference_Op },
             { SK_ColorYELLOW,   "Replace",    SkRegion::kReplace_Op       },
             { SK_ColorBLUE,     "XOR",        SkRegion::kXOR_Op           },
@@ -156,7 +156,7 @@ protected:
 
         SkPaint textPaint;
         textPaint.setAntiAlias(true);
-        sk_tool_utils::set_portable_typeface_always(&textPaint);
+        sk_tool_utils::set_portable_typeface(&textPaint);
         textPaint.setTextSize(SK_Scalar1*24);
         int xOff = 0;
 

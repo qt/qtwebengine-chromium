@@ -28,8 +28,6 @@
 
 #include "modules/webgl/WebGLContextObject.h"
 #include "modules/webgl/WebGLSharedObject.h"
-#include "wtf/PassRefPtr.h"
-#include "wtf/RefCounted.h"
 
 namespace blink {
 
@@ -39,7 +37,7 @@ class WebGLTexture;
 class WebGLFramebuffer final : public WebGLContextObject {
     DEFINE_WRAPPERTYPEINFO();
 public:
-    class WebGLAttachment : public RefCountedWillBeGarbageCollectedFinalized<WebGLAttachment> {
+    class WebGLAttachment : public GarbageCollectedFinalized<WebGLAttachment> {
     public:
         virtual ~WebGLAttachment();
 
@@ -66,7 +64,7 @@ public:
 
     ~WebGLFramebuffer() override;
 
-    static PassRefPtrWillBeRawPtr<WebGLFramebuffer> create(WebGLRenderingContextBase*);
+    static WebGLFramebuffer* create(WebGLRenderingContextBase*);
 
     Platform3DObject object() const { return m_object; }
 
@@ -107,6 +105,10 @@ public:
 
     GLenum getReadBuffer() const { return m_readBuffer; }
 
+    // If readbuffer is GL_NONE or no image is attached, return false.
+    // Note: it's ok for format or type to be nullptr.
+    bool getReadBufferFormatAndType(GLenum* format, GLenum* type) const;
+
     DECLARE_VIRTUAL_TRACE();
 
 protected:
@@ -130,9 +132,10 @@ private:
 
     Platform3DObject m_object;
 
-    typedef WillBeHeapHashMap<GLenum, RefPtrWillBeMember<WebGLAttachment>> AttachmentMap;
+    typedef HeapHashMap<GLenum, Member<WebGLAttachment>> AttachmentMap;
 
     AttachmentMap m_attachments;
+    bool m_destructionInProgress;
 
     bool m_hasEverBeenBound;
 

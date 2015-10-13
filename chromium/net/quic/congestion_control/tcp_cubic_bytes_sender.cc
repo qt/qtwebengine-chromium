@@ -10,6 +10,7 @@
 #include "net/quic/congestion_control/rtt_stats.h"
 #include "net/quic/crypto/crypto_protocol.h"
 #include "net/quic/proto/cached_network_parameters.pb.h"
+#include "net/quic/quic_flags.h"
 
 using std::max;
 using std::min;
@@ -40,8 +41,8 @@ TcpCubicBytesSender::TcpCubicBytesSender(
       reno_(reno),
       num_connections_(kDefaultNumConnections),
       num_acked_packets_(0),
-      largest_sent_sequence_number_(0),
-      largest_acked_sequence_number_(0),
+      largest_sent_packet_number_(0),
+      largest_acked_packet_number_(0),
       largest_sent_at_last_cutback_(0),
       congestion_window_(initial_tcp_congestion_window * kMaxSegmentSize),
       min_congestion_window_(kDefaultMinimumCongestionWindow),
@@ -49,8 +50,7 @@ TcpCubicBytesSender::TcpCubicBytesSender(
       max_congestion_window_(max_congestion_window * kMaxSegmentSize),
       slowstart_threshold_(max_congestion_window * kMaxSegmentSize),
       last_cutback_exited_slowstart_(false),
-      clock_(clock) {
-}
+      clock_(clock) {}
 
 TcpCubicBytesSender::~TcpCubicBytesSender() {
 }
@@ -77,17 +77,9 @@ void TcpCubicBytesSender::SetFromConfig(const QuicConfig& config,
   }
 }
 
-bool TcpCubicBytesSender::ResumeConnectionState(
+void TcpCubicBytesSender::ResumeConnectionState(
     const CachedNetworkParameters& cached_network_params,
     bool max_bandwidth_resumption) {
-  // If the previous bandwidth estimate is less than an hour old, store in
-  // preparation for doing bandwidth resumption.
-  int64 seconds_since_estimate =
-      clock_->WallNow().ToUNIXSeconds() - cached_network_params.timestamp();
-  if (seconds_since_estimate > kNumSecondsPerHour) {
-    return false;
-  }
-
   QuicBandwidth bandwidth = QuicBandwidth::FromBytesPerSecond(
       max_bandwidth_resumption
           ? cached_network_params.max_bandwidth_estimate_bytes_per_second()
@@ -98,12 +90,8 @@ bool TcpCubicBytesSender::ResumeConnectionState(
   // Make sure CWND is in appropriate range (in case of bad data).
   QuicByteCount new_congestion_window = bandwidth.ToBytesPerPeriod(rtt_ms);
   congestion_window_ =
-      max(min(new_congestion_window, kMaxResumptionCwnd * kMaxSegmentSize),
+      max(min(new_congestion_window, kMaxCongestionWindow * kMaxSegmentSize),
           kMinCongestionWindowForBandwidthResumption * kMaxSegmentSize);
-
-  // TODO(rjshade): Set appropriate CWND when previous connection was in slow
-  // start at time of estimate.
-  return true;
 }
 
 void TcpCubicBytesSender::SetNumEmulatedConnections(int num_connections) {
@@ -145,31 +133,30 @@ void TcpCubicBytesSender::OnCongestionEvent(
   }
 }
 
-void TcpCubicBytesSender::OnPacketAcked(
-    QuicPacketSequenceNumber acked_sequence_number,
-    QuicByteCount acked_bytes,
-    QuicByteCount bytes_in_flight) {
-  largest_acked_sequence_number_ =
-      max(acked_sequence_number, largest_acked_sequence_number_);
+void TcpCubicBytesSender::OnPacketAcked(QuicPacketNumber acked_packet_number,
+                                        QuicByteCount acked_bytes,
+                                        QuicByteCount bytes_in_flight) {
+  largest_acked_packet_number_ =
+      max(acked_packet_number, largest_acked_packet_number_);
   if (InRecovery()) {
     // PRR is used when in recovery.
     prr_.OnPacketAcked(acked_bytes);
     return;
   }
-  MaybeIncreaseCwnd(acked_sequence_number, acked_bytes, bytes_in_flight);
+  MaybeIncreaseCwnd(acked_packet_number, acked_bytes, bytes_in_flight);
   // TODO(ianswett): Should this even be called when not in slow start?
-  hybrid_slow_start_.OnPacketAcked(acked_sequence_number, InSlowStart());
+  hybrid_slow_start_.OnPacketAcked(acked_packet_number, InSlowStart());
 }
 
-void TcpCubicBytesSender::OnPacketLost(QuicPacketSequenceNumber sequence_number,
+void TcpCubicBytesSender::OnPacketLost(QuicPacketNumber packet_number,
                                        QuicByteCount bytes_in_flight) {
   // TCP NewReno (RFC6582) says that once a loss occurs, any losses in packets
   // already sent should be treated as a single loss event, since it's expected.
-  if (sequence_number <= largest_sent_at_last_cutback_) {
+  if (packet_number <= largest_sent_at_last_cutback_) {
     if (last_cutback_exited_slowstart_) {
       ++stats_->slowstart_packets_lost;
     }
-    DVLOG(1) << "Ignoring loss for largest_missing:" << sequence_number
+    DVLOG(1) << "Ignoring loss for largest_missing:" << packet_number
              << " because it was sent prior to the last CWND cutback.";
     return;
   }
@@ -192,7 +179,7 @@ void TcpCubicBytesSender::OnPacketLost(QuicPacketSequenceNumber sequence_number,
   if (congestion_window_ < min_congestion_window_) {
     congestion_window_ = min_congestion_window_;
   }
-  largest_sent_at_last_cutback_ = largest_sent_sequence_number_;
+  largest_sent_at_last_cutback_ = largest_sent_packet_number_;
   // Reset packet count from congestion avoidance mode. We start counting again
   // when we're out of recovery.
   num_acked_packets_ = 0;
@@ -203,7 +190,7 @@ void TcpCubicBytesSender::OnPacketLost(QuicPacketSequenceNumber sequence_number,
 bool TcpCubicBytesSender::OnPacketSent(
     QuicTime /*sent_time*/,
     QuicByteCount /*bytes_in_flight*/,
-    QuicPacketSequenceNumber sequence_number,
+    QuicPacketNumber packet_number,
     QuicByteCount bytes,
     HasRetransmittableData is_retransmittable) {
   if (InSlowStart()) {
@@ -218,9 +205,9 @@ bool TcpCubicBytesSender::OnPacketSent(
     // PRR is used when in recovery.
     prr_.OnPacketSent(bytes);
   }
-  DCHECK_LT(largest_sent_sequence_number_, sequence_number);
-  largest_sent_sequence_number_ = sequence_number;
-  hybrid_slow_start_.OnPacketSent(sequence_number);
+  DCHECK_LT(largest_sent_packet_number_, packet_number);
+  largest_sent_packet_number_ = packet_number;
+  hybrid_slow_start_.OnPacketSent(packet_number);
   return true;
 }
 
@@ -268,11 +255,6 @@ QuicBandwidth TcpCubicBytesSender::BandwidthEstimate() const {
   return QuicBandwidth::FromBytesAndTimeDelta(GetCongestionWindow(), srtt);
 }
 
-bool TcpCubicBytesSender::HasReliableBandwidthEstimate() const {
-  return !InSlowStart() && !InRecovery() &&
-         !rtt_stats_->smoothed_rtt().IsZero();
-}
-
 QuicTime::Delta TcpCubicBytesSender::RetransmissionDelay() const {
   if (rtt_stats_->smoothed_rtt().IsZero()) {
     return QuicTime::Delta::Zero();
@@ -304,20 +286,23 @@ bool TcpCubicBytesSender::IsCwndLimited(QuicByteCount bytes_in_flight) const {
 }
 
 bool TcpCubicBytesSender::InRecovery() const {
-  return largest_acked_sequence_number_ <= largest_sent_at_last_cutback_ &&
-         largest_acked_sequence_number_ != 0;
+  return largest_acked_packet_number_ <= largest_sent_at_last_cutback_ &&
+         largest_acked_packet_number_ != 0;
 }
 
 // Called when we receive an ack. Normal TCP tracks how many packets one ack
 // represents, but quic has a separate ack for each packet.
 void TcpCubicBytesSender::MaybeIncreaseCwnd(
-    QuicPacketSequenceNumber acked_sequence_number,
+    QuicPacketNumber acked_packet_number,
     QuicByteCount acked_bytes,
     QuicByteCount bytes_in_flight) {
   LOG_IF(DFATAL, InRecovery()) << "Never increase the CWND during recovery.";
   if (!IsCwndLimited(bytes_in_flight)) {
-    // We don't update the congestion window unless we are close to using the
-    // window we have available.
+    // Do not increase the congestion window unless the sender is close to using
+    // the current window.
+    if (FLAGS_reset_cubic_epoch_when_app_limited) {
+      cubic_.OnApplicationLimited();
+    }
     return;
   }
   if (congestion_window_ >= max_congestion_window_) {

@@ -46,7 +46,7 @@
 namespace blink {
 
 class CSSFontFace;
-class CSSValueList;
+class CSSPrimitiveValue;
 class DOMArrayBuffer;
 class DOMArrayBufferView;
 class Document;
@@ -110,7 +110,7 @@ public:
     void loadWithCallback(PassRefPtrWillBeRawPtr<LoadFontCallback>, ExecutionContext*);
 
     // ActiveDOMObject
-    virtual bool hasPendingActivity() const override;
+    bool hasPendingActivity() const override;
 
 private:
     static PassRefPtrWillBeRawPtr<FontFace> create(ExecutionContext*, const AtomicString& family, PassRefPtr<DOMArrayBuffer> source, const FontFaceDescriptors&);
@@ -125,11 +125,11 @@ private:
     void setPropertyFromString(const Document*, const String&, CSSPropertyID, ExceptionState* = 0);
     bool setPropertyFromStyle(const StylePropertySet&, CSSPropertyID);
     bool setPropertyValue(PassRefPtrWillBeRawPtr<CSSValue>, CSSPropertyID);
-    bool setFamilyValue(CSSValueList*);
+    bool setFamilyValue(CSSPrimitiveValue*);
     void loadInternal(ExecutionContext*);
     ScriptPromise fontStatusPromise(ScriptState*);
 
-    typedef ScriptPromiseProperty<RawPtrWillBeMember<FontFace>, RawPtrWillBeMember<FontFace>, Member<DOMException>> LoadedProperty;
+    using LoadedProperty = ScriptPromiseProperty<RawPtrWillBeMember<FontFace>, RawPtrWillBeMember<FontFace>, Member<DOMException>>;
 
     AtomicString m_family;
     String m_otsParseMessage;
@@ -148,7 +148,7 @@ private:
     WillBeHeapVector<RefPtrWillBeMember<LoadFontCallback>> m_callbacks;
 };
 
-typedef WillBeHeapVector<RefPtrWillBeMember<FontFace>> FontFaceArray;
+using FontFaceArray = WillBeHeapVector<RefPtrWillBeMember<FontFace>>;
 
 } // namespace blink
 

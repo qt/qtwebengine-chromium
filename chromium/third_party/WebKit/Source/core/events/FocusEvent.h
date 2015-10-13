@@ -40,9 +40,9 @@ public:
         return adoptRefWillBeNoop(new FocusEvent);
     }
 
-    static PassRefPtrWillBeRawPtr<FocusEvent> create(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtrWillBeRawPtr<AbstractView> view, int detail, EventTarget* relatedTarget)
+    static PassRefPtrWillBeRawPtr<FocusEvent> create(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtrWillBeRawPtr<AbstractView> view, int detail, EventTarget* relatedTarget, InputDeviceCapabilities* sourceCapabilities)
     {
-        return adoptRefWillBeNoop(new FocusEvent(type, canBubble, cancelable, view, detail, relatedTarget));
+        return adoptRefWillBeNoop(new FocusEvent(type, canBubble, cancelable, view, detail, relatedTarget, sourceCapabilities));
     }
 
     static PassRefPtrWillBeRawPtr<FocusEvent> create(const AtomicString& type, const FocusEventInit& initializer)
@@ -53,14 +53,16 @@ public:
     EventTarget* relatedTarget() const { return m_relatedTarget.get(); }
     void setRelatedTarget(EventTarget* relatedTarget) { m_relatedTarget = relatedTarget; }
 
-    virtual const AtomicString& interfaceName() const override;
-    virtual bool isFocusEvent() const override;
+    const AtomicString& interfaceName() const override;
+    bool isFocusEvent() const override;
+
+    PassRefPtrWillBeRawPtr<EventDispatchMediator> createMediator() override;
 
     DECLARE_VIRTUAL_TRACE();
 
 private:
     FocusEvent();
-    FocusEvent(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtrWillBeRawPtr<AbstractView>, int, EventTarget*);
+    FocusEvent(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtrWillBeRawPtr<AbstractView>, int, EventTarget*, InputDeviceCapabilities*);
     FocusEvent(const AtomicString& type, const FocusEventInit&);
 
     RefPtrWillBeMember<EventTarget> m_relatedTarget;
@@ -74,34 +76,7 @@ public:
 private:
     explicit FocusEventDispatchMediator(PassRefPtrWillBeRawPtr<FocusEvent>);
     FocusEvent& event() const { return static_cast<FocusEvent&>(EventDispatchMediator::event()); }
-    virtual bool dispatchEvent(EventDispatcher&) const override;
-};
-
-class BlurEventDispatchMediator final : public EventDispatchMediator {
-public:
-    static PassRefPtrWillBeRawPtr<BlurEventDispatchMediator> create(PassRefPtrWillBeRawPtr<FocusEvent>);
-private:
-    explicit BlurEventDispatchMediator(PassRefPtrWillBeRawPtr<FocusEvent>);
-    FocusEvent& event() const { return static_cast<FocusEvent&>(EventDispatchMediator::event()); }
-    virtual bool dispatchEvent(EventDispatcher&) const override;
-};
-
-class FocusInEventDispatchMediator final : public EventDispatchMediator {
-public:
-    static PassRefPtrWillBeRawPtr<FocusInEventDispatchMediator> create(PassRefPtrWillBeRawPtr<FocusEvent>);
-private:
-    explicit FocusInEventDispatchMediator(PassRefPtrWillBeRawPtr<FocusEvent>);
-    FocusEvent& event() const { return static_cast<FocusEvent&>(EventDispatchMediator::event()); }
-    virtual bool dispatchEvent(EventDispatcher&) const override;
-};
-
-class FocusOutEventDispatchMediator final : public EventDispatchMediator {
-public:
-    static PassRefPtrWillBeRawPtr<FocusOutEventDispatchMediator> create(PassRefPtrWillBeRawPtr<FocusEvent>);
-private:
-    explicit FocusOutEventDispatchMediator(PassRefPtrWillBeRawPtr<FocusEvent>);
-    FocusEvent& event() const { return static_cast<FocusEvent&>(EventDispatchMediator::event()); }
-    virtual bool dispatchEvent(EventDispatcher&) const override;
+    bool dispatchEvent(EventDispatcher&) const override;
 };
 
 } // namespace blink

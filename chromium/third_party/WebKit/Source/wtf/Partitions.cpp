@@ -31,18 +31,21 @@
 #include "config.h"
 #include "wtf/Partitions.h"
 
+#include "wtf/Alias.h"
 #include "wtf/DefaultAllocator.h"
 #include "wtf/FastMalloc.h"
 #include "wtf/MainThread.h"
 
 namespace WTF {
 
+const char* const Partitions::kAllocatedObjectPoolName = "partition_alloc/allocated_objects";
+
 int Partitions::s_initializationLock = 0;
 bool Partitions::s_initialized = false;
 
 PartitionAllocatorGeneric Partitions::m_fastMallocAllocator;
 PartitionAllocatorGeneric Partitions::m_bufferAllocator;
-SizeSpecificPartitionAllocator<3328> Partitions::m_objectModelAllocator;
+SizeSpecificPartitionAllocator<3328> Partitions::m_nodeAllocator;
 SizeSpecificPartitionAllocator<1024> Partitions::m_layoutAllocator;
 HistogramEnumerationFunction Partitions::m_histogramEnumeration = nullptr;
 
@@ -51,9 +54,10 @@ void Partitions::initialize()
     spinLockLock(&s_initializationLock);
 
     if (!s_initialized) {
+        partitionAllocGlobalInit(&Partitions::handleOutOfMemory);
         m_fastMallocAllocator.init();
         m_bufferAllocator.init();
-        m_objectModelAllocator.init();
+        m_nodeAllocator.init();
         m_layoutAllocator.init();
         s_initialized = true;
     }
@@ -73,7 +77,7 @@ void Partitions::shutdown()
     // to very hard to diagnose ASSERTs, so it's best to leave leak checking for
     // the valgrind and heapcheck bots, which run without partitions.
     (void) m_layoutAllocator.shutdown();
-    (void) m_objectModelAllocator.shutdown();
+    (void) m_nodeAllocator.shutdown();
     (void) m_bufferAllocator.shutdown();
     (void) m_fastMallocAllocator.shutdown();
 }
@@ -84,7 +88,7 @@ void Partitions::decommitFreeableMemory()
 
     partitionPurgeMemoryGeneric(bufferPartition(), PartitionPurgeDecommitEmptyPages);
     partitionPurgeMemoryGeneric(fastMallocPartition(), PartitionPurgeDecommitEmptyPages);
-    partitionPurgeMemory(objectModelPartition(), PartitionPurgeDecommitEmptyPages);
+    partitionPurgeMemory(nodePartition(), PartitionPurgeDecommitEmptyPages);
     partitionPurgeMemory(layoutPartition(), PartitionPurgeDecommitEmptyPages);
 }
 
@@ -110,16 +114,102 @@ void Partitions::reportMemoryUsageHistogram()
     }
 }
 
-void Partitions::dumpMemoryStats(PartitionStatsDumper* partitionStatsDumper)
+void Partitions::dumpMemoryStats(bool isLightDump, PartitionStatsDumper* partitionStatsDumper)
 {
     // Object model and rendering partitions are not thread safe and can be
     // accessed only on the main thread.
     ASSERT(isMainThread());
 
-    partitionDumpStatsGeneric(fastMallocPartition(), "fast_malloc_partition", partitionStatsDumper);
-    partitionDumpStatsGeneric(bufferPartition(), "buffer_partition", partitionStatsDumper);
-    partitionDumpStats(objectModelPartition(), "object_model_partition", partitionStatsDumper);
-    partitionDumpStats(layoutPartition(), "layout_partition", partitionStatsDumper);
+    partitionDumpStatsGeneric(fastMallocPartition(), "fast_malloc", isLightDump, partitionStatsDumper);
+    partitionDumpStatsGeneric(bufferPartition(), "buffer", isLightDump, partitionStatsDumper);
+    partitionDumpStats(nodePartition(), "node", isLightDump, partitionStatsDumper);
+    partitionDumpStats(layoutPartition(), "layout", isLightDump, partitionStatsDumper);
+}
+
+static NEVER_INLINE void partitionsOutOfMemoryUsing2G()
+{
+    size_t signature = 2UL * 1024 * 1024 * 1024;
+    alias(&signature);
+    IMMEDIATE_CRASH();
+}
+
+static NEVER_INLINE void partitionsOutOfMemoryUsing1G()
+{
+    size_t signature = 1UL * 1024 * 1024 * 1024;
+    alias(&signature);
+    IMMEDIATE_CRASH();
+}
+
+static NEVER_INLINE void partitionsOutOfMemoryUsing512M()
+{
+    size_t signature = 512 * 1024 * 1024;
+    alias(&signature);
+    IMMEDIATE_CRASH();
+}
+
+static NEVER_INLINE void partitionsOutOfMemoryUsing256M()
+{
+    size_t signature = 256 * 1024 * 1024;
+    alias(&signature);
+    IMMEDIATE_CRASH();
+}
+
+static NEVER_INLINE void partitionsOutOfMemoryUsing128M()
+{
+    size_t signature = 128 * 1024 * 1024;
+    alias(&signature);
+    IMMEDIATE_CRASH();
+}
+
+static NEVER_INLINE void partitionsOutOfMemoryUsing64M()
+{
+    size_t signature = 64 * 1024 * 1024;
+    alias(&signature);
+    IMMEDIATE_CRASH();
+}
+
+static NEVER_INLINE void partitionsOutOfMemoryUsing32M()
+{
+    size_t signature = 32 * 1024 * 1024;
+    alias(&signature);
+    IMMEDIATE_CRASH();
+}
+
+static NEVER_INLINE void partitionsOutOfMemoryUsing16M()
+{
+    size_t signature = 16 * 1024 * 1024;
+    alias(&signature);
+    IMMEDIATE_CRASH();
+}
+
+static NEVER_INLINE void partitionsOutOfMemoryUsingLessThan16M()
+{
+    size_t signature = 16 * 1024 * 1024 - 1;
+    alias(&signature);
+    IMMEDIATE_CRASH();
+}
+
+void Partitions::handleOutOfMemory()
+{
+    volatile size_t totalUsage = totalSizeOfCommittedPages();
+
+    if (totalUsage >= 2UL * 1024 * 1024 * 1024)
+        partitionsOutOfMemoryUsing2G();
+    if (totalUsage >= 1UL * 1024 * 1024 * 1024)
+        partitionsOutOfMemoryUsing1G();
+    if (totalUsage >= 512 * 1024 * 1024)
+        partitionsOutOfMemoryUsing512M();
+    if (totalUsage >= 256 * 1024 * 1024)
+        partitionsOutOfMemoryUsing256M();
+    if (totalUsage >= 128 * 1024 * 1024)
+        partitionsOutOfMemoryUsing128M();
+    if (totalUsage >= 64 * 1024 * 1024)
+        partitionsOutOfMemoryUsing64M();
+    if (totalUsage >= 32 * 1024 * 1024)
+        partitionsOutOfMemoryUsing32M();
+    if (totalUsage >= 16 * 1024 * 1024)
+        partitionsOutOfMemoryUsing16M();
+    partitionsOutOfMemoryUsingLessThan16M();
 }
 
 } // namespace WTF

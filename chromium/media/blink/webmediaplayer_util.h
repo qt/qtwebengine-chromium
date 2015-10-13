@@ -20,12 +20,6 @@
 
 namespace media {
 
-// Platform independent method for converting and rounding floating point
-// seconds to an int64 timestamp.
-//
-// Refer to https://bugs.webkit.org/show_bug.cgi?id=52697 for details.
-base::TimeDelta MEDIA_EXPORT ConvertSecondsToTimestamp(double seconds);
-
 blink::WebTimeRanges MEDIA_EXPORT ConvertToWebTimeRanges(
     const Ranges<base::TimeDelta>& ranges);
 
@@ -37,13 +31,16 @@ void MEDIA_EXPORT ReportMetrics(blink::WebMediaPlayer::LoadType load_type,
                                 const GURL& url,
                                 const GURL& origin_url);
 
+// Record a RAPPOR metric for the origin of an HLS playback.
+void MEDIA_EXPORT RecordOriginOfHLSPlayback(const GURL& origin_url);
+
 // Convert Initialization Data Types.
 EmeInitDataType MEDIA_EXPORT
 ConvertToEmeInitDataType(blink::WebEncryptedMediaInitDataType init_data_type);
 blink::WebEncryptedMediaInitDataType MEDIA_EXPORT
 ConvertToWebInitDataType(EmeInitDataType init_data_type);
 
-typedef blink::WebCallbacks<void, blink::WebSetSinkIdError> WebSetSinkIdCB;
+typedef blink::WebCallbacks<void, blink::WebSetSinkIdError*> WebSetSinkIdCB;
 
 // Wraps a WebSetSinkIdCB into a media::SwitchOutputDeviceCB
 // and binds it to the current thread

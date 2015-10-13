@@ -6,11 +6,12 @@
 
 #include "base/basictypes.h"
 #include "base/logging.h"
-#include "base/metrics/histogram.h"
+#include "base/sha1.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "media/base/decoder_buffer.h"
+#include "media/base/video_decoder_config.h"
 #include "media/base/video_util.h"
 
 namespace media {
@@ -154,6 +155,10 @@ static VideoCodec CodecIDToVideoCodec(AVCodecID codec_id) {
   switch (codec_id) {
     case AV_CODEC_ID_H264:
       return kCodecH264;
+#if defined(ENABLE_HEVC_DEMUXING)
+    case AV_CODEC_ID_HEVC:
+      return kCodecHEVC;
+#endif
     case AV_CODEC_ID_THEORA:
       return kCodecTheora;
     case AV_CODEC_ID_MPEG4:
@@ -168,10 +173,14 @@ static VideoCodec CodecIDToVideoCodec(AVCodecID codec_id) {
   return kUnknownVideoCodec;
 }
 
-static AVCodecID VideoCodecToCodecID(VideoCodec video_codec) {
+AVCodecID VideoCodecToCodecID(VideoCodec video_codec) {
   switch (video_codec) {
     case kCodecH264:
       return AV_CODEC_ID_H264;
+#if defined(ENABLE_HEVC_DEMUXING)
+    case kCodecHEVC:
+      return AV_CODEC_ID_HEVC;
+#endif
     case kCodecTheora:
       return AV_CODEC_ID_THEORA;
     case kCodecMPEG4:
@@ -276,11 +285,9 @@ static AVSampleFormat SampleFormatToAVSampleFormat(SampleFormat sample_format) {
   return AV_SAMPLE_FMT_NONE;
 }
 
-void AVCodecContextToAudioDecoderConfig(
-    const AVCodecContext* codec_context,
-    bool is_encrypted,
-    AudioDecoderConfig* config,
-    bool record_stats) {
+void AVCodecContextToAudioDecoderConfig(const AVCodecContext* codec_context,
+                                        bool is_encrypted,
+                                        AudioDecoderConfig* config) {
   DCHECK_EQ(codec_context->codec_type, AVMEDIA_TYPE_AUDIO);
 
   AudioCodec codec = CodecIDToAudioCodec(codec_context->codec_id);
@@ -319,25 +326,22 @@ void AVCodecContextToAudioDecoderConfig(
                      codec_context->extradata,
                      codec_context->extradata_size,
                      is_encrypted,
-                     record_stats,
                      seek_preroll,
                      codec_context->delay);
+
   if (codec != kCodecOpus) {
     DCHECK_EQ(av_get_bytes_per_sample(codec_context->sample_fmt) * 8,
               config->bits_per_channel());
   }
 }
 
-void AVStreamToAudioDecoderConfig(
-    const AVStream* stream,
-    AudioDecoderConfig* config,
-    bool record_stats) {
+void AVStreamToAudioDecoderConfig(const AVStream* stream,
+                                  AudioDecoderConfig* config) {
   bool is_encrypted = false;
   AVDictionaryEntry* key = av_dict_get(stream->metadata, "enc_key_id", NULL, 0);
   if (key)
     is_encrypted = true;
-  return AVCodecContextToAudioDecoderConfig(
-      stream->codec, is_encrypted, config, record_stats);
+  AVCodecContextToAudioDecoderConfig(stream->codec, is_encrypted, config);
 }
 
 void AudioDecoderConfigToAVCodecContext(const AudioDecoderConfig& config,
@@ -368,10 +372,8 @@ void AudioDecoderConfigToAVCodecContext(const AudioDecoderConfig& config,
   }
 }
 
-void AVStreamToVideoDecoderConfig(
-    const AVStream* stream,
-    VideoDecoderConfig* config,
-    bool record_stats) {
+void AVStreamToVideoDecoderConfig(const AVStream* stream,
+                                  VideoDecoderConfig* config) {
   gfx::Size coded_size(stream->codec->coded_width, stream->codec->coded_height);
 
   // TODO(vrk): This assumes decoded frame data starts at (0, 0), which is true
@@ -394,29 +396,39 @@ void AVStreamToVideoDecoderConfig(
   else
     profile = ProfileIDToVideoCodecProfile(stream->codec->profile);
 
+  // Without the FFmpeg h264 decoder, AVFormat is unable to get the profile, so
+  // default to baseline and let the VDA fail later if it doesn't support the
+  // real profile. This is alright because if the FFmpeg h264 decoder isn't
+  // enabled, there is no fallback if the VDA fails.
+#if defined(DISABLE_FFMPEG_VIDEO_DECODERS)
+  if (codec == kCodecH264)
+    profile = H264PROFILE_BASELINE;
+#endif
+
   gfx::Size natural_size = GetNaturalSize(
       visible_rect.size(), aspect_ratio.num, aspect_ratio.den);
 
-  if (record_stats) {
-    // Note the PRESUBMIT_IGNORE_UMA_MAX below, this silences the PRESUBMIT.py
-    // check for uma enum max usage, since we're abusing
-    // UMA_HISTOGRAM_ENUMERATION to report a discrete value.
-    UMA_HISTOGRAM_ENUMERATION("Media.VideoColorRange",
-                              stream->codec->color_range,
-                              AVCOL_RANGE_NB);  // PRESUBMIT_IGNORE_UMA_MAX
-  }
+  VideoPixelFormat format =
+      AVPixelFormatToVideoPixelFormat(stream->codec->pix_fmt);
+  // The format and coded size may be unknown if FFmpeg is compiled without
+  // video decoders.
+#if defined(DISABLE_FFMPEG_VIDEO_DECODERS)
+  if (format == PIXEL_FORMAT_UNKNOWN)
+    format = PIXEL_FORMAT_YV12;
+  if (coded_size == gfx::Size(0, 0))
+    coded_size = visible_rect.size();
+#endif
 
-  VideoFrame::Format format = PixelFormatToVideoFormat(stream->codec->pix_fmt);
   if (codec == kCodecVP9) {
     // TODO(tomfinegan): libavcodec doesn't know about VP9.
-    format = VideoFrame::YV12;
+    format = PIXEL_FORMAT_YV12;
     coded_size = visible_rect.size();
   }
 
   // Pad out |coded_size| for subsampled YUV formats.
-  if (format != VideoFrame::YV24) {
+  if (format != PIXEL_FORMAT_YV24) {
     coded_size.set_width((coded_size.width() + 1) / 2 * 2);
-    if (format != VideoFrame::YV16)
+    if (format != PIXEL_FORMAT_YV16)
       coded_size.set_height((coded_size.height() + 1) / 2 * 2);
   }
 
@@ -428,19 +440,22 @@ void AVStreamToVideoDecoderConfig(
   AVDictionaryEntry* webm_alpha =
       av_dict_get(stream->metadata, "alpha_mode", NULL, 0);
   if (webm_alpha && !strcmp(webm_alpha->value, "1")) {
-    format = VideoFrame::YV12A;
+    format = PIXEL_FORMAT_YV12A;
   }
 
-  config->Initialize(codec,
-                     profile,
-                     format,
-                     (stream->codec->colorspace == AVCOL_SPC_BT709)
-                         ? VideoFrame::COLOR_SPACE_HD_REC709
-                         : VideoFrame::COLOR_SPACE_UNSPECIFIED,
-                     coded_size, visible_rect, natural_size,
-                     stream->codec->extradata, stream->codec->extradata_size,
-                     is_encrypted,
-                     record_stats);
+  // Prefer the color space found by libavcodec if available.
+  ColorSpace color_space = AVColorSpaceToColorSpace(stream->codec->colorspace,
+                                                    stream->codec->color_range);
+  if (color_space == COLOR_SPACE_UNSPECIFIED) {
+    // Otherwise, assume that SD video is usually Rec.601, and HD is usually
+    // Rec.709.
+    color_space = (natural_size.height() < 720) ? COLOR_SPACE_SD_REC601
+                                                : COLOR_SPACE_HD_REC709;
+  }
+
+  config->Initialize(codec, profile, format, color_space, coded_size,
+                     visible_rect, natural_size, stream->codec->extradata,
+                     stream->codec->extradata_size, is_encrypted);
 }
 
 void VideoDecoderConfigToAVCodecContext(
@@ -451,7 +466,9 @@ void VideoDecoderConfigToAVCodecContext(
   codec_context->profile = VideoCodecProfileToProfileID(config.profile());
   codec_context->coded_width = config.coded_size().width();
   codec_context->coded_height = config.coded_size().height();
-  codec_context->pix_fmt = VideoFormatToPixelFormat(config.format());
+  codec_context->pix_fmt = VideoPixelFormatToAVPixelFormat(config.format());
+  if (config.color_space() == COLOR_SPACE_JPEG)
+    codec_context->color_range = AVCOL_RANGE_JPEG;
 
   if (config.extra_data()) {
     codec_context->extradata_size = config.extra_data_size();
@@ -532,41 +549,60 @@ ChannelLayout ChannelLayoutToChromeChannelLayout(int64_t layout, int channels) {
   }
 }
 
-VideoFrame::Format PixelFormatToVideoFormat(PixelFormat pixel_format) {
+VideoPixelFormat AVPixelFormatToVideoPixelFormat(AVPixelFormat pixel_format) {
   // The YUVJ alternatives are FFmpeg's (deprecated, but still in use) way to
-  // specify a pixel format and full range color combination
+  // specify a pixel format and full range color combination.
   switch (pixel_format) {
-    case PIX_FMT_YUV422P:
-    case PIX_FMT_YUVJ422P:
-      return VideoFrame::YV16;
-    case PIX_FMT_YUV444P:
-    case PIX_FMT_YUVJ444P:
-      return VideoFrame::YV24;
-    case PIX_FMT_YUV420P:
-    case PIX_FMT_YUVJ420P:
-      return VideoFrame::YV12;
-    case PIX_FMT_YUVA420P:
-      return VideoFrame::YV12A;
+    case AV_PIX_FMT_YUV422P:
+    case AV_PIX_FMT_YUVJ422P:
+      return PIXEL_FORMAT_YV16;
+    case AV_PIX_FMT_YUV444P:
+    case AV_PIX_FMT_YUVJ444P:
+      return PIXEL_FORMAT_YV24;
+    case AV_PIX_FMT_YUV420P:
+    case AV_PIX_FMT_YUVJ420P:
+      return PIXEL_FORMAT_YV12;
+    case AV_PIX_FMT_YUVA420P:
+      return PIXEL_FORMAT_YV12A;
     default:
-      DVLOG(1) << "Unsupported PixelFormat: " << pixel_format;
+      DVLOG(1) << "Unsupported AVPixelFormat: " << pixel_format;
   }
-  return VideoFrame::UNKNOWN;
+  return PIXEL_FORMAT_UNKNOWN;
 }
 
-PixelFormat VideoFormatToPixelFormat(VideoFrame::Format video_format) {
+AVPixelFormat VideoPixelFormatToAVPixelFormat(VideoPixelFormat video_format) {
   switch (video_format) {
-    case VideoFrame::YV16:
-      return PIX_FMT_YUV422P;
-    case VideoFrame::YV12:
-      return PIX_FMT_YUV420P;
-    case VideoFrame::YV12A:
-      return PIX_FMT_YUVA420P;
-    case VideoFrame::YV24:
-      return PIX_FMT_YUV444P;
+    case PIXEL_FORMAT_YV16:
+      return AV_PIX_FMT_YUV422P;
+    case PIXEL_FORMAT_YV12:
+      return AV_PIX_FMT_YUV420P;
+    case PIXEL_FORMAT_YV12A:
+      return AV_PIX_FMT_YUVA420P;
+    case PIXEL_FORMAT_YV24:
+      return AV_PIX_FMT_YUV444P;
     default:
-      DVLOG(1) << "Unsupported VideoFrame::Format: " << video_format;
+      DVLOG(1) << "Unsupported Format: " << video_format;
   }
-  return PIX_FMT_NONE;
+  return AV_PIX_FMT_NONE;
+}
+
+ColorSpace AVColorSpaceToColorSpace(AVColorSpace color_space,
+                                    AVColorRange color_range) {
+  if (color_range == AVCOL_RANGE_JPEG)
+    return COLOR_SPACE_JPEG;
+
+  switch (color_space) {
+    case AVCOL_SPC_UNSPECIFIED:
+      break;
+    case AVCOL_SPC_BT709:
+      return COLOR_SPACE_HD_REC709;
+    case AVCOL_SPC_SMPTE170M:
+    case AVCOL_SPC_BT470BG:
+      return COLOR_SPACE_SD_REC601;
+    default:
+      DVLOG(1) << "Unknown AVColorSpace: " << color_space;
+  }
+  return COLOR_SPACE_UNSPECIFIED;
 }
 
 bool FFmpegUTCDateToTime(const char* date_utc, base::Time* out) {
@@ -607,6 +643,13 @@ bool FFmpegUTCDateToTime(const char* date_utc, base::Time* out) {
   }
 
   return false;
+}
+
+int32_t HashCodecName(const char* codec_name) {
+  // Use the first 32-bits from the SHA1 hash as the identifier.
+  int32_t hash;
+  memcpy(&hash, base::SHA1HashString(codec_name).substr(0, 4).c_str(), 4);
+  return hash;
 }
 
 }  // namespace media

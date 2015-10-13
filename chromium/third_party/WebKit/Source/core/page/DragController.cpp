@@ -39,17 +39,19 @@
 #include "core/dom/Node.h"
 #include "core/dom/Text.h"
 #include "core/dom/shadow/ShadowRoot.h"
+#include "core/editing/DragCaretController.h"
+#include "core/editing/EditingUtilities.h"
 #include "core/editing/Editor.h"
 #include "core/editing/FrameSelection.h"
-#include "core/editing/MoveSelectionCommand.h"
-#include "core/editing/ReplaceSelectionCommand.h"
-#include "core/editing/htmlediting.h"
-#include "core/editing/markup.h"
+#include "core/editing/commands/MoveSelectionCommand.h"
+#include "core/editing/commands/ReplaceSelectionCommand.h"
+#include "core/editing/serializers/Serialization.h"
 #include "core/events/TextEvent.h"
 #include "core/fetch/ImageResource.h"
 #include "core/fetch/ResourceFetcher.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
+#include "core/frame/Settings.h"
 #include "core/html/HTMLAnchorElement.h"
 #include "core/html/HTMLFormElement.h"
 #include "core/html/HTMLInputElement.h"
@@ -64,7 +66,6 @@
 #include "core/page/DragSession.h"
 #include "core/page/DragState.h"
 #include "core/page/Page.h"
-#include "core/frame/Settings.h"
 #include "core/layout/HitTestRequest.h"
 #include "core/layout/HitTestResult.h"
 #include "core/layout/LayoutImage.h"
@@ -151,7 +152,7 @@ static PassRefPtrWillBeRawPtr<DocumentFragment> documentFragmentFromDragData(Dra
 
     Document& document = context->ownerDocument();
     if (dragData->containsCompatibleContent()) {
-        if (PassRefPtrWillBeRawPtr<DocumentFragment> fragment = dragData->asFragment(frame, context, allowPlainText, chosePlainText))
+        if (PassRefPtrWillBeRawPtr<DocumentFragment> fragment = dragData->asFragment(frame))
             return fragment;
 
         if (dragData->containsURL(DragData::DoNotConvertFilenames)) {
@@ -177,7 +178,7 @@ static PassRefPtrWillBeRawPtr<DocumentFragment> documentFragmentFromDragData(Dra
     }
     if (allowPlainText && dragData->containsPlainText()) {
         chosePlainText = true;
-        return createFragmentFromText(context.get(), dragData->asPlainText()).get();
+        return createFragmentFromText(EphemeralRange(context.get()), dragData->asPlainText()).get();
     }
 
     return nullptr;
@@ -373,7 +374,7 @@ bool DragController::tryDocumentDrag(DragData* dragData, DragDestinationAction a
         }
 
         if (!m_fileInputElementUnderMouse)
-            m_page->dragCaretController().setCaretPosition(m_documentUnderMouse->frame()->visiblePositionForPoint(point));
+            m_page->dragCaretController().setCaretPosition(m_documentUnderMouse->frame()->positionForPoint(point));
 
         LocalFrame* innerFrame = element->document().frame();
         dragSession.operation = dragIsMove(innerFrame->selection(), dragData) ? DragOperationMove : DragOperationCopy;
@@ -427,9 +428,9 @@ static bool setSelectionToDragCaret(LocalFrame* frame, VisibleSelection& dragCar
 {
     frame->selection().setSelection(dragCaret);
     if (frame->selection().isNone()) {
-        dragCaret = VisibleSelection(frame->visiblePositionForPoint(point));
+        dragCaret = VisibleSelection(frame->positionForPoint(point));
         frame->selection().setSelection(dragCaret);
-        range = dragCaret.toNormalizedRange();
+        range = createRange(dragCaret.toNormalizedEphemeralRange());
     }
     return !frame->selection().isNone() && frame->selection().isContentEditable();
 }
@@ -439,7 +440,7 @@ bool DragController::dispatchTextInputEventFor(LocalFrame* innerFrame, DragData*
     ASSERT(m_page->dragCaretController().hasCaret());
     String text = m_page->dragCaretController().isContentRichlyEditable() ? "" : dragData->asPlainText();
     Element* target = innerFrame->editor().findEventTargetFrom(VisibleSelection(m_page->dragCaretController().caretPosition()));
-    return target->dispatchEvent(TextEvent::createForDrop(innerFrame->domWindow(), text), IGNORE_EXCEPTION);
+    return target->dispatchEvent(TextEvent::createForDrop(innerFrame->domWindow(), text));
 }
 
 bool DragController::concludeEditDrag(DragData* dragData)
@@ -482,7 +483,7 @@ bool DragController::concludeEditDrag(DragData* dragData)
 
     VisibleSelection dragCaret(m_page->dragCaretController().caretPosition());
     m_page->dragCaretController().clear();
-    RefPtrWillBeRawPtr<Range> range = dragCaret.toNormalizedRange();
+    RefPtrWillBeRawPtr<Range> range = createRange(dragCaret.toNormalizedEphemeralRange());
     RefPtrWillBeRawPtr<Element> rootEditableElement = innerFrame->selection().rootEditableElement();
 
     // For range to be null a WebKit client must have done something bad while
@@ -521,7 +522,7 @@ bool DragController::concludeEditDrag(DragData* dragData)
 
         if (setSelectionToDragCaret(innerFrame.get(), dragCaret, range, point)) {
             ASSERT(m_documentUnderMouse);
-            ReplaceSelectionCommand::create(*m_documentUnderMouse.get(), createFragmentFromText(range.get(), text),  ReplaceSelectionCommand::SelectReplacement | ReplaceSelectionCommand::MatchStyle | ReplaceSelectionCommand::PreventNesting)->apply();
+            ReplaceSelectionCommand::create(*m_documentUnderMouse.get(), createFragmentFromText(EphemeralRange(range.get()), text),  ReplaceSelectionCommand::SelectReplacement | ReplaceSelectionCommand::MatchStyle | ReplaceSelectionCommand::PreventNesting)->apply();
         }
     }
 
@@ -606,9 +607,9 @@ bool DragController::tryDHTMLDrag(DragData* dragData, DragOperation& operation)
     }
 
     operation = dataTransfer->destinationOperation();
-    if (dataTransfer->dropEffectIsUninitialized())
+    if (dataTransfer->dropEffectIsUninitialized()) {
         operation = defaultOperationForDrag(srcOpMask);
-    else if (!(srcOpMask & operation)) {
+    } else if (!(srcOpMask & operation)) {
         // The element picked an operation which is not supported by the source
         operation = DragOperationNone;
     }
@@ -715,7 +716,7 @@ static void prepareDataTransferForImageDrag(LocalFrame* source, DataTransfer* da
     if (node->isContentRichlyEditable()) {
         RefPtrWillBeRawPtr<Range> range = source->document()->createRange();
         range->selectNode(node, ASSERT_NO_EXCEPTION);
-        source->selection().setSelection(VisibleSelection(range.get(), DOWNSTREAM));
+        source->selection().setSelection(VisibleSelection(EphemeralRange(range.get())));
     }
     dataTransfer->declareAndWriteDragImage(node, !linkURL.isEmpty() ? linkURL : imageURL, label);
 }
@@ -743,14 +744,7 @@ bool DragController::populateDragDataTransfer(LocalFrame* src, const DragState& 
     Node* node = state.m_dragSrc.get();
 
     if (state.m_dragType == DragSourceActionSelection) {
-        if (enclosingTextFormControl(src->selection().start())) {
-            dataTransfer->writePlainText(src->selectedTextForClipboard());
-        } else {
-            RefPtrWillBeRawPtr<Range> selectionRange = src->selection().toNormalizedRange();
-            ASSERT(selectionRange);
-
-            dataTransfer->writeRange(selectionRange.get(), src);
-        }
+        dataTransfer->writeSelection(src->selection());
     } else if (state.m_dragType == DragSourceActionImage) {
         if (imageURL.isEmpty() || !node || !node->isElementNode())
             return false;
@@ -806,12 +800,13 @@ static PassOwnPtr<DragImage> dragImageForImage(Element* element, Image* image, c
 
     InterpolationQuality interpolationQuality = element->ensureComputedStyle()->imageRendering() == ImageRenderingPixelated ? InterpolationNone : InterpolationHigh;
     if (image->size().height() * image->size().width() <= MaxOriginalImageArea
-        && (dragImage = DragImage::create(image, element->layoutObject() ? element->layoutObject()->shouldRespectImageOrientation() : DoNotRespectImageOrientation, 1 /* deviceScaleFactor */, interpolationQuality))) {
+        && (dragImage = DragImage::create(image,
+            element->layoutObject() ? element->layoutObject()->shouldRespectImageOrientation() : DoNotRespectImageOrientation,
+            1 /* deviceScaleFactor */, interpolationQuality, DragImageAlpha,
+            DragImage::clampedImageScale(*image, imageRect.size(), maxDragImageSize())))) {
         IntSize originalSize = imageRect.size();
         origin = imageRect.location();
 
-        dragImage->fitToMaxSize(imageRect.size(), maxDragImageSize());
-        dragImage->dissolveToFraction(DragImageAlpha);
         IntSize newSize = dragImage->size();
 
         // Properly orient the drag image and orient it differently if it's smaller than the original
@@ -874,9 +869,7 @@ bool DragController::startDrag(LocalFrame* src, const DragState& state, const Pl
     Node* node = state.m_dragSrc.get();
     if (state.m_dragType == DragSourceActionSelection) {
         if (!dragImage) {
-            dragImage = src->dragImageForSelection();
-            if (dragImage)
-                dragImage->dissolveToFraction(DragImageAlpha);
+            dragImage = src->dragImageForSelection(DragImageAlpha);
             dragLocation = dragLocationForSelectionDrag(src);
         }
         doSystemDrag(dragImage.get(), dragLocation, dragOrigin, dataTransfer, src, false);

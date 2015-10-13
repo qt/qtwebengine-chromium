@@ -7,6 +7,7 @@
 
 #include "core/CoreExport.h"
 #include "platform/Crypto.h"
+#include "wtf/Allocator.h"
 
 namespace WTF {
 class String;
@@ -20,6 +21,7 @@ class KURL;
 class Resource;
 
 class CORE_EXPORT SubresourceIntegrity {
+    STATIC_ONLY(SubresourceIntegrity);
 public:
     enum IntegrityParseResult {
         IntegrityParseValidResult,
@@ -27,6 +29,7 @@ public:
     };
 
     static bool CheckSubresourceIntegrity(const Element&, const WTF::String& content, const KURL& resourceUrl, const Resource&);
+    static bool CheckSubresourceIntegrity(const String&, const WTF::String& content, const KURL& resourceUrl, Document&, WTF::String&);
 
 private:
     // FIXME: After the merge with the Chromium repo, this should be refactored

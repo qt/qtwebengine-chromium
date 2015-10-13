@@ -35,9 +35,9 @@
 
 namespace blink {
 
-void CachedMatchedProperties::set(const ComputedStyle& style, const ComputedStyle& parentStyle, const MatchResult& matchResult)
+void CachedMatchedProperties::set(const ComputedStyle& style, const ComputedStyle& parentStyle, const MatchedPropertiesVector& properties)
 {
-    matchedProperties.appendVector(matchResult.matchedProperties);
+    matchedProperties.appendVector(properties);
 
     // Note that we don't cache the original ComputedStyle instance. It may be further modified.
     // The ComputedStyle in the cache is really just a holder for the substructures and never used as-is.
@@ -60,29 +60,29 @@ MatchedPropertiesCache::MatchedPropertiesCache()
 {
 }
 
-const CachedMatchedProperties* MatchedPropertiesCache::find(unsigned hash, const StyleResolverState& styleResolverState, const MatchResult& matchResult)
+const CachedMatchedProperties* MatchedPropertiesCache::find(unsigned hash, const StyleResolverState& styleResolverState, const MatchedPropertiesVector& properties)
 {
     ASSERT(hash);
 
     Cache::iterator it = m_cache.find(hash);
     if (it == m_cache.end())
-        return 0;
+        return nullptr;
     CachedMatchedProperties* cacheItem = it->value.get();
     ASSERT(cacheItem);
 
-    size_t size = matchResult.matchedProperties.size();
+    size_t size = properties.size();
     if (size != cacheItem->matchedProperties.size())
-        return 0;
+        return nullptr;
     if (cacheItem->computedStyle->insideLink() != styleResolverState.style()->insideLink())
-        return 0;
+        return nullptr;
     for (size_t i = 0; i < size; ++i) {
-        if (matchResult.matchedProperties[i] != cacheItem->matchedProperties[i])
-            return 0;
+        if (properties[i] != cacheItem->matchedProperties[i])
+            return nullptr;
     }
     return cacheItem;
 }
 
-void MatchedPropertiesCache::add(const ComputedStyle& style, const ComputedStyle& parentStyle, unsigned hash, const MatchResult& matchResult)
+void MatchedPropertiesCache::add(const ComputedStyle& style, const ComputedStyle& parentStyle, unsigned hash, const MatchedPropertiesVector& properties)
 {
 #if !ENABLE(OILPAN)
     static const unsigned maxAdditionsBetweenSweeps = 100;
@@ -102,7 +102,7 @@ void MatchedPropertiesCache::add(const ComputedStyle& style, const ComputedStyle
     if (!addResult.isNewEntry)
         cacheItem->clear();
 
-    cacheItem->set(style, parentStyle, matchResult);
+    cacheItem->set(style, parentStyle, properties);
 }
 
 void MatchedPropertiesCache::clear()
@@ -143,11 +143,9 @@ void MatchedPropertiesCache::sweep(Timer<MatchedPropertiesCache>*)
 }
 #endif
 
-bool MatchedPropertiesCache::isCacheable(const Element* element, const ComputedStyle& style, const ComputedStyle& parentStyle)
+bool MatchedPropertiesCache::isCacheable(const ComputedStyle& style, const ComputedStyle& parentStyle)
 {
     if (style.unique() || (style.styleType() != NOPSEUDO && parentStyle.unique()))
-        return false;
-    if (style.hasAppearance())
         return false;
     if (style.zoom() != ComputedStyle::initialZoom())
         return false;

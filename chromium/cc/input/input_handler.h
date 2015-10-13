@@ -15,11 +15,15 @@
 namespace gfx {
 class Point;
 class PointF;
+class ScrollOffset;
+class SizeF;
 class Vector2d;
 class Vector2dF;
 }
 
-namespace ui { struct LatencyInfo; }
+namespace ui {
+class LatencyInfo;
+}
 
 namespace cc {
 
@@ -49,6 +53,13 @@ class CC_EXPORT InputHandlerClient {
   virtual void Animate(base::TimeTicks time) = 0;
   virtual void MainThreadHasStoppedFlinging() = 0;
   virtual void ReconcileElasticOverscrollAndRootScroll() = 0;
+  virtual void UpdateRootLayerStateForSynchronousInputHandler(
+      const gfx::ScrollOffset& total_scroll_offset,
+      const gfx::ScrollOffset& max_scroll_offset,
+      const gfx::SizeF& scrollable_size,
+      float page_scale_factor,
+      float min_page_scale_factor,
+      float max_page_scale_factor) = 0;
 
  protected:
   InputHandlerClient() {}
@@ -123,15 +134,14 @@ class CC_EXPORT InputHandler {
   // returned SCROLL_STARTED.
   virtual void ScrollEnd() = 0;
 
-  virtual void SetRootLayerScrollOffsetDelegate(
-      LayerScrollOffsetDelegate* root_layer_scroll_offset_delegate) = 0;
+  // Requests a callback to UpdateRootLayerStateForSynchronousInputHandler()
+  // giving the current root scroll and page scale information.
+  virtual void RequestUpdateForSynchronousInputHandler() = 0;
 
-  // Called when the value returned by
-  // LayerScrollOffsetDelegate.GetTotalScrollOffset has changed for reasons
-  // other than a SetTotalScrollOffset call.
-  // NOTE: This should only called after a valid delegate was set via a call to
-  // SetRootLayerScrollOffsetDelegate.
-  virtual void OnRootLayerDelegatedScrollOffsetChanged() = 0;
+  // Called when the root scroll offset has been changed in the synchronous
+  // input handler by the application (outside of input event handling).
+  virtual void SetSynchronousInputHandlerRootScrollOffset(
+      const gfx::ScrollOffset& root_offset) = 0;
 
   virtual void PinchGestureBegin() = 0;
   virtual void PinchGestureUpdate(float magnify_delta,
@@ -141,9 +151,13 @@ class CC_EXPORT InputHandler {
   // Request another callback to InputHandlerClient::Animate().
   virtual void SetNeedsAnimateInput() = 0;
 
+  // If there is a scroll active, this reports whether the scroll is on the
+  // root layer, or on some other sublayer.
+  virtual bool IsCurrentlyScrollingRoot() const = 0;
+
   // Whether the layer under |viewport_point| is the currently scrolling layer.
   virtual bool IsCurrentlyScrollingLayerAt(const gfx::Point& viewport_point,
-                                           ScrollInputType type) = 0;
+                                           ScrollInputType type) const = 0;
 
   virtual bool HaveWheelEventHandlersAt(const gfx::Point& viewport_point) = 0;
 

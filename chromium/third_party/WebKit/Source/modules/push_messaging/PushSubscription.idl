@@ -4,12 +4,18 @@
 
 // https://w3c.github.io/push-api/#pushsubscription-interface
 
+enum PushEncryptionKeyName {
+    "curve25519dh"
+};
+
 [
     Exposed=(Window,ServiceWorker),
     GarbageCollected,
     RuntimeEnabled=PushMessaging,
 ] interface PushSubscription {
     readonly attribute USVString endpoint;
+
+    [RuntimeEnabled=PushMessagingData] ArrayBuffer? getKey(PushEncryptionKeyName name);
     [CallWith=ScriptState] Promise<boolean> unsubscribe();
 
     serializer = { attribute };

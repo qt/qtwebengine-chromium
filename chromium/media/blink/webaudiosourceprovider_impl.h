@@ -38,9 +38,9 @@ class MEDIA_EXPORT WebAudioSourceProviderImpl
       const scoped_refptr<AudioRendererSink>& sink);
 
   // blink::WebAudioSourceProvider implementation.
-  virtual void setClient(blink::WebAudioSourceProviderClient* client);
-  virtual void provideInput(const blink::WebVector<float*>& audio_data,
-                            size_t number_of_frames);
+  void setClient(blink::WebAudioSourceProviderClient* client) override;
+  void provideInput(const blink::WebVector<float*>& audio_data,
+                    size_t number_of_frames) override;
 
   // AudioRendererSink implementation.
   void Start() override;
@@ -48,14 +48,12 @@ class MEDIA_EXPORT WebAudioSourceProviderImpl
   void Play() override;
   void Pause() override;
   bool SetVolume(double volume) override;
-  void SwitchOutputDevice(const std::string& device_id,
-                          const GURL& security_origin,
-                          const SwitchOutputDeviceCB& callback) override;
+  OutputDevice* GetOutputDevice() override;
   void Initialize(const AudioParameters& params,
                   RenderCallback* renderer) override;
 
  protected:
-  virtual ~WebAudioSourceProviderImpl();
+  ~WebAudioSourceProviderImpl() override;
 
  private:
   // Calls setFormat() on |client_| from the Blink renderer thread.

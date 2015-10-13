@@ -13,6 +13,7 @@ source_set("browser") {
   # internal content ones) should depend on the public one.
   visibility = [ "//content/public/browser:browser_sources" ]
 
+  configs += [ "//build/config:precompiled_headers" ]
   defines = []
   libs = []
   ldflags = []
@@ -22,6 +23,7 @@ source_set("browser") {
     "//base",
     "//base:base_static",
     "//components/mime_util",
+    "//components/url_formatter",
     "//content:resources",
     "//content/browser/background_sync:background_sync_proto",
     "//content/browser/cache_storage:cache_storage_proto",
@@ -37,6 +39,7 @@ source_set("browser") {
     "//mojo/application/public/cpp:cpp_for_chromium",
     "//mojo/application/public/interfaces",
     "//mojo/common",
+    "//mojo/package_manager",
     "//mojo/shell",
     "//net",
     "//net:extras",
@@ -106,7 +109,6 @@ source_set("browser") {
     deps += [
       "//cc",
       "//cc/surfaces",
-      "//components/scheduler:common",
       "//content/app/resources",
       "//content/app/strings",
       "//content/browser/devtools:gen_devtools_protocol_handler",
@@ -243,10 +245,6 @@ source_set("browser") {
     #           ],
   }
 
-  if (is_linux) {
-    deps += [ "//sandbox/linux:libc_urandom_override" ]
-  }
-
   if (use_udev) {
     deps += [ "//device/udev_linux" ]
   } else {
@@ -282,8 +280,22 @@ source_set("browser") {
     }
   }
 
+  if (use_atk) {
+    sources +=
+        rebase_path(content_browser_gypi_values.auralinux_browser_sources,
+                    ".",
+                    "//content")
+
+    configs += [
+      "//build/config/linux:atk",
+      "//build/config/linux:atk_warnings",
+      "//build/config/linux:gconf",
+      "//build/config/linux:glib",
+    ]
+  }
+
   if (is_linux && use_aura) {
-    configs += [ "//build/config/linux:fontconfig" ]
+    deps += [ "//build/linux:fontconfig" ]
   }
 
   if (use_x11) {
@@ -328,6 +340,8 @@ source_set("browser") {
       "geolocation/network_location_provider.h",
       "geolocation/network_location_request.cc",
       "geolocation/network_location_request.h",
+      "power_usage_monitor_impl.cc",
+      "power_usage_monitor_impl.h",
       "renderer_host/begin_frame_observer_proxy.cc",
       "tracing/tracing_ui.cc",
       "tracing/tracing_ui.h",
@@ -354,6 +368,7 @@ source_set("browser") {
       "speech/speech_recognizer_impl.cc",
       "speech/speech_recognizer_impl.h",
     ]
+    deps -= [ "//device/battery" ]
     deps += [
       "//content/public/android:jni",
       "//media",
@@ -402,6 +417,8 @@ source_set("browser") {
       "renderer_host/compositor_resize_lock_aura.h",
       "renderer_host/input/synthetic_gesture_target_aura.cc",
       "renderer_host/input/synthetic_gesture_target_aura.h",
+      "renderer_host/input/touch_selection_controller_client_aura.cc",
+      "renderer_host/input/touch_selection_controller_client_aura.h",
       "renderer_host/native_web_keyboard_event_aura.cc",
       "renderer_host/render_widget_host_view_aura.cc",
       "renderer_host/render_widget_host_view_aura.h",
@@ -419,8 +436,6 @@ source_set("browser") {
       "web_contents/aura/overscroll_window_delegate.h",
       "web_contents/aura/shadow_layer_delegate.cc",
       "web_contents/aura/shadow_layer_delegate.h",
-      "web_contents/touch_editable_impl_aura.cc",
-      "web_contents/touch_editable_impl_aura.h",
       "web_contents/web_contents_view_aura.cc",
       "web_contents/web_contents_view_aura.h",
     ]
@@ -457,10 +472,7 @@ source_set("browser") {
   }
 
   if (enable_web_speech) {
-    deps += [
-      "//third_party/flac",
-      "//third_party/speex",
-    ]
+    deps += [ "//third_party/flac" ]
   }
 
   if (is_linux && use_dbus) {
@@ -476,7 +488,7 @@ source_set("browser") {
     ]
   }
 
-  if (is_linux && use_openssl) {
+  if (is_linux) {
     deps += [ "//third_party/boringssl" ]
   }
 
@@ -491,6 +503,15 @@ source_set("browser") {
       "vr/vr_device_manager.cc",
       "vr/vr_device_manager.h",
       "vr/vr_device_provider.h",
+    ]
+  }
+
+  if (enable_webvr && is_android) {
+    sources += [
+      "vr/android/cardboard/cardboard_vr_device.cc",
+      "vr/android/cardboard/cardboard_vr_device.h",
+      "vr/android/cardboard/cardboard_vr_device_provider.cc",
+      "vr/android/cardboard/cardboard_vr_device_provider.h",
     ]
   }
 }

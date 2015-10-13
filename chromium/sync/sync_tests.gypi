@@ -43,12 +43,12 @@
         'test/engine/fake_sync_scheduler.h',
         'test/engine/injectable_sync_context_proxy.cc',
         'test/engine/injectable_sync_context_proxy.h',
+        'test/engine/mock_commit_queue.cc',
+        'test/engine/mock_commit_queue.h',
         'test/engine/mock_connection_manager.cc',
         'test/engine/mock_connection_manager.h',
-        'test/engine/mock_model_type_sync_proxy.cc',
-        'test/engine/mock_model_type_sync_proxy.h',
-        'test/engine/mock_model_type_sync_worker.cc',
-        'test/engine/mock_model_type_sync_worker.h',
+        'test/engine/mock_model_type_processor.cc',
+        'test/engine/mock_model_type_processor.h',
         'test/engine/mock_nudge_handler.cc',
         'test/engine/mock_nudge_handler.h',
         'test/engine/mock_update_handler.cc',
@@ -278,8 +278,8 @@
         'engine/entity_tracker_unittest.cc',
         'engine/get_updates_processor_unittest.cc',
         'engine/model_type_entity_unittest.cc',
-        'engine/model_type_sync_proxy_impl_unittest.cc',
-        'engine/model_type_sync_worker_impl_unittest.cc',
+        'engine/model_type_processor_impl_unittest.cc',
+        'engine/model_type_worker_unittest.cc',
         'engine/sync_scheduler_unittest.cc',
         'engine/syncer_proto_util_unittest.cc',
         'engine/syncer_unittest.cc',
@@ -503,6 +503,25 @@
           },
           'includes': [ '../build/apk_test.gypi' ],
         },
+      ],
+      'conditions': [
+        ['test_isolation_mode != "noop"', {
+          'targets': [
+            {
+              'target_name': 'sync_unit_tests_apk_run',
+              'type': 'none',
+              'dependencies': [
+                'sync_unit_tests_apk',
+              ],
+              'includes': [
+                '../build/isolate.gypi',
+              ],
+              'sources': [
+                'sync_unit_tests_apk.isolate',
+              ],
+            },
+          ],
+        }],
       ],
     }],
     ['test_isolation_mode != "noop"', {

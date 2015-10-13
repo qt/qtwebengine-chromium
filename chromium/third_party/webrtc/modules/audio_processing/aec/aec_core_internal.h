@@ -101,7 +101,7 @@ struct AecCore {
 
   int mult;  // sampling frequency multiple
   int sampFreq;
-  int num_bands;
+  size_t num_bands;
   uint32_t seed;
 
   float normal_mu;               // stepsize
@@ -166,6 +166,7 @@ struct AecCore {
   rtc_WavWriter* nearFile;
   rtc_WavWriter* outFile;
   rtc_WavWriter* outLinearFile;
+  FILE* e_fft_file;
 #endif
 };
 

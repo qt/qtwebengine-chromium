@@ -9,6 +9,8 @@
 #include "base/command_line.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
+#include "third_party/skia/include/core/SkPaint.h"
+#include "third_party/skia/include/core/SkPath.h"
 #include "third_party/skia/include/effects/SkGradientShader.h"
 #include "ui/base/layout.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -588,8 +590,8 @@ SkRect NativeThemeBase::PaintCheckboxRadioCommon(
     return SkRect::MakeEmpty();
   }
 
-  // Make room for the drop shadow.
-  skrect.iset(skrect.x(), skrect.y(), skrect.right() - 1, skrect.bottom() - 1);
+  // Make room for padding/drop shadow.
+  AdjustCheckboxRadioRectForPadding(&skrect);
 
   // Draw the drop shadow below the widget.
   if (state != kPressed) {
@@ -976,6 +978,11 @@ void NativeThemeBase::PaintProgressBar(SkCanvas* canvas,
   DrawImageInt(canvas, *right_border_image, 0, 0, right_border_image->width(),
                right_border_image->height(), dest_x, rect.y(),
                dest_right_border_width, rect.height());
+}
+
+void NativeThemeBase::AdjustCheckboxRadioRectForPadding(SkRect* rect) const {
+  // By default we only take 1px from right and bottom for the drop shadow.
+  rect->iset(rect->x(), rect->y(), rect->right() - 1, rect->bottom() - 1);
 }
 
 bool NativeThemeBase::IntersectsClipRectInt(SkCanvas* canvas,

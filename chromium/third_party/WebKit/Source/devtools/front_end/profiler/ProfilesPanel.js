@@ -183,8 +183,9 @@ WebInspector.ProfileType.prototype = {
     loadFromFile: function(file)
     {
         var name = file.name;
-        if (name.endsWith(this.fileExtension()))
-            name = name.substr(0, name.length - this.fileExtension().length);
+        var fileExtension = this.fileExtension();
+        if (fileExtension && name.endsWith(fileExtension))
+            name = name.substr(0, name.length - fileExtension.length);
         var profile = this.createProfileLoadedFromFile(name);
         profile.setFromFile();
         this.setProfileBeingRecorded(profile);
@@ -463,11 +464,10 @@ WebInspector.ProfilesPanel = function()
     this.panelSidebarElement().insertBefore(toolbarContainerLeft, this.panelSidebarElement().firstChild);
     var toolbar = new WebInspector.Toolbar(toolbarContainerLeft);
 
-    this.recordButton = new WebInspector.ToolbarButton("", "record-toolbar-item");
-    this.recordButton.addEventListener("click", this.toggleRecordButton, this);
+    this.recordButton = WebInspector.ToolbarButton.createActionButton("profiler.toggle-recording");
     toolbar.appendToolbarItem(this.recordButton);
 
-    this.clearResultsButton = new WebInspector.ToolbarButton(WebInspector.UIString("Clear all profiles."), "clear-toolbar-item");
+    this.clearResultsButton = new WebInspector.ToolbarButton(WebInspector.UIString("Clear all profiles"), "clear-toolbar-item");
     this.clearResultsButton.addEventListener("click", this._reset, this);
     toolbar.appendToolbarItem(this.clearResultsButton);
 
@@ -489,12 +489,27 @@ WebInspector.ProfilesPanel = function()
 
     this._createFileSelectorElement();
     this.element.addEventListener("contextmenu", this._handleContextMenuEvent.bind(this), true);
-    this._registerShortcuts();
+
+    this.contentElement.addEventListener("keydown", this._onKeyDown.bind(this), false);
 
     WebInspector.targetManager.addEventListener(WebInspector.TargetManager.Events.SuspendStateChanged, this._onSuspendStateChanged, this);
 }
 
 WebInspector.ProfilesPanel.prototype = {
+    /**
+     * @param {!Event} event
+     */
+    _onKeyDown: function(event)
+    {
+        var handled = false;
+        if (event.keyIdentifier === "Down" && !event.altKey)
+            handled = this._sidebarTree.selectNext();
+        else if (event.keyIdentifier === "Up" && !event.altKey)
+            handled = this._sidebarTree.selectPrevious();
+        if (handled)
+            event.consume(true);
+    },
+
     /**
      * @override
      * @return {?WebInspector.SearchableView}
@@ -524,11 +539,6 @@ WebInspector.ProfilesPanel.prototype = {
                 return type;
         }
         return null;
-    },
-
-    _registerShortcuts: function()
-    {
-        this.registerShortcuts(WebInspector.ShortcutsScreen.ProfilesPanelShortcuts.StartStopRecording, this.toggleRecordButton.bind(this));
     },
 
     /**
@@ -909,6 +919,16 @@ WebInspector.ProfilesPanel.prototype = {
         contextMenu.appendItem(WebInspector.UIString.capitalize("Reveal in Summary ^view"), revealInView.bind(this, "Summary"));
     },
 
+    wasShown: function()
+    {
+        WebInspector.context.setFlavor(WebInspector.ProfilesPanel, this);
+    },
+
+    willHide: function()
+    {
+        WebInspector.context.setFlavor(WebInspector.ProfilesPanel, null);
+    },
+
     __proto__: WebInspector.PanelWithSidebar.prototype
 }
 
@@ -1266,5 +1286,27 @@ WebInspector.ProfilesPanelFactory.prototype = {
     createPanel: function()
     {
         return WebInspector.ProfilesPanel._instance();
+    }
+}
+
+/**
+ * @constructor
+ * @implements {WebInspector.ActionDelegate}
+ */
+WebInspector.ProfilesPanel.RecordActionDelegate = function()
+{
+}
+
+WebInspector.ProfilesPanel.RecordActionDelegate.prototype = {
+    /**
+     * @override
+     * @param {!WebInspector.Context} context
+     * @param {string} actionId
+     */
+    handleAction: function(context, actionId)
+    {
+        var panel = WebInspector.context.flavor(WebInspector.ProfilesPanel);
+        console.assert(panel && panel instanceof WebInspector.ProfilesPanel);
+        panel.toggleRecordButton();
     }
 }

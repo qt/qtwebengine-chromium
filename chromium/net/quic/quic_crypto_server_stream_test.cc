@@ -61,18 +61,22 @@ class QuicCryptoServerStreamPeer {
 namespace {
 
 const char kServerHostname[] = "test.example.com";
-const uint16 kServerPort = 80;
+const uint16 kServerPort = 443;
 
 class QuicCryptoServerStreamTest : public ::testing::TestWithParam<bool> {
  public:
   QuicCryptoServerStreamTest()
       : server_crypto_config_(QuicCryptoServerConfig::TESTING,
                               QuicRandom::GetInstance()),
-        server_id_(kServerHostname, kServerPort, false, PRIVACY_MODE_DISABLED) {
-    // TODO(wtc): replace this with ProofSourceForTesting() when Chromium has
-    // a working ProofSourceForTesting().
+        server_id_(kServerHostname, kServerPort, true, PRIVACY_MODE_DISABLED) {
+#if defined(USE_OPENSSL)
+    server_crypto_config_.SetProofSource(
+        CryptoTestUtils::ProofSourceForTesting());
+#else
+    // TODO(rch): Implement a NSS proof source.
     server_crypto_config_.SetProofSource(
         CryptoTestUtils::FakeProofSourceForTesting());
+#endif
     server_crypto_config_.set_strike_register_no_startup_period();
 
     InitializeServer();
@@ -124,6 +128,16 @@ class QuicCryptoServerStreamTest : public ::testing::TestWithParam<bool> {
                                &client_session);
     CHECK(client_session);
     client_session_.reset(client_session);
+    if (!client_options_.dont_verify_certs) {
+#if defined(USE_OPENSSL)
+      client_crypto_config_.SetProofVerifier(
+          CryptoTestUtils::ProofVerifierForTesting());
+#else
+      // TODO(rch): Implement a NSS proof source.
+      client_crypto_config_.SetProofVerifier(
+          CryptoTestUtils::FakeProofVerifierForTesting());
+#endif
+    }
   }
 
   bool AsyncStrikeRegisterVerification() {
@@ -139,7 +153,7 @@ class QuicCryptoServerStreamTest : public ::testing::TestWithParam<bool> {
     CHECK(server_connection_);
     CHECK(server_session_ != nullptr);
     return CryptoTestUtils::HandshakeWithFakeClient(
-        server_connection_, server_stream(), client_options_);
+        server_connection_, server_stream(), server_id_, client_options_);
   }
 
   // Performs a single round of handshake message-exchange between the
@@ -355,8 +369,9 @@ TEST_P(QuicCryptoServerStreamTest, MessageAfterHandshake) {
       SendConnectionClose(QUIC_CRYPTO_MESSAGE_AFTER_HANDSHAKE_COMPLETE));
   message_.set_tag(kCHLO);
   ConstructHandshakeMessage();
-  server_stream()->ProcessRawData(message_data_->data(),
-                                  message_data_->length());
+  server_stream()->OnStreamFrame(
+      QuicStreamFrame(kCryptoStreamId, /*fin=*/false, /*offset=*/0,
+                      message_data_->AsStringPiece()));
 }
 
 TEST_P(QuicCryptoServerStreamTest, BadMessageType) {
@@ -364,12 +379,15 @@ TEST_P(QuicCryptoServerStreamTest, BadMessageType) {
   ConstructHandshakeMessage();
   EXPECT_CALL(*server_connection_,
               SendConnectionClose(QUIC_INVALID_CRYPTO_MESSAGE_TYPE));
-  server_stream()->ProcessRawData(message_data_->data(),
-                                  message_data_->length());
+  server_stream()->OnStreamFrame(
+      QuicStreamFrame(kCryptoStreamId, /*fin=*/false, /*offset=*/0,
+                      message_data_->AsStringPiece()));
 }
 
 TEST_P(QuicCryptoServerStreamTest, WithoutCertificates) {
   server_crypto_config_.SetProofSource(nullptr);
+  server_id_ =
+      QuicServerId(kServerHostname, kServerPort, false, PRIVACY_MODE_DISABLED);
   client_options_.dont_verify_certs = true;
 
   // Only 2 client hellos need to be sent in the no-certs case: one to get the

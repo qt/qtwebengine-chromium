@@ -2,7 +2,7 @@
 
   /**
    * @demo demo/index.html
-   * @polymerBehavior
+   * @polymerBehavior Polymer.IronButtonState
    */
   Polymer.IronButtonStateImpl = {
 
@@ -36,8 +36,7 @@
         type: Boolean,
         value: false,
         notify: true,
-        reflectToAttribute: true,
-        observer: '_activeChanged'
+        reflectToAttribute: true
       },
 
       /**
@@ -58,6 +57,16 @@
       receivedFocusFromKeyboard: {
         type: Boolean,
         readOnly: true
+      },
+
+      /**
+       * The aria attribute to be set if the button is a toggle and in the
+       * active state.
+       */
+      ariaActiveAttribute: {
+        type: String,
+        value: 'aria-pressed',
+        observer: '_ariaActiveAttributeChanged'
       }
     },
 
@@ -68,7 +77,8 @@
     },
 
     observers: [
-      '_detectKeyboardFocus(focused)'
+      '_detectKeyboardFocus(focused)',
+      '_activeChanged(active, ariaActiveAttribute)'
     ],
 
     keyBindings: {
@@ -76,6 +86,8 @@
       'space:keydown': '_spaceKeyDownHandler',
       'space:keyup': '_spaceKeyUpHandler',
     },
+
+    _mouseEventRe: /^mouse/,
 
     _tapHandler: function() {
       if (this.toggles) {
@@ -93,11 +105,39 @@
     // to emulate native checkbox, (de-)activations from a user interaction fire
     // 'change' events
     _userActivate: function(active) {
-      this.active = active;
-      this.fire('change');
+      if (this.active !== active) {
+        this.active = active;
+        this.fire('change');
+      }
     },
 
-    _downHandler: function() {
+    _eventSourceIsPrimaryInput: function(event) {
+      event = event.detail.sourceEvent || event;
+
+      // Always true for non-mouse events....
+      if (!this._mouseEventRe.test(event.type)) {
+        return true;
+      }
+
+      // http://developer.mozilla.org/en-US/docs/Web/API/MouseEvent/buttons
+      if ('buttons' in event) {
+        return event.buttons === 1;
+      }
+
+      // http://developer.mozilla.org/en-US/docs/Web/API/MouseEvent/which
+      if (typeof event.which === 'number') {
+        return event.which < 2;
+      }
+
+      // http://developer.mozilla.org/en-US/docs/Web/API/MouseEvent/button
+      return event.button < 1;
+    },
+
+    _downHandler: function(event) {
+      if (!this._eventSourceIsPrimaryInput(event)) {
+        return;
+      }
+
       this._setPointerDown(true);
       this._setPressed(true);
       this._setReceivedFocusFromKeyboard(false);
@@ -136,11 +176,18 @@
       this._changedButtonState();
     },
 
-    _activeChanged: function(active) {
+    _ariaActiveAttributeChanged: function(value, oldValue) {
+      if (oldValue && oldValue != value && this.hasAttribute(oldValue)) {
+        this.removeAttribute(oldValue);
+      }
+    },
+
+    _activeChanged: function(active, ariaActiveAttribute) {
       if (this.toggles) {
-        this.setAttribute('aria-pressed', active ? 'true' : 'false');
+        this.setAttribute(this.ariaActiveAttribute,
+                          active ? 'true' : 'false');
       } else {
-        this.removeAttribute('aria-pressed');
+        this.removeAttribute(this.ariaActiveAttribute);
       }
       this._changedButtonState();
     },
@@ -163,7 +210,7 @@
 
   };
 
-  /** @polymerBehavior Polymer.IronButtonState */
+  /** @polymerBehavior */
   Polymer.IronButtonState = [
     Polymer.IronA11yKeysBehavior,
     Polymer.IronButtonStateImpl

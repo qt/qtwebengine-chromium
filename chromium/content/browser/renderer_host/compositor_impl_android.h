@@ -43,8 +43,15 @@ class CONTENT_EXPORT CompositorImpl
     : public Compositor,
       public cc::LayerTreeHostClient,
       public cc::LayerTreeHostSingleThreadClient,
+      public ui::UIResourceProvider,
       public ui::WindowAndroidCompositor {
  public:
+  class VSyncObserver {
+   public:
+    virtual void OnUpdateVSyncParameters(base::TimeTicks timebase,
+                                         base::TimeDelta interval) = 0;
+  };
+
   CompositorImpl(CompositorClient* client, gfx::NativeWindow root_window);
   ~CompositorImpl() override;
 
@@ -54,6 +61,14 @@ class CONTENT_EXPORT CompositorImpl
   static scoped_ptr<cc::SurfaceIdAllocator> CreateSurfaceIdAllocator();
 
   void PopulateGpuCapabilities(gpu::Capabilities gpu_capabilities);
+
+  void AddObserver(VSyncObserver* observer);
+  void RemoveObserver(VSyncObserver* observer);
+
+  // ui::ResourceProvider implementation.
+  cc::UIResourceId CreateUIResource(cc::UIResourceClient* client) override;
+  void DeleteUIResource(cc::UIResourceId resource_id) override;
+  bool SupportsETC1NonPowerOfTwo() const override;
 
  private:
   // Compositor implementation.
@@ -147,7 +162,6 @@ class CONTENT_EXPORT CompositorImpl
   scoped_refptr<cc::Layer> subroot_layer_;
 
   scoped_ptr<cc::LayerTreeHost> host_;
-  ui::UIResourceProvider ui_resource_provider_;
   ui::ResourceManagerImpl resource_manager_;
 
   scoped_ptr<cc::OnscreenDisplayClient> display_client_;
@@ -196,13 +210,17 @@ class CONTENT_EXPORT CompositorImpl
   base::TimeDelta vsync_period_;
   base::TimeTicks last_vsync_;
 
-  base::OneShotTimer<CompositorImpl> establish_gpu_channel_timeout_;
+  base::OneShotTimer establish_gpu_channel_timeout_;
 
   // Whether there is an OutputSurface request pending from the current
   // |host_|. Becomes |true| if RequestNewOutputSurface is called, and |false|
   // if |host_| is deleted or we succeed in creating *and* initializing an
   // OutputSurface (which is essentially the contract with cc).
   bool output_surface_request_pending_;
+
+  gpu::Capabilities gpu_capabilities_;
+
+  base::ObserverList<VSyncObserver, true> observer_list_;
 
   base::WeakPtrFactory<CompositorImpl> weak_factory_;
 

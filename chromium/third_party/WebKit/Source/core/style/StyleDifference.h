@@ -5,19 +5,23 @@
 #ifndef StyleDifference_h
 #define StyleDifference_h
 
+#include "wtf/Allocator.h"
 #include "wtf/Assertions.h"
 
 namespace blink {
 
 class StyleDifference {
+    STACK_ALLOCATED();
 public:
     enum PropertyDifference {
         TransformChanged = 1 << 0,
         OpacityChanged = 1 << 1,
         ZIndexChanged = 1 << 2,
         FilterChanged = 1 << 3,
-        // The object needs to issue paint invalidations if it contains text or properties dependent on color (e.g., border or outline).
-        TextOrColorChanged = 1 << 4,
+        BackdropFilterChanged = 1 << 4,
+        // The object needs to issue paint invalidations if it is affected by text decorations or properties dependent on color (e.g., border or outline).
+        TextDecorationOrColorChanged = 1 << 5,
+        // If you add a value here, be sure to update the number of bits on m_propertySpecificDifferences.
     };
 
     StyleDifference()
@@ -74,8 +78,11 @@ public:
     bool filterChanged() const { return m_propertySpecificDifferences & FilterChanged; }
     void setFilterChanged() { m_propertySpecificDifferences |= FilterChanged; }
 
-    bool textOrColorChanged() const { return m_propertySpecificDifferences & TextOrColorChanged; }
-    void setTextOrColorChanged() { m_propertySpecificDifferences |= TextOrColorChanged; }
+    bool backdropFilterChanged() const { return m_propertySpecificDifferences & BackdropFilterChanged; }
+    void setBackdropFilterChanged() { m_propertySpecificDifferences |= BackdropFilterChanged; }
+
+    bool textDecorationOrColorChanged() const { return m_propertySpecificDifferences & TextDecorationOrColorChanged; }
+    void setTextDecorationOrColorChanged() { m_propertySpecificDifferences |= TextDecorationOrColorChanged; }
 
 private:
     enum PaintInvalidationType {
@@ -92,7 +99,7 @@ private:
     };
     unsigned m_layoutType : 2;
 
-    unsigned m_propertySpecificDifferences : 5;
+    unsigned m_propertySpecificDifferences : 6;
 };
 
 } // namespace blink

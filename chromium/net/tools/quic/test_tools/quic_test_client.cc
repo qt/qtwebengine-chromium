@@ -10,6 +10,7 @@
 #include "net/cert/cert_verify_result.h"
 #include "net/cert/x509_certificate.h"
 #include "net/quic/crypto/proof_verifier.h"
+#include "net/quic/quic_flags.h"
 #include "net/quic/quic_server_id.h"
 #include "net/quic/test_tools/quic_connection_peer.h"
 #include "net/quic/test_tools/quic_spdy_session_peer.h"
@@ -60,13 +61,16 @@ class RecordingProofVerifier : public ProofVerifier {
     for (unsigned i = 0; i < certs.size(); i++) {
       cert_pieces[i] = StringPiece(certs[i]);
     }
-    scoped_refptr<net::X509Certificate> cert =
-        net::X509Certificate::CreateFromDERCertChain(cert_pieces);
-    if (!cert.get()) {
-      return QUIC_FAILURE;
-    }
-
-    common_name_ = cert->subject().GetDisplayName();
+    // TODO(rtenneti): Fix after adding support for real certs. Currently,
+    // cert_pieces are "leaf" and "intermediate" and CreateFromDERCertChain
+    // fails to return cert from these cert_pieces.
+    //    scoped_refptr<net::X509Certificate> cert =
+    //        net::X509Certificate::CreateFromDERCertChain(cert_pieces);
+    //    if (!cert.get()) {
+    //      return QUIC_FAILURE;
+    //    }
+    //
+    //    common_name_ = cert->subject().GetDisplayName();
     return QUIC_SUCCESS;
   }
 
@@ -141,9 +145,9 @@ QuicPacketWriter* MockableQuicClient::CreateQuicPacketWriter() {
   return test_writer_;
 }
 
-QuicConnectionId MockableQuicClient::GenerateConnectionId() {
+QuicConnectionId MockableQuicClient::GenerateNewConnectionId() {
   return override_connection_id_ ? override_connection_id_
-      : QuicClient::GenerateConnectionId();
+                                 : QuicClient::GenerateNewConnectionId();
 }
 
 // Takes ownership of writer.
@@ -229,9 +233,8 @@ void QuicTestClient::SetUserAgentID(const string& user_agent_id) {
 }
 
 ssize_t QuicTestClient::SendRequest(const string& uri) {
-  HTTPMessage message(HttpConstants::HTTP_1_1,
-                      HttpConstants::GET,
-                      uri);
+  HTTPMessage message;
+  FillInRequest(uri, &message);
   return SendMessage(message);
 }
 
@@ -243,6 +246,48 @@ void QuicTestClient::SendRequestsAndWaitForResponses(
   while (client()->WaitForEvents()) {
   }
   return;
+}
+
+ssize_t QuicTestClient::GetOrCreateStreamAndSendRequest(
+    const BalsaHeaders* headers,
+    StringPiece body,
+    bool fin,
+    QuicAckNotifier::DelegateInterface* delegate) {
+  // Maybe it's better just to overload this.  it's just that we need
+  // for the GetOrCreateStream function to call something else...which
+  // is icky and complicated, but maybe not worse than this.
+  QuicSpdyClientStream* stream = GetOrCreateStream();
+  if (stream == nullptr) {
+    return 0;
+  }
+  ssize_t ret = 0;
+
+  if (headers != nullptr) {
+    SpdyHeaderBlock spdy_headers = SpdyBalsaUtils::RequestHeadersToSpdyHeaders(
+        *headers, stream->version());
+    if (headers->HasHeader("transfer-encoding")) {
+      // We have tests which rely on sending a non-standards-compliant
+      // T-E header.
+      string encoding;
+      headers->GetAllOfHeaderAsString("transfer-encoding", &encoding);
+      spdy_headers.insert(std::make_pair("transfer-encoding", encoding));
+    }
+    ret = stream->SendRequest(spdy_headers, body, fin);
+  } else {
+    stream->SendBody(body.data(), fin, delegate);
+    ret = body.length();
+  }
+  if (FLAGS_enable_quic_stateless_reject_support) {
+    BalsaHeaders* new_headers = nullptr;
+    if (headers) {
+      new_headers = new BalsaHeaders;
+      new_headers->CopyFrom(*headers);
+    }
+    auto data_to_resend =
+        new TestClientDataToResend(new_headers, body, fin, this, delegate);
+    client()->MaybeAddQuicDataToResend(data_to_resend);
+  }
+  return ret;
 }
 
 ssize_t QuicTestClient::SendMessage(const HTTPMessage& message) {
@@ -260,32 +305,28 @@ ssize_t QuicTestClient::SendMessage(const HTTPMessage& message) {
     }
   }
 
-  QuicSpdyClientStream* stream = GetOrCreateStream();
-  if (!stream) { return 0; }
+  // TODO(rtenneti): Add support for HTTPMessage::body_chunks().
+  // CHECK(message.body_chunks().empty())
+  //      << "HTTPMessage::body_chunks not supported";
 
   scoped_ptr<BalsaHeaders> munged_headers(MungeHeaders(message.headers(),
                                           secure_));
-  ssize_t ret = GetOrCreateStream()->SendRequest(
-      SpdyBalsaUtils::RequestHeadersToSpdyHeaders(
-          munged_headers.get() ? *munged_headers : *message.headers(),
-          stream->version()),
-      message.body(), message.has_complete_message());
+  ssize_t ret = GetOrCreateStreamAndSendRequest(
+      (munged_headers.get() ? munged_headers.get() : message.headers()),
+      message.body(), message.has_complete_message(), nullptr);
   WaitForWriteToFlush();
   return ret;
 }
 
-ssize_t QuicTestClient::SendData(string data, bool last_data) {
+ssize_t QuicTestClient::SendData(const string& data, bool last_data) {
   return SendData(data, last_data, nullptr);
 }
 
-ssize_t QuicTestClient::SendData(string data,
+ssize_t QuicTestClient::SendData(const string& data,
                                  bool last_data,
                                  QuicAckNotifier::DelegateInterface* delegate) {
-  QuicSpdyClientStream* stream = GetOrCreateStream();
-  if (!stream) { return 0; }
-  GetOrCreateStream()->SendBody(data, last_data, delegate);
-  WaitForWriteToFlush();
-  return data.length();
+  return GetOrCreateStreamAndSendRequest(nullptr, StringPiece(data), last_data,
+                                         delegate);
 }
 
 bool QuicTestClient::response_complete() const {
@@ -318,14 +359,9 @@ const string& QuicTestClient::response_body() {
 
 string QuicTestClient::SendCustomSynchronousRequest(
     const HTTPMessage& message) {
-  SendMessage(message);
-  WaitForResponse();
-  return response_;
-}
-
-string QuicTestClient::SendSynchronousRequest(const string& uri) {
-  if (SendRequest(uri) == 0) {
-    DLOG(ERROR) << "Failed the request for uri:" << uri;
+  if (SendMessage(message) == 0) {
+    DLOG(ERROR) << "Failed the request for uri:"
+                << message.headers()->request_uri();
     // Set the response_ explicitly.  Otherwise response_ will contain the
     // response from the previously successful request.
     response_ = "";
@@ -333,6 +369,12 @@ string QuicTestClient::SendSynchronousRequest(const string& uri) {
     WaitForResponse();
   }
   return response_;
+}
+
+string QuicTestClient::SendSynchronousRequest(const string& uri) {
+  HTTPMessage message;
+  FillInRequest(uri, &message);
+  return SendCustomSynchronousRequest(message);
 }
 
 QuicSpdyClientStream* QuicTestClient::GetOrCreateStream() {
@@ -359,7 +401,7 @@ QuicSpdyClientStream* QuicTestClient::GetOrCreateStream() {
 }
 
 QuicErrorCode QuicTestClient::connection_error() {
-  return client()->session()->error();
+  return client()->connection_error();
 }
 
 MockableQuicClient* QuicTestClient::client() { return client_.get(); }
@@ -370,8 +412,7 @@ const string& QuicTestClient::cert_common_name() const {
 }
 
 QuicTagValueMap QuicTestClient::GetServerConfig() const {
-  QuicCryptoClientConfig* config =
-      QuicClientPeer::GetCryptoConfig(client_.get());
+  QuicCryptoClientConfig* config = client_->crypto_config();
   QuicCryptoClientConfig::CachedState* state =
       config->LookupOrCreate(client_->server_id());
   const CryptoHandshakeMessage* handshake_msg = state->GetServerConfig();
@@ -405,7 +446,7 @@ void QuicTestClient::Disconnect() {
   connect_attempted_ = false;
 }
 
-IPEndPoint QuicTestClient::LocalSocketAddress() const {
+IPEndPoint QuicTestClient::local_address() const {
   return client_->client_address();
 }
 
@@ -543,6 +584,10 @@ void QuicTestClient::Bind(IPEndPoint* local_address) {
   DLOG(WARNING) << "Bind will be done during connect";
 }
 
+void QuicTestClient::MigrateSocket(const IPAddressNumber& new_host) {
+  client_->MigrateSocket(new_host);
+}
+
 string QuicTestClient::SerializeMessage(const HTTPMessage& message) {
   LOG(DFATAL) << "Not implemented";
   return "";
@@ -579,6 +624,25 @@ void QuicTestClient::SetFecPolicy(FecPolicy fec_policy) {
       QuicSpdySessionPeer::GetHeadersStream(client()->session()), fec_policy);
   ReliableQuicStreamPeer::SetFecPolicy(client()->session()->GetCryptoStream(),
                                        fec_policy);
+}
+
+void QuicTestClient::TestClientDataToResend::Resend() {
+  test_client_->GetOrCreateStreamAndSendRequest(headers_, body_, fin_,
+                                                delegate_);
+  if (headers_ != nullptr) {
+    delete headers_;
+    headers_ = nullptr;
+  }
+}
+
+// static
+void QuicTestClient::FillInRequest(const string& uri, HTTPMessage* message) {
+  CHECK(message);
+  message->headers()->SetRequestVersion(
+      HTTPMessage::VersionToString(HttpConstants::HTTP_1_1));
+  message->headers()->SetRequestMethod(
+      HTTPMessage::MethodToString(HttpConstants::GET));
+  message->headers()->SetRequestUri(uri);
 }
 
 }  // namespace test

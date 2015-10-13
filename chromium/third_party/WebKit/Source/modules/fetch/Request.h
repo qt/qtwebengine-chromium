@@ -15,7 +15,6 @@
 #include "platform/heap/Handle.h"
 #include "platform/weborigin/KURL.h"
 #include "public/platform/WebURLRequest.h"
-#include "wtf/RefPtr.h"
 #include "wtf/text/WTFString.h"
 
 namespace blink {
@@ -24,12 +23,13 @@ class BodyStreamBuffer;
 class RequestInit;
 class WebServiceWorkerRequest;
 
-typedef RequestOrUSVString RequestInfo;
+using RequestInfo = RequestOrUSVString;
 
 class MODULES_EXPORT Request final : public Body {
     DEFINE_WRAPPERTYPEINFO();
+    WTF_MAKE_NONCOPYABLE(Request);
 public:
-    ~Request() override { }
+    ~Request() override {}
 
     // From Request.idl:
     static Request* create(ScriptState*, const RequestInfo&, const Dictionary&, ExceptionState&);
@@ -41,8 +41,6 @@ public:
     static Request* create(ExecutionContext*, FetchRequestData*);
     static Request* create(ExecutionContext*, const WebServiceWorkerRequest&);
 
-    const FetchRequestData* request() { return m_request; }
-
     // From Request.idl:
     String method() const;
     KURL url() const;
@@ -51,15 +49,17 @@ public:
     String referrer() const;
     String mode() const;
     String credentials() const;
+    String redirect() const;
+    String integrity() const;
 
     // From Request.idl:
     Request* clone(ExceptionState&);
 
     FetchRequestData* passRequestData();
-
     void populateWebServiceWorkerRequest(WebServiceWorkerRequest&) const;
-
-    bool hasBody() const { return m_request->buffer(); }
+    bool hasBody() const;
+    BodyStreamBuffer* bodyBuffer() override { return m_request->buffer(); }
+    const BodyStreamBuffer* bodyBuffer() const override { return m_request->buffer(); }
 
     DECLARE_VIRTUAL_TRACE();
 
@@ -68,11 +68,8 @@ private:
     Request(ExecutionContext*, const WebServiceWorkerRequest&);
     Request(ExecutionContext*, FetchRequestData*, Headers*);
 
-    void setBuffer(BodyStreamBuffer*);
-    void refreshBody();
-
-    static Request* createRequestWithRequestOrString(ScriptState*, Request*, const String&, const RequestInit&, ExceptionState&);
-    void clearHeaderList();
+    const FetchRequestData* request() const { return m_request; }
+    static Request* createRequestWithRequestOrString(ScriptState*, Request*, const String&, RequestInit&, ExceptionState&);
 
     String mimeType() const override;
 

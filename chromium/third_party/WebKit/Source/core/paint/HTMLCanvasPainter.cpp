@@ -17,7 +17,7 @@ namespace blink {
 void HTMLCanvasPainter::paintReplaced(const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
 {
     GraphicsContext* context = paintInfo.context;
-    if (LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(*context, m_layoutHTMLCanvas, paintInfo.phase))
+    if (LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(*context, m_layoutHTMLCanvas, paintInfo.phase, paintOffset))
         return;
 
     LayoutRect contentRect = m_layoutHTMLCanvas.contentBoxRect();
@@ -25,7 +25,7 @@ void HTMLCanvasPainter::paintReplaced(const PaintInfo& paintInfo, const LayoutPo
     LayoutRect paintRect = m_layoutHTMLCanvas.replacedContentRect();
     paintRect.moveBy(paintOffset);
 
-    LayoutObjectDrawingRecorder drawingRecorder(*context, m_layoutHTMLCanvas, paintInfo.phase, contentRect);
+    LayoutObjectDrawingRecorder drawingRecorder(*context, m_layoutHTMLCanvas, paintInfo.phase, contentRect, paintOffset);
 #if ENABLE(ASSERT)
     // The drawing may be in display list mode or image mode, producing different pictures for the same result.
     drawingRecorder.setUnderInvalidationCheckingMode(DrawingDisplayItem::CheckBitmap);
@@ -34,7 +34,8 @@ void HTMLCanvasPainter::paintReplaced(const PaintInfo& paintInfo, const LayoutPo
     bool clip = !contentRect.contains(paintRect);
     if (clip) {
         context->save();
-        context->clip(contentRect);
+        // TODO(chrishtr): this should be pixel-snapped.
+        context->clip(FloatRect(contentRect));
     }
 
     // FIXME: InterpolationNone should be used if ImageRenderingOptimizeContrast is set.

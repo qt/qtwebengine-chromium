@@ -166,9 +166,11 @@ TEST(BitBufferTest, SetOffsetValues) {
 
   // Disable death test on Android because it relies on fork() and doesn't play
   // nicely.
+#if defined(GTEST_HAS_DEATH_TEST)
 #if !defined(WEBRTC_ANDROID)
   // Passing a NULL out parameter is death.
   EXPECT_DEATH(buffer.GetCurrentOffset(&byte_offset, NULL), "");
+#endif
 #endif
 }
 
@@ -200,6 +202,25 @@ TEST(BitBufferTest, GolombUint32Values) {
     EXPECT_TRUE(buffer.Seek(0, 0));
     EXPECT_TRUE(buffer.ReadExponentialGolomb(&decoded_val));
     EXPECT_EQ(i, decoded_val);
+  }
+}
+
+TEST(BitBufferTest, SignedGolombValues) {
+  uint8_t golomb_bits[] = {
+      0x80,  // 1
+      0x40,  // 010
+      0x60,  // 011
+      0x20,  // 00100
+      0x38,  // 00111
+  };
+  int32_t expected[] = {0, 1, -1, 2, -3};
+  for (size_t i = 0; i < sizeof(golomb_bits); ++i) {
+    BitBuffer buffer(&golomb_bits[i], 1);
+    int32_t decoded_val;
+    ASSERT_TRUE(buffer.ReadSignedExponentialGolomb(&decoded_val));
+    EXPECT_EQ(expected[i], decoded_val)
+        << "Mismatch in expected/decoded value for golomb_bits[" << i
+        << "]: " << static_cast<int>(golomb_bits[i]);
   }
 }
 

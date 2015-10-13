@@ -77,7 +77,7 @@ class StreamListenSocket :
   virtual int GetLocalAddress(IPEndPoint* address) const;
   // Copies the peer address to |address|. Returns a network error code.
   // This method is virtual to support unit testing.
-  virtual int GetPeerAddress(IPEndPoint* address);
+  virtual int GetPeerAddress(IPEndPoint* address) const;
 
   static const int kSocketError;
 
@@ -116,7 +116,7 @@ class StreamListenSocket :
   void OnFileCanReadWithoutBlocking(int fd) override;
   void OnFileCanWriteWithoutBlocking(int fd) override;
   WaitState wait_state_;
-  // The socket's libevent wrapper.
+  // The socket's posix wrapper.
   base::MessageLoopForIO::FileDescriptorWatcher watcher_;
 #endif
 

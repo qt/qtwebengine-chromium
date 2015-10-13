@@ -315,7 +315,12 @@ leveldb::Status IndexedDBTransaction::CommitPhaseTwo() {
 
   if (committed) {
     abort_task_stack_.clear();
-    callbacks_->OnComplete(id_);
+    {
+      IDB_TRACE1(
+          "IndexedDBTransaction::CommitPhaseTwo.TransactionCompleteCallbacks",
+          "txn.id", id());
+      callbacks_->OnComplete(id_);
+    }
     database_->TransactionFinished(this, true);
   } else {
     while (!abort_task_stack_.empty())
@@ -393,11 +398,13 @@ void IndexedDBTransaction::ProcessTaskQueue() {
   // never requests further activity. Read-only transactions don't
   // block other transactions, so don't time those out.
   if (mode_ != blink::WebIDBTransactionModeReadOnly) {
-    timeout_timer_.Start(
-        FROM_HERE,
-        base::TimeDelta::FromSeconds(kInactivityTimeoutPeriodSeconds),
-        base::Bind(&IndexedDBTransaction::Timeout, this));
+    timeout_timer_.Start(FROM_HERE, GetInactivityTimeout(),
+                         base::Bind(&IndexedDBTransaction::Timeout, this));
   }
+}
+
+base::TimeDelta IndexedDBTransaction::GetInactivityTimeout() const {
+  return base::TimeDelta::FromSeconds(kInactivityTimeoutPeriodSeconds);
 }
 
 void IndexedDBTransaction::Timeout() {
@@ -407,6 +414,7 @@ void IndexedDBTransaction::Timeout() {
 }
 
 void IndexedDBTransaction::CloseOpenCursors() {
+  IDB_TRACE1("IndexedDBTransaction::CloseOpenCursors", "txn.id", id());
   for (auto* cursor : open_cursors_)
     cursor->Close();
   open_cursors_.clear();

@@ -48,14 +48,10 @@ class CC_EXPORT RecordingSource {
   virtual gfx::Size GetSize() const = 0;
   virtual void SetEmptyBounds() = 0;
   virtual void SetSlowdownRasterScaleFactor(int factor) = 0;
-  virtual void SetGatherPixelRefs(bool gather_pixel_refs) = 0;
+  virtual void SetGenerateDiscardableImagesMetadata(bool generate_metadata) = 0;
   virtual void SetBackgroundColor(SkColor background_color) = 0;
   virtual void SetRequiresClear(bool requires_clear) = 0;
   virtual bool IsSuitableForGpuRasterization() const = 0;
-
-  // TODO(hendrikw): Figure out how to remove this.
-  virtual void SetUnsuitableForGpuRasterizationForTesting() = 0;
-  virtual gfx::Size GetTileGridSizeForTesting() const = 0;
 };
 
 }  // namespace cc

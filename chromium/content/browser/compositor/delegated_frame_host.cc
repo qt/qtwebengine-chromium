@@ -14,8 +14,10 @@
 #include "cc/resources/texture_mailbox.h"
 #include "cc/surfaces/surface.h"
 #include "cc/surfaces/surface_factory.h"
+#include "cc/surfaces/surface_hittest.h"
 #include "cc/surfaces/surface_manager.h"
 #include "content/browser/compositor/resize_lock.h"
+#include "content/browser/compositor/surface_utils.h"
 #include "content/browser/gpu/compositor_util.h"
 #include "content/common/gpu/client/gl_helper.h"
 #include "content/public/browser/render_widget_host_view_frame_subscriber.h"
@@ -130,7 +132,7 @@ bool DelegatedFrameHost::ShouldCreateResizeLock() {
 void DelegatedFrameHost::CopyFromCompositingSurface(
     const gfx::Rect& src_subrect,
     const gfx::Size& output_size,
-    ReadbackRequestCallback& callback,
+    const ReadbackRequestCallback& callback,
     const SkColorType preferred_color_type) {
   // Only ARGB888 and RGB565 supported as of now.
   bool format_support = ((preferred_color_type == kAlpha_8_SkColorType) ||
@@ -182,10 +184,6 @@ bool DelegatedFrameHost::CanCopyToVideoFrame() const {
          client_->DelegatedFrameHostGetLayer()->has_external_content();
 }
 
-bool DelegatedFrameHost::CanSubscribeFrame() const {
-  return true;
-}
-
 void DelegatedFrameHost::BeginFrameSubscription(
     scoped_ptr<RenderWidgetHostViewFrameSubscriber> subscriber) {
   frame_subscriber_ = subscriber.Pass();
@@ -201,6 +199,21 @@ uint32_t DelegatedFrameHost::GetSurfaceIdNamespace() {
     return 0;
 
   return id_allocator_->id_namespace();
+}
+
+cc::SurfaceId DelegatedFrameHost::SurfaceIdAtPoint(
+    const gfx::Point& point,
+    gfx::Point* transformed_point) {
+  if (surface_id_.is_null())
+    return surface_id_;
+  cc::SurfaceHittest hittest(GetSurfaceManager());
+  gfx::Transform target_transform;
+  cc::SurfaceId target_surface_id =
+      hittest.GetTargetSurfaceAtPoint(surface_id_, point, &target_transform);
+  *transformed_point = point;
+  if (!target_surface_id.is_null())
+    target_transform.TransformPoint(transformed_point);
+  return target_surface_id;
 }
 
 bool DelegatedFrameHost::ShouldSkipFrame(gfx::Size size_in_dip) const {
@@ -309,7 +322,7 @@ void DelegatedFrameHost::SwapDelegatedFrame(
   gfx::Size frame_size_in_dip =
       gfx::ConvertSizeToDIP(frame_device_scale_factor, frame_size);
 
-  gfx::Rect damage_rect = gfx::ToEnclosingRect(root_pass->damage_rect);
+  gfx::Rect damage_rect = root_pass->damage_rect;
   damage_rect.Intersect(gfx::Rect(frame_size));
   gfx::Rect damage_rect_in_dip =
       gfx::ConvertRectToDIP(frame_device_scale_factor, damage_rect);
@@ -412,7 +425,7 @@ void DelegatedFrameHost::SwapDelegatedFrame(
         ack_callback = base::Bind(&DelegatedFrameHost::SurfaceDrawn,
                                   AsWeakPtr(), output_surface_id);
       }
-      surface_factory_->SubmitFrame(
+      surface_factory_->SubmitCompositorFrame(
           surface_id_, compositor_frame.Pass(), ack_callback);
     } else {
       if (!resource_collection_.get()) {
@@ -467,6 +480,11 @@ void DelegatedFrameHost::SwapDelegatedFrame(
     delegated_frame_evictor_->SwappedFrame(
         client_->DelegatedFrameHostIsVisible());
   // Note: the frame may have been evicted immediately.
+}
+
+void DelegatedFrameHost::ClearDelegatedFrame() {
+  if (frame_provider_.get() || !surface_id_.is_null())
+    EvictDelegatedFrame();
 }
 
 void DelegatedFrameHost::SendDelegatedFrameAck(uint32 output_surface_id) {
@@ -532,7 +550,7 @@ void DelegatedFrameHost::EvictDelegatedFrame() {
 void DelegatedFrameHost::CopyFromCompositingSurfaceHasResult(
     const gfx::Size& dst_size_in_pixel,
     const SkColorType color_type,
-    ReadbackRequestCallback& callback,
+    const ReadbackRequestCallback& callback,
     scoped_ptr<cc::CopyOutputResult> result) {
   if (result->IsEmpty() || result->size().IsEmpty()) {
     callback.Run(SkBitmap(), content::READBACK_FAILED);
@@ -560,7 +578,7 @@ void DelegatedFrameHost::CopyFromCompositingSurfaceHasResult(
 }
 
 static void CopyFromCompositingSurfaceFinished(
-    ReadbackRequestCallback& callback,
+    const ReadbackRequestCallback& callback,
     scoped_ptr<cc::SingleReleaseCallback> release_callback,
     scoped_ptr<SkBitmap> bitmap,
     scoped_ptr<SkAutoLockPixels> bitmap_pixels_lock,
@@ -584,7 +602,7 @@ static void CopyFromCompositingSurfaceFinished(
 void DelegatedFrameHost::PrepareTextureCopyOutputResult(
     const gfx::Size& dst_size_in_pixel,
     const SkColorType color_type,
-    ReadbackRequestCallback& callback,
+    const ReadbackRequestCallback& callback,
     scoped_ptr<cc::CopyOutputResult> result) {
   DCHECK(result->HasTexture());
   base::ScopedClosureRunner scoped_callback_runner(
@@ -638,7 +656,7 @@ void DelegatedFrameHost::PrepareTextureCopyOutputResult(
 void DelegatedFrameHost::PrepareBitmapCopyOutputResult(
     const gfx::Size& dst_size_in_pixel,
     const SkColorType preferred_color_type,
-    ReadbackRequestCallback& callback,
+    const ReadbackRequestCallback& callback,
     scoped_ptr<cc::CopyOutputResult> result) {
   SkColorType color_type = preferred_color_type;
   if (color_type != kN32_SkColorType && color_type != kAlpha_8_SkColorType) {

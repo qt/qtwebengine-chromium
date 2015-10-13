@@ -19,7 +19,6 @@
 #include "base/file_descriptor_posix.h"
 #endif
 
-using cc::CheckerboardDrawQuad;
 using cc::DelegatedFrameData;
 using cc::DebugBorderDrawQuad;
 using cc::DrawQuad;
@@ -33,7 +32,6 @@ using cc::RenderPassDrawQuad;
 using cc::ResourceId;
 using cc::ResourceProvider;
 using cc::SharedQuadState;
-using cc::SoftwareFrameData;
 using cc::SolidColorDrawQuad;
 using cc::SurfaceDrawQuad;
 using cc::TextureDrawQuad;
@@ -79,10 +77,6 @@ class CCMessagesTest : public testing::Test {
     Compare(a->shared_quad_state, b->shared_quad_state);
 
     switch (a->material) {
-      case DrawQuad::CHECKERBOARD:
-        Compare(CheckerboardDrawQuad::MaterialCast(a),
-                CheckerboardDrawQuad::MaterialCast(b));
-        break;
       case DrawQuad::DEBUG_BORDER:
         Compare(DebugBorderDrawQuad::MaterialCast(a),
                 DebugBorderDrawQuad::MaterialCast(b));
@@ -128,11 +122,6 @@ class CCMessagesTest : public testing::Test {
     }
   }
 
-  void Compare(const CheckerboardDrawQuad* a, const CheckerboardDrawQuad* b) {
-    EXPECT_EQ(a->color, b->color);
-    EXPECT_EQ(a->scale, b->scale);
-  }
-
   void Compare(const DebugBorderDrawQuad* a, const DebugBorderDrawQuad* b) {
     EXPECT_EQ(a->color, b->color);
     EXPECT_EQ(a->width, b->width);
@@ -142,6 +131,7 @@ class CCMessagesTest : public testing::Test {
     EXPECT_EQ(a->io_surface_size.ToString(), b->io_surface_size.ToString());
     EXPECT_EQ(a->io_surface_resource_id(), b->io_surface_resource_id());
     EXPECT_EQ(a->orientation, b->orientation);
+    EXPECT_EQ(a->allow_overlay, b->allow_overlay);
   }
 
   void Compare(const RenderPassDrawQuad* a, const RenderPassDrawQuad* b) {
@@ -279,6 +269,7 @@ TEST_F(CCMessagesTest, AllQuads) {
   SkXfermode::Mode arbitrary_blend_mode3 = SkXfermode::kOverlay_Mode;
   IOSurfaceDrawQuad::Orientation arbitrary_orientation =
       IOSurfaceDrawQuad::UNFLIPPED;
+  bool arbitrary_allow_overlay = true;
   ResourceId arbitrary_resourceid1 = 55;
   ResourceId arbitrary_resourceid2 = 47;
   ResourceId arbitrary_resourceid3 = 23;
@@ -327,15 +318,6 @@ TEST_F(CCMessagesTest, AllQuads) {
       pass_cmp->CreateAndAppendSharedQuadState();
   shared_state1_cmp->CopyFrom(shared_state1_in);
 
-  CheckerboardDrawQuad* checkerboard_in =
-      pass_in->CreateAndAppendDrawQuad<CheckerboardDrawQuad>();
-  checkerboard_in->SetAll(shared_state1_in, arbitrary_rect1,
-                          arbitrary_rect2_inside_rect1,
-                          arbitrary_rect1_inside_rect1, arbitrary_bool1,
-                          arbitrary_color, arbitrary_float1);
-  pass_cmp->CopyFromAndAppendDrawQuad(checkerboard_in,
-                                      checkerboard_in->shared_quad_state);
-
   DebugBorderDrawQuad* debugborder_in =
       pass_in->CreateAndAppendDrawQuad<DebugBorderDrawQuad>();
   debugborder_in->SetAll(shared_state1_in,
@@ -357,7 +339,8 @@ TEST_F(CCMessagesTest, AllQuads) {
                        arbitrary_bool1,
                        arbitrary_size1,
                        arbitrary_resourceid3,
-                       arbitrary_orientation);
+                       arbitrary_orientation,
+                       arbitrary_allow_overlay);
   pass_cmp->CopyFromAndAppendDrawQuad(iosurface_in,
                                       iosurface_in->shared_quad_state);
 
@@ -465,7 +448,7 @@ TEST_F(CCMessagesTest, AllQuads) {
   ASSERT_EQ(0u, child_pass_in->quad_list.size());
   Compare(pass_cmp.get(), pass_in.get());
   ASSERT_EQ(3u, pass_in->shared_quad_state_list.size());
-  ASSERT_EQ(10u, pass_in->quad_list.size());
+  ASSERT_EQ(9u, pass_in->quad_list.size());
   for (cc::SharedQuadStateList::ConstIterator
            cmp_iterator = pass_cmp->shared_quad_state_list.begin(),
            in_iterator = pass_in->shared_quad_state_list.begin();
@@ -510,7 +493,7 @@ TEST_F(CCMessagesTest, AllQuads) {
       frame_out.render_pass_list.take(frame_out.render_pass_list.begin() + 1);
   Compare(pass_cmp.get(), pass_out.get());
   ASSERT_EQ(3u, pass_out->shared_quad_state_list.size());
-  ASSERT_EQ(10u, pass_out->quad_list.size());
+  ASSERT_EQ(9u, pass_out->quad_list.size());
   for (cc::SharedQuadStateList::ConstIterator
            cmp_iterator = pass_cmp->shared_quad_state_list.begin(),
            out_iterator = pass_out->shared_quad_state_list.begin();
@@ -554,10 +537,10 @@ TEST_F(CCMessagesTest, UnusedSharedQuadStates) {
                            SkXfermode::kSrcOver_Mode,
                            0);
 
-  CheckerboardDrawQuad* quad1 =
-      pass_in->CreateAndAppendDrawQuad<CheckerboardDrawQuad>();
+  SolidColorDrawQuad* quad1 =
+      pass_in->CreateAndAppendDrawQuad<SolidColorDrawQuad>();
   quad1->SetAll(shared_state1_in, gfx::Rect(10, 10), gfx::Rect(10, 10),
-                gfx::Rect(10, 10), false, SK_ColorRED, 1.f);
+                gfx::Rect(10, 10), false, SK_ColorRED, false);
 
   // The second and third SharedQuadStates are not used.
   SharedQuadState* shared_state2_in = pass_in->CreateAndAppendSharedQuadState();
@@ -591,10 +574,10 @@ TEST_F(CCMessagesTest, UnusedSharedQuadStates) {
                            SkXfermode::kSrcOver_Mode,
                            0);
 
-  CheckerboardDrawQuad* quad2 =
-      pass_in->CreateAndAppendDrawQuad<CheckerboardDrawQuad>();
+  SolidColorDrawQuad* quad2 =
+      pass_in->CreateAndAppendDrawQuad<SolidColorDrawQuad>();
   quad2->SetAll(shared_state4_in, gfx::Rect(10, 10), gfx::Rect(10, 10),
-                gfx::Rect(10, 10), false, SK_ColorRED, 1.f);
+                gfx::Rect(10, 10), false, SK_ColorRED, false);
 
   // The fifth is not used again.
   SharedQuadState* shared_state5_in = pass_in->CreateAndAppendSharedQuadState();
@@ -693,71 +676,6 @@ TEST_F(CCMessagesTest, Resources) {
   ASSERT_EQ(2u, frame_out.resource_list.size());
   Compare(arbitrary_resource1, frame_out.resource_list[0]);
   Compare(arbitrary_resource2, frame_out.resource_list[1]);
-}
-
-TEST_F(CCMessagesTest, SoftwareFrameData) {
-  cc::SoftwareFrameData frame_in;
-  frame_in.id = 3;
-  frame_in.size = gfx::Size(40, 20);
-  frame_in.damage_rect = gfx::Rect(5, 18, 31, 44);
-  frame_in.bitmap_id = cc::SharedBitmap::GenerateId();
-
-  // Write the frame.
-  IPC::Message msg(1, 2, IPC::Message::PRIORITY_NORMAL);
-  IPC::ParamTraits<cc::SoftwareFrameData>::Write(&msg, frame_in);
-
-  // Read the frame.
-  cc::SoftwareFrameData frame_out;
-  base::PickleIterator iter(msg);
-  EXPECT_TRUE(
-      IPC::ParamTraits<SoftwareFrameData>::Read(&msg, &iter, &frame_out));
-  EXPECT_EQ(frame_in.id, frame_out.id);
-  EXPECT_EQ(frame_in.size.ToString(), frame_out.size.ToString());
-  EXPECT_EQ(frame_in.damage_rect.ToString(), frame_out.damage_rect.ToString());
-  EXPECT_EQ(frame_in.bitmap_id, frame_out.bitmap_id);
-}
-
-TEST_F(CCMessagesTest, SoftwareFrameDataMaxInt) {
-  SoftwareFrameData frame_in;
-  frame_in.id = 3;
-  frame_in.size = gfx::Size(40, 20);
-  frame_in.damage_rect = gfx::Rect(5, 18, 31, 44);
-  frame_in.bitmap_id = cc::SharedBitmap::GenerateId();
-
-  // Write the SoftwareFrameData by hand, make sure it works.
-  {
-    IPC::Message msg(1, 2, IPC::Message::PRIORITY_NORMAL);
-    IPC::WriteParam(&msg, frame_in.id);
-    IPC::WriteParam(&msg, frame_in.size);
-    IPC::WriteParam(&msg, frame_in.damage_rect);
-    IPC::WriteParam(&msg, frame_in.bitmap_id);
-    SoftwareFrameData frame_out;
-    base::PickleIterator iter(msg);
-    EXPECT_TRUE(
-        IPC::ParamTraits<SoftwareFrameData>::Read(&msg, &iter, &frame_out));
-  }
-
-  // The size of the frame may overflow when multiplied together.
-  int max = std::numeric_limits<int>::max();
-  frame_in.size = gfx::Size(max, max);
-
-  // If size_t is larger than int, then int*int*4 can always fit in size_t.
-  bool expect_read = sizeof(size_t) >= sizeof(int) * 2;
-
-  // Write the SoftwareFrameData with the MaxInt size, if it causes overflow it
-  // should fail.
-  {
-    IPC::Message msg(1, 2, IPC::Message::PRIORITY_NORMAL);
-    IPC::WriteParam(&msg, frame_in.id);
-    IPC::WriteParam(&msg, frame_in.size);
-    IPC::WriteParam(&msg, frame_in.damage_rect);
-    IPC::WriteParam(&msg, frame_in.bitmap_id);
-    SoftwareFrameData frame_out;
-    base::PickleIterator iter(msg);
-    EXPECT_EQ(
-        expect_read,
-        IPC::ParamTraits<SoftwareFrameData>::Read(&msg, &iter, &frame_out));
-  }
 }
 
 }  // namespace

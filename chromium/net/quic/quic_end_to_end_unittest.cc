@@ -137,9 +137,9 @@ class QuicEndToEndTest : public PlatformTest {
     server_config_.SetInitialSessionFlowControlWindowToSend(
         kInitialSessionFlowControlWindowForTest);
     server_thread_.reset(new ServerThread(
-         new QuicServer(server_config_, QuicSupportedVersions()),
-         server_address_,
-         strike_register_no_startup_period_));
+        new QuicServer(server_config_, QuicSupportedVersions()),
+        /*is_secure=*/true, server_address_,
+        strike_register_no_startup_period_));
     server_thread_->Initialize();
     server_address_ = IPEndPoint(server_address_.address(),
                                  server_thread_->GetPort());
@@ -272,7 +272,13 @@ TEST_F(QuicEndToEndTest, LargePostWithPacketLoss) {
   CheckResponse(consumer, "HTTP/1.1 200 OK", kResponseBody);
 }
 
-TEST_F(QuicEndToEndTest, UberTest) {
+// crbug.com/536845
+#if defined(THREAD_SANITIZER)
+#define MAYBE_UberTest DISABLED_UberTest
+#else
+#define MAYBE_UberTest UberTest
+#endif
+TEST_F(QuicEndToEndTest, MAYBE_UberTest) {
   // FLAGS_fake_packet_loss_percentage = 30;
 
   const char kResponseBody[] = "some really big response body";

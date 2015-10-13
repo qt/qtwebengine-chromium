@@ -93,6 +93,7 @@ static const ProfileMap kProfileMap[] = {
     // media::H264PROFILE_HIGH*.
     {media::H264PROFILE_HIGH, VAProfileH264High},
     {media::VP8PROFILE_ANY, VAProfileVP8Version0_3},
+    {media::VP9PROFILE_ANY, VAProfileVP9Profile0},
 };
 
 static std::vector<VAConfigAttrib> GetRequiredAttribs(
@@ -223,6 +224,12 @@ VaapiWrapper::GetSupportedDecodeProfiles() {
     }
   }
   return profiles;
+}
+
+// static
+bool VaapiWrapper::IsJpegDecodeSupported() {
+  return profile_infos_.Get().IsProfileSupported(kDecode,
+                                                 VAProfileJPEGBaseline);
 }
 
 void VaapiWrapper::TryToSetVADisplayAttributeToLocalGPU() {
@@ -495,7 +502,8 @@ void VaapiWrapper::Deinitialize() {
   va_display_ = NULL;
 }
 
-bool VaapiWrapper::CreateSurfaces(const gfx::Size& size,
+bool VaapiWrapper::CreateSurfaces(unsigned int va_format,
+                                  const gfx::Size& size,
                                   size_t num_surfaces,
                                   std::vector<VASurfaceID>* va_surfaces) {
   base::AutoLock auto_lock(*va_lock_);
@@ -506,12 +514,9 @@ bool VaapiWrapper::CreateSurfaces(const gfx::Size& size,
   va_surface_ids_.resize(num_surfaces);
 
   // Allocate surfaces in driver.
-  VAStatus va_res = vaCreateSurfaces(va_display_,
-                                     VA_RT_FORMAT_YUV420,
-                                     size.width(), size.height(),
-                                     &va_surface_ids_[0],
-                                     va_surface_ids_.size(),
-                                     NULL, 0);
+  VAStatus va_res =
+      vaCreateSurfaces(va_display_, va_format, size.width(), size.height(),
+                       &va_surface_ids_[0], va_surface_ids_.size(), NULL, 0);
 
   VA_LOG_ON_ERROR(va_res, "vaCreateSurfaces failed");
   if (va_res != VA_STATUS_SUCCESS) {
@@ -678,7 +683,8 @@ bool VaapiWrapper::CreateCodedBuffer(size_t size, VABufferID* buffer_id) {
                                    buffer_id);
   VA_SUCCESS_OR_RETURN(va_res, "Failed to create a coded buffer", false);
 
-  DCHECK(coded_buffers_.insert(*buffer_id).second);
+  const auto is_new_entry = coded_buffers_.insert(*buffer_id).second;
+  DCHECK(is_new_entry);
   return true;
 }
 
@@ -927,7 +933,8 @@ bool VaapiWrapper::DownloadAndDestroyCodedBuffer(VABufferID buffer_id,
   va_res = vaDestroyBuffer(va_display_, buffer_id);
   VA_LOG_ON_ERROR(va_res, "vaDestroyBuffer failed");
 
-  DCHECK(coded_buffers_.erase(buffer_id));
+  const auto was_found = coded_buffers_.erase(buffer_id);
+  DCHECK(was_found);
 
   return buffer_segment == NULL;
 }

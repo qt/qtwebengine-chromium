@@ -237,8 +237,8 @@ WebInspector.TimelineEventOverview.Network.prototype = {
                 path = { waiting: new Path2D(), transfer: new Path2D() };
                 paths.set(style, path);
             }
-            var s = Math.floor((request.startTime - timeOffset) * scale);
-            var e = Math.ceil((request.endTime - timeOffset) * scale);
+            var s = Math.max(Math.floor((request.startTime - timeOffset) * scale), 0);
+            var e = Math.min(Math.ceil((request.endTime - timeOffset) * scale), canvasWidth);
             path["waiting"].rect(s, y, e - s, bandHeight - 1);
             path["transfer"].rect(e - tickWidth / 2, y, tickWidth, bandHeight - 1);
             if (!request.responseTime)
@@ -254,13 +254,11 @@ WebInspector.TimelineEventOverview.Network.prototype = {
 /**
  * @constructor
  * @extends {WebInspector.TimelineEventOverview}
- * @param {string} id
- * @param {string} title
  * @param {!WebInspector.TimelineModel} model
  */
-WebInspector.TimelineEventOverview.Thread = function(id, title, model)
+WebInspector.TimelineEventOverview.CPUActivity = function(model)
 {
-    WebInspector.TimelineEventOverview.call(this, id, title, model)
+    WebInspector.TimelineEventOverview.call(this, "cpu-activity", WebInspector.UIString("CPU"), model);
     this._fillStyles = {};
     var categories = WebInspector.TimelineUIUtils.categories();
     for (var category in categories) {
@@ -268,9 +266,10 @@ WebInspector.TimelineEventOverview.Thread = function(id, title, model)
         categories[category].addEventListener(WebInspector.TimelineCategory.Events.VisibilityChanged, this._onCategoryVisibilityChanged, this);
     }
     this._disabledCategoryFillStyle = "hsl(0, 0%, 67%)";
+    this._backgroundCanvas = this.element.createChild("canvas", "fill background");
 }
 
-WebInspector.TimelineEventOverview.Thread.prototype = {
+WebInspector.TimelineEventOverview.CPUActivity.prototype = {
     /**
      * @override
      */
@@ -296,39 +295,30 @@ WebInspector.TimelineEventOverview.Thread.prototype = {
         return category.hidden ? this._disabledCategoryFillStyle : this._fillStyles[category.name];
     },
 
-    __proto__: WebInspector.TimelineEventOverview.prototype
-}
+    /**
+     * @override
+     */
+    resetCanvas: function()
+    {
+        WebInspector.TimelineEventOverview.prototype.resetCanvas.call(this);
+        this._backgroundCanvas.width = this.element.clientWidth * window.devicePixelRatio;
+        this._backgroundCanvas.height = this.element.clientHeight * window.devicePixelRatio;
+    },
 
-/**
- * @constructor
- * @extends {WebInspector.TimelineEventOverview.Thread}
- * @param {!WebInspector.TimelineModel} model
- */
-WebInspector.TimelineEventOverview.MainThread = function(model)
-{
-    WebInspector.TimelineEventOverview.Thread.call(this, "main-thread", WebInspector.UIString("CPU"), model)
-}
-
-WebInspector.TimelineEventOverview.MainThread.prototype = {
     /**
      * @override
      */
     update: function()
     {
         WebInspector.TimelineEventOverview.prototype.update.call(this);
-        var events = this._model.mainThreadEvents();
-        if (!events.length)
-            return;
         var /** @const */ quantSizePx = 4 * window.devicePixelRatio;
+        var width = this._canvas.width;
         var height = this._canvas.height;
         var baseLine = height;
         var timeOffset = this._model.minimumRecordTime();
         var timeSpan = this._model.maximumRecordTime() - timeOffset;
-        var scale = this._canvas.width / timeSpan;
+        var scale = width / timeSpan;
         var quantTime = quantSizePx / scale;
-        var quantizer = new WebInspector.Quantizer(timeOffset, quantTime, drawSample.bind(this));
-        var ctx = this._context;
-        var x = 0;
         var categories = WebInspector.TimelineUIUtils.categories();
         var categoryOrder = ["idle", "loading", "painting", "rendering", "scripting", "other"];
         var otherIndex = categoryOrder.indexOf("other");
@@ -336,49 +326,92 @@ WebInspector.TimelineEventOverview.MainThread.prototype = {
         console.assert(idleIndex === categoryOrder.indexOf("idle"));
         for (var i = idleIndex + 1; i < categoryOrder.length; ++i)
             categories[categoryOrder[i]]._overviewIndex = i;
-        var categoryIndexStack = [];
+
+        var backgroundContext = this._backgroundCanvas.getContext("2d");
+        for (var thread of this._model.virtualThreads())
+            drawThreadEvents.call(this, backgroundContext, thread.events);
+        applyPattern(backgroundContext);
+        drawThreadEvents.call(this, this._context, this._model.mainThreadEvents());
 
         /**
-         * @param {!Array<number>} counters
+         * @param {!CanvasRenderingContext2D} ctx
+         * @param {!Array<!WebInspector.TracingModel.Event>} events
          * @this {WebInspector.TimelineEventOverview}
          */
-        function drawSample(counters)
+        function drawThreadEvents(ctx, events)
         {
-            var y = baseLine;
-            for (var i = idleIndex + 1; i < counters.length; ++i) {
-                if (!counters[i])
-                    continue;
-                var h = counters[i] / quantTime * height;
-                ctx.fillStyle = this._categoryColor(categories[categoryOrder[i]]);
-                ctx.fillRect(x, y - h, quantSizePx, h);
-                y -= h;
+            var quantizer = new WebInspector.Quantizer(timeOffset, quantTime, drawSample);
+            var x = 0;
+            var categoryIndexStack = [];
+            var paths = [];
+            var lastY = [];
+            for (var i = 0; i < categoryOrder.length; ++i) {
+                paths[i] = new Path2D();
+                paths[i].moveTo(0, height);
+                lastY[i] = height;
             }
-            x += quantSizePx;
+
+            /**
+             * @param {!Array<number>} counters
+             */
+            function drawSample(counters)
+            {
+                var y = baseLine;
+                for (var i = idleIndex + 1; i < categoryOrder.length; ++i) {
+                    var h = (counters[i] || 0) / quantTime * height;
+                    y -= h;
+                    paths[i].bezierCurveTo(x, lastY[i], x, y, x + quantSizePx / 2, y);
+                    lastY[i] = y;
+                }
+                x += quantSizePx;
+            }
+
+            /**
+             * @param {!WebInspector.TracingModel.Event} e
+             */
+            function onEventStart(e)
+            {
+                var index = categoryIndexStack.length ? categoryIndexStack.peekLast() : idleIndex;
+                quantizer.appendInterval(e.startTime, index);
+                categoryIndexStack.push(WebInspector.TimelineUIUtils.eventStyle(e).category._overviewIndex || otherIndex);
+            }
+
+            /**
+             * @param {!WebInspector.TracingModel.Event} e
+             */
+            function onEventEnd(e)
+            {
+                quantizer.appendInterval(e.endTime, categoryIndexStack.pop());
+            }
+
+            WebInspector.TimelineModel.forEachEvent(events, onEventStart, onEventEnd);
+            quantizer.appendInterval(timeOffset + timeSpan + quantTime, idleIndex);  // Kick drawing the last bucket.
+            for (var i = categoryOrder.length - 1; i > 0; --i) {
+                paths[i].lineTo(width, height);
+                ctx.fillStyle = this._categoryColor(categories[categoryOrder[i]]);
+                ctx.fill(paths[i]);
+            }
         }
 
         /**
-         * @param {!WebInspector.TracingModel.Event} e
+         * @param {!CanvasRenderingContext2D} ctx
          */
-        function onEventStart(e)
+        function applyPattern(ctx)
         {
-            var index = categoryIndexStack.length ? categoryIndexStack.peekLast() : idleIndex;
-            quantizer.appendInterval(e.startTime, index);
-            categoryIndexStack.push(WebInspector.TimelineUIUtils.eventStyle(e).category._overviewIndex || otherIndex);
+            var step = 4 * window.devicePixelRatio;
+            ctx.save();
+            ctx.lineWidth = step / Math.sqrt(8);
+            for (var x = 0.5; x < width + height; x += step) {
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x - height, height);
+            }
+            ctx.globalCompositeOperation = "destination-out";
+            ctx.stroke();
+            ctx.restore();
         }
-
-        /**
-         * @param {!WebInspector.TracingModel.Event} e
-         */
-        function onEventEnd(e)
-        {
-            quantizer.appendInterval(e.endTime, categoryIndexStack.pop());
-        }
-
-        WebInspector.TimelineModel.forEachEvent(events, onEventStart, onEventEnd);
-        quantizer.appendInterval(timeOffset + timeSpan + quantTime, idleIndex);  // Kick drawing the last bucket.
     },
 
-    __proto__: WebInspector.TimelineEventOverview.Thread.prototype
+    __proto__: WebInspector.TimelineEventOverview.prototype
 }
 
 /**
@@ -684,6 +717,127 @@ WebInspector.TimelineEventOverview.Frames.prototype = {
         ctx.lineWidth = lineWidth;
         ctx.fill();
         ctx.stroke();
+    },
+
+    __proto__: WebInspector.TimelineEventOverview.prototype
+}
+
+/**
+ * @constructor
+ * @extends {WebInspector.TimelineEventOverview}
+ * @param {!WebInspector.TimelineModel} model
+ */
+WebInspector.TimelineEventOverview.Memory = function(model)
+{
+    WebInspector.TimelineEventOverview.call(this, "memory", "Memory", model);
+    this._heapSizeLabel = this.element.createChild("div", "memory-graph-label");
+}
+
+WebInspector.TimelineEventOverview.Memory.prototype = {
+    resetHeapSizeLabels: function()
+    {
+        this._heapSizeLabel.textContent = "";
+    },
+
+    /**
+     * @override
+     */
+    update: function()
+    {
+        WebInspector.TimelineEventOverview.prototype.update.call(this);
+        var ratio = window.devicePixelRatio;
+
+        var events = this._model.mainThreadEvents();
+        if (!events.length) {
+            this.resetHeapSizeLabels();
+            return;
+        }
+
+        var lowerOffset = 3 * ratio;
+        var maxUsedHeapSize = 0;
+        var minUsedHeapSize = 100000000000;
+        var minTime = this._model.minimumRecordTime();
+        var maxTime = this._model.maximumRecordTime();
+        /**
+         * @param {!WebInspector.TracingModel.Event} event
+         * @return {boolean}
+         */
+        function isUpdateCountersEvent(event)
+        {
+            return event.name === WebInspector.TimelineModel.RecordType.UpdateCounters;
+        }
+        events = events.filter(isUpdateCountersEvent);
+        /**
+         * @param {!WebInspector.TracingModel.Event} event
+         */
+        function calculateMinMaxSizes(event)
+        {
+            var counters = event.args.data;
+            if (!counters || !counters.jsHeapSizeUsed)
+                return;
+            maxUsedHeapSize = Math.max(maxUsedHeapSize, counters.jsHeapSizeUsed);
+            minUsedHeapSize = Math.min(minUsedHeapSize, counters.jsHeapSizeUsed);
+        }
+        events.forEach(calculateMinMaxSizes);
+        minUsedHeapSize = Math.min(minUsedHeapSize, maxUsedHeapSize);
+
+        var lineWidth = 1;
+        var width = this._canvas.width;
+        var height = this._canvas.height - lowerOffset;
+        var xFactor = width / (maxTime - minTime);
+        var yFactor = (height - lineWidth) / Math.max(maxUsedHeapSize - minUsedHeapSize, 1);
+
+        var histogram = new Array(width);
+
+        /**
+         * @param {!WebInspector.TracingModel.Event} event
+         */
+        function buildHistogram(event)
+        {
+            var counters = event.args.data;
+            if (!counters || !counters.jsHeapSizeUsed)
+                return;
+            var x = Math.round((event.startTime - minTime) * xFactor);
+            var y = Math.round((counters.jsHeapSizeUsed - minUsedHeapSize) * yFactor);
+            histogram[x] = Math.max(histogram[x] || 0, y);
+        }
+        events.forEach(buildHistogram);
+
+        var ctx = this._context;
+        var heightBeyondView = height + lowerOffset + lineWidth;
+
+        ctx.translate(0.5, 0.5);
+        ctx.beginPath();
+        ctx.moveTo(-lineWidth, heightBeyondView);
+        var y = 0;
+        var isFirstPoint = true;
+        var lastX = 0;
+        for (var x = 0; x < histogram.length; x++) {
+            if (typeof histogram[x] === "undefined")
+                continue;
+            if (isFirstPoint) {
+                isFirstPoint = false;
+                y = histogram[x];
+                ctx.lineTo(-lineWidth, height - y);
+            }
+            var nextY = histogram[x];
+            if (Math.abs(nextY - y) > 2 && Math.abs(x - lastX) > 1)
+                ctx.lineTo(x, height - y);
+            y = nextY;
+            ctx.lineTo(x, height - y);
+            lastX = x;
+        }
+        ctx.lineTo(width + lineWidth, height - y);
+        ctx.lineTo(width + lineWidth, heightBeyondView);
+        ctx.closePath();
+
+        ctx.fillStyle = "hsla(220, 90%, 70%, 0.2)";
+        ctx.fill();
+        ctx.lineWidth = lineWidth;
+        ctx.strokeStyle = "hsl(220, 90%, 70%)";
+        ctx.stroke();
+
+        this._heapSizeLabel.textContent = WebInspector.UIString("%s \u2013 %s", Number.bytesToString(minUsedHeapSize), Number.bytesToString(maxUsedHeapSize));
     },
 
     __proto__: WebInspector.TimelineEventOverview.prototype

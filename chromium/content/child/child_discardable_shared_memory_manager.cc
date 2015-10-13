@@ -61,6 +61,12 @@ class DiscardableMemoryImpl : public base::DiscardableMemory {
     return reinterpret_cast<void*>(span_->start() * base::GetPageSize());
   }
 
+  base::trace_event::MemoryAllocatorDump* CreateMemoryAllocatorDump(
+      const char* name,
+      base::trace_event::ProcessMemoryDump* pmd) const override {
+    return manager_->CreateMemoryAllocatorDump(span_.get(), name, pmd);
+  }
+
  private:
   ChildDiscardableSharedMemoryManager* const manager_;
   scoped_ptr<DiscardableSharedMemoryHeap::Span> span_;
@@ -143,6 +149,8 @@ ChildDiscardableSharedMemoryManager::AllocateLockedDiscardableMemory(
       continue;
     }
 
+    free_span->set_is_locked(true);
+
     // Memory usage is guaranteed to have changed after having removed
     // at least one span from the free lists.
     MemoryUsageChanged(heap_.GetSize(), heap_.GetSizeOfFreeLists());
@@ -173,6 +181,7 @@ ChildDiscardableSharedMemoryManager::AllocateLockedDiscardableMemory(
   scoped_ptr<DiscardableSharedMemoryHeap::Span> new_span(heap_.Grow(
       shared_memory.Pass(), allocation_size_in_bytes, new_id,
       base::Bind(&SendDeletedDiscardableSharedMemoryMessage, sender_, new_id)));
+  new_span->set_is_locked(true);
 
   // Unlock and insert any left over memory into free lists.
   if (pages < pages_to_allocate) {
@@ -182,6 +191,7 @@ ChildDiscardableSharedMemoryManager::AllocateLockedDiscardableMemory(
         leftover->start() * base::GetPageSize() -
             reinterpret_cast<size_t>(leftover->shared_memory()->memory()),
         leftover->length() * base::GetPageSize());
+    leftover->set_is_locked(false);
     heap_.MergeIntoFreeLists(leftover.Pass());
   }
 
@@ -191,6 +201,7 @@ ChildDiscardableSharedMemoryManager::AllocateLockedDiscardableMemory(
 }
 
 bool ChildDiscardableSharedMemoryManager::OnMemoryDump(
+    const base::trace_event::MemoryDumpArgs& args,
     base::trace_event::ProcessMemoryDump* pmd) {
   base::AutoLock lock(lock_);
   return heap_.OnMemoryDump(pmd);
@@ -222,9 +233,11 @@ bool ChildDiscardableSharedMemoryManager::LockSpan(
 
   switch (span->shared_memory()->Lock(offset, length)) {
     case base::DiscardableSharedMemory::SUCCESS:
+      span->set_is_locked(true);
       return true;
     case base::DiscardableSharedMemory::PURGED:
       span->shared_memory()->Unlock(offset, length);
+      span->set_is_locked(false);
       return false;
     case base::DiscardableSharedMemory::FAILED:
       return false;
@@ -243,6 +256,7 @@ void ChildDiscardableSharedMemoryManager::UnlockSpan(
       reinterpret_cast<size_t>(span->shared_memory()->memory());
   size_t length = span->length() * base::GetPageSize();
 
+  span->set_is_locked(false);
   return span->shared_memory()->Unlock(offset, length);
 }
 
@@ -258,6 +272,15 @@ void ChildDiscardableSharedMemoryManager::ReleaseSpan(
 
   // Bytes of free memory changed.
   MemoryUsageChanged(heap_.GetSize(), heap_.GetSizeOfFreeLists());
+}
+
+base::trace_event::MemoryAllocatorDump*
+ChildDiscardableSharedMemoryManager::CreateMemoryAllocatorDump(
+    DiscardableSharedMemoryHeap::Span* span,
+    const char* name,
+    base::trace_event::ProcessMemoryDump* pmd) const {
+  base::AutoLock lock(lock_);
+  return heap_.CreateMemoryAllocatorDump(span, name, pmd);
 }
 
 scoped_ptr<base::DiscardableSharedMemory>
@@ -283,9 +306,6 @@ ChildDiscardableSharedMemoryManager::AllocateLockedDiscardableSharedMemory(
 void ChildDiscardableSharedMemoryManager::MemoryUsageChanged(
     size_t new_bytes_total,
     size_t new_bytes_free) const {
-  TRACE_COUNTER2("renderer", "DiscardableMemoryUsage", "allocated",
-                 new_bytes_total - new_bytes_free, "free", new_bytes_free);
-
   static const char kDiscardableMemoryAllocatedKey[] =
       "discardable-memory-allocated";
   base::debug::SetCrashKeyValue(kDiscardableMemoryAllocatedKey,

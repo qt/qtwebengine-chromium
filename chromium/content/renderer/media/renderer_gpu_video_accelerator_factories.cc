@@ -29,13 +29,14 @@ RendererGpuVideoAcceleratorFactories::Create(
     GpuChannelHost* gpu_channel_host,
     const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
     const scoped_refptr<ContextProviderCommandBuffer>& context_provider,
+    bool enable_gpu_memory_buffer_video_frames,
     unsigned image_texture_target,
     bool enable_video_accelerator) {
   scoped_refptr<RendererGpuVideoAcceleratorFactories> factories =
-      new RendererGpuVideoAcceleratorFactories(gpu_channel_host, task_runner,
-                                               context_provider,
-                                               image_texture_target,
-                                               enable_video_accelerator);
+      new RendererGpuVideoAcceleratorFactories(
+          gpu_channel_host, task_runner, context_provider,
+          enable_gpu_memory_buffer_video_frames, image_texture_target,
+          enable_video_accelerator);
   // Post task from outside constructor, since AddRef()/Release() is unsafe from
   // within.
   task_runner->PostTask(
@@ -49,16 +50,20 @@ RendererGpuVideoAcceleratorFactories::RendererGpuVideoAcceleratorFactories(
     GpuChannelHost* gpu_channel_host,
     const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
     const scoped_refptr<ContextProviderCommandBuffer>& context_provider,
+    bool enable_gpu_memory_buffer_video_frames,
     unsigned image_texture_target,
     bool enable_video_accelerator)
     : task_runner_(task_runner),
       gpu_channel_host_(gpu_channel_host),
       context_provider_(context_provider),
+      enable_gpu_memory_buffer_video_frames_(
+          enable_gpu_memory_buffer_video_frames),
       image_texture_target_(image_texture_target),
       video_accelerator_enabled_(enable_video_accelerator),
-      gpu_memory_buffer_manager_(
-          ChildThreadImpl::current()->gpu_memory_buffer_manager()),
+      gpu_memory_buffer_manager_(ChildThreadImpl::current()
+                                     ->gpu_memory_buffer_manager()),
       thread_safe_sender_(ChildThreadImpl::current()->thread_safe_sender()) {
+  DCHECK(gpu_channel_host_.get());
 }
 
 RendererGpuVideoAcceleratorFactories::~RendererGpuVideoAcceleratorFactories() {}
@@ -106,12 +111,10 @@ RendererGpuVideoAcceleratorFactories::CreateVideoDecodeAccelerator() {
   DCHECK(task_runner_->BelongsToCurrentThread());
 
   WebGraphicsContext3DCommandBufferImpl* context = GetContext3d();
-  if (context && context->GetCommandBufferProxy()) {
-    return gpu_channel_host_->CreateVideoDecoder(
-        context->GetCommandBufferProxy()->GetRouteID());
-  }
+  if (context && context->GetCommandBufferProxy())
+    return context->GetCommandBufferProxy()->CreateVideoDecoder();
 
-  return scoped_ptr<media::VideoDecodeAccelerator>();
+  return nullptr;
 }
 
 scoped_ptr<media::VideoEncodeAccelerator>
@@ -120,12 +123,10 @@ RendererGpuVideoAcceleratorFactories::CreateVideoEncodeAccelerator() {
   DCHECK(task_runner_->BelongsToCurrentThread());
 
   WebGraphicsContext3DCommandBufferImpl* context = GetContext3d();
-  if (context && context->GetCommandBufferProxy()) {
-    return gpu_channel_host_->CreateVideoEncoder(
-        context->GetCommandBufferProxy()->GetRouteID());
-  }
+  if (context && context->GetCommandBufferProxy())
+    return context->GetCommandBufferProxy()->CreateVideoEncoder();
 
-  return scoped_ptr<media::VideoEncodeAccelerator>();
+  return nullptr;
 }
 
 bool RendererGpuVideoAcceleratorFactories::CreateTextures(
@@ -208,25 +209,36 @@ void RendererGpuVideoAcceleratorFactories::WaitSyncPoint(uint32 sync_point) {
 scoped_ptr<gfx::GpuMemoryBuffer>
 RendererGpuVideoAcceleratorFactories::AllocateGpuMemoryBuffer(
     const gfx::Size& size,
-    gfx::GpuMemoryBuffer::Format format,
-    gfx::GpuMemoryBuffer::Usage usage) {
+    gfx::BufferFormat format,
+    gfx::BufferUsage usage) {
   DCHECK(task_runner_->BelongsToCurrentThread());
   scoped_ptr<gfx::GpuMemoryBuffer> buffer =
       gpu_memory_buffer_manager_->AllocateGpuMemoryBuffer(size, format, usage);
   return buffer.Pass();
 }
-
-bool RendererGpuVideoAcceleratorFactories::IsTextureRGSupported() {
-  DCHECK(task_runner_->BelongsToCurrentThread());
-
-  WebGraphicsContext3DCommandBufferImpl* context = GetContext3d();
-  if (!context)
-    return false;
-  return context->GetImplementation()->capabilities().texture_rg;
+bool RendererGpuVideoAcceleratorFactories::
+    ShouldUseGpuMemoryBuffersForVideoFrames() const {
+  return enable_gpu_memory_buffer_video_frames_;
 }
 
 unsigned RendererGpuVideoAcceleratorFactories::ImageTextureTarget() {
   return image_texture_target_;
+}
+
+media::VideoPixelFormat
+RendererGpuVideoAcceleratorFactories::VideoFrameOutputFormat() {
+  DCHECK(task_runner_->BelongsToCurrentThread());
+
+  WebGraphicsContext3DCommandBufferImpl* context = GetContext3d();
+  if (context) {
+    gpu::gles2::GLES2Implementation* gles2 = context->GetImplementation();
+    if (gles2->capabilities().image_ycbcr_422)
+      return media::PIXEL_FORMAT_UYVY;
+    if (gles2->capabilities().texture_rg)
+      return media::PIXEL_FORMAT_I420;
+  }
+
+  return media::PIXEL_FORMAT_UNKNOWN;
 }
 
 gpu::gles2::GLES2Interface*

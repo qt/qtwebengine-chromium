@@ -34,7 +34,10 @@ source_set("common_sources") {
                         ".",
                         "//content")
 
-  configs += [ "//content:content_implementation" ]
+  configs += [
+    "//build/config:precompiled_headers",
+    "//content:content_implementation",
+  ]
 
   public_deps = [
     "//content/common",
@@ -62,5 +65,6 @@ mojom("mojo_bindings") {
     "background_sync.mojom",
     "mojo_geoposition.mojom",
     "permission_status.mojom",
+    "service_worker_event_status.mojom",
   ]
 }

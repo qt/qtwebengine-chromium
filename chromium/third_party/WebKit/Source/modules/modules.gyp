@@ -39,8 +39,10 @@
     # GN version: //third_party/WebKit/Source/modules:modules
     'target_name': 'modules',
     'dependencies': [
-      '<(DEPTH)/third_party/zlib/zlib.gyp:zlib',
+      '<(DEPTH)/third_party/icu/icu.gyp:icui18n',
+      '<(DEPTH)/third_party/icu/icu.gyp:icuuc',
       '<(DEPTH)/third_party/sqlite/sqlite.gyp:sqlite',
+      '<(DEPTH)/third_party/zlib/zlib.gyp:zlib',
       '../config.gyp:config',
       'modules_generated.gyp:make_modules_generated',
     ],
@@ -80,7 +82,7 @@
         ],
         'conditions': [
           # Shard this target into parts to work around linker limitations.
-          ['OS=="win" and buildtype=="Official"', {
+          ['OS=="win" and (buildtype=="Official" or (fastbuild==0 and win_z7==1))', {
             'msvs_shard': 4,
           }],
         ],

@@ -30,12 +30,25 @@
 #ifndef LineBoxList_h
 #define LineBoxList_h
 
-#include "core/layout/LayoutObject.h"
+#include "core/layout/api/HitTestAction.h"
+#include "wtf/Allocator.h"
+#include "wtf/Assertions.h"
 
 namespace blink {
 
+class HitTestLocation;
+class HitTestResult;
 class InlineFlowBox;
+class LayoutBoxModelObject;
+class LayoutPoint;
+class LayoutRect;
+class LayoutUnit;
+class LineLayoutBoxModel;
+class LineLayoutItem;
+struct PaintInfo;
+
 class LineBoxList {
+    DISALLOW_ALLOCATION();
 public:
     LineBoxList()
         : m_firstLineBox(nullptr)
@@ -62,12 +75,12 @@ public:
     void removeLineBox(InlineFlowBox*);
 
     void dirtyLineBoxes();
-    void dirtyLinesFromChangedChild(LayoutObject* parent, LayoutObject* child);
+    void dirtyLinesFromChangedChild(LineLayoutItem parent, LineLayoutItem child);
 
-    bool hitTest(LayoutBoxModelObject*, HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction) const;
-    bool anyLineIntersectsRect(LayoutBoxModelObject*, const LayoutRect&, const LayoutPoint&) const;
-    bool lineIntersectsDirtyRect(LayoutBoxModelObject*, InlineFlowBox*, const PaintInfo&, const LayoutPoint&) const;
-    bool rangeIntersectsRect(LayoutBoxModelObject*, LayoutUnit logicalTop, LayoutUnit logicalBottom, const LayoutRect&, const LayoutPoint&) const;
+    bool hitTest(LineLayoutBoxModel, HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction) const;
+    bool anyLineIntersectsRect(LineLayoutBoxModel, const LayoutRect&, const LayoutPoint&) const;
+    bool lineIntersectsDirtyRect(LineLayoutBoxModel, InlineFlowBox*, const PaintInfo&, const LayoutPoint&) const;
+    bool rangeIntersectsRect(LineLayoutBoxModel, LayoutUnit logicalTop, LayoutUnit logicalBottom, const LayoutRect&, const LayoutPoint&) const;
 
 private:
 

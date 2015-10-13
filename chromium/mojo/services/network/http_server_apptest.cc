@@ -23,6 +23,7 @@
 #include "mojo/services/network/public/interfaces/net_address.mojom.h"
 #include "mojo/services/network/public/interfaces/network_service.mojom.h"
 #include "mojo/services/network/public/interfaces/web_socket.mojom.h"
+#include "mojo/services/network/public/interfaces/web_socket_factory.mojom.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
 #include "net/base/test_completion_callback.h"
@@ -113,12 +114,12 @@ void CheckHeaders(const TestHeaders& expected,
   std::map<std::string, std::string> header_map;
   for (size_t i = 0; i < headers.size(); ++i) {
     std::string lower_name =
-        base::StringToLowerASCII(headers[i]->name.To<std::string>());
+        base::ToLowerASCII(headers[i]->name.To<std::string>());
     header_map[lower_name] = headers[i]->value;
   }
 
   for (const auto& item : expected) {
-    std::string lower_name = base::StringToLowerASCII(item.first);
+    std::string lower_name = base::ToLowerASCII(item.first);
     EXPECT_NE(header_map.end(), header_map.find(lower_name));
     EXPECT_EQ(item.second, header_map[lower_name]);
   }
@@ -553,9 +554,10 @@ class HttpServerAppTest : public test::ApplicationTestBase {
 
     mojo::URLRequestPtr request(mojo::URLRequest::New());
     request->url = mojo::String::From("mojo:network_service");
-    ApplicationConnection* connection =
+    scoped_ptr<ApplicationConnection> connection =
         application_impl()->ConnectToApplication(request.Pass());
     connection->ConnectToService(&network_service_);
+    connection->ConnectToService(&web_socket_factory_);
   }
 
   void CreateHttpServer(HttpServerDelegatePtr delegate,
@@ -571,6 +573,7 @@ class HttpServerAppTest : public test::ApplicationTestBase {
   }
 
   NetworkServicePtr network_service_;
+  WebSocketFactoryPtr web_socket_factory_;
 
  private:
   base::MessageLoop message_loop_;
@@ -657,7 +660,7 @@ TEST_F(HttpServerAppTest, WebSocket) {
   CreateHttpServer(server_delegate_ptr.Pass(), &bound_to);
 
   WebSocketPtr web_socket_ptr;
-  network_service_->CreateWebSocket(GetProxy(&web_socket_ptr));
+  web_socket_factory_->CreateWebSocket(GetProxy(&web_socket_ptr));
   WebSocketClientImpl socket_0;
   socket_0.Connect(
       web_socket_ptr.Pass(),

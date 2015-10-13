@@ -19,10 +19,7 @@
 using base::StringPiece;
 using std::min;
 using std::string;
-using testing::AnyNumber;
-using testing::InSequence;
 using testing::Return;
-using testing::SaveArg;
 using testing::StrictMock;
 using testing::_;
 
@@ -40,11 +37,16 @@ class TestStream : public QuicDataStream {
       : QuicDataStream(id, session),
         should_process_data_(should_process_data) {}
 
-  uint32 ProcessData(const char* data, uint32 data_len) override {
-    EXPECT_NE(0u, data_len);
-    DVLOG(1) << "ProcessData data_len: " << data_len;
-    data_ += string(data, data_len);
-    return should_process_data_ ? data_len : 0;
+  void OnDataAvailable() override {
+    if (!should_process_data_) {
+      return;
+    }
+    char buffer[2048];
+    struct iovec vec;
+    vec.iov_base = buffer;
+    vec.iov_len = arraysize(buffer);
+    size_t bytes_read = Readv(&vec, 1);
+    data_ += string(buffer, bytes_read);
   }
 
   using ReliableQuicStream::WriteOrBufferData;
@@ -128,6 +130,23 @@ TEST_P(QuicDataStreamTest, ProcessHeaders) {
   EXPECT_EQ("", stream_->data());
   EXPECT_EQ(headers, stream_->decompressed_headers());
   EXPECT_FALSE(stream_->IsDoneReading());
+}
+
+TEST_P(QuicDataStreamTest, ProcessHeadersWithFin) {
+  Initialize(kShouldProcessData);
+
+  string headers =
+      SpdyUtils::SerializeUncompressedHeaders(headers_, GetParam());
+  stream_->OnStreamHeadersPriority(QuicUtils::HighestPriority());
+  stream_->OnStreamHeaders(headers);
+  EXPECT_EQ("", stream_->data());
+  EXPECT_EQ(headers, stream_->decompressed_headers());
+  stream_->OnStreamHeadersComplete(true, headers.size());
+  EXPECT_EQ(QuicUtils::HighestPriority(), stream_->EffectivePriority());
+  EXPECT_EQ("", stream_->data());
+  EXPECT_EQ(headers, stream_->decompressed_headers());
+  EXPECT_FALSE(stream_->IsDoneReading());
+  EXPECT_TRUE(stream_->HasFinalReceivedByteOffset());
 }
 
 TEST_P(QuicDataStreamTest, MarkHeadersConsumed) {
@@ -254,6 +273,29 @@ TEST_P(QuicDataStreamTest, ProcessHeadersAndBodyReadv) {
   size_t bytes_read = stream_->Readv(&vec, 1);
   EXPECT_EQ(body.length(), bytes_read);
   EXPECT_EQ(body, string(buffer, bytes_read));
+}
+
+TEST_P(QuicDataStreamTest, ProcessHeadersAndBodyMarkConsumed) {
+  Initialize(!kShouldProcessData);
+
+  string headers =
+      SpdyUtils::SerializeUncompressedHeaders(headers_, GetParam());
+  string body = "this is the body";
+
+  stream_->OnStreamHeaders(headers);
+  stream_->OnStreamHeadersComplete(false, headers.size());
+  QuicStreamFrame frame(kClientDataStreamId1, false, 0, StringPiece(body));
+  stream_->OnStreamFrame(frame);
+  stream_->MarkHeadersConsumed(headers.length());
+
+  struct iovec vec;
+
+  EXPECT_EQ(1, stream_->GetReadableRegions(&vec, 1));
+  EXPECT_EQ(body.length(), vec.iov_len);
+  EXPECT_EQ(body, string(static_cast<char*>(vec.iov_base), vec.iov_len));
+
+  stream_->MarkConsumed(body.length());
+  EXPECT_EQ(body.length(), stream_->flow_controller()->bytes_consumed());
 }
 
 TEST_P(QuicDataStreamTest, ProcessHeadersAndBodyIncrementalReadv) {

@@ -35,7 +35,7 @@ import re
 
 from idl_types import IdlTypeBase
 import idl_types
-from idl_definitions import Exposure, IdlInterface
+from idl_definitions import Exposure, IdlInterface, IdlAttribute
 from v8_globals import includes
 
 ACRONYMS = [
@@ -125,7 +125,7 @@ def scoped_name(interface, definition, base_name):
     if partial_interface_implemented_as:
         return '%s::%s' % (partial_interface_implemented_as, base_name)
     if (definition.is_static or
-        definition.name in ('Constructor', 'NamedConstructor')):
+            definition.name in ('Constructor', 'NamedConstructor')):
         return '%s::%s' % (cpp_name(interface), base_name)
     return 'impl->%s' % base_name
 
@@ -176,7 +176,7 @@ def activity_logging_world_check(member):
     if 'LogActivity' not in extended_attributes:
         return False
     if ('PerWorldBindings' not in extended_attributes and
-        'LogAllWorlds' not in extended_attributes):
+            'LogAllWorlds' not in extended_attributes):
         return True
     return False
 
@@ -228,7 +228,8 @@ def conditional_string(definition_or_member):
 # [Constructor], [NamedConstructor]
 def is_constructor_attribute(member):
     # TODO(yukishiino): replace this with [Constructor] and [NamedConstructor] extended attribute
-    return member.idl_type.name.endswith('Constructor')
+    return (type(member) == IdlAttribute and
+            member.idl_type.name.endswith('Constructor'))
 
 
 # [DeprecateAs]
@@ -411,7 +412,7 @@ def is_legacy_interface_type_checking(interface, member):
     return False
 
 
-# [Unforgeable], [Global], [PrimaryGlobal] and [DoNotExposeJSAccessors]
+# [Unforgeable], [Global], [PrimaryGlobal]
 def on_instance(interface, member):
     """Returns True if the interface's member needs to be defined on every
     instance object.
@@ -419,60 +420,57 @@ def on_instance(interface, member):
     The following members must be defiend on an instance object.
     - [Unforgeable] members
     - regular members of [Global] or [PrimaryGlobal] interfaces
-    - members on which [DoNotExposeJSAccessors] is specified
     """
-    # TODO(yukishiino): Implement this function following the spec.
-    return not on_prototype(interface, member)
+    if member.is_static:
+        return False
+
+    # TODO(yukishiino): Remove a hack for toString once we support
+    # Symbol.toStringTag.
+    if (interface.name == 'Window' and member.name == 'toString'):
+        return False
+
+    # TODO(yukishiino): Implement "interface object" and its [[Call]] method
+    # in a better way.  Then we can get rid of this hack.
+    if is_constructor_attribute(member):
+        return True
+
+    if ('PrimaryGlobal' in interface.extended_attributes or
+            'Global' in interface.extended_attributes or
+            'Unforgeable' in member.extended_attributes or
+            'Unforgeable' in interface.extended_attributes):
+        return True
+    return False
 
 
-# [ExposeJSAccessors]
 def on_prototype(interface, member):
     """Returns True if the interface's member needs to be defined on the
     prototype object.
 
     Most members are defined on the prototype object.  Exceptions are as
     follows.
-    - constant members
     - static members (optional)
     - [Unforgeable] members
     - members of [Global] or [PrimaryGlobal] interfaces
     - named properties of [Global] or [PrimaryGlobal] interfaces
-    However, if [ExposeJSAccessors] is specified, the member is defined on the
-    prototype object.
     """
-    # TODO(yukishiino): Implement this function following the spec.
+    if member.is_static:
+        return False
 
-    if ('ExposeJSAccessors' in interface.extended_attributes and
-            'DoNotExposeJSAccessors' in interface.extended_attributes):
-        raise Exception('Both of ExposeJSAccessors and DoNotExposeJSAccessors are specified at a time in an interface: ' + interface.name)
-    if ('ExposeJSAccessors' in member.extended_attributes and
-            'DoNotExposeJSAccessors' in member.extended_attributes):
-        raise Exception('Both of ExposeJSAccessors and DoNotExposeJSAccessors are specified at a time on a member: ' + member.name + ' in an interface: ' + interface.name)
-
-    # Note that ExposeJSAccessors and DoNotExposeJSAccessors are more powerful
-    # than 'static', [Unforgeable] and [OverrideBuiltins].
-    if 'ExposeJSAccessors' in member.extended_attributes:
+    # TODO(yukishiino): Remove a hack for toString once we support
+    # Symbol.toStringTag.
+    if (interface.name == 'Window' and member.name == 'toString'):
         return True
-    if 'DoNotExposeJSAccessors' in member.extended_attributes:
+
+    # TODO(yukishiino): Implement "interface object" and its [[Call]] method
+    # in a better way.  Then we can get rid of this hack.
+    if is_constructor_attribute(member):
         return False
 
-    # These members must not be placed on prototype chains.
-    if (is_constructor_attribute(member) or
-            member.is_static or
-            is_unforgeable(interface, member) or
-            'OverrideBuiltins' in interface.extended_attributes):
+    if ('PrimaryGlobal' in interface.extended_attributes or
+            'Global' in interface.extended_attributes or
+            'Unforgeable' in member.extended_attributes or
+            'Unforgeable' in interface.extended_attributes):
         return False
-
-    # TODO(yukishiino): We should handle [Global] and [PrimaryGlobal] instead of
-    # Window.
-    if (interface.name == 'Window'):
-        return member.idl_type.name == 'EventHandler'
-
-    if 'ExposeJSAccessors' in interface.extended_attributes:
-        return True
-    if 'DoNotExposeJSAccessors' in interface.extended_attributes:
-        return False
-
     return True
 
 
@@ -482,10 +480,10 @@ def on_interface(interface, member):
     interface object.
 
     The following members must be defiend on an interface object.
-    - constant members
     - static members
     """
-    # TODO(yukishiino): Implement this function following the spec.
+    if member.is_static:
+        return True
     return False
 
 

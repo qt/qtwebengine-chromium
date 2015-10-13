@@ -187,7 +187,7 @@ WebInspector.OverridesView.DeviceTab = function()
     this.element.appendChild(this._createDeviceElement());
 
     var footnote = this.element.createChild("p", "help-footnote");
-    footnote.appendChild(WebInspector.linkifyDocumentationURLAsNode("device-mode", WebInspector.UIString("More information about screen emulation")));
+    footnote.appendChild(WebInspector.linkifyDocumentationURLAsNode("setup/remote-debugging/remote-debugging", WebInspector.UIString("More information about screen emulation")));
 }
 
 WebInspector.OverridesView.DeviceTab.prototype = {
@@ -225,7 +225,7 @@ WebInspector.OverridesView.DeviceTab.prototype = {
         cellElement.colSpan = 4;
 
         rowElement = tableElement.createChild("tr");
-        rowElement.title = WebInspector.UIString("Ratio between a device's physical pixels and device-independent pixels.");
+        rowElement.title = WebInspector.UIString("Ratio between a device's physical pixels and device-independent pixels");
         rowElement.createChild("td").createTextChild(WebInspector.UIString("Device pixel ratio:"));
         rowElement.createChild("td").appendChild(WebInspector.SettingsUI.createSettingInputField("", WebInspector.overridesSupport.settings.deviceScaleFactor, true, 4, "80px", WebInspector.OverridesSupport.deviceScaleFactorValidator, true, true, WebInspector.UIString("\u2013")));
 

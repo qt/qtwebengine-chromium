@@ -29,6 +29,16 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+// https://notifications.spec.whatwg.org/#enumdef-notificationpermission
+
+enum NotificationPermission {
+    "default",
+    "denied",
+    "granted"
+};
+
+// https://notifications.spec.whatwg.org/#api
+
 [
     GarbageCollected,
     ActiveDOMObject,
@@ -39,10 +49,11 @@
     RaisesException=Constructor,
     RuntimeEnabled=Notifications,
 ] interface Notification : EventTarget {
-    [CallWith=ExecutionContext, MeasureAs=NotificationPermission] static readonly attribute DOMString permission;
-    [CallWith=ExecutionContext, MeasureAs=NotificationPermissionRequested] static void requestPermission(optional NotificationPermissionCallback callback);
+    [CallWith=ExecutionContext, MeasureAs=NotificationPermission] static readonly attribute NotificationPermission permission;
 
-    // FIXME: Implement the Notification.get() method.
+    [CallWith=ScriptState, Exposed=Window, MeasureAs=NotificationPermissionRequested] static Promise<NotificationPermission> requestPermission(optional NotificationPermissionCallback deprecatedCallback);
+
+    [RuntimeEnabled=NotificationExperimental] static readonly attribute unsigned long maxActions;
 
     attribute EventHandler onclick;
     [MeasureAs=NotificationShowEvent] attribute EventHandler onshow;
@@ -58,7 +69,11 @@
 
     [RuntimeEnabled=NotificationExperimental] readonly attribute sequence<unsigned long>? vibrate;
     readonly attribute boolean silent;
-    [CallWith=ScriptState] readonly attribute any data;
+    readonly attribute boolean requireInteraction;
+    [CallWith=ScriptState, SameObject] readonly attribute any data;
+
+    // TODO(johnme): The spec requires a FrozenArray, but sequence seems to behave like one already?! https://crbug.com/515920
+    [RuntimeEnabled=NotificationExperimental] readonly attribute sequence<NotificationAction> actions;
 
     [MeasureAs=NotificationClosed] void close();
 };

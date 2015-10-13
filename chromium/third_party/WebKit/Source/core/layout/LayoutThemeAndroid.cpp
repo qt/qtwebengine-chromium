@@ -58,7 +58,9 @@ LayoutThemeAndroid::~LayoutThemeAndroid()
 
 String LayoutThemeAndroid::extraMediaControlsStyleSheet()
 {
-    return loadResourceAsASCIIString("mediaControlsAndroid.css");
+    return loadResourceAsASCIIString(
+        RuntimeEnabledFeatures::newMediaPlaybackUiEnabled() ?
+        "mediaControlsAndroidNew.css" : "mediaControlsAndroid.css");
 }
 
 String LayoutThemeAndroid::extraDefaultStyleSheet()
@@ -69,7 +71,7 @@ String LayoutThemeAndroid::extraDefaultStyleSheet()
 
 }
 
-void LayoutThemeAndroid::adjustInnerSpinButtonStyle(ComputedStyle& style, Element*) const
+void LayoutThemeAndroid::adjustInnerSpinButtonStyle(ComputedStyle& style) const
 {
     if (LayoutTestSupport::isRunningLayoutTest()) {
         // Match Linux spin button style in layout tests.

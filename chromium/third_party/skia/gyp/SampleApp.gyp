@@ -7,15 +7,12 @@
   'includes': [
     'apptype_console.gypi',
   ],
-  'variables': {
-    #manually set sample_pdf_file_viewer to 1 to have the PdfViewer in SampleApp
-    'sample_pdf_file_viewer%': 0,
-  },
   'targets': [
     {
       'target_name': 'SampleApp',
       'type': 'executable',
       'include_dirs' : [
+        '../include/private',
         '../src/core',
         '../src/effects', #needed for BlurMask.h
         '../src/gpu', # needed by SkLua.cpp
@@ -25,6 +22,7 @@
         '../samplecode', # To pull SampleApp.h and SampleCode.h
         '../src/pipe/utils', # For TiledPipeController
         '../src/utils/debugger',
+        '../tools',
       ],
       'includes': [
         'gmslides.gypi',
@@ -66,8 +64,6 @@
         '../samplecode/SampleDitherBitmap.cpp',
         '../samplecode/SampleEffects.cpp',
         '../samplecode/SampleEmboss.cpp',
-        '../samplecode/SampleEmptyPath.cpp',
-        '../samplecode/SampleEncode.cpp',
         '../samplecode/SampleFatBits.cpp',
         '../samplecode/SampleFillType.cpp',
         '../samplecode/SampleFilter.cpp',
@@ -86,7 +82,7 @@
         '../samplecode/SampleLayerMask.cpp',
         '../samplecode/SampleLayers.cpp',
         '../samplecode/SampleLCD.cpp',
-	'../samplecode/SampleLighting.cpp',
+        '../samplecode/SampleLighting.cpp',
         '../samplecode/SampleLines.cpp',
         '../samplecode/SampleLua.cpp',
         '../samplecode/SampleManyRects.cpp',
@@ -96,7 +92,6 @@
         '../samplecode/SamplePathClip.cpp',
         '../samplecode/SamplePathFuzz.cpp',
         '../samplecode/SamplePathEffects.cpp',
-        '../samplecode/SamplePicture.cpp',
         '../samplecode/SamplePictFile.cpp',
         '../samplecode/SamplePoints.cpp',
         '../samplecode/SamplePolyToPoly.cpp',
@@ -121,6 +116,7 @@
         '../samplecode/SampleUnpremul.cpp',
         '../samplecode/SampleVertices.cpp',
         '../samplecode/SampleXfermodesBlur.cpp',
+        '../samplecode/SampleXfer.cpp',
 
         # DrawingBoard
         #'../experimental/DrawingBoard/SkColorPalette.h',
@@ -157,31 +153,12 @@
         'skia_lib.gyp:skia_lib',
         'tools.gyp:resources',
         'tools.gyp:sk_tool_utils',
+        'tools.gyp:timer',
         'views.gyp:views',
         'views_animated.gyp:views_animated',
         'xml.gyp:xml',
       ],
-     'conditions' : [
-       [ 'sample_pdf_file_viewer == 1', {
-         'defines': [
-           'SAMPLE_PDF_FILE_VIEWER',
-         ],
-         'dependencies': [
-           'pdfviewer_lib.gyp:pdfviewer_lib',
-         ],
-         'include_dirs' : [
-           '../experimental/PdfViewer/inc',
-         ],
-         'sources': [
-           '../samplecode/SamplePdfFileViewer.cpp',
-         ]
-       }],
-        [ 'skia_os == "win"', {
-          'sources!': [
-            # require UNIX functions
-            '../samplecode/SampleEncode.cpp',
-          ],
-        }],
+      'conditions' : [
         [ 'skia_os == "ios"', {
           # TODO: This doesn't build properly yet, but it's getting there.
           'sources!': [
@@ -260,15 +237,19 @@
             'android_deps.gyp:Android_SampleApp',
           ],
         }],
-	[ 'skia_os == "chromeos"', {
-	  'sources!': [
-	    '../samplecode/SampleLighting.cpp',  #doesn't compile due to gpu dependencies
+        [ 'skia_os == "chromeos"', {
+          'sources!': [
+            '../samplecode/SampleLighting.cpp',  #doesn't compile due to gpu dependencies
           ],
         }],
         [ 'skia_gpu == 1', {
           'dependencies': [
             'gputest.gyp:skgputest',
           ],
+        }],
+        [ 'not skia_pdf', {
+          'dependencies!': [ 'pdf.gyp:pdf' ],
+          'dependencies': [ 'pdf.gyp:nopdf' ],
         }],
       ],
     },

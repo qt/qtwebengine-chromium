@@ -12,7 +12,9 @@ class WebRemoteFrameImpl;
 
 class RemoteFrameClientImpl final : public RemoteFrameClient {
 public:
-    explicit RemoteFrameClientImpl(WebRemoteFrameImpl*);
+    static PassOwnPtrWillBeRawPtr<RemoteFrameClientImpl> create(WebRemoteFrameImpl*);
+
+    DECLARE_VIRTUAL_TRACE();
 
     // FrameClient overrides:
     bool inShadowTree() const override;
@@ -33,11 +35,14 @@ public:
     void reload(FrameLoadType, ClientRedirectPolicy) override;
     unsigned backForwardLength() override;
     void forwardInputEvent(Event*) override;
+    void frameRectsChanged(const IntRect& frameRect) override;
 
     WebRemoteFrameImpl* webFrame() const { return m_webFrame; }
 
 private:
-    WebRemoteFrameImpl* m_webFrame;
+    explicit RemoteFrameClientImpl(WebRemoteFrameImpl*);
+
+    RawPtrWillBeMember<WebRemoteFrameImpl> m_webFrame;
 };
 
 } // namespace blink

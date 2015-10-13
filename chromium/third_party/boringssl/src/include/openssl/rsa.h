@@ -59,6 +59,7 @@
 
 #include <openssl/base.h>
 
+#include <openssl/asn1.h>
 #include <openssl/engine.h>
 #include <openssl/ex_data.h>
 #include <openssl/thread.h>
@@ -163,7 +164,7 @@ OPENSSL_EXPORT int RSA_public_encrypt(int flen, const uint8_t *from,
  *
  * WARNING: this function is dangerous because it breaks the usual return value
  * convention. Use |RSA_decrypt| instead. */
-OPENSSL_EXPORT int RSA_private_decrypt(int flen, const uint8_t *from,
+OPENSSL_EXPORT int RSA_private_decrypt(size_t flen, const uint8_t *from,
                                        uint8_t *to, RSA *rsa, int padding);
 
 /* RSA_message_index_PKCS1_type_2 performs the first step of a PKCS #1 padding
@@ -272,7 +273,7 @@ OPENSSL_EXPORT int RSA_is_opaque(const RSA *rsa);
  * of type |md|. Otherwise it returns zero. */
 OPENSSL_EXPORT int RSA_supports_digest(const RSA *rsa, const EVP_MD *md);
 
-/* RSAPublicKey_dup allocates a fresh |RSA| and copies the private key from
+/* RSAPublicKey_dup allocates a fresh |RSA| and copies the public key from
  * |rsa| into it. It returns the fresh |RSA| object, or NULL on error. */
 OPENSSL_EXPORT RSA *RSAPublicKey_dup(const RSA *rsa);
 
@@ -332,33 +333,52 @@ OPENSSL_EXPORT int RSA_add_pkcs1_prefix(uint8_t **out_msg, size_t *out_msg_len,
 
 /* ASN.1 functions. */
 
-/* d2i_RSAPublicKey parses an ASN.1, DER-encoded, RSA public key from |len|
- * bytes at |*inp|. If |out| is not NULL then, on exit, a pointer to the result
- * is in |*out|. If |*out| is already non-NULL on entry then the result is
- * written directly into |*out|, otherwise a fresh |RSA| is allocated. On
- * successful exit, |*inp| is advanced past the DER structure. It returns the
- * result or NULL on error. */
-OPENSSL_EXPORT RSA *d2i_RSAPublicKey(RSA **out, const uint8_t **inp, long len);
+/* RSA_parse_public_key parses a DER-encoded RSAPublicKey structure (RFC 3447)
+ * from |cbs| and advances |cbs|. It returns a newly-allocated |RSA| or NULL on
+ * error. */
+OPENSSL_EXPORT RSA *RSA_parse_public_key(CBS *cbs);
 
-/* i2d_RSAPublicKey marshals |in| to an ASN.1, DER structure. If |outp| is not
- * NULL then the result is written to |*outp| and |*outp| is advanced just past
- * the output. It returns the number of bytes in the result, whether written or
- * not, or a negative value on error. */
-OPENSSL_EXPORT int i2d_RSAPublicKey(const RSA *in, uint8_t **outp);
+/* RSA_parse_public_key_buggy behaves like |RSA_parse_public_key|, but it
+ * tolerates some invalid encodings. Do not use this function. */
+OPENSSL_EXPORT RSA *RSA_parse_public_key_buggy(CBS *cbs);
 
-/* d2i_RSAPrivateKey parses an ASN.1, DER-encoded, RSA private key from |len|
- * bytes at |*inp|. If |out| is not NULL then, on exit, a pointer to the result
- * is in |*out|. If |*out| is already non-NULL on entry then the result is
- * written directly into |*out|, otherwise a fresh |RSA| is allocated. On
- * successful exit, |*inp| is advanced past the DER structure. It returns the
- * result or NULL on error. */
-OPENSSL_EXPORT RSA *d2i_RSAPrivateKey(RSA **out, const uint8_t **inp, long len);
+/* RSA_public_key_from_bytes parses |in| as a DER-encoded RSAPublicKey structure
+ * (RFC 3447). It returns a newly-allocated |RSA| or NULL on error. */
+OPENSSL_EXPORT RSA *RSA_public_key_from_bytes(const uint8_t *in, size_t in_len);
 
-/* i2d_RSAPrivateKey marshals |in| to an ASN.1, DER structure. If |outp| is not
- * NULL then the result is written to |*outp| and |*outp| is advanced just past
- * the output. It returns the number of bytes in the result, whether written or
- * not, or a negative value on error. */
-OPENSSL_EXPORT int i2d_RSAPrivateKey(const RSA *in, uint8_t **outp);
+/* RSA_marshal_public_key marshals |rsa| as a DER-encoded RSAPublicKey structure
+ * (RFC 3447) and appends the result to |cbb|. It returns one on success and
+ * zero on failure. */
+OPENSSL_EXPORT int RSA_marshal_public_key(CBB *cbb, const RSA *rsa);
+
+/* RSA_public_key_to_bytes marshals |rsa| as a DER-encoded RSAPublicKey
+ * structure (RFC 3447) and, on success, sets |*out_bytes| to a newly allocated
+ * buffer containing the result and returns one. Otherwise, it returns zero. The
+ * result should be freed with |OPENSSL_free|. */
+OPENSSL_EXPORT int RSA_public_key_to_bytes(uint8_t **out_bytes, size_t *out_len,
+                                           const RSA *rsa);
+
+/* RSA_parse_private_key parses a DER-encoded RSAPrivateKey structure (RFC 3447)
+ * from |cbs| and advances |cbs|. It returns a newly-allocated |RSA| or NULL on
+ * error. */
+OPENSSL_EXPORT RSA *RSA_parse_private_key(CBS *cbs);
+
+/* RSA_private_key_from_bytes parses |in| as a DER-encoded RSAPrivateKey
+ * structure (RFC 3447). It returns a newly-allocated |RSA| or NULL on error. */
+OPENSSL_EXPORT RSA *RSA_private_key_from_bytes(const uint8_t *in,
+                                               size_t in_len);
+
+/* RSA_marshal_private_key marshals |rsa| as a DER-encoded RSAPrivateKey
+ * structure (RFC 3447) and appends the result to |cbb|. It returns one on
+ * success and zero on failure. */
+OPENSSL_EXPORT int RSA_marshal_private_key(CBB *cbb, const RSA *rsa);
+
+/* RSA_private_key_to_bytes marshals |rsa| as a DER-encoded RSAPrivateKey
+ * structure (RFC 3447) and, on success, sets |*out_bytes| to a newly allocated
+ * buffer containing the result and returns one. Otherwise, it returns zero. The
+ * result should be freed with |OPENSSL_free|. */
+OPENSSL_EXPORT int RSA_private_key_to_bytes(uint8_t **out_bytes,
+                                            size_t *out_len, const RSA *rsa);
 
 
 /* ex_data functions.
@@ -371,6 +391,9 @@ OPENSSL_EXPORT int RSA_get_ex_new_index(long argl, void *argp,
                                         CRYPTO_EX_free *free_func);
 OPENSSL_EXPORT int RSA_set_ex_data(RSA *r, int idx, void *arg);
 OPENSSL_EXPORT void *RSA_get_ex_data(const RSA *r, int idx);
+
+
+/* Flags. */
 
 /* RSA_FLAG_OPAQUE specifies that this RSA_METHOD does not expose its key
  * material. This may be set if, for instance, it is wrapping some other crypto
@@ -415,6 +438,43 @@ OPENSSL_EXPORT int RSA_blinding_on(RSA *rsa, BN_CTX *ctx);
  * and |cb_arg| parameters must be NULL. */
 OPENSSL_EXPORT RSA *RSA_generate_key(int bits, unsigned long e, void *callback,
                                      void *cb_arg);
+
+/* d2i_RSAPublicKey parses an ASN.1, DER-encoded, RSA public key from |len|
+ * bytes at |*inp|. If |out| is not NULL then, on exit, a pointer to the result
+ * is in |*out|. If |*out| is already non-NULL on entry then the result is
+ * written directly into |*out|, otherwise a fresh |RSA| is allocated. On
+ * successful exit, |*inp| is advanced past the DER structure. It returns the
+ * result or NULL on error. */
+OPENSSL_EXPORT RSA *d2i_RSAPublicKey(RSA **out, const uint8_t **inp, long len);
+
+/* i2d_RSAPublicKey marshals |in| to an ASN.1, DER structure. If |outp| is not
+ * NULL then the result is written to |*outp| and |*outp| is advanced just past
+ * the output. It returns the number of bytes in the result, whether written or
+ * not, or a negative value on error. */
+OPENSSL_EXPORT int i2d_RSAPublicKey(const RSA *in, uint8_t **outp);
+
+/* d2i_RSAPrivateKey parses an ASN.1, DER-encoded, RSA private key from |len|
+ * bytes at |*inp|. If |out| is not NULL then, on exit, a pointer to the result
+ * is in |*out|. If |*out| is already non-NULL on entry then the result is
+ * written directly into |*out|, otherwise a fresh |RSA| is allocated. On
+ * successful exit, |*inp| is advanced past the DER structure. It returns the
+ * result or NULL on error. */
+OPENSSL_EXPORT RSA *d2i_RSAPrivateKey(RSA **out, const uint8_t **inp, long len);
+
+/* i2d_RSAPrivateKey marshals |in| to an ASN.1, DER structure. If |outp| is not
+ * NULL then the result is written to |*outp| and |*outp| is advanced just past
+ * the output. It returns the number of bytes in the result, whether written or
+ * not, or a negative value on error. */
+OPENSSL_EXPORT int i2d_RSAPrivateKey(const RSA *in, uint8_t **outp);
+
+typedef struct rsa_pss_params_st {
+  X509_ALGOR *hashAlgorithm;
+  X509_ALGOR *maskGenAlgorithm;
+  ASN1_INTEGER *saltLength;
+  ASN1_INTEGER *trailerField;
+} RSA_PSS_PARAMS;
+
+DECLARE_ASN1_FUNCTIONS(RSA_PSS_PARAMS)
 
 
 struct rsa_meth_st {
@@ -485,8 +545,6 @@ struct rsa_meth_st {
 typedef struct bn_blinding_st BN_BLINDING;
 
 struct rsa_st {
-  /* version is only used during ASN.1 (de)serialisation. */
-  long version;
   RSA_METHOD *meth;
 
   BIGNUM *n;
@@ -529,35 +587,6 @@ struct rsa_st {
 }  /* extern C */
 #endif
 
-#define RSA_F_BN_BLINDING_convert_ex 100
-#define RSA_F_BN_BLINDING_create_param 101
-#define RSA_F_BN_BLINDING_invert_ex 102
-#define RSA_F_BN_BLINDING_new 103
-#define RSA_F_BN_BLINDING_update 104
-#define RSA_F_RSA_check_key 105
-#define RSA_F_RSA_new_method 106
-#define RSA_F_RSA_padding_add_PKCS1_OAEP_mgf1 107
-#define RSA_F_RSA_padding_add_PKCS1_PSS_mgf1 108
-#define RSA_F_RSA_padding_add_PKCS1_type_1 109
-#define RSA_F_RSA_padding_add_PKCS1_type_2 110
-#define RSA_F_RSA_padding_add_none 111
-#define RSA_F_RSA_padding_check_PKCS1_OAEP_mgf1 112
-#define RSA_F_RSA_padding_check_PKCS1_type_1 113
-#define RSA_F_RSA_padding_check_PKCS1_type_2 114
-#define RSA_F_RSA_padding_check_none 115
-#define RSA_F_RSA_recover_crt_params 116
-#define RSA_F_RSA_sign 117
-#define RSA_F_RSA_verify 118
-#define RSA_F_RSA_verify_PKCS1_PSS_mgf1 119
-#define RSA_F_decrypt 120
-#define RSA_F_encrypt 121
-#define RSA_F_keygen 122
-#define RSA_F_RSA_add_pkcs1_prefix 123
-#define RSA_F_private_transform 124
-#define RSA_F_rsa_setup_blinding 125
-#define RSA_F_sign_raw 126
-#define RSA_F_verify_raw 127
-#define RSA_F_keygen_multiprime 128
 #define RSA_R_BAD_E_VALUE 100
 #define RSA_R_BAD_FIXED_HEADER_DECRYPT 101
 #define RSA_R_BAD_PAD_BYTE_COUNT 102
@@ -601,5 +630,8 @@ struct rsa_st {
 #define RSA_R_WRONG_SIGNATURE_LENGTH 140
 #define RSA_R_MUST_HAVE_AT_LEAST_TWO_PRIMES 141
 #define RSA_R_CANNOT_RECOVER_MULTI_PRIME_KEY 142
+#define RSA_R_BAD_ENCODING 143
+#define RSA_R_ENCODE_ERROR 144
+#define RSA_R_BAD_VERSION 145
 
 #endif  /* OPENSSL_HEADER_RSA_H */

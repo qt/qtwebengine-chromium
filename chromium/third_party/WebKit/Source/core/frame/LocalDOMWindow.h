@@ -74,19 +74,19 @@ public:
         return adoptRefWillBeNoop(new LocalDOMWindow(frame));
     }
 
-    virtual ~LocalDOMWindow();
+    ~LocalDOMWindow() override;
 
     DECLARE_VIRTUAL_TRACE();
 
     PassRefPtrWillBeRawPtr<Document> installNewDocument(const String& mimeType, const DocumentInit&, bool forceXHTML = false);
 
     // EventTarget overrides:
-    virtual ExecutionContext* executionContext() const override;
-    virtual LocalDOMWindow* toDOMWindow() override;
+    ExecutionContext* executionContext() const override;
+    LocalDOMWindow* toDOMWindow() override;
 
     // DOMWindow overrides:
     bool isLocalDOMWindow() const override { return true; }
-    virtual LocalFrame* frame() const override;
+    LocalFrame* frame() const override;
     Screen* screen() const override;
     History* history() const override;
     BarProp* locationbar() const override;
@@ -127,7 +127,7 @@ public:
     String prompt(const String& message, const String& defaultValue) override;
     bool find(const String&, bool caseSensitive, bool backwards, bool wrap, bool wholeWord, bool searchInFrames, bool showDialog) const override;
 
-    // FIXME: ScrollBehaviorSmooth is currently unsupported in PinchViewport.
+    // FIXME: ScrollBehaviorSmooth is currently unsupported in VisualViewport.
     // crbug.com/434497
     void scrollBy(double x, double y, ScrollBehavior = ScrollBehaviorAuto) const override;
     void scrollBy(const ScrollToOptions&) const override;
@@ -144,6 +144,8 @@ public:
     int requestAnimationFrame(FrameRequestCallback*) override;
     int webkitRequestAnimationFrame(FrameRequestCallback*) override;
     void cancelAnimationFrame(int id) override;
+    int requestIdleCallback(IdleRequestCallback*, const IdleRequestOptions&) override;
+    void cancelIdleCallback(int id) override;
     void schedulePostMessage(PassRefPtrWillBeRawPtr<MessageEvent>, LocalDOMWindow* source, SecurityOrigin* target, PassRefPtrWillBeRawPtr<ScriptCallStack> stackTrace);
 
     void registerProperty(DOMWindowProperty*);
@@ -171,9 +173,9 @@ public:
 
     // Events
     // EventTarget API
-    virtual bool addEventListener(const AtomicString& eventType, PassRefPtr<EventListener>, bool useCapture = false) override;
-    virtual bool removeEventListener(const AtomicString& eventType, PassRefPtr<EventListener>, bool useCapture = false) override;
-    virtual void removeAllEventListeners() override;
+    bool addEventListener(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener>, bool useCapture = false) override;
+    bool removeEventListener(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener>, bool useCapture = false) override;
+    void removeAllEventListeners() override;
 
     using EventTarget::dispatchEvent;
     bool dispatchEvent(PassRefPtrWillBeRawPtr<Event> prpEvent, PassRefPtrWillBeRawPtr<EventTarget> prpTarget);
@@ -221,12 +223,12 @@ private:
 
         DECLARE_VIRTUAL_TRACE();
 
-    private:
-        WindowFrameObserver(LocalDOMWindow*, LocalFrame&);
-
         // LocalFrameLifecycleObserver overrides:
         void willDetachFrameHost() override;
         void contextDestroyed() override;
+
+    private:
+        WindowFrameObserver(LocalDOMWindow*, LocalFrame&);
 
         RawPtrWillBeMember<LocalDOMWindow> m_window;
     };

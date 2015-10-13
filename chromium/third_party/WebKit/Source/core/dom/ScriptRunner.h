@@ -29,7 +29,6 @@
 #include "core/CoreExport.h"
 #include "core/fetch/ResourcePtr.h"
 #include "platform/heap/Handle.h"
-#include "platform/scheduler/CancellableTaskFactory.h"
 #include "wtf/Deque.h"
 #include "wtf/HashMap.h"
 #include "wtf/Noncopyable.h"
@@ -37,6 +36,7 @@
 
 namespace blink {
 
+class CancellableTaskFactory;
 class Document;
 class ScriptLoader;
 
@@ -48,6 +48,9 @@ public:
         return adoptPtrWillBeNoop(new ScriptRunner(document));
     }
     ~ScriptRunner();
+#if !ENABLE(OILPAN)
+    void dispose();
+#endif
 
     enum ExecutionType { ASYNC_EXECUTION, IN_ORDER_EXECUTION };
     void queueScriptForExecution(ScriptLoader*, ExecutionType);
@@ -79,9 +82,9 @@ private:
     // http://www.whatwg.org/specs/web-apps/current-work/#set-of-scripts-that-will-execute-as-soon-as-possible
     WillBeHeapDeque<RawPtrWillBeMember<ScriptLoader>> m_scriptsToExecuteSoon;
     WillBeHeapHashSet<RawPtrWillBeMember<ScriptLoader>> m_pendingAsyncScripts;
-    CancellableTaskFactory m_executeScriptsTaskFactory;
+    OwnPtr<CancellableTaskFactory> m_executeScriptsTaskFactory;
 };
 
-}
+} // namespace blink
 
-#endif
+#endif // ScriptRunner_h

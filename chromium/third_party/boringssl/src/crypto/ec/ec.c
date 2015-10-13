@@ -222,7 +222,11 @@ const struct built_in_curve OPENSSL_built_in_curves[] = {
     {NID_secp224r1, &P224, 0},
     {
         NID_X9_62_prime256v1, &P256,
-#if defined(OPENSSL_64_BIT) && !defined(OPENSSL_WINDOWS)
+    /* MSAN appears to have a bug that causes this P-256 code to be miscompiled
+     * in opt mode. While that is being looked at, don't run the uint128_t
+     * P-256 code under MSAN for now. */
+#if defined(OPENSSL_64_BIT) && !defined(OPENSSL_WINDOWS) && \
+    !defined(MEMORY_SANITIZER)
         EC_GFp_nistp256_method,
 #else
         0,
@@ -237,18 +241,18 @@ EC_GROUP *ec_group_new(const EC_METHOD *meth) {
   EC_GROUP *ret;
 
   if (meth == NULL) {
-    OPENSSL_PUT_ERROR(EC, ec_group_new, EC_R_SLOT_FULL);
+    OPENSSL_PUT_ERROR(EC, EC_R_SLOT_FULL);
     return NULL;
   }
 
   if (meth->group_init == 0) {
-    OPENSSL_PUT_ERROR(EC, ec_group_new, ERR_R_SHOULD_NOT_HAVE_BEEN_CALLED);
+    OPENSSL_PUT_ERROR(EC, ERR_R_SHOULD_NOT_HAVE_BEEN_CALLED);
     return NULL;
   }
 
   ret = OPENSSL_malloc(sizeof(EC_GROUP));
   if (ret == NULL) {
-    OPENSSL_PUT_ERROR(EC, ec_group_new, ERR_R_MALLOC_FAILURE);
+    OPENSSL_PUT_ERROR(EC, ERR_R_MALLOC_FAILURE);
     return NULL;
   }
   memset(ret, 0, sizeof(EC_GROUP));
@@ -276,8 +280,7 @@ EC_GROUP *EC_GROUP_new_curve_GFp(const BIGNUM *p, const BIGNUM *a,
   }
 
   if (ret->meth->group_set_curve == 0) {
-    OPENSSL_PUT_ERROR(EC, EC_GROUP_new_curve_GFp,
-                      ERR_R_SHOULD_NOT_HAVE_BEEN_CALLED);
+    OPENSSL_PUT_ERROR(EC, ERR_R_SHOULD_NOT_HAVE_BEEN_CALLED);
     return 0;
   }
   if (!ret->meth->group_set_curve(ret, p, a, b, ctx)) {
@@ -329,7 +332,7 @@ static EC_GROUP *ec_group_new_from_data(const struct built_in_curve *curve) {
   EC_GROUP *group = NULL;
   EC_POINT *P = NULL;
   BN_CTX *ctx = NULL;
-  BIGNUM *p = NULL, *a = NULL, *b = NULL, *x = NULL, *y = NULL, *order = NULL;
+  BIGNUM *p = NULL, *a = NULL, *b = NULL, *x = NULL, *y = NULL;
   int ok = 0;
   unsigned param_len;
   const EC_METHOD *meth;
@@ -337,7 +340,7 @@ static EC_GROUP *ec_group_new_from_data(const struct built_in_curve *curve) {
   const uint8_t *params;
 
   if ((ctx = BN_CTX_new()) == NULL) {
-    OPENSSL_PUT_ERROR(EC, ec_group_new_from_data, ERR_R_MALLOC_FAILURE);
+    OPENSSL_PUT_ERROR(EC, ERR_R_MALLOC_FAILURE);
     goto err;
   }
 
@@ -348,7 +351,7 @@ static EC_GROUP *ec_group_new_from_data(const struct built_in_curve *curve) {
   if (!(p = BN_bin2bn(params + 0 * param_len, param_len, NULL)) ||
       !(a = BN_bin2bn(params + 1 * param_len, param_len, NULL)) ||
       !(b = BN_bin2bn(params + 2 * param_len, param_len, NULL))) {
-    OPENSSL_PUT_ERROR(EC, ec_group_new_from_data, ERR_R_BN_LIB);
+    OPENSSL_PUT_ERROR(EC, ERR_R_BN_LIB);
     goto err;
   }
 
@@ -356,45 +359,39 @@ static EC_GROUP *ec_group_new_from_data(const struct built_in_curve *curve) {
     meth = curve->method();
     if (((group = ec_group_new(meth)) == NULL) ||
         (!(group->meth->group_set_curve(group, p, a, b, ctx)))) {
-      OPENSSL_PUT_ERROR(EC, ec_group_new_from_data, ERR_R_EC_LIB);
+      OPENSSL_PUT_ERROR(EC, ERR_R_EC_LIB);
       goto err;
     }
   } else {
     if ((group = EC_GROUP_new_curve_GFp(p, a, b, ctx)) == NULL) {
-      OPENSSL_PUT_ERROR(EC, ec_group_new_from_data, ERR_R_EC_LIB);
+      OPENSSL_PUT_ERROR(EC, ERR_R_EC_LIB);
       goto err;
     }
   }
 
   if ((P = EC_POINT_new(group)) == NULL) {
-    OPENSSL_PUT_ERROR(EC, ec_group_new_from_data, ERR_R_EC_LIB);
+    OPENSSL_PUT_ERROR(EC, ERR_R_EC_LIB);
     goto err;
   }
 
   if (!(x = BN_bin2bn(params + 3 * param_len, param_len, NULL)) ||
       !(y = BN_bin2bn(params + 4 * param_len, param_len, NULL))) {
-    OPENSSL_PUT_ERROR(EC, ec_group_new_from_data, ERR_R_BN_LIB);
+    OPENSSL_PUT_ERROR(EC, ERR_R_BN_LIB);
     goto err;
   }
 
   if (!EC_POINT_set_affine_coordinates_GFp(group, P, x, y, ctx)) {
-    OPENSSL_PUT_ERROR(EC, ec_group_new_from_data, ERR_R_EC_LIB);
+    OPENSSL_PUT_ERROR(EC, ERR_R_EC_LIB);
     goto err;
   }
-  if (!(order = BN_bin2bn(params + 5 * param_len, param_len, NULL)) ||
-      !BN_set_word(x, (BN_ULONG)data->cofactor)) {
-    OPENSSL_PUT_ERROR(EC, ec_group_new_from_data, ERR_R_BN_LIB);
+  if (!BN_bin2bn(params + 5 * param_len, param_len, &group->order) ||
+      !BN_set_word(&group->cofactor, (BN_ULONG)data->cofactor)) {
+    OPENSSL_PUT_ERROR(EC, ERR_R_BN_LIB);
     goto err;
   }
 
   group->generator = P;
   P = NULL;
-  if (!BN_copy(&group->order, order) ||
-      !BN_set_word(&group->cofactor, (BN_ULONG)data->cofactor)) {
-    OPENSSL_PUT_ERROR(EC, ec_group_new_from_data, ERR_R_BN_LIB);
-    goto err;
-  }
-
   ok = 1;
 
 err:
@@ -407,7 +404,6 @@ err:
   BN_free(p);
   BN_free(a);
   BN_free(b);
-  BN_free(order);
   BN_free(x);
   BN_free(y);
   return group;
@@ -427,7 +423,7 @@ EC_GROUP *EC_GROUP_new_by_curve_name(int nid) {
   }
 
   if (ret == NULL) {
-    OPENSSL_PUT_ERROR(EC, EC_GROUP_new_by_curve_name, EC_R_UNKNOWN_GROUP);
+    OPENSSL_PUT_ERROR(EC, EC_R_UNKNOWN_GROUP);
     return NULL;
   }
 
@@ -455,11 +451,11 @@ void EC_GROUP_free(EC_GROUP *group) {
 
 int ec_group_copy(EC_GROUP *dest, const EC_GROUP *src) {
   if (dest->meth->group_copy == 0) {
-    OPENSSL_PUT_ERROR(EC, EC_GROUP_copy, ERR_R_SHOULD_NOT_HAVE_BEEN_CALLED);
+    OPENSSL_PUT_ERROR(EC, ERR_R_SHOULD_NOT_HAVE_BEEN_CALLED);
     return 0;
   }
   if (dest->meth != src->meth) {
-    OPENSSL_PUT_ERROR(EC, EC_GROUP_copy, EC_R_INCOMPATIBLE_OBJECTS);
+    OPENSSL_PUT_ERROR(EC, EC_R_INCOMPATIBLE_OBJECTS);
     return 0;
   }
   if (dest == src) {
@@ -554,8 +550,7 @@ int EC_GROUP_get_cofactor(const EC_GROUP *group, BIGNUM *cofactor,
 int EC_GROUP_get_curve_GFp(const EC_GROUP *group, BIGNUM *out_p, BIGNUM *out_a,
                            BIGNUM *out_b, BN_CTX *ctx) {
   if (group->meth->group_get_curve == 0) {
-    OPENSSL_PUT_ERROR(EC, EC_GROUP_get_curve_GFp,
-                      ERR_R_SHOULD_NOT_HAVE_BEEN_CALLED);
+    OPENSSL_PUT_ERROR(EC, ERR_R_SHOULD_NOT_HAVE_BEEN_CALLED);
     return 0;
   }
   return group->meth->group_get_curve(group, out_p, out_a, out_b, ctx);
@@ -565,8 +560,7 @@ int EC_GROUP_get_curve_name(const EC_GROUP *group) { return group->curve_name; }
 
 int EC_GROUP_get_degree(const EC_GROUP *group) {
   if (group->meth->group_get_degree == 0) {
-    OPENSSL_PUT_ERROR(EC, EC_GROUP_get_degree,
-                      ERR_R_SHOULD_NOT_HAVE_BEEN_CALLED);
+    OPENSSL_PUT_ERROR(EC, ERR_R_SHOULD_NOT_HAVE_BEEN_CALLED);
     return 0;
   }
   return group->meth->group_get_degree(group);
@@ -602,17 +596,17 @@ EC_POINT *EC_POINT_new(const EC_GROUP *group) {
   EC_POINT *ret;
 
   if (group == NULL) {
-    OPENSSL_PUT_ERROR(EC, EC_POINT_new, ERR_R_PASSED_NULL_PARAMETER);
+    OPENSSL_PUT_ERROR(EC, ERR_R_PASSED_NULL_PARAMETER);
     return NULL;
   }
   if (group->meth->point_init == 0) {
-    OPENSSL_PUT_ERROR(EC, EC_POINT_new, ERR_R_SHOULD_NOT_HAVE_BEEN_CALLED);
+    OPENSSL_PUT_ERROR(EC, ERR_R_SHOULD_NOT_HAVE_BEEN_CALLED);
     return NULL;
   }
 
   ret = OPENSSL_malloc(sizeof *ret);
   if (ret == NULL) {
-    OPENSSL_PUT_ERROR(EC, EC_POINT_new, ERR_R_MALLOC_FAILURE);
+    OPENSSL_PUT_ERROR(EC, ERR_R_MALLOC_FAILURE);
     return NULL;
   }
 
@@ -653,11 +647,11 @@ void EC_POINT_clear_free(EC_POINT *point) {
 
 int EC_POINT_copy(EC_POINT *dest, const EC_POINT *src) {
   if (dest->meth->point_copy == 0) {
-    OPENSSL_PUT_ERROR(EC, EC_POINT_copy, ERR_R_SHOULD_NOT_HAVE_BEEN_CALLED);
+    OPENSSL_PUT_ERROR(EC, ERR_R_SHOULD_NOT_HAVE_BEEN_CALLED);
     return 0;
   }
   if (dest->meth != src->meth) {
-    OPENSSL_PUT_ERROR(EC, EC_POINT_copy, EC_R_INCOMPATIBLE_OBJECTS);
+    OPENSSL_PUT_ERROR(EC, EC_R_INCOMPATIBLE_OBJECTS);
     return 0;
   }
   if (dest == src) {
@@ -676,7 +670,7 @@ EC_POINT *EC_POINT_dup(const EC_POINT *a, const EC_GROUP *group) {
 
   t = EC_POINT_new(group);
   if (t == NULL) {
-    OPENSSL_PUT_ERROR(EC, EC_POINT_dup, ERR_R_MALLOC_FAILURE);
+    OPENSSL_PUT_ERROR(EC, ERR_R_MALLOC_FAILURE);
     return NULL;
   }
   r = EC_POINT_copy(t, a);
@@ -690,12 +684,11 @@ EC_POINT *EC_POINT_dup(const EC_POINT *a, const EC_GROUP *group) {
 
 int EC_POINT_set_to_infinity(const EC_GROUP *group, EC_POINT *point) {
   if (group->meth->point_set_to_infinity == 0) {
-    OPENSSL_PUT_ERROR(EC, EC_POINT_set_to_infinity,
-                      ERR_R_SHOULD_NOT_HAVE_BEEN_CALLED);
+    OPENSSL_PUT_ERROR(EC, ERR_R_SHOULD_NOT_HAVE_BEEN_CALLED);
     return 0;
   }
   if (group->meth != point->meth) {
-    OPENSSL_PUT_ERROR(EC, EC_POINT_set_to_infinity, EC_R_INCOMPATIBLE_OBJECTS);
+    OPENSSL_PUT_ERROR(EC, EC_R_INCOMPATIBLE_OBJECTS);
     return 0;
   }
   return group->meth->point_set_to_infinity(group, point);
@@ -703,12 +696,11 @@ int EC_POINT_set_to_infinity(const EC_GROUP *group, EC_POINT *point) {
 
 int EC_POINT_is_at_infinity(const EC_GROUP *group, const EC_POINT *point) {
   if (group->meth->is_at_infinity == 0) {
-    OPENSSL_PUT_ERROR(EC, EC_POINT_is_at_infinity,
-                      ERR_R_SHOULD_NOT_HAVE_BEEN_CALLED);
+    OPENSSL_PUT_ERROR(EC, ERR_R_SHOULD_NOT_HAVE_BEEN_CALLED);
     return 0;
   }
   if (group->meth != point->meth) {
-    OPENSSL_PUT_ERROR(EC, EC_POINT_is_at_infinity, EC_R_INCOMPATIBLE_OBJECTS);
+    OPENSSL_PUT_ERROR(EC, EC_R_INCOMPATIBLE_OBJECTS);
     return 0;
   }
   return group->meth->is_at_infinity(group, point);
@@ -717,12 +709,11 @@ int EC_POINT_is_at_infinity(const EC_GROUP *group, const EC_POINT *point) {
 int EC_POINT_is_on_curve(const EC_GROUP *group, const EC_POINT *point,
                          BN_CTX *ctx) {
   if (group->meth->is_on_curve == 0) {
-    OPENSSL_PUT_ERROR(EC, EC_POINT_is_on_curve,
-                      ERR_R_SHOULD_NOT_HAVE_BEEN_CALLED);
+    OPENSSL_PUT_ERROR(EC, ERR_R_SHOULD_NOT_HAVE_BEEN_CALLED);
     return 0;
   }
   if (group->meth != point->meth) {
-    OPENSSL_PUT_ERROR(EC, EC_POINT_is_on_curve, EC_R_INCOMPATIBLE_OBJECTS);
+    OPENSSL_PUT_ERROR(EC, EC_R_INCOMPATIBLE_OBJECTS);
     return 0;
   }
   return group->meth->is_on_curve(group, point, ctx);
@@ -731,11 +722,11 @@ int EC_POINT_is_on_curve(const EC_GROUP *group, const EC_POINT *point,
 int EC_POINT_cmp(const EC_GROUP *group, const EC_POINT *a, const EC_POINT *b,
                  BN_CTX *ctx) {
   if (group->meth->point_cmp == 0) {
-    OPENSSL_PUT_ERROR(EC, EC_POINT_cmp, ERR_R_SHOULD_NOT_HAVE_BEEN_CALLED);
+    OPENSSL_PUT_ERROR(EC, ERR_R_SHOULD_NOT_HAVE_BEEN_CALLED);
     return -1;
   }
   if ((group->meth != a->meth) || (a->meth != b->meth)) {
-    OPENSSL_PUT_ERROR(EC, EC_POINT_cmp, EC_R_INCOMPATIBLE_OBJECTS);
+    OPENSSL_PUT_ERROR(EC, EC_R_INCOMPATIBLE_OBJECTS);
     return -1;
   }
   return group->meth->point_cmp(group, a, b, ctx);
@@ -743,12 +734,11 @@ int EC_POINT_cmp(const EC_GROUP *group, const EC_POINT *a, const EC_POINT *b,
 
 int EC_POINT_make_affine(const EC_GROUP *group, EC_POINT *point, BN_CTX *ctx) {
   if (group->meth->make_affine == 0) {
-    OPENSSL_PUT_ERROR(EC, EC_POINT_make_affine,
-                      ERR_R_SHOULD_NOT_HAVE_BEEN_CALLED);
+    OPENSSL_PUT_ERROR(EC, ERR_R_SHOULD_NOT_HAVE_BEEN_CALLED);
     return 0;
   }
   if (group->meth != point->meth) {
-    OPENSSL_PUT_ERROR(EC, EC_POINT_make_affine, EC_R_INCOMPATIBLE_OBJECTS);
+    OPENSSL_PUT_ERROR(EC, EC_R_INCOMPATIBLE_OBJECTS);
     return 0;
   }
   return group->meth->make_affine(group, point, ctx);
@@ -759,13 +749,12 @@ int EC_POINTs_make_affine(const EC_GROUP *group, size_t num, EC_POINT *points[],
   size_t i;
 
   if (group->meth->points_make_affine == 0) {
-    OPENSSL_PUT_ERROR(EC, EC_POINTs_make_affine,
-                      ERR_R_SHOULD_NOT_HAVE_BEEN_CALLED);
+    OPENSSL_PUT_ERROR(EC, ERR_R_SHOULD_NOT_HAVE_BEEN_CALLED);
     return 0;
   }
   for (i = 0; i < num; i++) {
     if (group->meth != points[i]->meth) {
-      OPENSSL_PUT_ERROR(EC, EC_POINTs_make_affine, EC_R_INCOMPATIBLE_OBJECTS);
+      OPENSSL_PUT_ERROR(EC, EC_R_INCOMPATIBLE_OBJECTS);
       return 0;
     }
   }
@@ -776,13 +765,11 @@ int EC_POINT_get_affine_coordinates_GFp(const EC_GROUP *group,
                                         const EC_POINT *point, BIGNUM *x,
                                         BIGNUM *y, BN_CTX *ctx) {
   if (group->meth->point_get_affine_coordinates == 0) {
-    OPENSSL_PUT_ERROR(EC, EC_POINT_get_affine_coordinates_GFp,
-                      ERR_R_SHOULD_NOT_HAVE_BEEN_CALLED);
+    OPENSSL_PUT_ERROR(EC, ERR_R_SHOULD_NOT_HAVE_BEEN_CALLED);
     return 0;
   }
   if (group->meth != point->meth) {
-    OPENSSL_PUT_ERROR(EC, EC_POINT_get_affine_coordinates_GFp,
-                      EC_R_INCOMPATIBLE_OBJECTS);
+    OPENSSL_PUT_ERROR(EC, EC_R_INCOMPATIBLE_OBJECTS);
     return 0;
   }
   return group->meth->point_get_affine_coordinates(group, point, x, y, ctx);
@@ -792,13 +779,11 @@ int EC_POINT_set_affine_coordinates_GFp(const EC_GROUP *group, EC_POINT *point,
                                         const BIGNUM *x, const BIGNUM *y,
                                         BN_CTX *ctx) {
   if (group->meth->point_set_affine_coordinates == 0) {
-    OPENSSL_PUT_ERROR(EC, EC_POINT_set_affine_coordinates_GFp,
-                      ERR_R_SHOULD_NOT_HAVE_BEEN_CALLED);
+    OPENSSL_PUT_ERROR(EC, ERR_R_SHOULD_NOT_HAVE_BEEN_CALLED);
     return 0;
   }
   if (group->meth != point->meth) {
-    OPENSSL_PUT_ERROR(EC, EC_POINT_set_affine_coordinates_GFp,
-                      EC_R_INCOMPATIBLE_OBJECTS);
+    OPENSSL_PUT_ERROR(EC, EC_R_INCOMPATIBLE_OBJECTS);
     return 0;
   }
   return group->meth->point_set_affine_coordinates(group, point, x, y, ctx);
@@ -807,12 +792,12 @@ int EC_POINT_set_affine_coordinates_GFp(const EC_GROUP *group, EC_POINT *point,
 int EC_POINT_add(const EC_GROUP *group, EC_POINT *r, const EC_POINT *a,
                  const EC_POINT *b, BN_CTX *ctx) {
   if (group->meth->add == 0) {
-    OPENSSL_PUT_ERROR(EC, EC_POINT_add, ERR_R_SHOULD_NOT_HAVE_BEEN_CALLED);
+    OPENSSL_PUT_ERROR(EC, ERR_R_SHOULD_NOT_HAVE_BEEN_CALLED);
     return 0;
   }
   if ((group->meth != r->meth) || (r->meth != a->meth) ||
       (a->meth != b->meth)) {
-    OPENSSL_PUT_ERROR(EC, EC_POINT_add, EC_R_INCOMPATIBLE_OBJECTS);
+    OPENSSL_PUT_ERROR(EC, EC_R_INCOMPATIBLE_OBJECTS);
     return 0;
   }
   return group->meth->add(group, r, a, b, ctx);
@@ -822,11 +807,11 @@ int EC_POINT_add(const EC_GROUP *group, EC_POINT *r, const EC_POINT *a,
 int EC_POINT_dbl(const EC_GROUP *group, EC_POINT *r, const EC_POINT *a,
                  BN_CTX *ctx) {
   if (group->meth->dbl == 0) {
-    OPENSSL_PUT_ERROR(EC, EC_POINT_dbl, ERR_R_SHOULD_NOT_HAVE_BEEN_CALLED);
+    OPENSSL_PUT_ERROR(EC, ERR_R_SHOULD_NOT_HAVE_BEEN_CALLED);
     return 0;
   }
   if ((group->meth != r->meth) || (r->meth != a->meth)) {
-    OPENSSL_PUT_ERROR(EC, EC_POINT_dbl, EC_R_INCOMPATIBLE_OBJECTS);
+    OPENSSL_PUT_ERROR(EC, EC_R_INCOMPATIBLE_OBJECTS);
     return 0;
   }
   return group->meth->dbl(group, r, a, ctx);
@@ -835,11 +820,11 @@ int EC_POINT_dbl(const EC_GROUP *group, EC_POINT *r, const EC_POINT *a,
 
 int EC_POINT_invert(const EC_GROUP *group, EC_POINT *a, BN_CTX *ctx) {
   if (group->meth->invert == 0) {
-    OPENSSL_PUT_ERROR(EC, EC_POINT_invert, ERR_R_SHOULD_NOT_HAVE_BEEN_CALLED);
+    OPENSSL_PUT_ERROR(EC, ERR_R_SHOULD_NOT_HAVE_BEEN_CALLED);
     return 0;
   }
   if (group->meth != a->meth) {
-    OPENSSL_PUT_ERROR(EC, EC_POINT_invert, EC_R_INCOMPATIBLE_OBJECTS);
+    OPENSSL_PUT_ERROR(EC, EC_R_INCOMPATIBLE_OBJECTS);
     return 0;
   }
   return group->meth->invert(group, a, ctx);
@@ -874,13 +859,11 @@ int ec_point_set_Jprojective_coordinates_GFp(const EC_GROUP *group, EC_POINT *po
                                              const BIGNUM *x, const BIGNUM *y,
                                              const BIGNUM *z, BN_CTX *ctx) {
   if (group->meth->point_set_Jprojective_coordinates_GFp == 0) {
-    OPENSSL_PUT_ERROR(EC, ec_point_set_Jprojective_coordinates_GFp,
-                      ERR_R_SHOULD_NOT_HAVE_BEEN_CALLED);
+    OPENSSL_PUT_ERROR(EC, ERR_R_SHOULD_NOT_HAVE_BEEN_CALLED);
     return 0;
   }
   if (group->meth != point->meth) {
-    OPENSSL_PUT_ERROR(EC, ec_point_set_Jprojective_coordinates_GFp,
-                      EC_R_INCOMPATIBLE_OBJECTS);
+    OPENSSL_PUT_ERROR(EC, EC_R_INCOMPATIBLE_OBJECTS);
     return 0;
   }
   return group->meth->point_set_Jprojective_coordinates_GFp(group, point, x, y,

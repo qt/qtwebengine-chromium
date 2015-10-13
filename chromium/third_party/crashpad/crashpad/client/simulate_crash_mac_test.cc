@@ -30,6 +30,7 @@
 #include "util/mach/mach_message.h"
 #include "util/mach/mach_message_server.h"
 #include "util/mach/symbolic_constants_mach.h"
+#include "util/misc/implicit_cast.h"
 
 namespace crashpad {
 namespace test {
@@ -228,7 +229,7 @@ class TestSimulateCrashMac final : public MachMultiprocess,
     ExcServerCopyState(
         behavior, old_state, old_state_count, new_state, new_state_count);
 
-    return ExcServerSuccessfulReturnValue(behavior, true);
+    return ExcServerSuccessfulReturnValue(exception, behavior, true);
   }
 
  private:

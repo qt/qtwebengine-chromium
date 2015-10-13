@@ -152,11 +152,11 @@ void URLRequestContextFactory::InitializeOnUIThread(net::NetLog* net_log) {
 
   // Proxy config service should be initialized in UI thread, since
   // ProxyConfigServiceDelegate on Android expects UI thread.
-  proxy_config_service_.reset(net::ProxyService::CreateSystemProxyConfigService(
+  proxy_config_service_ = net::ProxyService::CreateSystemProxyConfigService(
       content::BrowserThread::GetMessageLoopProxyForThread(
           content::BrowserThread::IO),
       content::BrowserThread::GetMessageLoopProxyForThread(
-          content::BrowserThread::FILE)));
+          content::BrowserThread::FILE));
 
   net_log_ = net_log;
 }
@@ -206,18 +206,18 @@ void URLRequestContextFactory::InitializeSystemContextDependencies() {
       new net::ChannelIDService(new net::DefaultChannelIDStore(NULL),
                                 base::WorkerPool::GetTaskRunner(true)));
 
-  cert_verifier_.reset(net::CertVerifier::CreateDefault());
+  cert_verifier_ = net::CertVerifier::CreateDefault();
 
   ssl_config_service_ = new net::SSLConfigServiceDefaults;
 
   transport_security_state_.reset(new net::TransportSecurityState());
-  http_auth_handler_factory_.reset(
-      net::HttpAuthHandlerFactory::CreateDefault(host_resolver_.get()));
+  http_auth_handler_factory_ =
+      net::HttpAuthHandlerFactory::CreateDefault(host_resolver_.get());
 
   http_server_properties_.reset(new net::HttpServerPropertiesImpl);
 
-  proxy_service_.reset(net::ProxyService::CreateUsingSystemProxyResolver(
-      proxy_config_service_.release(), 0, NULL));
+  proxy_service_ = net::ProxyService::CreateUsingSystemProxyResolver(
+      proxy_config_service_.Pass(), 0, NULL);
   system_dependencies_initialized_ = true;
 }
 
@@ -238,22 +238,21 @@ void URLRequestContextFactory::InitializeMainContextDependencies(
        it != protocol_handlers->end();
        ++it) {
     set_protocol = job_factory->SetProtocolHandler(
-        it->first, it->second.release());
+        it->first, make_scoped_ptr(it->second.release()));
     DCHECK(set_protocol);
   }
   set_protocol = job_factory->SetProtocolHandler(
-      url::kDataScheme,
-      new net::DataProtocolHandler);
+      url::kDataScheme, make_scoped_ptr(new net::DataProtocolHandler));
   DCHECK(set_protocol);
 
   if (base::CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kEnableLocalFileAccesses)) {
     set_protocol = job_factory->SetProtocolHandler(
         url::kFileScheme,
-        new net::FileProtocolHandler(
-            content::BrowserThread::GetBlockingPool()->
-                GetTaskRunnerWithShutdownBehavior(
-                    base::SequencedWorkerPool::SKIP_ON_SHUTDOWN)));
+        make_scoped_ptr(new net::FileProtocolHandler(
+            content::BrowserThread::GetBlockingPool()
+                ->GetTaskRunnerWithShutdownBehavior(
+                    base::SequencedWorkerPool::SKIP_ON_SHUTDOWN))));
     DCHECK(set_protocol);
   }
 
@@ -298,7 +297,7 @@ void URLRequestContextFactory::PopulateNetworkSessionParams(
   // TODO(lcwu): http://crbug.com/329681. Remove this once spdy is enabled
   // by default at the content level.
   params->next_protos = net::NextProtosSpdy31();
-  params->use_alternate_protocols = true;
+  params->use_alternative_services = true;
 }
 
 net::URLRequestContext* URLRequestContextFactory::CreateSystemRequestContext() {

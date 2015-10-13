@@ -44,6 +44,7 @@
 #include "net/base/request_priority.h"
 #include "net/base/upload_bytes_element_reader.h"
 #include "net/url_request/url_request_context.h"
+#include "url/origin.h"
 
 namespace content {
 namespace {
@@ -127,6 +128,7 @@ void BeginDownload(scoped_ptr<DownloadUrlParameters> params,
       params->resource_context(),
       params->render_process_host_id(),
       params->render_view_host_routing_id(),
+      params->render_frame_host_routing_id(),
       params->prefer_cache(),
       params->do_not_prompt_for_login(),
       save_info.Pass(),
@@ -565,8 +567,26 @@ void DownloadManagerImpl::DownloadRemoved(DownloadItemImpl* download) {
   delete download;
 }
 
-int DownloadManagerImpl::RemoveDownloadsBetween(base::Time remove_begin,
-                                                base::Time remove_end) {
+namespace {
+
+bool RemoveDownloadBetween(base::Time remove_begin,
+                           base::Time remove_end,
+                           const DownloadItemImpl* download_item) {
+  return download_item->GetStartTime() >= remove_begin &&
+         (remove_end.is_null() || download_item->GetStartTime() < remove_end);
+}
+
+bool RemoveDownloadByOriginAndTime(const url::Origin& origin,
+                                   base::Time remove_begin,
+                                   base::Time remove_end,
+                                   const DownloadItemImpl* download_item) {
+  return origin.IsSameOriginWith(url::Origin(download_item->GetURL())) &&
+         RemoveDownloadBetween(remove_begin, remove_end, download_item);
+}
+
+}  // namespace
+
+int DownloadManagerImpl::RemoveDownloads(const DownloadRemover& remover) {
   int count = 0;
   DownloadMap::const_iterator it = downloads_.begin();
   while (it != downloads_.end()) {
@@ -575,15 +595,28 @@ int DownloadManagerImpl::RemoveDownloadsBetween(base::Time remove_begin,
     // Increment done here to protect against invalidation below.
     ++it;
 
-    if (download->GetStartTime() >= remove_begin &&
-        (remove_end.is_null() || download->GetStartTime() < remove_end) &&
-        (download->GetState() != DownloadItem::IN_PROGRESS)) {
-      // Erases the download from downloads_.
+    if (download->GetState() != DownloadItem::IN_PROGRESS &&
+        remover.Run(download)) {
       download->Remove();
       count++;
     }
   }
   return count;
+}
+
+int DownloadManagerImpl::RemoveDownloadsByOriginAndTime(
+    const url::Origin& origin,
+    base::Time remove_begin,
+    base::Time remove_end) {
+  return RemoveDownloads(base::Bind(&RemoveDownloadByOriginAndTime,
+                                    base::ConstRef(origin), remove_begin,
+                                    remove_end));
+}
+
+int DownloadManagerImpl::RemoveDownloadsBetween(base::Time remove_begin,
+                                                base::Time remove_end) {
+  return RemoveDownloads(
+      base::Bind(&RemoveDownloadBetween, remove_begin, remove_end));
 }
 
 int DownloadManagerImpl::RemoveDownloads(base::Time remove_begin) {

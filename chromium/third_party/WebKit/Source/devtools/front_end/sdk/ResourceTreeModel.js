@@ -53,6 +53,8 @@ WebInspector.ResourceTreeModel = function(target)
     this._pendingConsoleMessages = {};
     this._securityOriginFrameCount = {};
     this._inspectedPageURL = "";
+    this._pendingReloadOptions = null;
+    this._reloadSuspensionCount = 0;
 }
 
 WebInspector.ResourceTreeModel.EventTypes = {
@@ -66,6 +68,7 @@ WebInspector.ResourceTreeModel.EventTypes = {
     CachedResourcesLoaded: "CachedResourcesLoaded",
     DOMContentLoaded: "DOMContentLoaded",
     Load: "Load",
+    PageReloadRequested: "PageReloadRequested",
     WillReloadPage: "WillReloadPage",
     InspectedURLChanged: "InspectedURLChanged",
     SecurityOriginAdded: "SecurityOriginAdded",
@@ -497,12 +500,33 @@ WebInspector.ResourceTreeModel.prototype = {
         return new WebInspector.Resource(this.target(), null, url, frame.url, frame.id, frame.loaderId, type, mimeType);
     },
 
+    suspendReload: function()
+    {
+        this._reloadSuspensionCount++;
+    },
+
+    resumeReload: function()
+    {
+        this._reloadSuspensionCount--;
+        console.assert(this._reloadSuspensionCount >= 0, "Unbalanced call to ResourceTreeModel.resumeReload()");
+        if (!this._reloadSuspensionCount && this._pendingReloadOptions)
+            this.reloadPage.apply(this, this._pendingReloadOptions);
+    },
+
     /**
      * @param {boolean=} ignoreCache
      * @param {string=} scriptToEvaluateOnLoad
      */
     reloadPage: function(ignoreCache, scriptToEvaluateOnLoad)
     {
+        // Only dispatch PageReloadRequested upon first reload request to simplify client logic.
+        if (!this._pendingReloadOptions)
+            this.dispatchEventToListeners(WebInspector.ResourceTreeModel.EventTypes.PageReloadRequested);
+        if (this._reloadSuspensionCount) {
+            this._pendingReloadOptions = [ignoreCache, scriptToEvaluateOnLoad];
+            return;
+        }
+        this._pendingReloadOptions = null;
         this.dispatchEventToListeners(WebInspector.ResourceTreeModel.EventTypes.WillReloadPage);
         this._agent.reload(ignoreCache, scriptToEvaluateOnLoad);
     },

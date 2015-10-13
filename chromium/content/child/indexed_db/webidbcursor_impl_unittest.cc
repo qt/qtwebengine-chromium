@@ -7,21 +7,22 @@
 #include "base/values.h"
 #include "content/child/indexed_db/indexed_db_dispatcher.h"
 #include "content/child/indexed_db/indexed_db_key_builders.h"
+#include "content/child/indexed_db/mock_webidbcallbacks.h"
 #include "content/child/indexed_db/webidbcursor_impl.h"
 #include "content/child/thread_safe_sender.h"
 #include "content/common/indexed_db/indexed_db_key.h"
 #include "ipc/ipc_sync_message_filter.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/WebKit/public/platform/WebData.h"
-#include "third_party/WebKit/public/platform/modules/indexeddb/WebIDBCallbacks.h"
 
 using blink::WebBlobInfo;
 using blink::WebData;
 using blink::WebIDBCallbacks;
-using blink::WebIDBDatabase;
 using blink::WebIDBKey;
 using blink::WebIDBKeyTypeNumber;
+using blink::WebIDBValue;
 using blink::WebVector;
+using testing::StrictMock;
 
 namespace content {
 
@@ -94,7 +95,7 @@ class MockDispatcher : public IndexedDBDispatcher {
   scoped_ptr<WebIDBCallbacks> callbacks_;
 };
 
-class MockContinueCallbacks : public WebIDBCallbacks {
+class MockContinueCallbacks : public StrictMock<MockWebIDBCallbacks> {
  public:
   MockContinueCallbacks(IndexedDBKey* key = 0,
                         WebVector<WebBlobInfo>* webBlobInfo = 0)
@@ -102,17 +103,25 @@ class MockContinueCallbacks : public WebIDBCallbacks {
 
   void onSuccess(const WebIDBKey& key,
                  const WebIDBKey& primaryKey,
-                 const WebData& value,
-                 const WebVector<WebBlobInfo>& webBlobInfo) override {
+                 const WebIDBValue& value) override {
     if (key_)
       *key_ = IndexedDBKeyBuilder::Build(key);
     if (web_blob_info_)
-      *web_blob_info_ = webBlobInfo;
+      *web_blob_info_ = value.webBlobInfo;
   }
 
  private:
   IndexedDBKey* key_;
   WebVector<WebBlobInfo>* web_blob_info_;
+};
+
+class MockSyncMessageFilter : public IPC::SyncMessageFilter {
+ public:
+  MockSyncMessageFilter()
+      : SyncMessageFilter(nullptr, false /* is_channel_send_thread_safe */) {}
+
+ private:
+  ~MockSyncMessageFilter() override {}
 };
 
 }  // namespace
@@ -121,9 +130,8 @@ class WebIDBCursorImplTest : public testing::Test {
  public:
   WebIDBCursorImplTest() {
     null_key_.assignNull();
-    sync_message_filter_ = new IPC::SyncMessageFilter(NULL);
     thread_safe_sender_ = new ThreadSafeSender(
-        base::ThreadTaskRunnerHandle::Get(), sync_message_filter_.get());
+        base::ThreadTaskRunnerHandle::Get(), new MockSyncMessageFilter);
     dispatcher_ =
         make_scoped_ptr(new MockDispatcher(thread_safe_sender_.get()));
   }
@@ -135,8 +143,6 @@ class WebIDBCursorImplTest : public testing::Test {
   scoped_ptr<MockDispatcher> dispatcher_;
 
  private:
-  scoped_refptr<IPC::SyncMessageFilter> sync_message_filter_;
-
   DISALLOW_COPY_AND_ASSIGN(WebIDBCursorImplTest);
 };
 
@@ -320,8 +326,8 @@ TEST_F(WebIDBCursorImplTest, PrefetchReset) {
   EXPECT_EQ(0, dispatcher_->reset_calls());
 
   // The real dispatcher would call cursor->CachedContinue(), so do that:
-  scoped_ptr<WebIDBCallbacks> callbacks(new MockContinueCallbacks());
-  cursor.CachedContinue(callbacks.get());
+  MockContinueCallbacks callbacks;
+  cursor.CachedContinue(&callbacks);
 
   // Now the cursor should have reset the rest of the cache.
   EXPECT_EQ(1, dispatcher_->reset_calls());

@@ -32,6 +32,7 @@
 
 #include "core/html/track/TextTrackCue.h"
 #include "platform/heap/Handle.h"
+#include "wtf/Allocator.h"
 
 namespace blink {
 
@@ -42,6 +43,7 @@ class VTTCue;
 class VTTScanner;
 
 struct VTTDisplayParameters {
+    STACK_ALLOCATED();
     VTTDisplayParameters();
 
     FloatPoint position;
@@ -75,9 +77,9 @@ private:
 class VTTCue final : public TextTrackCue {
     DEFINE_WRAPPERTYPEINFO();
 public:
-    static PassRefPtrWillBeRawPtr<VTTCue> create(Document& document, double startTime, double endTime, const String& text)
+    static VTTCue* create(Document& document, double startTime, double endTime, const String& text)
     {
-        return adoptRefWillBeNoop(new VTTCue(document, startTime, endTime, text));
+        return new VTTCue(document, startTime, endTime, text);
     }
 
     ~VTTCue() override;

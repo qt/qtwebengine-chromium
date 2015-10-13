@@ -18,6 +18,7 @@
 #include "public/platform/WebCircularGeofencingRegion.h"
 #include "public/platform/WebGeofencingProvider.h"
 #include "public/platform/WebGeofencingRegistration.h"
+#include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
 
 namespace blink {
@@ -27,12 +28,12 @@ namespace {
 // For CallbackPromiseAdapter to convert a WebVector of regions to a HeapVector.
 class RegionArray {
 public:
-    typedef WebVector<WebGeofencingRegistration> WebType;
-    static HeapVector<Member<GeofencingRegion>> take(ScriptPromiseResolver* resolver, PassOwnPtr<WebType> webRegions)
+    using WebType = const WebVector<WebGeofencingRegistration>&;
+    static HeapVector<Member<GeofencingRegion>> take(ScriptPromiseResolver* resolver, const WebVector<WebGeofencingRegistration>& webRegions)
     {
         HeapVector<Member<GeofencingRegion>> regions;
-        for (size_t i = 0; i < webRegions->size(); ++i)
-            regions.append(CircularGeofencingRegion::create((*webRegions)[i].id, (*webRegions)[i].region));
+        for (size_t i = 0; i < webRegions.size(); ++i)
+            regions.append(CircularGeofencingRegion::create(webRegions[i].id, webRegions[i].region));
         return regions;
     }
 
@@ -53,7 +54,7 @@ ScriptPromise Geofencing::registerRegion(ScriptState* scriptState, GeofencingReg
     if (!provider)
         return ScriptPromise::rejectWithDOMException(scriptState, DOMException::create(NotSupportedError));
 
-    RefPtrWillBeRawPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(scriptState);
+    ScriptPromiseResolver* resolver = ScriptPromiseResolver::create(scriptState);
     ScriptPromise promise = resolver->promise();
     WebGeofencingCallbacks* callbacks = new CallbackPromiseAdapter<void, GeofencingError>(resolver);
     WebServiceWorkerRegistration* serviceWorkerRegistration = nullptr;
@@ -69,7 +70,7 @@ ScriptPromise Geofencing::unregisterRegion(ScriptState* scriptState, const Strin
     if (!provider)
         return ScriptPromise::rejectWithDOMException(scriptState, DOMException::create(NotSupportedError));
 
-    RefPtrWillBeRawPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(scriptState);
+    ScriptPromiseResolver* resolver = ScriptPromiseResolver::create(scriptState);
     ScriptPromise promise = resolver->promise();
     WebGeofencingCallbacks* callbacks = new CallbackPromiseAdapter<void, GeofencingError>(resolver);
     WebServiceWorkerRegistration* serviceWorkerRegistration = nullptr;
@@ -85,7 +86,7 @@ ScriptPromise Geofencing::getRegisteredRegions(ScriptState* scriptState) const
     if (!provider)
         return ScriptPromise::rejectWithDOMException(scriptState, DOMException::create(NotSupportedError));
 
-    RefPtrWillBeRawPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(scriptState);
+    ScriptPromiseResolver* resolver = ScriptPromiseResolver::create(scriptState);
     ScriptPromise promise = resolver->promise();
     WebGeofencingRegionsCallbacks* callbacks = new CallbackPromiseAdapter<RegionArray, GeofencingError>(resolver);
     WebServiceWorkerRegistration* serviceWorkerRegistration = nullptr;

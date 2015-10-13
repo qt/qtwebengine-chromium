@@ -33,17 +33,19 @@
 #include "platform/geometry/FloatQuad.h"
 #include "platform/geometry/IntSize.h"
 #include "platform/geometry/LayoutSize.h"
+#include "wtf/Allocator.h"
 #include "wtf/OwnPtr.h"
 
 namespace blink {
 
-class DeprecatedPaintLayer;
+class PaintLayer;
 class LayoutBoxModelObject;
 class TransformationMatrix;
 class TransformState;
 
 // Can be used while walking the layout tree to cache data about offsets and transforms.
 class CORE_EXPORT LayoutGeometryMap {
+    DISALLOW_ALLOCATION();
     WTF_MAKE_NONCOPYABLE(LayoutGeometryMap);
 public:
     LayoutGeometryMap(MapCoordinatesFlags = UseTransforms);
@@ -63,8 +65,8 @@ public:
     FloatQuad mapToContainer(const FloatRect&, const LayoutBoxModelObject*) const;
 
     // Called by code walking the layout or layer trees.
-    void pushMappingsToAncestor(const DeprecatedPaintLayer*, const DeprecatedPaintLayer* ancestorLayer);
-    void popMappingsToAncestor(const DeprecatedPaintLayer*);
+    void pushMappingsToAncestor(const PaintLayer*, const PaintLayer* ancestorLayer);
+    void popMappingsToAncestor(const PaintLayer*);
     void pushMappingsToAncestor(const LayoutObject*, const LayoutBoxModelObject* ancestorLayoutObject);
     void popMappingsToAncestor(const LayoutBoxModelObject*);
 

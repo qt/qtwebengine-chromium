@@ -265,6 +265,8 @@ WebInspector.Resource.prototype = {
      */
     contentType: function()
     {
+        if (this.resourceType() === WebInspector.resourceTypes.Document && this.mimeType.indexOf("javascript") !== -1)
+            return WebInspector.resourceTypes.Script;
         return this.resourceType();
     },
 
@@ -289,7 +291,7 @@ WebInspector.Resource.prototype = {
      */
     canonicalMimeType: function()
     {
-        return this.resourceType().canonicalMimeType() || this.mimeType;
+        return this.contentType().canonicalMimeType() || this.mimeType;
     },
 
     /**
@@ -308,11 +310,6 @@ WebInspector.Resource.prototype = {
         function callbackWrapper(error, searchMatches)
         {
             callback(searchMatches || []);
-        }
-
-        if (this.resourceType() === WebInspector.resourceTypes.Document) {
-            callback([]);
-            return;
         }
 
         if (this.frameId)

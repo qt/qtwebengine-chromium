@@ -12,6 +12,7 @@
 #include "gpu/command_buffer/client/gles2_interface.h"
 #include "gpu/command_buffer/common/mailbox.h"
 #include "media/base/media_export.h"
+#include "media/base/video_types.h"
 #include "media/video/video_decode_accelerator.h"
 #include "media/video/video_encode_accelerator.h"
 #include "ui/gfx/gpu_memory_buffer.h"
@@ -65,11 +66,14 @@ class MEDIA_EXPORT GpuVideoAcceleratorFactories
 
   virtual scoped_ptr<gfx::GpuMemoryBuffer> AllocateGpuMemoryBuffer(
       const gfx::Size& size,
-      gfx::GpuMemoryBuffer::Format format,
-      gfx::GpuMemoryBuffer::Usage usage) = 0;
+      gfx::BufferFormat format,
+      gfx::BufferUsage usage) = 0;
 
+  virtual bool ShouldUseGpuMemoryBuffersForVideoFrames() const = 0;
   virtual unsigned ImageTextureTarget() = 0;
-  virtual bool IsTextureRGSupported() = 0;
+  // Pixel format of the hardware video frames created when GpuMemoryBuffers
+  // video frames are enabled.
+  virtual VideoPixelFormat VideoFrameOutputFormat() = 0;
 
   virtual gpu::gles2::GLES2Interface* GetGLES2Interface() = 0;
 

@@ -67,8 +67,8 @@ size_t ReadProcStatusAndGetFieldAsSizeT(pid_t pid, const std::string& field) {
     const std::string& key = pairs[i].first;
     const std::string& value_str = pairs[i].second;
     if (key == field) {
-      std::vector<std::string> split_value_str;
-      SplitString(value_str, ' ', &split_value_str);
+      std::vector<StringPiece> split_value_str = SplitStringPiece(
+          value_str, " ", base::TRIM_WHITESPACE, base::SPLIT_WANT_ALL);
       if (split_value_str.size() != 2 || split_value_str[1] != "kB") {
         NOTREACHED();
         return 0;
@@ -316,8 +316,9 @@ bool ProcessMetrics::GetWorkingSetKBytesTotmaps(WorkingSetKBytes *ws_usage)
       return false;
   }
 
-  std::vector<std::string> totmaps_fields;
-  SplitStringAlongWhitespace(totmaps_data, &totmaps_fields);
+  std::vector<std::string> totmaps_fields = SplitString(
+      totmaps_data, base::kWhitespaceASCII, base::KEEP_WHITESPACE,
+      base::SPLIT_WANT_NONEMPTY);
 
   DCHECK_EQ("Pss:", totmaps_fields[kPssIndex-1]);
   DCHECK_EQ("Private_Clean:", totmaps_fields[kPrivate_CleanIndex - 1]);
@@ -368,8 +369,8 @@ bool ProcessMetrics::GetWorkingSetKBytesStatm(WorkingSetKBytes* ws_usage)
       return false;
   }
 
-  std::vector<std::string> statm_vec;
-  SplitString(statm, ' ', &statm_vec);
+  std::vector<StringPiece> statm_vec = SplitStringPiece(
+      statm, " ", base::TRIM_WHITESPACE, base::SPLIT_WANT_ALL);
   if (statm_vec.size() != 7)
     return false;  // Not the format we expect.
 

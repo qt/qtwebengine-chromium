@@ -27,21 +27,37 @@
 
 namespace content {
 
+namespace {
+
+uint64_t CommandBufferProxyID(int channel_id, int32 route_id) {
+  return (static_cast<uint64_t>(channel_id) << 32) | route_id;
+}
+
+}  // namespace
+
 CommandBufferProxyImpl::CommandBufferProxyImpl(GpuChannelHost* channel,
-                                               int route_id)
+                                               int32 route_id,
+                                               int32 stream_id)
     : lock_(nullptr),
       channel_(channel),
+      command_buffer_id_(CommandBufferProxyID(channel->channel_id(), route_id)),
       route_id_(route_id),
+      stream_id_(stream_id),
       flush_count_(0),
       last_put_offset_(-1),
       last_barrier_put_offset_(-1),
       next_signal_id_(0) {
+  DCHECK(channel);
 }
 
 CommandBufferProxyImpl::~CommandBufferProxyImpl() {
   FOR_EACH_OBSERVER(DeletionObserver,
                     deletion_observers_,
                     OnWillDeleteImpl());
+  if (channel_) {
+    channel_->DestroyCommandBuffer(this);
+    channel_ = nullptr;
+  }
 }
 
 bool CommandBufferProxyImpl::OnMessageReceived(const IPC::Message& message) {
@@ -88,7 +104,10 @@ void CommandBufferProxyImpl::OnDestroyed(gpu::error::ContextLostReason reason,
                                          gpu::error::Error error) {
   CheckLock();
   // Prevent any further messages from being sent.
-  channel_ = NULL;
+  if (channel_) {
+    channel_->DestroyCommandBuffer(this);
+    channel_ = nullptr;
+  }
 
   // When the client sees that the context is lost, they should delete this
   // CommandBufferProxyImpl and create a new one.
@@ -212,7 +231,7 @@ void CommandBufferProxyImpl::Flush(int32 put_offset) {
   last_barrier_put_offset_ = put_offset;
 
   if (channel_) {
-    channel_->OrderingBarrier(route_id_, put_offset, ++flush_count_,
+    channel_->OrderingBarrier(route_id_, stream_id_, put_offset, ++flush_count_,
                               latency_info_, put_offset_changed, true);
   }
 
@@ -231,7 +250,7 @@ void CommandBufferProxyImpl::OrderingBarrier(int32 put_offset) {
   last_barrier_put_offset_ = put_offset;
 
   if (channel_) {
-    channel_->OrderingBarrier(route_id_, put_offset, ++flush_count_,
+    channel_->OrderingBarrier(route_id_, stream_id_, put_offset, ++flush_count_,
                               latency_info_, put_offset_changed, false);
   }
 
@@ -320,20 +339,29 @@ scoped_refptr<gpu::Buffer> CommandBufferProxyImpl::CreateTransferBuffer(
 
   scoped_ptr<base::SharedMemory> shared_memory(
       channel_->factory()->AllocateSharedMemory(size));
-  if (!shared_memory)
+  if (!shared_memory) {
+    if (last_state_.error == gpu::error::kNoError)
+      last_state_.error = gpu::error::kOutOfBounds;
     return NULL;
+  }
 
   DCHECK(!shared_memory->memory());
-  if (!shared_memory->Map(size))
+  if (!shared_memory->Map(size)) {
+    if (last_state_.error == gpu::error::kNoError)
+      last_state_.error = gpu::error::kOutOfBounds;
     return NULL;
+  }
 
   // This handle is owned by the GPU process and must be passed to it or it
   // will leak. In otherwords, do not early out on error between here and the
   // sending of the RegisterTransferBuffer IPC below.
   base::SharedMemoryHandle handle =
       channel_->ShareToGpuProcess(shared_memory->handle());
-  if (!base::SharedMemory::IsHandleValid(handle))
+  if (!base::SharedMemory::IsHandleValid(handle)) {
+    if (last_state_.error == gpu::error::kNoError)
+      last_state_.error = gpu::error::kLostContext;
     return NULL;
+  }
 
   if (!Send(new GpuCommandBufferMsg_RegisterTransferBuffer(route_id_,
                                                            new_id,
@@ -424,16 +452,12 @@ int32_t CommandBufferProxyImpl::CreateGpuMemoryBufferImage(
   scoped_ptr<gfx::GpuMemoryBuffer> buffer(
       channel_->gpu_memory_buffer_manager()->AllocateGpuMemoryBuffer(
           gfx::Size(width, height),
-          gpu::ImageFactory::ImageFormatToGpuMemoryBufferFormat(internalformat),
+          gpu::ImageFactory::DefaultBufferFormatForImageFormat(internalformat),
           gpu::ImageFactory::ImageUsageToGpuMemoryBufferUsage(usage)));
   if (!buffer)
     return -1;
 
   return CreateImage(buffer->AsClientBuffer(), width, height, internalformat);
-}
-
-int CommandBufferProxyImpl::GetRouteID() const {
-  return route_id_;
 }
 
 uint32 CommandBufferProxyImpl::CreateStreamTexture(uint32 texture_id) {
@@ -458,6 +482,14 @@ void CommandBufferProxyImpl::SetLock(base::Lock* lock) {
 
 bool CommandBufferProxyImpl::IsGpuChannelLost() {
   return !channel_ || channel_->IsLost();
+}
+
+gpu::CommandBufferNamespace CommandBufferProxyImpl::GetNamespaceID() const {
+  return gpu::CommandBufferNamespace::GPU_IO;
+}
+
+uint64_t CommandBufferProxyImpl::GetCommandBufferID() const {
+  return command_buffer_id_;
 }
 
 uint32 CommandBufferProxyImpl::InsertSyncPoint() {

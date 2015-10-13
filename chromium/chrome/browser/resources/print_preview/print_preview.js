@@ -169,7 +169,8 @@ cr.define('print_preview', function() {
         this.printTicketStore_.fitToPage,
         this.printTicketStore_.cssBackground,
         this.printTicketStore_.selectionOnly,
-        this.printTicketStore_.headerFooter);
+        this.printTicketStore_.headerFooter,
+        this.printTicketStore_.distillPage);
     this.addChild(this.otherOptionsSettings_);
 
     /**
@@ -357,6 +358,10 @@ cr.define('print_preview', function() {
           this.nativeLayer_,
           print_preview.NativeLayer.EventType.MANIPULATE_SETTINGS_FOR_TEST,
           this.onManipulateSettingsForTest_.bind(this));
+       this.tracker.add(
+          this.nativeLayer_,
+          print_preview.NativeLayer.EventType.ALLOW_DISTILL_PAGE,
+          this.onAllowDistillPage_.bind(this));
 
       if ($('system-dialog-link')) {
         this.tracker.add(
@@ -983,10 +988,8 @@ cr.define('print_preview', function() {
      * @private
      */
     onPrintPresetOptionsFromDocument_: function(event) {
-      if (event.optionsFromDocument.disableScaling) {
-        this.printTicketStore_.fitToPage.updateValue(null);
+      if (event.optionsFromDocument.disableScaling)
         this.documentInfo_.updateIsScalingDisabled(true);
-      }
 
       if (event.optionsFromDocument.copies > 0 &&
           this.printTicketStore_.copies.isCapabilityAvailable()) {
@@ -1011,6 +1014,15 @@ cr.define('print_preview', function() {
                     event.httpError);
       this.printHeader_.setErrorMessage(
           loadTimeData.getString('couldNotPrint'));
+    },
+
+    /**
+     * Called when the native layer has detected that the "Distill page"
+     * option should be allowed.
+     * @private
+     */
+    onAllowDistillPage_: function(event) {
+      this.printTicketStore_.distillPage.setIsCapabilityAvailable(true);
     },
 
     /**
@@ -1270,6 +1282,7 @@ cr.define('print_preview', function() {
 <include src="data/ticket_items/dpi.js">
 <include src="data/ticket_items/duplex.js">
 <include src="data/ticket_items/header_footer.js">
+<include src="data/ticket_items/distill_page.js">
 <include src="data/ticket_items/media_size.js">
 <include src="data/ticket_items/landscape.js">
 <include src="data/ticket_items/margins_type.js">

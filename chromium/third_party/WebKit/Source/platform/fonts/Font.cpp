@@ -25,8 +25,6 @@
 #include "config.h"
 #include "platform/fonts/Font.h"
 
-#include "SkPaint.h"
-#include "SkTemplates.h"
 #include "platform/LayoutUnit.h"
 #include "platform/RuntimeEnabledFeatures.h"
 #include "platform/fonts/Character.h"
@@ -45,6 +43,7 @@
 #include "platform/text/TextRunIterator.h"
 #include "platform/transforms/AffineTransform.h"
 #include "third_party/skia/include/core/SkCanvas.h"
+#include "third_party/skia/include/core/SkPaint.h"
 #include "wtf/MainThread.h"
 #include "wtf/StdLibExtras.h"
 #include "wtf/text/CharacterNames.h"
@@ -145,7 +144,6 @@ void Font::drawText(SkCanvas* canvas, const TextRunPaintInfo& runInfo,
         return;
 
     if (runInfo.cachedTextBlob && runInfo.cachedTextBlob->get()) {
-        ASSERT(RuntimeEnabledFeatures::textBlobEnabled());
         // we have a pre-cached blob -- happy joy!
         drawTextBlob(canvas, paint, runInfo.cachedTextBlob->get(), point.data());
         return;
@@ -238,8 +236,6 @@ float Font::width(const TextRun& run, HashSet<const SimpleFontData*>* fallbackFo
 
 PassTextBlobPtr Font::buildTextBlob(const GlyphBuffer& glyphBuffer) const
 {
-    ASSERT(RuntimeEnabledFeatures::textBlobEnabled());
-
     SkTextBlobBuilder builder;
     bool hasVerticalOffsets = glyphBuffer.hasVerticalOffsets();
 
@@ -528,14 +524,15 @@ GlyphData Font::glyphDataForCharacter(UChar32& c, bool mirror, bool normalizeSpa
         }
         if (characterFontData) {
             // Got the fallback glyph and font.
-            GlyphPage* fallbackPage = GlyphPageTreeNode::getRootChild(characterFontData.get(), pageNumber)->page();
-            GlyphData data = fallbackPage && fallbackPage->glyphForCharacter(c) ? fallbackPage->glyphDataForCharacter(c) : characterFontData->missingGlyphData();
+            unsigned pageNumberForRendering = characterToRender / GlyphPage::size;
+            GlyphPage* fallbackPage = GlyphPageTreeNode::getRootChild(characterFontData.get(), pageNumberForRendering)->page();
+            GlyphData data = fallbackPage && fallbackPage->glyphForCharacter(characterToRender) ? fallbackPage->glyphDataForCharacter(characterToRender) : characterFontData->missingGlyphData();
             // Cache it so we don't have to do system fallback again next time.
             if (variant == NormalVariant) {
                 page->setGlyphDataForCharacter(c, data.glyph, data.fontData);
                 data.fontData->setMaxGlyphPageTreeLevel(std::max(data.fontData->maxGlyphPageTreeLevel(), node->level()));
-                if (data.fontData->platformData().isVerticalAnyUpright() && !data.fontData->isTextOrientationFallback() && !Character::isCJKIdeographOrSymbol(c))
-                    return glyphDataForNonCJKCharacterWithGlyphOrientation(c, m_fontDescription.isVerticalUpright(c), data, pageNumber);
+                if (data.fontData->platformData().isVerticalAnyUpright() && !data.fontData->isTextOrientationFallback() && !Character::isCJKIdeographOrSymbol(characterToRender))
+                    return glyphDataForNonCJKCharacterWithGlyphOrientation(characterToRender, m_fontDescription.isVerticalUpright(characterToRender), data, pageNumberForRendering);
             }
             return data;
         }
@@ -655,12 +652,11 @@ void Font::drawGlyphs(SkCanvas* canvas, const SkPaint& paint, const SimpleFontDa
     ASSERT(glyphBuffer.size() >= from + numGlyphs);
 
     if (!glyphBuffer.hasVerticalOffsets()) {
-        SkAutoSTMalloc<64, SkScalar> storage(numGlyphs);
-        SkScalar* xpos = storage.get();
+        Vector<SkScalar, 64> xpos(numGlyphs);
         for (unsigned i = 0; i < numGlyphs; i++)
             xpos[i] = SkFloatToScalar(point.x() + glyphBuffer.xOffsetAt(from + i));
 
-        paintGlyphsHorizontal(canvas, paint, font, glyphBuffer.glyphs(from), numGlyphs, xpos,
+        paintGlyphsHorizontal(canvas, paint, font, glyphBuffer.glyphs(from), numGlyphs, xpos.data(),
             SkFloatToScalar(point.y()), textRect, deviceScaleFactor);
         return;
     }
@@ -677,22 +673,19 @@ void Font::drawGlyphs(SkCanvas* canvas, const SkPaint& paint, const SimpleFontDa
     const float verticalBaselineXOffset = drawVertically ? SkFloatToScalar(font->fontMetrics().floatAscent() - font->fontMetrics().floatAscent(IdeographicBaseline)) : 0;
 
     ASSERT(glyphBuffer.hasVerticalOffsets());
-    SkAutoSTMalloc<32, SkPoint> storage(numGlyphs);
-    SkPoint* pos = storage.get();
+    Vector<SkPoint, 32> pos(numGlyphs);
     for (unsigned i = 0; i < numGlyphs; i++) {
         pos[i].set(
             SkFloatToScalar(point.x() + verticalBaselineXOffset + glyphBuffer.xOffsetAt(from + i)),
             SkFloatToScalar(point.y() + glyphBuffer.yOffsetAt(from + i)));
     }
 
-    paintGlyphs(canvas, paint, font, glyphBuffer.glyphs(from), numGlyphs, pos, textRect, deviceScaleFactor);
+    paintGlyphs(canvas, paint, font, glyphBuffer.glyphs(from), numGlyphs, pos.data(), textRect, deviceScaleFactor);
     canvas->restoreToCount(canvasStackLevel);
 }
 
 void Font::drawTextBlob(SkCanvas* canvas, const SkPaint& paint, const SkTextBlob* blob, const SkPoint& origin) const
 {
-    ASSERT(RuntimeEnabledFeatures::textBlobEnabled());
-
     canvas->drawTextBlob(blob, origin.x(), origin.y(), paint);
 }
 
@@ -707,11 +700,8 @@ float Font::floatWidthForComplexText(const TextRun& run, HashSet<const SimpleFon
 int Font::offsetForPositionForComplexText(const TextRun& run, float xFloat,
     bool includePartialGlyphs) const
 {
-    HarfBuzzShaper shaper(this, run);
-    RefPtr<ShapeResult> shapeResult = shaper.shapeResult();
-    if (!shapeResult)
-        return 0;
-    return shapeResult->offsetForPosition(xFloat);
+    CachingWordShaper& shaper = m_fontFallbackList->cachingWordShaper();
+    return shaper.offsetForPosition(this, run, xFloat);
 }
 
 // Return the rectangle for selecting the given range of code-points in the TextRun.
@@ -727,16 +717,13 @@ void Font::drawGlyphBuffer(SkCanvas* canvas, const SkPaint& paint, const TextRun
     if (glyphBuffer.isEmpty())
         return;
 
-    if (RuntimeEnabledFeatures::textBlobEnabled()) {
-        // Enabling text-blobs forces the blob rendering path even for uncacheable blobs.
-        TextBlobPtr uncacheableTextBlob;
-        TextBlobPtr& textBlob = runInfo.cachedTextBlob ? *runInfo.cachedTextBlob : uncacheableTextBlob;
-
-        textBlob = buildTextBlob(glyphBuffer);
-        if (textBlob) {
-            drawTextBlob(canvas, paint, textBlob.get(), point.data());
-            return;
-        }
+    // Always try to draw a text blob, even for uncacheable blobs.
+    TextBlobPtr uncacheableTextBlob;
+    TextBlobPtr& textBlob = runInfo.cachedTextBlob ? *runInfo.cachedTextBlob : uncacheableTextBlob;
+    textBlob = buildTextBlob(glyphBuffer);
+    if (textBlob) {
+        drawTextBlob(canvas, paint, textBlob.get(), point.data());
+        return;
     }
 
     // Draw each contiguous run of glyphs that use the same font data.

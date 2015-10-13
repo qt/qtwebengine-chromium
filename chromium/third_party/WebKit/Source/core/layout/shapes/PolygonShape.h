@@ -37,6 +37,7 @@
 namespace blink {
 
 class OffsetPolygonEdge final : public VertexPair {
+    DISALLOW_ALLOCATION();
 public:
     OffsetPolygonEdge(const FloatPolygonEdge& edge, const FloatSize& offset)
         : m_vertex1(edge.vertex1() + offset)
@@ -44,8 +45,8 @@ public:
     {
     }
 
-    virtual const FloatPoint& vertex1() const override { return m_vertex1; }
-    virtual const FloatPoint& vertex2() const override { return m_vertex2; }
+    const FloatPoint& vertex1() const override { return m_vertex1; }
+    const FloatPoint& vertex2() const override { return m_vertex2; }
 
     bool isWithinYRange(float y1, float y2) const { return y1 <= minY() && y2 >= maxY(); }
     bool overlapsYRange(float y1, float y2) const { return y2 >= minY() && y1 <= maxY(); }
@@ -66,10 +67,10 @@ public:
     {
     }
 
-    virtual LayoutRect shapeMarginLogicalBoundingBox() const override;
-    virtual bool isEmpty() const override { return m_polygon.isEmpty(); }
-    virtual LineSegment getExcludedInterval(LayoutUnit logicalTop, LayoutUnit logicalHeight) const override;
-    virtual void buildDisplayPaths(DisplayPaths&) const override;
+    LayoutRect shapeMarginLogicalBoundingBox() const override;
+    bool isEmpty() const override { return m_polygon.isEmpty(); }
+    LineSegment getExcludedInterval(LayoutUnit logicalTop, LayoutUnit logicalHeight) const override;
+    void buildDisplayPaths(DisplayPaths&) const override;
 
 private:
     FloatPolygon m_polygon;

@@ -35,18 +35,6 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
-
-namespace testing {
-
-template<typename T>
-PassOwnPtr<T> CloneToPassOwnPtr(T& o)
-{
-    return adoptPtr(new T(o));
-}
-
-} // namespace testing
-
-
 // Test helpers and mocks for Web* types
 // -----------------------------------------------------------------------
 namespace blink {
@@ -164,7 +152,7 @@ private:
     private:
         blink::Platform* m_platform; // Not owned.
         WebCompositorSupportMock** m_compositor;
-        virtual WebCompositorSupport* compositorSupport() override { return *m_compositor; }
+        WebCompositorSupport* compositorSupport() override { return *m_compositor; }
     };
 
     WebCompositorSupportMock* m_mockCompositor;

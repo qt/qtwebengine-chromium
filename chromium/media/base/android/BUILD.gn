@@ -52,6 +52,10 @@ source_set("android") {
     "media_resource_getter.h",
     "media_source_player.cc",
     "media_source_player.h",
+    "media_statistics.cc",
+    "media_statistics.h",
+    "media_task_runner.cc",
+    "media_task_runner.h",
     "media_url_interceptor.h",
     "video_decoder_job.cc",
     "video_decoder_job.h",
@@ -83,6 +87,7 @@ source_set("unittests") {
     "media_source_player_unittest.cc",
     "test_data_factory.cc",
     "test_data_factory.h",
+    "test_statistics.h",
   ]
   deps = [
     ":android",
@@ -117,8 +122,8 @@ generate_jni("video_capture_jni_headers") {
 
 java_cpp_enum("media_java_enums_srcjar") {
   sources = [
-    "//media/video/capture/android/video_capture_device_android.h",
-    "//media/video/capture/video_capture_device.h",
+    "//media/capture/video/android/video_capture_device_android.h",
+    "//media/capture/video/video_capture_device.h",
   ]
   outputs = [
     "org/chromium/media/AndroidImageFormat.java",

@@ -10,22 +10,19 @@
 
 #include "webrtc/common_audio/signal_processing/include/signal_processing_library.h"
 
-int WebRtcSpl_AutoCorrelation(const int16_t* in_vector,
-                              int in_vector_length,
-                              int order,
-                              int32_t* result,
-                              int* scale) {
+#include <assert.h>
+
+size_t WebRtcSpl_AutoCorrelation(const int16_t* in_vector,
+                                 size_t in_vector_length,
+                                 size_t order,
+                                 int32_t* result,
+                                 int* scale) {
   int32_t sum = 0;
-  int i = 0, j = 0;
+  size_t i = 0, j = 0;
   int16_t smax = 0;
   int scaling = 0;
 
-  if (order > in_vector_length) {
-    /* Undefined */
-    return -1;
-  } else if (order < 0) {
-    order = in_vector_length;
-  }
+  assert(order <= in_vector_length);
 
   // Find the maximum absolute value of the samples.
   smax = WebRtcSpl_MaxAbsValueW16(in_vector, in_vector_length);

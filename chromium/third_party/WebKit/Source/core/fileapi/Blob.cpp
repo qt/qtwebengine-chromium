@@ -45,8 +45,8 @@ namespace {
 
 class BlobURLRegistry final : public URLRegistry {
 public:
-    virtual void registerURL(SecurityOrigin*, const KURL&, URLRegistrable*) override;
-    virtual void unregisterURL(const KURL&) override;
+    void registerURL(SecurityOrigin*, const KURL&, URLRegistrable*) override;
+    void unregisterURL(const KURL&) override;
 
     static URLRegistry& registry();
 };
@@ -124,10 +124,11 @@ void Blob::clampSliceOffsets(long long size, long long& start, long long& end)
     if (start >= size) {
         start = 0;
         end = 0;
-    } else if (end < start)
+    } else if (end < start) {
         end = start;
-    else if (end > size)
+    } else if (end > size) {
         end = size;
+    }
 }
 
 Blob* Blob::slice(long long start, long long end, const String& contentType, ExceptionState& exceptionState) const

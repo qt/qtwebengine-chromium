@@ -32,7 +32,8 @@
 #define AsyncCallTracker_h
 
 #include "core/CoreExport.h"
-#include "core/inspector/InspectorDebuggerAgent.h"
+#include "core/inspector/InstrumentingAgents.h"
+#include "core/inspector/v8/V8DebuggerAgent.h"
 #include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
 #include "wtf/HashMap.h"
@@ -40,29 +41,27 @@
 
 namespace blink {
 
+class EncodedFormData;
 class Event;
 class EventListener;
 class EventTarget;
 class ExecutionContext;
 class ExecutionContextTask;
-class FormData;
 class HTTPHeaderMap;
-class InspectorDebuggerAgent;
 class KURL;
 class MutationObserver;
 class ThreadableLoaderClient;
 class XMLHttpRequest;
 
-class CORE_EXPORT AsyncCallTracker final : public NoBaseWillBeGarbageCollectedFinalized<AsyncCallTracker>, public InspectorDebuggerAgent::AsyncCallTrackingListener {
+class CORE_EXPORT AsyncCallTracker final : public NoBaseWillBeGarbageCollectedFinalized<AsyncCallTracker> {
     WTF_MAKE_NONCOPYABLE(AsyncCallTracker);
-    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(AsyncCallTracker);
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(AsyncCallTracker);
 public:
-    AsyncCallTracker(InspectorDebuggerAgent*, InstrumentingAgents*);
-    virtual ~AsyncCallTracker();
+    AsyncCallTracker(V8DebuggerAgent*, InstrumentingAgents*);
+    ~AsyncCallTracker();
 
-    // InspectorDebuggerAgent::AsyncCallTrackingListener implementation:
-    void asyncCallTrackingStateChanged(bool tracking) override;
-    void resetAsyncOperations() override;
+    void asyncCallTrackingStateChanged(bool tracking);
+    void resetAsyncOperations();
 
     void didInstallTimer(ExecutionContext*, int timerId, int timeout, bool singleShot);
     void didRemoveTimer(ExecutionContext*, int timerId);
@@ -79,7 +78,7 @@ public:
     void willHandleEvent(EventTarget*, Event*, EventListener*, bool useCapture);
     void didHandleEvent() { didFireAsyncCall(); }
 
-    void willLoadXHR(XMLHttpRequest*, ThreadableLoaderClient*, const AtomicString& method, const KURL&, bool async, PassRefPtr<FormData> body, const HTTPHeaderMap& headers, bool includeCrendentials);
+    void willLoadXHR(XMLHttpRequest*, ThreadableLoaderClient*, const AtomicString& method, const KURL&, bool async, PassRefPtr<EncodedFormData> body, const HTTPHeaderMap& headers, bool includeCrendentials);
     void didDispatchXHRLoadendEvent(XMLHttpRequest*);
 
     void didEnqueueMutationRecord(ExecutionContext*, MutationObserver*);
@@ -113,7 +112,7 @@ private:
 
     using ExecutionContextDataMap = WillBeHeapHashMap<RawPtrWillBeMember<ExecutionContext>, OwnPtrWillBeMember<ExecutionContextData>>;
     ExecutionContextDataMap m_executionContextDataMap;
-    RawPtrWillBeMember<InspectorDebuggerAgent> m_debuggerAgent;
+    V8DebuggerAgent* m_debuggerAgent;
     RawPtrWillBeMember<InstrumentingAgents> m_instrumentingAgents;
 };
 

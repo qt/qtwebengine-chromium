@@ -30,7 +30,7 @@
 #include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/frame/UseCounter.h"
-#include "modules/webaudio/AudioContext.h"
+#include "modules/webaudio/AbstractAudioContext.h"
 #include "modules/webaudio/AudioNodeOutput.h"
 #include "platform/FloatConversion.h"
 #include "platform/audio/AudioUtilities.h"
@@ -59,6 +59,7 @@ AudioBufferSourceHandler::AudioBufferSourceHandler(AudioNode& node, float sample
     , m_playbackRate(playbackRate)
     , m_detune(detune)
     , m_isLooping(false)
+    , m_didSetLooping(false)
     , m_loopStart(0)
     , m_loopEnd(0)
     , m_virtualReadIndex(0)
@@ -347,7 +348,7 @@ void AudioBufferSourceHandler::setBuffer(AudioBuffer* buffer, ExceptionState& ex
     }
 
     // The context must be locked since changing the buffer can re-configure the number of channels that are output.
-    AudioContext::AutoLocker contextLocker(context());
+    AbstractAudioContext::AutoLocker contextLocker(context());
 
     // This synchronizes with process().
     MutexLocker processLocker(m_processLock);
@@ -358,7 +359,7 @@ void AudioBufferSourceHandler::setBuffer(AudioBuffer* buffer, ExceptionState& ex
 
         // This should not be possible since AudioBuffers can't be created with too many channels
         // either.
-        if (numberOfChannels > AudioContext::maxNumberOfChannels()) {
+        if (numberOfChannels > AbstractAudioContext::maxNumberOfChannels()) {
             exceptionState.throwDOMException(
                 NotSupportedError,
                 ExceptionMessages::indexOutsideRange(
@@ -366,7 +367,7 @@ void AudioBufferSourceHandler::setBuffer(AudioBuffer* buffer, ExceptionState& ex
                     numberOfChannels,
                     1u,
                     ExceptionMessages::InclusiveBound,
-                    AudioContext::maxNumberOfChannels(),
+                    AbstractAudioContext::maxNumberOfChannels(),
                     ExceptionMessages::InclusiveBound));
             return;
         }
@@ -445,7 +446,7 @@ void AudioBufferSourceHandler::startSource(double when, double grainOffset, doub
 {
     ASSERT(isMainThread());
 
-    if (m_playbackState != UNSCHEDULED_STATE) {
+    if (playbackState() != UNSCHEDULED_STATE) {
         exceptionState.throwDOMException(
             InvalidStateError,
             "cannot call start more than once.");
@@ -482,6 +483,10 @@ void AudioBufferSourceHandler::startSource(double when, double grainOffset, doub
         return;
     }
 
+    // This synchronizes with process(). updateSchedulingInfo will read some of the variables being
+    // set here.
+    MutexLocker processLocker(m_processLock);
+
     m_isDurationGiven = isDurationGiven;
     m_isGrain = true;
     m_grainOffset = grainOffset;
@@ -500,7 +505,7 @@ void AudioBufferSourceHandler::startSource(double when, double grainOffset, doub
     if (buffer())
         clampGrainParameters(buffer());
 
-    m_playbackState = SCHEDULED_STATE;
+    setPlaybackState(SCHEDULED_STATE);
 }
 
 double AudioBufferSourceHandler::computePlaybackRate()
@@ -509,9 +514,9 @@ double AudioBufferSourceHandler::computePlaybackRate()
     if (m_pannerNode)
         dopplerRate = m_pannerNode->dopplerRate();
 
-    // Incorporate buffer's sample-rate versus AudioContext's sample-rate.
+    // Incorporate buffer's sample-rate versus AbstractAudioContext's sample-rate.
     // Normally it's not an issue because buffers are loaded at the
-    // AudioContext's sample-rate, but we can handle it in any case.
+    // AbstractAudioContext's sample-rate, but we can handle it in any case.
     double sampleRateFactor = 1.0;
     if (buffer()) {
         // Use doubles to compute this to full accuracy.
@@ -575,7 +580,11 @@ void AudioBufferSourceHandler::handleStoppableSourceNode()
     // been called but is never connected to the destination (directly or indirectly).  By stopping
     // the node, the node can be collected.  Otherwise, the node will never get collected, leaking
     // memory.
-    if (!loop() && buffer() && isPlayingOrScheduled() && m_minPlaybackRate > 0) {
+    //
+    // If looping was ever done (m_didSetLooping = true), give up.  We can't easily determine how
+    // long we looped so we don't know the actual duration thus far, so don't try to do anything
+    // fancy.
+    if (!m_didSetLooping && buffer() && isPlayingOrScheduled() && m_minPlaybackRate > 0) {
         // Adjust the duration to include the playback rate. Only need to account for rate < 1
         // which makes the sound last longer.  For rate >= 1, the source stops sooner, but that's
         // ok.
@@ -608,7 +617,7 @@ void AudioBufferSourceHandler::finish()
 }
 
 // ----------------------------------------------------------------
-AudioBufferSourceNode::AudioBufferSourceNode(AudioContext& context, float sampleRate)
+AudioBufferSourceNode::AudioBufferSourceNode(AbstractAudioContext& context, float sampleRate)
     : AudioScheduledSourceNode(context)
     , m_playbackRate(AudioParam::create(context, 1.0))
     , m_detune(AudioParam::create(context, 0.0))
@@ -616,7 +625,7 @@ AudioBufferSourceNode::AudioBufferSourceNode(AudioContext& context, float sample
     setHandler(AudioBufferSourceHandler::create(*this, sampleRate, m_playbackRate->handler(), m_detune->handler()));
 }
 
-AudioBufferSourceNode* AudioBufferSourceNode::create(AudioContext& context, float sampleRate)
+AudioBufferSourceNode* AudioBufferSourceNode::create(AbstractAudioContext& context, float sampleRate)
 {
     return new AudioBufferSourceNode(context, sampleRate);
 }

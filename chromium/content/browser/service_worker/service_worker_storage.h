@@ -14,7 +14,6 @@
 #include "base/bind.h"
 #include "base/files/file_path.h"
 #include "base/gtest_prod_util.h"
-#include "base/memory/scoped_vector.h"
 #include "base/memory/weak_ptr.h"
 #include "content/browser/service_worker/service_worker_database.h"
 #include "content/browser/service_worker/service_worker_database_task_manager.h"
@@ -46,7 +45,8 @@ class ServiceWorkerResponseWriter;
 struct ServiceWorkerRegistrationInfo;
 
 // This class provides an interface to store and retrieve ServiceWorker
-// registration data.
+// registration data. The lifetime is equal to ServiceWorkerContextCore that is
+// an owner of this class.
 class CONTENT_EXPORT ServiceWorkerStorage
     : NON_EXPORTED_BASE(public ServiceWorkerVersion::Listener) {
  public:
@@ -72,7 +72,7 @@ class CONTENT_EXPORT ServiceWorkerStorage
 
   static scoped_ptr<ServiceWorkerStorage> Create(
       const base::FilePath& path,
-      base::WeakPtr<ServiceWorkerContextCore> context,
+      const base::WeakPtr<ServiceWorkerContextCore>& context,
       scoped_ptr<ServiceWorkerDatabaseTaskManager> database_task_manager,
       const scoped_refptr<base::SingleThreadTaskRunner>& disk_cache_thread,
       storage::QuotaManagerProxy* quota_manager_proxy,
@@ -80,7 +80,7 @@ class CONTENT_EXPORT ServiceWorkerStorage
 
   // Used for DeleteAndStartOver. Creates new storage based on |old_storage|.
   static scoped_ptr<ServiceWorkerStorage> Create(
-      base::WeakPtr<ServiceWorkerContextCore> context,
+      const base::WeakPtr<ServiceWorkerContextCore>& context,
       ServiceWorkerStorage* old_storage);
 
   // Finds registration for |document_url| or |pattern| or |registration_id|.
@@ -266,7 +266,7 @@ class CONTENT_EXPORT ServiceWorkerStorage
   typedef std::vector<ServiceWorkerDatabase::RegistrationData> RegistrationList;
   typedef std::map<int64, scoped_refptr<ServiceWorkerRegistration> >
       RegistrationRefsById;
-  typedef base::Callback<void(InitialData* data,
+  typedef base::Callback<void(scoped_ptr<InitialData> data,
                               ServiceWorkerDatabase::Status status)>
       InitializeCallback;
   typedef base::Callback<void(ServiceWorkerDatabase::Status status)>
@@ -315,7 +315,7 @@ class CONTENT_EXPORT ServiceWorkerStorage
 
   bool LazyInitialize(
       const base::Closure& callback);
-  void DidReadInitialData(InitialData* data,
+  void DidReadInitialData(scoped_ptr<InitialData> data,
                           ServiceWorkerDatabase::Status status);
   void DidFindRegistrationForDocument(
       const GURL& document_url,
@@ -506,6 +506,8 @@ class CONTENT_EXPORT ServiceWorkerStorage
   State state_;
 
   base::FilePath path_;
+
+  // The context should be valid while the storage is alive.
   base::WeakPtr<ServiceWorkerContextCore> context_;
 
   // Only accessed using |database_task_manager_|.

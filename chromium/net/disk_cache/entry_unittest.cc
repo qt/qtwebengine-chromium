@@ -1791,6 +1791,15 @@ void DiskCacheEntryTest::GetAvailableRange() {
   EXPECT_EQ(1, cb.GetResult(rv));
   EXPECT_EQ(0x20F0000, start);
 
+  // Use very small ranges. Write at offset 50.
+  const int kTinyLen = 10;
+  EXPECT_EQ(kTinyLen, WriteSparseData(entry, 50, buf.get(), kTinyLen));
+
+  start = -1;
+  rv = entry->GetAvailableRange(kTinyLen * 2, kTinyLen, &start, cb.callback());
+  EXPECT_EQ(0, cb.GetResult(rv));
+  EXPECT_EQ(kTinyLen * 2, start);
+
   entry->Close();
 }
 
@@ -2709,7 +2718,7 @@ TEST_F(DiskCacheEntryTest, SimpleCacheNoEOF) {
 
   // Truncate the file such that the length isn't sufficient to have an EOF
   // record.
-  int kTruncationBytes = -implicit_cast<int>(sizeof(disk_cache::SimpleFileEOF));
+  int kTruncationBytes = -static_cast<int>(sizeof(disk_cache::SimpleFileEOF));
   const base::FilePath entry_path = cache_path_.AppendASCII(
       disk_cache::simple_util::GetFilenameFromKeyAndFileIndex(key, 0));
   const int64 invalid_size =

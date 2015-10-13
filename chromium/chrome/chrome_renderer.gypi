@@ -23,7 +23,6 @@
       'renderer/external_extension.cc',
       'renderer/external_extension.h',
       'renderer/instant_restricted_id_cache.h',
-      'renderer/chrome_isolated_world_ids.h',
       'renderer/loadtimes_extension_bindings.cc',
       'renderer/loadtimes_extension_bindings.h',
       'renderer/media/chrome_key_systems.cc',
@@ -40,8 +39,6 @@
       'renderer/plugins/non_loadable_plugin_placeholder.h',
       'renderer/plugins/plugin_uma.cc',
       'renderer/plugins/plugin_uma.h',
-      'renderer/plugins/shadow_dom_plugin_placeholder.cc',
-      'renderer/plugins/shadow_dom_plugin_placeholder.h',
       'renderer/prerender/prerender_dispatcher.cc',
       'renderer/prerender/prerender_dispatcher.h',
       'renderer/prerender/prerender_extra_data.cc',
@@ -62,8 +59,6 @@
       'renderer/tts_dispatcher.h',
       'renderer/web_apps.cc',
       'renderer/web_apps.h',
-      'renderer/webview_color_overlay.cc',
-      'renderer/webview_color_overlay.h',
       'renderer/worker_content_settings_client_proxy.cc',
       'renderer/worker_content_settings_client_proxy.h',
     ],
@@ -135,6 +130,7 @@
       'renderer/resources/extensions/app_custom_bindings.js',
       'renderer/resources/extensions/automation_custom_bindings.js',
       'renderer/resources/extensions/browser_action_custom_bindings.js',
+      'renderer/resources/extensions/certificate_provider_custom_bindings.js',
       'renderer/resources/extensions/chrome_direct_setting.js',
       'renderer/resources/extensions/chrome_setting.js',
       'renderer/resources/extensions/content_setting.js',
@@ -158,10 +154,6 @@
       'renderer/resources/extensions/system_indicator_custom_bindings.js',
       'renderer/resources/extensions/tts_custom_bindings.js',
       'renderer/resources/extensions/tts_engine_custom_bindings.js',
-    ],
-    'chrome_renderer_non_android_sources': [
-      'renderer/prerender/prerender_media_load_deferrer.cc',
-      'renderer/prerender/prerender_media_load_deferrer.h',
     ],
     'chrome_renderer_plugin_sources': [
       'renderer/pepper/chrome_renderer_pepper_host_factory.cc',
@@ -214,12 +206,12 @@
       'renderer/safe_browsing/scorer.h',
     ],
     'chrome_renderer_spellchecker_sources': [
-      'renderer/spellchecker/cocoa_spelling_engine_mac.cc',
-      'renderer/spellchecker/cocoa_spelling_engine_mac.h',
       'renderer/spellchecker/custom_dictionary_engine.cc',
       'renderer/spellchecker/custom_dictionary_engine.h',
       'renderer/spellchecker/hunspell_engine.cc',
       'renderer/spellchecker/hunspell_engine.h',
+      'renderer/spellchecker/platform_spelling_engine.cc',
+      'renderer/spellchecker/platform_spelling_engine.h',
       'renderer/spellchecker/spellcheck.cc',
       'renderer/spellchecker/spellcheck.h',
       'renderer/spellchecker/spellcheck_language.cc',
@@ -247,7 +239,6 @@
       'dependencies': [
         'common',
         'common_mojo_bindings',
-        'common_net',
         'chrome_resources.gyp:chrome_resources',
         'chrome_resources.gyp:chrome_strings',
         '../third_party/re2/re2.gyp:re2',
@@ -261,6 +252,7 @@
         '../components/components.gyp:omnibox_common',
         '../components/components.gyp:error_page_renderer',
         '../components/components.gyp:startup_metric_utils',
+        '../components/components.gyp:page_load_metrics_renderer',
         '../components/components.gyp:password_manager_content_renderer',
         '../components/components.gyp:plugins_renderer',
         '../components/components.gyp:translate_content_renderer',
@@ -285,6 +277,13 @@
         '<@(chrome_renderer_sources)',
       ],
       'conditions': [
+        ['OS != "ios"', {
+          'dependencies': [
+            'common_net',
+            '../components/components.gyp:dom_distiller_content_renderer',
+            '../media/media.gyp:media',
+          ],
+        }],
         ['disable_nacl!=1', {
           'dependencies': [
             '../components/nacl.gyp:nacl',
@@ -347,9 +346,25 @@
           'sources': [
             '<@(chrome_renderer_spellchecker_sources)',
           ],
-          'dependencies': [
-            '../third_party/hunspell/hunspell.gyp:hunspell',
+          'conditions': [
+            ['OS!="android"', {
+              'dependencies': [
+                '../third_party/hunspell/hunspell.gyp:hunspell',
+              ],
+            }],
           ],
+        }],
+        ['use_browser_spellchecker==0', {
+          'sources!': [
+            'renderer/spellchecker/platform_spelling_engine.cc',
+            'renderer/spellchecker/platform_spelling_engine.h',
+          ]
+        }],
+        ['OS=="android"', {
+          'sources!': [
+            'renderer/spellchecker/hunspell_engine.cc',
+            'renderer/spellchecker/hunspell_engine.h',
+          ]
         }],
         ['OS=="mac"', {
           'dependencies': [
@@ -368,11 +383,6 @@
         ['enable_print_preview==1', {
           'sources': [
             '<@(chrome_renderer_full_printing_sources)',
-          ],
-        }],
-        ['OS!="android"', {
-          'sources': [
-            '<@(chrome_renderer_non_android_sources)',
           ],
         }],
         ['OS=="win"', {

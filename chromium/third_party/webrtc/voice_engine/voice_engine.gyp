@@ -26,6 +26,7 @@
         '<(webrtc_root)/modules/modules.gyp:rtp_rtcp',
         '<(webrtc_root)/modules/modules.gyp:webrtc_utility',
         '<(webrtc_root)/system_wrappers/system_wrappers.gyp:system_wrappers',
+        '<(webrtc_root)/webrtc.gyp:rtc_event_log',
       ],
       'sources': [
         'include/voe_audio_processing.h',
@@ -153,6 +154,7 @@
             '<(webrtc_root)/system_wrappers/system_wrappers.gyp:system_wrappers_default',
             '<(webrtc_root)/test/test.gyp:channel_transport',
             '<(webrtc_root)/test/test.gyp:test_support',
+            '<(webrtc_root)/webrtc.gyp:rtc_event_log',
            ],
           'sources': [
             'test/auto_test/automated_mode.cc',
@@ -160,8 +162,8 @@
             'test/auto_test/extended/ec_metrics_test.cc',
             'test/auto_test/fakes/conference_transport.cc',
             'test/auto_test/fakes/conference_transport.h',
-            'test/auto_test/fakes/fake_external_transport.cc',
-            'test/auto_test/fakes/fake_external_transport.h',
+            'test/auto_test/fakes/loudest_filter.cc',
+            'test/auto_test/fakes/loudest_filter.h',
             'test/auto_test/fixtures/after_initialization_fixture.cc',
             'test/auto_test/fixtures/after_initialization_fixture.h',
             'test/auto_test/fixtures/after_streaming_fixture.cc',
@@ -206,6 +208,11 @@
                 'test/auto_test/standard/hardware_before_streaming_test.cc',
               ],
             }],
+            ['enable_protobuf==1', {
+              'defines': [
+                'ENABLE_RTC_EVENT_LOG',
+              ],
+            }],
           ],
           # Disable warnings to enable Win64 build, issue 1323.
           'msvs_disabled_warnings': [
@@ -224,6 +231,7 @@
             '<(webrtc_root)/system_wrappers/system_wrappers.gyp:system_wrappers_default',
             '<(webrtc_root)/test/test.gyp:channel_transport',
             '<(webrtc_root)/test/test.gyp:test_support',
+            '<(webrtc_root)/webrtc.gyp:rtc_event_log',
           ],
           'sources': [
             'test/cmd_test/voe_cmd_test.cc',

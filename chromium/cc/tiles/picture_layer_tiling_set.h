@@ -40,7 +40,7 @@ class CC_EXPORT PictureLayerTilingSet {
   static scoped_ptr<PictureLayerTilingSet> Create(
       WhichTree tree,
       PictureLayerTilingClient* client,
-      size_t max_tiles_for_interest_area,
+      size_t tiling_interest_area_padding,
       float skewport_target_time_in_seconds,
       int skewport_extrapolation_limit_in_content);
 
@@ -51,7 +51,6 @@ class CC_EXPORT PictureLayerTilingSet {
   void CleanUpTilings(float min_acceptable_high_res_scale,
                       float max_acceptable_high_res_scale,
                       const std::vector<PictureLayerTiling*>& needed_tilings,
-                      bool should_have_low_res,
                       PictureLayerTilingSet* twin_set);
   void RemoveNonIdealTilings();
 
@@ -175,7 +174,7 @@ class CC_EXPORT PictureLayerTilingSet {
   explicit PictureLayerTilingSet(
       WhichTree tree,
       PictureLayerTilingClient* client,
-      size_t max_tiles_for_interest_area,
+      size_t tiling_interest_area_padding,
       float skewport_target_time_in_seconds,
       int skewport_extrapolation_limit_in_content_pixels);
 
@@ -190,7 +189,7 @@ class CC_EXPORT PictureLayerTilingSet {
 
   ScopedPtrVector<PictureLayerTiling> tilings_;
 
-  const size_t max_tiles_for_interest_area_;
+  const size_t tiling_interest_area_padding_;
   const float skewport_target_time_in_seconds_;
   const int skewport_extrapolation_limit_in_content_pixels_;
   WhichTree tree_;

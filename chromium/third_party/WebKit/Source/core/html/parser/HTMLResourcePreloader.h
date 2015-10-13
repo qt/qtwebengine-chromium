@@ -30,19 +30,21 @@
 #include "core/fetch/Resource.h"
 #include "core/html/parser/PreloadRequest.h"
 #include "core/html/parser/ResourcePreloader.h"
+#include "core/loader/NetworkHintsInterface.h"
 #include "wtf/CurrentTime.h"
 #include "wtf/text/TextPosition.h"
 
 namespace blink {
 
-class HTMLResourcePreloader final : public NoBaseWillBeGarbageCollected<HTMLResourcePreloader>, public ResourcePreloader {
+class CORE_EXPORT HTMLResourcePreloader final : public NoBaseWillBeGarbageCollected<HTMLResourcePreloader>, public ResourcePreloader {
     WTF_MAKE_NONCOPYABLE(HTMLResourcePreloader); WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(HTMLResourcePreloader);
+    friend class HTMLResourcePreloaderTest;
 public:
     static PassOwnPtrWillBeRawPtr<HTMLResourcePreloader> create(Document&);
     DECLARE_TRACE();
 
 protected:
-    void preload(PassOwnPtr<PreloadRequest>) override;
+    void preload(PassOwnPtr<PreloadRequest>, const NetworkHintsInterface&) override;
 
 private:
     explicit HTMLResourcePreloader(Document&);

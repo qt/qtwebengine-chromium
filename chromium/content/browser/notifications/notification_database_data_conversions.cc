@@ -29,11 +29,21 @@ bool DeserializeNotificationDatabaseData(const std::string& input,
       message.notification_data();
 
   notification_data->title = base::UTF8ToUTF16(payload.title());
-  notification_data->direction =
-      payload.direction() ==
-          NotificationDatabaseDataProto::NotificationData::RIGHT_TO_LEFT ?
-              PlatformNotificationData::NotificationDirectionRightToLeft :
-              PlatformNotificationData::NotificationDirectionLeftToRight;
+
+  switch (payload.direction()) {
+    case NotificationDatabaseDataProto::NotificationData::LEFT_TO_RIGHT:
+      notification_data->direction =
+          PlatformNotificationData::DIRECTION_LEFT_TO_RIGHT;
+      break;
+    case NotificationDatabaseDataProto::NotificationData::RIGHT_TO_LEFT:
+      notification_data->direction =
+          PlatformNotificationData::DIRECTION_RIGHT_TO_LEFT;
+      break;
+    case NotificationDatabaseDataProto::NotificationData::AUTO:
+      notification_data->direction = PlatformNotificationData::DIRECTION_AUTO;
+      break;
+  }
+
   notification_data->lang = payload.lang();
   notification_data->body = base::UTF8ToUTF16(payload.body());
   notification_data->tag = payload.tag();
@@ -46,10 +56,18 @@ bool DeserializeNotificationDatabaseData(const std::string& input,
   }
 
   notification_data->silent = payload.silent();
+  notification_data->require_interaction = payload.require_interaction();
 
   if (payload.data().length()) {
     notification_data->data.assign(payload.data().begin(),
                                    payload.data().end());
+  }
+
+  for (const auto& payload_action : payload.actions()) {
+    PlatformNotificationAction action;
+    action.action = payload_action.action();
+    action.title = base::UTF8ToUTF16(payload_action.title());
+    notification_data->actions.push_back(action);
   }
 
   return true;
@@ -65,11 +83,22 @@ bool SerializeNotificationDatabaseData(const NotificationDatabaseData& input,
   const PlatformNotificationData& notification_data = input.notification_data;
 
   payload->set_title(base::UTF16ToUTF8(notification_data.title));
-  payload->set_direction(
-      notification_data.direction ==
-          PlatformNotificationData::NotificationDirectionRightToLeft ?
-              NotificationDatabaseDataProto::NotificationData::RIGHT_TO_LEFT :
-              NotificationDatabaseDataProto::NotificationData::LEFT_TO_RIGHT);
+
+  switch (notification_data.direction) {
+    case PlatformNotificationData::DIRECTION_LEFT_TO_RIGHT:
+      payload->set_direction(
+          NotificationDatabaseDataProto::NotificationData::LEFT_TO_RIGHT);
+      break;
+    case PlatformNotificationData::DIRECTION_RIGHT_TO_LEFT:
+      payload->set_direction(
+          NotificationDatabaseDataProto::NotificationData::RIGHT_TO_LEFT);
+      break;
+    case PlatformNotificationData::DIRECTION_AUTO:
+      payload->set_direction(
+          NotificationDatabaseDataProto::NotificationData::AUTO);
+      break;
+  }
+
   payload->set_lang(notification_data.lang);
   payload->set_body(base::UTF16ToUTF8(notification_data.body));
   payload->set_tag(notification_data.tag);
@@ -79,10 +108,18 @@ bool SerializeNotificationDatabaseData(const NotificationDatabaseData& input,
     payload->add_vibration_pattern(notification_data.vibration_pattern[i]);
 
   payload->set_silent(notification_data.silent);
+  payload->set_require_interaction(notification_data.require_interaction);
 
   if (notification_data.data.size()) {
     payload->set_data(&notification_data.data.front(),
                       notification_data.data.size());
+  }
+
+  for (const PlatformNotificationAction& action : notification_data.actions) {
+    NotificationDatabaseDataProto::NotificationAction* payload_action =
+        payload->add_actions();
+    payload_action->set_action(action.action);
+    payload_action->set_title(base::UTF16ToUTF8(action.title));
   }
 
   NotificationDatabaseDataProto message;

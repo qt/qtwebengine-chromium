@@ -40,14 +40,14 @@ namespace blink {
 class PLATFORM_EXPORT GIFImageDecoder : public ImageDecoder {
     WTF_MAKE_NONCOPYABLE(GIFImageDecoder);
 public:
-    GIFImageDecoder(ImageSource::AlphaOption, ImageSource::GammaAndColorProfileOption, size_t maxDecodedBytes);
+    GIFImageDecoder(AlphaOption, GammaAndColorProfileOption, size_t maxDecodedBytes);
     ~GIFImageDecoder() override;
 
     enum GIFParseQuery { GIFSizeQuery, GIFFrameCountQuery };
 
     // ImageDecoder:
     String filenameExtension() const override { return "gif"; }
-    void setData(SharedBuffer* data, bool allDataReceived) override;
+    void onSetData(SharedBuffer* data) override;
     int repetitionCount() const override;
     bool frameIsCompleteAtIndex(size_t) const override;
     float frameDurationAtIndex(size_t) const override;

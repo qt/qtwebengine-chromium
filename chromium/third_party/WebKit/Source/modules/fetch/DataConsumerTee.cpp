@@ -184,7 +184,7 @@ public:
             }
             ASSERT(m_readerThread);
             if (!m_readerThread->isCurrentThread()) {
-                m_readerThread->postTask(FROM_HERE, new Task(threadSafeBind(&DestinationContext::notify, this)));
+                m_readerThread->taskRunner()->postTask(FROM_HERE, new Task(threadSafeBind(&DestinationContext::notify, this)));
                 return;
             }
         }
@@ -271,7 +271,7 @@ public:
             // We need to use threadSafeBind here to retain the context. Note
             // |context()| return value is of type DestinationContext*, not
             // PassRefPtr<DestinationContext>.
-            Platform::current()->currentThread()->postTask(FROM_HERE, new Task(threadSafeBind(&DestinationContext::notify, context())));
+            Platform::current()->currentThread()->taskRunner()->postTask(FROM_HERE, new Task(threadSafeBind(&DestinationContext::notify, context())));
         }
     }
     ~DestinationReader() override
@@ -326,10 +326,15 @@ private:
 
 class DestinationHandle final : public WebDataConsumerHandle {
 public:
-    DestinationHandle(PassRefPtr<DestinationContext::Proxy> contextProxy) : m_contextProxy(contextProxy) { }
+    static PassOwnPtr<WebDataConsumerHandle> create(PassRefPtr<DestinationContext::Proxy> contextProxy)
+    {
+        return adoptPtr(new DestinationHandle(contextProxy));
+    }
 
 private:
+    DestinationHandle(PassRefPtr<DestinationContext::Proxy> contextProxy) : m_contextProxy(contextProxy) { }
     DestinationReader* obtainReaderInternal(Client* client) { return new DestinationReader(m_contextProxy, client); }
+    const char* debugName() const override { return "DestinationHandle"; }
 
     RefPtr<DestinationContext::Proxy> m_contextProxy;
 };
@@ -421,8 +426,8 @@ void DataConsumerTee::create(ExecutionContext* executionContext, PassOwnPtr<WebD
 
     root->initialize(new SourceContext(root, src, context1, context2, executionContext));
 
-    *dest1 = adoptPtr(new DestinationHandle(DestinationContext::Proxy::create(context1, tracker)));
-    *dest2 = adoptPtr(new DestinationHandle(DestinationContext::Proxy::create(context2, tracker)));
+    *dest1 = DestinationHandle::create(DestinationContext::Proxy::create(context1, tracker));
+    *dest2 = DestinationHandle::create(DestinationContext::Proxy::create(context2, tracker));
 }
 
 void DataConsumerTee::create(ExecutionContext* executionContext, PassOwnPtr<FetchDataConsumerHandle> src, OwnPtr<FetchDataConsumerHandle>* dest1, OwnPtr<FetchDataConsumerHandle>* dest2)

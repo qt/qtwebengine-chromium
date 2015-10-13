@@ -5,9 +5,9 @@
  * found in the LICENSE file.
  */
 
+#include "SkBmpCodec.h"
 #include "SkCodec.h"
 #include "SkData.h"
-#include "SkCodec_libbmp.h"
 #include "SkCodec_libgif.h"
 #include "SkCodec_libico.h"
 #include "SkCodec_libpng.h"
@@ -16,7 +16,6 @@
 #ifndef SK_BUILD_FOR_ANDROID_FRAMEWORK
 #include "SkJpegCodec.h"
 #endif
-#include "SkScanlineDecoder.h"
 #include "SkStream.h"
 #include "SkWebpCodec.h"
 
@@ -39,17 +38,17 @@ static const DecoderProc gDecoderProcs[] = {
 
 SkCodec* SkCodec::NewFromStream(SkStream* stream) {
     if (!stream) {
-        return NULL;
+        return nullptr;
     }
 
     SkAutoTDelete<SkStream> streamDeleter(stream);
     
-    SkAutoTDelete<SkCodec> codec(NULL);
+    SkAutoTDelete<SkCodec> codec(nullptr);
     for (uint32_t i = 0; i < SK_ARRAY_COUNT(gDecoderProcs); i++) {
         DecoderProc proc = gDecoderProcs[i];
         const bool correctFormat = proc.IsFormat(stream);
         if (!stream->rewind()) {
-            return NULL;
+            return nullptr;
         }
         if (correctFormat) {
             codec.reset(proc.NewFromStream(streamDeleter.detach()));
@@ -63,7 +62,7 @@ SkCodec* SkCodec::NewFromStream(SkStream* stream) {
     const int32_t maxSize = 1 << 27;
     if (codec && codec->getInfo().width() * codec->getInfo().height() > maxSize) {
         SkCodecPrintf("Error: Image size too large, cannot decode.\n");
-        return NULL;
+        return nullptr;
     } else {
         return codec.detach();
     }
@@ -71,32 +70,45 @@ SkCodec* SkCodec::NewFromStream(SkStream* stream) {
 
 SkCodec* SkCodec::NewFromData(SkData* data) {
     if (!data) {
-        return NULL;
+        return nullptr;
     }
-    return NewFromStream(SkNEW_ARGS(SkMemoryStream, (data)));
+    return NewFromStream(new SkMemoryStream(data));
 }
 
 SkCodec::SkCodec(const SkImageInfo& info, SkStream* stream)
-    : fInfo(info)
+    : fSrcInfo(info)
     , fStream(stream)
     , fNeedsRewind(false)
-    , fScanlineDecoder(NULL)
+    , fDstInfo()
+    , fOptions()
+    , fCurrScanline(-1)
 {}
 
-SkCodec::~SkCodec() {
-    SkDELETE(fScanlineDecoder);
-}
+SkCodec::~SkCodec() {}
 
-SkCodec::RewindState SkCodec::rewindIfNeeded() {
+bool SkCodec::rewindIfNeeded() {
+    if (!fStream) {
+        // Some codecs do not have a stream, but they hold others that do. They
+        // must handle rewinding themselves.
+        return true;
+    }
+
     // Store the value of fNeedsRewind so we can update it. Next read will
     // require a rewind.
     const bool needsRewind = fNeedsRewind;
     fNeedsRewind = true;
     if (!needsRewind) {
-        return kNoRewindNecessary_RewindState;
+        return true;
     }
-    return fStream->rewind() ? kRewound_RewindState
-                             : kCouldNotRewind_RewindState;
+
+    // startScanlineDecode will need to be called before decoding scanlines.
+    fCurrScanline = -1;
+
+    if (!fStream->rewind()) {
+        return false;
+    }
+
+    return this->onRewind();
 }
 
 SkCodec::Result SkCodec::getPixels(const SkImageInfo& info, void* pixels, size_t rowBytes,
@@ -104,7 +116,7 @@ SkCodec::Result SkCodec::getPixels(const SkImageInfo& info, void* pixels, size_t
     if (kUnknown_SkColorType == info.colorType()) {
         return kInvalidConversion;
     }
-    if (NULL == pixels) {
+    if (nullptr == pixels) {
         return kInvalidParameters;
     }
     if (rowBytes < info.minRowBytes()) {
@@ -112,20 +124,33 @@ SkCodec::Result SkCodec::getPixels(const SkImageInfo& info, void* pixels, size_t
     }
 
     if (kIndex_8_SkColorType == info.colorType()) {
-        if (NULL == ctable || NULL == ctableCount) {
+        if (nullptr == ctable || nullptr == ctableCount) {
             return kInvalidParameters;
         }
     } else {
         if (ctableCount) {
             *ctableCount = 0;
         }
-        ctableCount = NULL;
-        ctable = NULL;
+        ctableCount = nullptr;
+        ctable = nullptr;
+    }
+
+    {
+        SkAlphaType canonical;
+        if (!SkColorTypeValidateAlphaType(info.colorType(), info.alphaType(), &canonical)
+            || canonical != info.alphaType())
+        {
+            return kInvalidConversion;
+        }
+    }
+
+    if (!this->rewindIfNeeded()) {
+        return kCouldNotRewind;
     }
 
     // Default options.
     Options optsStorage;
-    if (NULL == options) {
+    if (nullptr == options) {
         options = &optsStorage;
     }
     const Result result = this->onGetPixels(info, pixels, rowBytes, *options, ctable, ctableCount);
@@ -137,31 +162,81 @@ SkCodec::Result SkCodec::getPixels(const SkImageInfo& info, void* pixels, size_t
 }
 
 SkCodec::Result SkCodec::getPixels(const SkImageInfo& info, void* pixels, size_t rowBytes) {
-    SkASSERT(kIndex_8_SkColorType != info.colorType());
-    if (kIndex_8_SkColorType == info.colorType()) {
-        return kInvalidConversion;
-    }
-    return this->getPixels(info, pixels, rowBytes, NULL, NULL, NULL);
+    return this->getPixels(info, pixels, rowBytes, nullptr, nullptr, nullptr);
 }
 
-SkScanlineDecoder* SkCodec::getScanlineDecoder(const SkImageInfo& dstInfo, const Options* options,
-        SkPMColor ctable[], int* ctableCount) {
+SkCodec::Result SkCodec::startScanlineDecode(const SkImageInfo& dstInfo,
+        const SkCodec::Options* options, SkPMColor ctable[], int* ctableCount) {
+    // Reset fCurrScanline in case of failure.
+    fCurrScanline = -1;
+    // Ensure that valid color ptrs are passed in for kIndex8 color type
+    if (kIndex_8_SkColorType == dstInfo.colorType()) {
+        if (nullptr == ctable || nullptr == ctableCount) {
+            return SkCodec::kInvalidParameters;
+        }
+    } else {
+        if (ctableCount) {
+            *ctableCount = 0;
+        }
+        ctableCount = nullptr;
+        ctable = nullptr;
+    }
+
+    if (!this->rewindIfNeeded()) {
+        return kCouldNotRewind;
+    }
 
     // Set options.
     Options optsStorage;
-    if (NULL == options) {
+    if (nullptr == options) {
         options = &optsStorage;
     }
 
-    SkDELETE(fScanlineDecoder);
-    fScanlineDecoder = this->onGetScanlineDecoder(dstInfo, *options, ctable, ctableCount);
-    return fScanlineDecoder;
+    const Result result = this->onStartScanlineDecode(dstInfo, *options, ctable, ctableCount);
+    if (result != SkCodec::kSuccess) {
+        return result;
+    }
+
+    fCurrScanline = 0;
+    fDstInfo = dstInfo;
+    fOptions = *options;
+    return kSuccess;
 }
 
-SkScanlineDecoder* SkCodec::getScanlineDecoder(const SkImageInfo& dstInfo) {
-    SkASSERT(kIndex_8_SkColorType != dstInfo.colorType());
-    if (kIndex_8_SkColorType == dstInfo.colorType()) {
-        return NULL;
+SkCodec::Result SkCodec::startScanlineDecode(const SkImageInfo& dstInfo) {
+    return this->startScanlineDecode(dstInfo, nullptr, nullptr, nullptr);
+}
+
+SkCodec::Result SkCodec::getScanlines(void* dst, int countLines, size_t rowBytes) {
+    if (fCurrScanline < 0) {
+        return kScanlineDecodingNotStarted;
     }
-    return this->getScanlineDecoder(dstInfo, NULL, NULL, NULL);
+
+    SkASSERT(!fDstInfo.isEmpty());
+    if ((rowBytes < fDstInfo.minRowBytes() && countLines > 1 ) || countLines <= 0
+         || fCurrScanline + countLines > fDstInfo.height()) {
+        return kInvalidParameters;
+    }
+
+    const Result result = this->onGetScanlines(dst, countLines, rowBytes);
+    fCurrScanline += countLines;
+    return result;
+}
+
+SkCodec::Result SkCodec::skipScanlines(int countLines) {
+    if (fCurrScanline < 0) {
+        return kScanlineDecodingNotStarted;
+    }
+
+    SkASSERT(!fDstInfo.isEmpty());
+    if (fCurrScanline + countLines > fDstInfo.height()) {
+        // Arguably, we could just skip the scanlines which are remaining,
+        // and return kSuccess. We choose to return invalid so the client
+        // can catch their bug.
+        return SkCodec::kInvalidParameters;
+    }
+
+    const Result result = this->onSkipScanlines(countLines);
+    fCurrScanline += countLines;
+    return result;
 }

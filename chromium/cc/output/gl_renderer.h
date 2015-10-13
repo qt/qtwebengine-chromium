@@ -13,7 +13,6 @@
 #include "cc/output/gl_renderer_draw_cache.h"
 #include "cc/output/program_binding.h"
 #include "cc/output/renderer.h"
-#include "cc/quads/checkerboard_draw_quad.h"
 #include "cc/quads/debug_border_draw_quad.h"
 #include "cc/quads/io_surface_draw_quad.h"
 #include "cc/quads/render_pass_draw_quad.h"
@@ -63,7 +62,6 @@ class CC_EXPORT GLRenderer : public DirectRenderer {
   // Waits for rendering to finish.
   void Finish() override;
 
-  void DoNoOp() override;
   void SwapBuffers(const CompositorFrameMetadata& metadata) override;
 
   virtual bool IsContextLost();
@@ -154,9 +152,6 @@ class CC_EXPORT GLRenderer : public DirectRenderer {
   void ClearFramebuffer(DrawingFrame* frame);
   void SetViewport();
 
-  void DrawCheckerboardQuad(const DrawingFrame* frame,
-                            const CheckerboardDrawQuad* quad,
-                            const gfx::QuadF* clip_region);
   void DrawDebugBorderQuad(const DrawingFrame* frame,
                            const DebugBorderDrawQuad* quad);
   static bool IsDefaultBlendMode(SkXfermode::Mode blend_mode) {
@@ -174,8 +169,7 @@ class CC_EXPORT GLRenderer : public DirectRenderer {
       bool use_aa);
   scoped_ptr<ScopedResource> GetBackdropTexture(const gfx::Rect& bounding_rect);
 
-  static bool ShouldApplyBackgroundFilters(DrawingFrame* frame,
-                                           const RenderPassDrawQuad* quad);
+  static bool ShouldApplyBackgroundFilters(const RenderPassDrawQuad* quad);
   skia::RefPtr<SkImage> ApplyBackgroundFilters(
       DrawingFrame* frame,
       const RenderPassDrawQuad* quad,
@@ -268,6 +262,7 @@ class CC_EXPORT GLRenderer : public DirectRenderer {
       OverlayResourceLockList;
   OverlayResourceLockList pending_overlay_resources_;
   OverlayResourceLockList in_use_overlay_resources_;
+  OverlayResourceLockList previous_swap_overlay_resources_;
 
   RendererCapabilitiesImpl capabilities_;
 
@@ -294,8 +289,6 @@ class CC_EXPORT GLRenderer : public DirectRenderer {
       TileProgramSwizzle;
   typedef ProgramBinding<VertexShaderTile, FragmentShaderRGBATexSwizzleOpaque>
       TileProgramSwizzleOpaque;
-  typedef ProgramBinding<VertexShaderPosTex, FragmentShaderCheckerboard>
-      TileCheckerboardProgram;
 
   // Texture shaders.
   typedef ProgramBinding<VertexShaderPosTexTransform,
@@ -361,8 +354,6 @@ class CC_EXPORT GLRenderer : public DirectRenderer {
       TexCoordPrecision precision, SamplerType sampler);
   const TileProgramSwizzleAA* GetTileProgramSwizzleAA(
       TexCoordPrecision precision, SamplerType sampler);
-
-  const TileCheckerboardProgram* GetTileCheckerboardProgram();
 
   const RenderPassProgram* GetRenderPassProgram(TexCoordPrecision precision,
                                                 BlendMode blend_mode);
@@ -433,8 +424,6 @@ class CC_EXPORT GLRenderer : public DirectRenderer {
                                    1][LAST_SAMPLER_TYPE + 1];
   TileProgramSwizzleAA tile_program_swizzle_aa_[LAST_TEX_COORD_PRECISION +
                                                 1][LAST_SAMPLER_TYPE + 1];
-
-  TileCheckerboardProgram tile_checkerboard_program_;
 
   TextureProgram
       texture_program_[LAST_TEX_COORD_PRECISION + 1][LAST_SAMPLER_TYPE + 1];

@@ -21,7 +21,6 @@ URLRequestContext::URLRequestContext()
       host_resolver_(nullptr),
       cert_verifier_(nullptr),
       channel_id_service_(nullptr),
-      fraudulent_certificate_reporter_(nullptr),
       http_auth_handler_factory_(nullptr),
       proxy_service_(nullptr),
       network_delegate_(nullptr),
@@ -31,6 +30,7 @@ URLRequestContext::URLRequestContext()
       http_transaction_factory_(nullptr),
       job_factory_(nullptr),
       throttler_manager_(nullptr),
+      backoff_manager_(nullptr),
       sdch_manager_(nullptr),
       network_quality_estimator_(nullptr),
       url_requests_(new std::set<const URLRequest*>) {
@@ -46,7 +46,6 @@ void URLRequestContext::CopyFrom(const URLRequestContext* other) {
   set_host_resolver(other->host_resolver_);
   set_cert_verifier(other->cert_verifier_);
   set_channel_id_service(other->channel_id_service_);
-  set_fraudulent_certificate_reporter(other->fraudulent_certificate_reporter_);
   set_http_auth_handler_factory(other->http_auth_handler_factory_);
   set_proxy_service(other->proxy_service_);
   set_ssl_config_service(other->ssl_config_service_.get());
@@ -58,6 +57,7 @@ void URLRequestContext::CopyFrom(const URLRequestContext* other) {
   set_http_transaction_factory(other->http_transaction_factory_);
   set_job_factory(other->job_factory_);
   set_throttler_manager(other->throttler_manager_);
+  set_backoff_manager(other->backoff_manager_);
   set_sdch_manager(other->sdch_manager_);
   set_http_user_agent_settings(other->http_user_agent_settings_);
   set_network_quality_estimator(other->network_quality_estimator_);

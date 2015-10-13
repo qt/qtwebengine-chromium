@@ -8,6 +8,9 @@
 
 #include "x11/X11Window.h"
 
+#include "system_utils.h"
+#include "Timer.h"
+
 namespace {
 
 Bool WaitForMapNotify(Display *dpy, XEvent *event, XPointer window)
@@ -89,6 +92,7 @@ static Key X11CodeToKey(Display *display, unsigned int scancode)
       case XK_KP_Down:     return KEY_NUMPAD2;
       case XK_KP_Page_Down:return KEY_NUMPAD3;
       case XK_KP_Left:     return KEY_NUMPAD4;
+      case XK_KP_5:        return KEY_NUMPAD5;
       case XK_KP_Right:    return KEY_NUMPAD6;
       case XK_KP_Home:     return KEY_NUMPAD7;
       case XK_KP_Up:       return KEY_NUMPAD8;
@@ -172,9 +176,9 @@ bool X11Window::initialize(const std::string &name, size_t width, size_t height)
         int screen = DefaultScreen(mDisplay);
         Window root = RootWindow(mDisplay, screen);
 
-        Colormap colormap = XCreateColormap(mDisplay, root, DefaultVisual(mDisplay, screen), AllocNone);
-        int depth = DefaultDepth(mDisplay, screen);
         Visual *visual = DefaultVisual(mDisplay, screen);
+        int depth = DefaultDepth(mDisplay, screen);
+        Colormap colormap = XCreateColormap(mDisplay, root, visual, AllocNone);
 
         XSetWindowAttributes attributes;
         unsigned long attributeMask = CWBorderPixel | CWColormap | CWEventMask;
@@ -288,6 +292,21 @@ bool X11Window::resize(int width, int height)
 {
     XResizeWindow(mDisplay, mWindow, width, height);
     XFlush(mDisplay);
+
+    Timer* timer = CreateTimer();
+    timer->start();
+
+    // Wait until the window as actually been resized so that the code calling resize
+    // can assume the window has been resized.
+    const double kResizeWaitDelay = 0.2;
+    while (mHeight != height && mWidth != width && timer->getElapsedTime() < kResizeWaitDelay)
+    {
+        messageLoop();
+        angle::Sleep(10);
+    }
+
+    delete timer;
+
     return true;
 }
 

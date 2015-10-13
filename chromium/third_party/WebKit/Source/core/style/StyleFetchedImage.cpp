@@ -44,9 +44,24 @@ StyleFetchedImage::~StyleFetchedImage()
     m_image->removeClient(this);
 }
 
+WrappedImagePtr StyleFetchedImage::data() const
+{
+    return m_image.get();
+}
+
+ImageResource* StyleFetchedImage::cachedImage() const
+{
+    return m_image.get();
+}
+
 PassRefPtrWillBeRawPtr<CSSValue> StyleFetchedImage::cssValue() const
 {
     return CSSImageValue::create(m_image->url(), const_cast<StyleFetchedImage*>(this));
+}
+
+PassRefPtrWillBeRawPtr<CSSValue> StyleFetchedImage::computedCSSValue() const
+{
+    return cssValue();
 }
 
 bool StyleFetchedImage::canRender(const LayoutObject& layoutObject, float multiplier) const
@@ -112,7 +127,7 @@ void StyleFetchedImage::notifyFinished(Resource* resource)
     m_document.clear();
 }
 
-PassRefPtr<Image> StyleFetchedImage::image(LayoutObject* layoutObject, const IntSize&) const
+PassRefPtr<Image> StyleFetchedImage::image(const LayoutObject* layoutObject, const IntSize&) const
 {
     return m_image->imageForLayoutObject(layoutObject);
 }
@@ -120,6 +135,12 @@ PassRefPtr<Image> StyleFetchedImage::image(LayoutObject* layoutObject, const Int
 bool StyleFetchedImage::knownToBeOpaque(const LayoutObject* layoutObject) const
 {
     return m_image->currentFrameKnownToBeOpaque(layoutObject);
+}
+
+DEFINE_TRACE(StyleFetchedImage)
+{
+    visitor->trace(m_document);
+    StyleImage::trace(visitor);
 }
 
 }

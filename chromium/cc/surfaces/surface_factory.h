@@ -11,6 +11,7 @@
 #include "base/containers/scoped_ptr_hash_map.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "cc/output/compositor_frame.h"
 #include "cc/surfaces/surface_id.h"
 #include "cc/surfaces/surface_resource_holder.h"
 #include "cc/surfaces/surface_sequence.h"
@@ -21,7 +22,6 @@ class Size;
 }
 
 namespace cc {
-class CompositorFrame;
 class CopyOutputRequest;
 class Surface;
 class SurfaceFactoryClient;
@@ -49,9 +49,9 @@ class CC_SURFACES_EXPORT SurfaceFactory
   // although the frame may reference surfaces created by other factories.
   // The callback is called the first time this frame is used to draw, or if
   // the frame is discarded.
-  void SubmitFrame(SurfaceId surface_id,
-                   scoped_ptr<CompositorFrame> frame,
-                   const DrawCallback& callback);
+  void SubmitCompositorFrame(SurfaceId surface_id,
+                             scoped_ptr<CompositorFrame> frame,
+                             const DrawCallback& callback);
   void RequestCopyOfSurface(SurfaceId surface_id,
                             scoped_ptr<CopyOutputRequest> copy_request);
 

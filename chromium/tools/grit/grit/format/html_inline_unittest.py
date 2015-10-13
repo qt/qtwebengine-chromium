@@ -37,6 +37,8 @@ class HtmlInlineUnittest(unittest.TestCase):
           <include src="test.html">
           <include
               src="really-long-long-long-long-long-test-file-omg-so-long.html">
+          <iron-icon src="[[icon]]"></iron-icon><!-- Should be ignored. -->
+          <iron-icon src="{{src}}"></iron-icon><!-- Also ignored. -->
         </body>
       </html>
       ''',

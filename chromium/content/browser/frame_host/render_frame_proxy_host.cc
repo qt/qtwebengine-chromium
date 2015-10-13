@@ -58,7 +58,8 @@ RenderFrameProxyHost::RenderFrameProxyHost(SiteInstance* site_instance,
           RenderFrameProxyHostID(GetProcess()->GetID(), routing_id_),
           this)).second);
   CHECK_IMPLIES(!render_view_host,
-                frame_tree_node_->render_manager()->ForInnerDelegate());
+                frame_tree_node_->render_manager()->ForInnerDelegate() &&
+                    frame_tree_node_->IsMainFrame());
   if (render_view_host)
     frame_tree_node_->frame_tree()->AddRenderViewHostRef(render_view_host_);
 
@@ -67,12 +68,14 @@ RenderFrameProxyHost::RenderFrameProxyHost(SiteInstance* site_instance,
                                     ->render_manager()
                                     ->current_frame_host()
                                     ->GetSiteInstance() == site_instance;
+  bool is_proxy_to_outer_delegate =
+      frame_tree_node_->IsMainFrame() &&
+      frame_tree_node_->render_manager()->ForInnerDelegate();
 
   // If this is a proxy to parent frame or this proxy is for the inner
   // WebContents's FrameTreeNode in outer WebContents's SiteInstance, then we
   // need a CrossProcessFrameConnector.
-  if (is_proxy_to_parent ||
-      frame_tree_node_->render_manager()->ForInnerDelegate()) {
+  if (is_proxy_to_parent || is_proxy_to_outer_delegate) {
     // The RenderFrameHost navigating cross-process is destroyed and a proxy for
     // it is created in the parent's process. CrossProcessFrameConnector
     // initialization only needs to happen on an initial cross-process
@@ -142,6 +145,7 @@ bool RenderFrameProxyHost::OnMessageReceived(const IPC::Message& msg) {
     IPC_MESSAGE_HANDLER(FrameHostMsg_Detach, OnDetach)
     IPC_MESSAGE_HANDLER(FrameHostMsg_OpenURL, OnOpenURL)
     IPC_MESSAGE_HANDLER(FrameHostMsg_RouteMessageEvent, OnRouteMessageEvent)
+    IPC_MESSAGE_HANDLER(FrameHostMsg_DidChangeOpener, OnDidChangeOpener)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
@@ -181,11 +185,18 @@ bool RenderFrameProxyHost::InitRenderFrameProxy() {
     CHECK_NE(parent_routing_id, MSG_ROUTING_NONE);
   }
 
+  int opener_routing_id = MSG_ROUTING_NONE;
+  if (frame_tree_node_->opener()) {
+    opener_routing_id = frame_tree_node_->render_manager()->GetOpenerRoutingID(
+        site_instance_.get());
+  }
+
   Send(new FrameMsg_NewFrameProxy(routing_id_,
-                                  parent_routing_id,
                                   frame_tree_node_->frame_tree()
                                       ->GetRenderViewHost(site_instance_.get())
                                       ->GetRoutingID(),
+                                  opener_routing_id,
+                                  parent_routing_id,
                                   frame_tree_node_
                                       ->current_replication_state()));
 
@@ -193,12 +204,24 @@ bool RenderFrameProxyHost::InitRenderFrameProxy() {
   return true;
 }
 
-void RenderFrameProxyHost::DisownOpener() {
-  Send(new FrameMsg_DisownOpener(GetRoutingID()));
+void RenderFrameProxyHost::UpdateOpener() {
+  // Another frame in this proxy's SiteInstance may reach the new opener by
+  // first reaching this proxy and then referencing its window.opener.  Ensure
+  // the new opener's proxy exists in this case.
+  if (frame_tree_node_->opener()) {
+    frame_tree_node_->opener()->render_manager()->CreateOpenerProxies(
+        GetSiteInstance(), frame_tree_node_);
+  }
+
+  int opener_routing_id =
+      frame_tree_node_->render_manager()->GetOpenerRoutingID(GetSiteInstance());
+  Send(new FrameMsg_UpdateOpener(GetRoutingID(), opener_routing_id));
 }
 
 void RenderFrameProxyHost::OnDetach() {
   if (frame_tree_node_->render_manager()->ForInnerDelegate()) {
+    // Only main frame proxy can detach for inner WebContents.
+    DCHECK(frame_tree_node_->IsMainFrame());
     frame_tree_node_->render_manager()->RemoveOuterDelegateFrame();
     return;
   }
@@ -291,6 +314,11 @@ void RenderFrameProxyHost::OnRouteMessageEvent(
     target_rfh->Send(
         new FrameMsg_PostMessageEvent(target_rfh->GetRoutingID(), new_params));
   }
+}
+
+void RenderFrameProxyHost::OnDidChangeOpener(int32 opener_routing_id) {
+  frame_tree_node_->render_manager()->DidChangeOpener(opener_routing_id,
+                                                      GetSiteInstance());
 }
 
 }  // namespace content

@@ -40,8 +40,6 @@ public:
     void setCanHaveScrollbars(bool) override;
     WebSize scrollOffset() const override;
     void setScrollOffset(const WebSize&) override;
-    WebSize minimumScrollOffset() const override;
-    WebSize maximumScrollOffset() const override;
     WebSize contentsSize() const override;
     bool hasVisibleContent() const override;
     WebRect visibleContentRect() const override;
@@ -76,6 +74,7 @@ public:
         int argc,
         v8::Local<v8::Value> argv[]) override;
     v8::Local<v8::Context> mainWorldScriptContext() const override;
+    v8::Local<v8::Context> deprecatedMainWorldScriptContext() const override;
     void reload(bool ignoreCache) override;
     void reloadWithOverrideURL(const WebURL& overrideUrl, bool ignoreCache) override;
     void loadRequest(const WebURLRequest&) override;
@@ -197,21 +196,17 @@ public:
 private:
     WebRemoteFrameImpl(WebTreeScopeType, WebRemoteFrameClient*);
 
-    RemoteFrameClientImpl m_frameClient;
+    OwnPtrWillBeMember<RemoteFrameClientImpl> m_frameClient;
     RefPtrWillBeMember<RemoteFrame> m_frame;
     WebRemoteFrameClient* m_client;
 
     WillBeHeapHashMap<WebFrame*, OwnPtrWillBeMember<FrameOwner>> m_ownersForChildren;
 
 #if ENABLE(OILPAN)
-    // Oilpan: to provide the guarantee of having the frame live until
-    // close() is called, an instance keep a self-persistent. It is
-    // cleared upon calling close(). This avoids having to assume that
-    // an embedder's WebFrame references are all discovered via thread
-    // state (stack, registers) should an Oilpan GC strike while we're
-    // in the process of detaching.
-    GC_PLUGIN_IGNORE("340522")
-    Persistent<WebRemoteFrameImpl> m_selfKeepAlive;
+    // Oilpan: WebRemoteFrameImpl must remain alive until close() is called.
+    // Accomplish that by keeping a self-referential Persistent<>. It is
+    // cleared upon close().
+    SelfKeepAlive<WebRemoteFrameImpl> m_selfKeepAlive;
 #endif
 };
 

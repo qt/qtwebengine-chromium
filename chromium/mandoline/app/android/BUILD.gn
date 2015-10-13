@@ -19,10 +19,15 @@ group("android") {
 executable("mandoline_runner") {
   deps = [
     ":jni_headers",
-    "//mandoline/ui/browser/public/interfaces",
+    "//base",
+    "//build/config/sanitizers:deps",
+    "//mandoline/ui/desktop_ui/public/interfaces",
     "//mojo/common",
     "//mojo/environment:chromium",
+    "//mojo/package_manager",
+    "//mojo/runner:lib",
     "//mojo/runner:mojo_runner_lib",
+    "//mojo/shell",
   ]
 
   sources = [
@@ -41,10 +46,10 @@ copy("copy_mandoline_runner") {
     ":mandoline_runner",
   ]
   sources = [
-    "$root_out_dir/exe.stripped/mandoline_runner",
+    "$root_out_dir/mandoline_runner",
   ]
   outputs = [
-    "$root_out_dir/lib.stripped/libmandoline_runner.so",
+    "$root_shlib_dir/${shlib_prefix}mandoline_runner$shlib_extension",
   ]
 }
 
@@ -54,15 +59,15 @@ copy_ex("copy_mandoline_assets") {
   deps = [
     "//components/devtools_service",
     "//components/html_viewer",
-    "//mandoline/services/core_services",
-    "//mojo/services/network",
     "//components/resource_provider",
+    "//mandoline/services/core_services",
     "//mojo/runner:bootstrap",
     "//mojo/runner:bootstrap_java",
+    "//mojo/services/network",
   ]
   sources = [
-    "$root_out_dir/lib.stripped/libbootstrap.so",
     "$root_out_dir/obj/mojo/runner/bootstrap_java.dex.jar",
+    "$root_shlib_dir/${shlib_prefix}bootstrap$shlib_extension",
   ]
 
   # Directories can't be specified as sources so pass manually to the script.
@@ -75,14 +80,11 @@ copy_ex("copy_mandoline_assets") {
   ]
 
   if (use_aura) {
-    deps += [
-      "//mandoline/ui/browser",
-      "//mandoline/ui/omnibox",
-    ]
+    deps += [ "//mandoline/ui" ]
 
     args += [
-      "--files=" + rebase_path("$root_out_dir/browser", root_build_dir),
       "--files=" + rebase_path("$root_out_dir/omnibox", root_build_dir),
+      "--files=" + rebase_path("$root_out_dir/phone_ui", root_build_dir),
     ]
   }
 }
@@ -120,7 +122,7 @@ android_apk("mandoline_apk") {
 
   android_manifest = "apk/AndroidManifest.xml"
 
-  native_libs = [ "libmandoline_runner.so" ]
+  native_libs = [ "${shlib_prefix}mandoline_runner$shlib_extension" ]
 
   asset_location = mandoline_assets_dir
 
@@ -132,7 +134,7 @@ android_apk("mandoline_apk") {
     "//mojo/runner:java",
     "//mojo/runner:resources",
     "//base:base_java",
-    "//third_party/android_tools:google_play_services_default_resources",
     "//ui/platform_window/android:platform_window_java",
+    google_play_services_resources,
   ]
 }

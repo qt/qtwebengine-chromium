@@ -35,7 +35,7 @@
 
 namespace blink {
 
-class AudioContext;
+class AbstractAudioContext;
 class ExceptionState;
 class PeriodicWave;
 
@@ -88,9 +88,6 @@ private:
     // Since it's floating-point, it has sub-sample accuracy.
     double m_virtualReadIndex;
 
-    // This synchronizes process().
-    mutable Mutex m_processLock;
-
     // Stores sample-accurate values calculated according to frequency and detune.
     AudioFloatArray m_phaseIncrements;
     AudioFloatArray m_detuneValues;
@@ -103,7 +100,7 @@ private:
 class OscillatorNode final : public AudioScheduledSourceNode {
     DEFINE_WRAPPERTYPEINFO();
 public:
-    static OscillatorNode* create(AudioContext&, float sampleRate);
+    static OscillatorNode* create(AbstractAudioContext&, float sampleRate);
     DECLARE_VIRTUAL_TRACE();
 
     String type() const;
@@ -113,7 +110,7 @@ public:
     void setPeriodicWave(PeriodicWave*);
 
 private:
-    OscillatorNode(AudioContext&, float sampleRate);
+    OscillatorNode(AbstractAudioContext&, float sampleRate);
     OscillatorHandler& oscillatorHandler() const;
 
     Member<AudioParam> m_frequency;

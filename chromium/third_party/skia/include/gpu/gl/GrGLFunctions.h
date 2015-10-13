@@ -257,6 +257,8 @@ typedef GrGLvoid (GR_GL_FUNCTION_TYPE* GrGLStencilThenCoverFillPathInstancedProc
 typedef GrGLvoid (GR_GL_FUNCTION_TYPE* GrGLStencilThenCoverStrokePathInstancedProc)(GrGLsizei numPaths, GrGLenum pathNameType, const GrGLvoid *paths, GrGLuint pathBase, GrGLint reference, GrGLuint mask, GrGLenum coverMode, GrGLenum transformType, const GrGLfloat *transformValues);
 // NV_path_rendering v1.3
 typedef GrGLvoid (GR_GL_FUNCTION_TYPE* GrGLProgramPathFragmentInputGenProc)(GrGLuint program, GrGLint location, GrGLenum genMode, GrGLint components,const GrGLfloat *coeffs);
+// CHROMIUM_path_rendering
+typedef GrGLvoid (GR_GL_FUNCTION_TYPE* GrGLBindFragmentInputLocationProc)(GrGLuint program, GrGLint location, const GrGLchar* name);
 
 /* ARB_program_interface_query */
 typedef GrGLint (GR_GL_FUNCTION_TYPE* GrGLGetProgramResourceLocationProc)(GrGLuint program, GrGLenum programInterface, const GrGLchar *name);
@@ -388,6 +390,8 @@ typedef GrGLvoid (GR_GL_FUNCTION_TYPE* GrGLGetVertexArrayIntegeri_vProc)(GrGLuin
 typedef GrGLvoid (GR_GL_FUNCTION_TYPE* GrGLGetVertexArrayPointeri_vProc)(GrGLuint vaobj, GrGLuint index, GrGLenum pname, GrGLvoid **param);
 typedef GrGLvoid* (GR_GL_FUNCTION_TYPE* GrGLMapNamedBufferRangeProc)(GrGLuint buffer, GrGLintptr offset, GrGLsizeiptr length, GrGLbitfield access);
 typedef GrGLvoid (GR_GL_FUNCTION_TYPE* GrGLFlushMappedNamedBufferRangeProc)(GrGLuint buffer, GrGLintptr offset, GrGLsizeiptr length);
+// OpenGL 4.5
+typedef GrGLvoid (GR_GL_FUNCTION_TYPE* GrGLNamedFramebufferParameteriProc)(GrGLuint framebuffer, GrGLenum pname, GrGLint param);
 
 /* KHR_debug */
 typedef GrGLvoid (GR_GL_FUNCTION_TYPE* GrGLDebugMessageControlProc)(GrGLenum source, GrGLenum type, GrGLenum severity, GrGLsizei count, const GrGLuint* ids, GrGLboolean enabled);

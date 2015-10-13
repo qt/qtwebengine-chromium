@@ -42,12 +42,8 @@ WebInspector.TimelineFlameChartDataProviderBase = function(model)
     this._timelineData;
     this._font = "11px " + WebInspector.fontFamily();
     this._filters = [];
-    this.addFilter(WebInspector.TimelineUIUtils.hiddenEventsFilter());
+    this.addFilter(WebInspector.TimelineUIUtils.visibleEventsFilter());
     this.addFilter(new WebInspector.ExcludeTopLevelFilter());
-    this._jsFramesColorGenerator = new WebInspector.FlameChart.ColorGenerator(
-        { min: 40, max: 310, count: 10 },
-        { min: 50, max: 80, count: 3 },
-        85);
 }
 
 WebInspector.TimelineFlameChartDataProviderBase.prototype = {
@@ -104,7 +100,7 @@ WebInspector.TimelineFlameChartDataProviderBase.prototype = {
     },
 
     /**
-     * @param {!WebInspector.TraceEventFilter} filter
+     * @param {!WebInspector.TimelineModel.Filter} filter
      */
     addFilter: function(filter)
     {
@@ -141,7 +137,7 @@ WebInspector.TimelineFlameChartDataProviderBase.prototype = {
     /**
      * @override
      * @param {number} entryIndex
-     * @return {?Array.<!{title: string, text: string}>}
+     * @return {?Array.<!{title: string, value: (string|!Element)}>}
      */
     prepareHighlightedEntryInfo: function(entryIndex)
     {
@@ -539,10 +535,8 @@ WebInspector.TimelineFlameChartDataProvider.prototype = {
         var event = this._entryEvents[entryIndex];
         if (!event)
             return this._entryIndexToFrame[entryIndex] ? "white" : "#aaa";
-        if (event.name === WebInspector.TimelineModel.RecordType.JSFrame) {
-            var colorId = event.args["data"]["url"];
-            return this._jsFramesColorGenerator.colorForID(colorId);
-        }
+        if (event.name === WebInspector.TimelineModel.RecordType.JSFrame)
+            return WebInspector.TimelineUIUtils.colorForURL(event.args["data"]["url"]);
         var category = WebInspector.TimelineUIUtils.eventStyle(event).category;
         if (WebInspector.TracingModel.isAsyncPhase(event.phase)) {
             if (event.hasCategory(WebInspector.TracingModel.ConsoleEventCategory))
@@ -897,22 +891,22 @@ WebInspector.TimelineFlameChartNetworkDataProvider.prototype = {
      * @param {number} index
      * @return {string}
      */
-    entryTitle: function(index)
-    {
-        var event = this._requests[index];
-        return event && event.url || "";
-    },
-
-    /**
-     * @override
-     * @param {number} index
-     * @return {string}
-     */
     entryColor: function(index)
     {
         var request = /** @type {!WebInspector.TimelineModel.NetworkRequest} */ (this._requests[index]);
         var category = WebInspector.TimelineUIUtils.networkRequestCategory(request);
         return WebInspector.TimelineUIUtils.networkCategoryColor(category);
+    },
+
+    /**
+     * @override
+     * @param {number} index
+     * @return {?string}
+     */
+    entryTitle: function(index)
+    {
+        var request = /** @type {!WebInspector.TimelineModel.NetworkRequest} */ (this._requests[index]);
+        return request.url || null;
     },
 
     /**
@@ -933,7 +927,11 @@ WebInspector.TimelineFlameChartNetworkDataProvider.prototype = {
         var startTime = request.startTime;
         var responseTime = request.responseTime || request.endTime;
         var requestDuration = request.endTime - startTime;
-        var waitingWidth = requestDuration ? (responseTime - startTime) / requestDuration * barWidth : 0;
+        var waitingWidth;
+        if (isFinite(requestDuration))
+            waitingWidth = requestDuration ? (responseTime - startTime) / requestDuration * barWidth : 0;
+        else
+            waitingWidth = barWidth;
         waitingWidth = Math.min(waitingWidth, barWidth - minTransferWidthPx);
         context.fillStyle = "hsla(0, 0%, 100%, 0.5)";
         context.fillRect(barX, barY, waitingWidth, barHeight);
@@ -951,6 +949,17 @@ WebInspector.TimelineFlameChartNetworkDataProvider.prototype = {
     },
 
     /**
+     * @override
+     * @param {number} index
+     * @return {?Array.<!{title: string, value: (string|!Element)}>}
+     */
+    prepareHighlightedEntryInfo: function(index)
+    {
+        var request = /** @type {!WebInspector.TimelineModel.NetworkRequest} */ (this._requests[index]);
+        return WebInspector.TimelineUIUtils.buildNetworkRequestInfo(request);
+    },
+
+    /**
      * @param {!Array.<!WebInspector.TracingModel.Event>} events
      */
     _appendTimelineData: function(events)
@@ -959,18 +968,31 @@ WebInspector.TimelineFlameChartNetworkDataProvider.prototype = {
         this._maximumBoundary = this._model.maximumRecordTime();
         this._timeSpan = this._model.isEmpty() ? 1000 : this._maximumBoundary - this._minimumBoundary;
         this._model.networkRequests().forEach(this._appendEntry.bind(this));
-        this._currentLevel = this._requests.length;
+        this._updateTimelineData();
     },
 
     _updateTimelineData: function()
     {
         if (!this._timelineData)
             return;
-        var index = 0;
+        var index = -1;
+        var lastTime = Infinity;
         for (var i = 0; i < this._requests.length; ++i) {
             var r = this._requests[i];
             var visible = r.startTime < this._endTime && r.endTime > this._startTime;
-            this._timelineData.entryLevels[i] = visible ? index++ : 0;
+            if (!visible) {
+                this._timelineData.entryLevels[i] = -1;
+                continue;
+            }
+            if (lastTime > r.startTime)
+                ++index;
+            lastTime = r.endTime;
+            this._timelineData.entryLevels[i] = index;
+        }
+        ++index;
+        for (var i = 0; i < this._requests.length; ++i) {
+            if (this._timelineData.entryLevels[i] === -1)
+                this._timelineData.entryLevels[i] = index;
         }
         this._timelineData = new WebInspector.FlameChart.TimelineData(
              this._timelineData.entryLevels,
@@ -988,343 +1010,6 @@ WebInspector.TimelineFlameChartNetworkDataProvider.prototype = {
         this._timelineData.entryStartTimes.push(request.startTime);
         this._timelineData.entryTotalTimes.push(request.endTime - request.startTime);
         this._timelineData.entryLevels.push(this._requests.length - 1);
-    },
-
-    __proto__: WebInspector.TimelineFlameChartDataProviderBase.prototype
-}
-
-/**
- * @constructor
- * @extends {WebInspector.TimelineFlameChartDataProviderBase}
- * @param {!WebInspector.TimelineModel} model
- */
-WebInspector.TimelineFlameChartBottomUpDataProvider = function(model)
-{
-    WebInspector.TimelineFlameChartDataProviderBase.call(this, model);
-}
-
-/**
- * @constructor
- */
-WebInspector.TimelineFlameChartBottomUpDataProvider.TreeNode = function()
-{
-    /** @type {number} */
-    this.totalTime;
-    /** @type {number} */
-    this.selfTime;
-    /** @type {string} */
-    this.name;
-    /** @type {string} */
-    this.color;
-    /** @type {string} */
-    this.id;
-    /** @type {!WebInspector.TracingModel.Event} */
-    this.event;
-    /** @type {?Object.<string,!WebInspector.TimelineFlameChartBottomUpDataProvider.TreeNode>} */
-    this.children;
-    /** @type {?WebInspector.TimelineFlameChartBottomUpDataProvider.TreeNode} */
-    this.parent;
-}
-
-WebInspector.TimelineFlameChartBottomUpDataProvider.prototype = {
-    /**
-     * @override
-     * @return {!WebInspector.FlameChart.TimelineData}
-     */
-    timelineData: function()
-    {
-        if (this._timelineData)
-            return this._timelineData;
-        this._entries = [];
-        this._timelineData = new WebInspector.FlameChart.TimelineData([], [], []);
-        this._appendTimelineData(this._model.mainThreadEvents());
-        return this._timelineData;
-    },
-
-    /**
-     * @override
-     */
-    reset: function()
-    {
-        WebInspector.TimelineFlameChartDataProviderBase.prototype.reset.call(this);
-        this._entries = [];
-    },
-
-    /**
-     * @param {number} startTime
-     * @param {number} endTime
-     */
-    setWindowTimes: function(startTime, endTime)
-    {
-        this._startTime = startTime;
-        this._endTime = endTime;
-        this.reset();
-    },
-
-    /**
-     * @override
-     * @param {number} index
-     * @return {string}
-     */
-    entryTitle: function(index)
-    {
-        return this._entries[index].name;
-    },
-
-    /**
-     * @override
-     * @param {number} entryIndex
-     * @return {string}
-     */
-    entryColor: function(entryIndex)
-    {
-        var entry = this._entries[entryIndex];
-        if (entry.color)
-            return entry.color;
-        var event = entry.event;
-        if (!event)
-            return "#aaa";
-        if (event.name === WebInspector.TimelineModel.RecordType.JSFrame) {
-            var colorId = event.args["data"]["url"];
-            return this._jsFramesColorGenerator.colorForID(colorId);
-        }
-        return WebInspector.TimelineUIUtils.eventStyle(event).category.fillColorStop1;
-    },
-
-    /**
-     * @param {!Array.<!WebInspector.TracingModel.Event>} events
-     */
-    _appendTimelineData: function(events)
-    {
-        var topDownTree = this._buildTopDownTree(events);
-        var bottomUpTree = this._buildBottomUpTree(topDownTree);
-        this._flowEventIndexById = {};
-        this._minimumBoundary = 0;
-        this._currentLevel = 0;
-        this._timeSpan = appendTree.call(this, 0, 0, bottomUpTree);
-
-        /**
-         * @param {number} level
-         * @param {number} position
-         * @param {!WebInspector.TimelineFlameChartBottomUpDataProvider.TreeNode} node
-         * @this {!WebInspector.TimelineFlameChartBottomUpDataProvider}
-         */
-        function appendTree(level, position, node)
-        {
-            /**
-             * @param {!WebInspector.TimelineFlameChartBottomUpDataProvider.TreeNode} a
-             * @param {!WebInspector.TimelineFlameChartBottomUpDataProvider.TreeNode} b
-             * @return {number}
-             */
-            function sortFunction(a, b)
-            {
-                return b.totalTime - a.totalTime;
-            }
-            this._currentLevel = Math.max(this._currentLevel, level);
-            this._appendNode(node, level, position);
-            if (node.children)
-                Object.values(node.children).sort(sortFunction).reduce(appendTree.bind(this, level + 1), position);
-            return position + node.totalTime;
-        }
-    },
-
-    /**
-     * @param {!WebInspector.TimelineFlameChartBottomUpDataProvider.TreeNode} node
-     * @param {number} level
-     * @param {number} position
-     */
-    _appendNode: function(node, level, position)
-    {
-        var index = this._entries.length;
-        this._entries.push(node);
-        this._timelineData.entryLevels[index] = level;
-        this._timelineData.entryTotalTimes[index] = node.totalTime;
-        this._timelineData.entryStartTimes[index] = position;
-    },
-
-    /**
-     * @param {!Array.<!WebInspector.TracingModel.Event>} events
-     * @return {!WebInspector.TimelineFlameChartBottomUpDataProvider.TreeNode}
-     */
-    _buildTopDownTree: function(events)
-    {
-        // Use a big enough value that exceeds the max recording time.
-        var /** @const */ initialTime = 1e7;
-        var root = new WebInspector.TimelineFlameChartBottomUpDataProvider.TreeNode();
-        root.totalTime = initialTime;
-        root.selfTime = initialTime;
-        root.name = WebInspector.UIString("Top-Down Chart");
-        var parent = root;
-
-        /**
-         * @param {!WebInspector.TracingModel.Event} e
-         * @return {boolean}
-         * @this {!WebInspector.TimelineFlameChartBottomUpDataProvider}
-         */
-        function filter(e)
-        {
-            if (!e.endTime && e.phase !== WebInspector.TracingModel.Phase.Instant)
-                return false;
-            if (WebInspector.TracingModel.isAsyncPhase(e.phase))
-                return false;
-            if (!this._isVisible(e))
-                return false;
-            if (e.endTime <= this._startTime)
-                return false;
-            if (e.startTime >= this._endTime)
-                return false;
-            return true;
-        }
-        var boundFilter = filter.bind(this);
-
-        /**
-         * @param {!WebInspector.TracingModel.Event} e
-         * @this {!WebInspector.TimelineFlameChartBottomUpDataProvider}
-         */
-        function onStartEvent(e)
-        {
-            if (!boundFilter(e))
-                return;
-            var time = Math.min(this._endTime, e.endTime) - Math.max(this._startTime, e.startTime);
-            var id = eventId(e);
-            if (!parent.children)
-                parent.children = {};
-            var node = parent.children[id];
-            if (node) {
-                node.selfTime += time;
-                node.totalTime += time;
-            } else {
-                node = new WebInspector.TimelineFlameChartBottomUpDataProvider.TreeNode();
-                node.totalTime = time;
-                node.selfTime = time;
-                node.parent = parent;
-                node.name = eventName(e);
-                node.id = id;
-                node.event = e;
-                parent.children[id] = node;
-            }
-            parent.selfTime -= time;
-            if (parent.selfTime < 0) {
-                console.log("Error: Negative self of " + parent.selfTime, e);
-                parent.selfTime = 0;
-            }
-            parent = node;
-        }
-
-        /**
-         * @param {!WebInspector.TracingModel.Event} e
-         */
-        function onEndEvent(e)
-        {
-            if (!boundFilter(e))
-                return;
-            parent = parent.parent;
-        }
-
-        /**
-         * @param {!WebInspector.TracingModel.Event} e
-         * @return {string}
-         */
-        function eventId(e)
-        {
-            if (e.name === "JSFrame")
-                return "f:" + (e.args.data.callUID || e.args.data.functionName);
-            return e.name;
-        }
-
-        /**
-         * @param {!WebInspector.TracingModel.Event} e
-         * @return {string}
-         */
-        function eventName(e)
-        {
-            if (e.name === "JSFrame")
-                return WebInspector.beautifyFunctionName(e.args.data.functionName);
-            if (e.name === "EventDispatch")
-                return WebInspector.UIString("Event%s", e.args.data ? " (" + e.args.data.type + ")" : "");
-            return e.name;
-        }
-
-        WebInspector.TimelineModel.forEachEvent(events, onStartEvent.bind(this), onEndEvent);
-        root.totalTime -= root.selfTime;
-        root.selfTime = 0;
-        return root;
-    },
-
-    /**
-     * @param {!WebInspector.TimelineFlameChartBottomUpDataProvider.TreeNode} topDownTree
-     * @return {!WebInspector.TimelineFlameChartBottomUpDataProvider.TreeNode}
-     */
-    _buildBottomUpTree: function(topDownTree)
-    {
-        var buRoot = new WebInspector.TimelineFlameChartBottomUpDataProvider.TreeNode();
-        buRoot.totalTime = 0;
-        buRoot.name = WebInspector.UIString("Bottom-Up Chart");
-        buRoot.children = {};
-
-        var categories = WebInspector.TimelineUIUtils.categories();
-        for (var categoryName in categories) {
-            var category = categories[categoryName];
-            var node = new WebInspector.TimelineFlameChartBottomUpDataProvider.TreeNode();
-            node.totalTime = 0;
-            node.name = category.title;
-            node.color = category.fillColorStop1;
-            buRoot.children[categoryName] = node;
-        }
-
-        for (var id in topDownTree.children)
-            processNode(topDownTree.children[id]);
-
-        for (var id in buRoot.children) {
-            var buNode = buRoot.children[id];
-            buRoot.totalTime += buNode.totalTime;
-        }
-
-        /**
-         * @param {!WebInspector.TimelineFlameChartBottomUpDataProvider.TreeNode} tdNode
-         */
-        function processNode(tdNode)
-        {
-            if (tdNode.selfTime > 0) {
-                var category = WebInspector.TimelineUIUtils.eventStyle(tdNode.event).category;
-                var buNode = buRoot.children[category.name] || buRoot;
-                var time = tdNode.selfTime;
-                buNode.totalTime += time;
-                appendNode(tdNode, buNode, time);
-            }
-            for (var id in tdNode.children)
-                processNode(tdNode.children[id]);
-        }
-
-        /**
-         * @param {!WebInspector.TimelineFlameChartBottomUpDataProvider.TreeNode} tdNode
-         * @param {!WebInspector.TimelineFlameChartBottomUpDataProvider.TreeNode} buParent
-         * @param {number} time
-         */
-        function appendNode(tdNode, buParent, time)
-        {
-            // FIXME: it is possible to optimize this loop out.
-            while (tdNode.parent) {
-                if (!buParent.children)
-                    buParent.children = {};
-                var id = tdNode.id;
-                var buNode = buParent.children[id];
-                if (!buNode) {
-                    buNode = new WebInspector.TimelineFlameChartBottomUpDataProvider.TreeNode();
-                    buNode.totalTime = time;
-                    buNode.name = tdNode.name;
-                    buNode.event = tdNode.event;
-                    buNode.id = id;
-                    buParent.children[id] = buNode;
-                } else {
-                    buNode.totalTime += time;
-                }
-                tdNode = tdNode.parent;
-                buParent = buNode;
-            }
-        }
-
-        return buRoot;
     },
 
     __proto__: WebInspector.TimelineFlameChartDataProviderBase.prototype
@@ -1481,6 +1166,15 @@ WebInspector.TimelineFlameChartView.prototype = {
     updateRangeSelection: function(startTime, endTime)
     {
         this._delegate.select(WebInspector.TimelineSelection.fromRange(startTime, endTime));
+    },
+
+    /**
+     * @override
+     */
+    endRangeSelection: function()
+    {
+        if (Runtime.experiments.isEnabled("multipleTimelineViews"))
+            this._delegate.select(null);
     },
 
     /**

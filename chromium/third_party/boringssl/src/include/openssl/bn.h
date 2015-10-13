@@ -298,6 +298,21 @@ OPENSSL_EXPORT int BN_print_fp(FILE *fp, const BIGNUM *a);
 OPENSSL_EXPORT BN_ULONG BN_get_word(const BIGNUM *bn);
 
 
+/* ASN.1 functions. */
+
+/* BN_cbs2unsigned parses a non-negative DER INTEGER from |cbs| writes the
+ * result to |ret|. It returns one on success and zero on failure. */
+OPENSSL_EXPORT int BN_cbs2unsigned(CBS *cbs, BIGNUM *ret);
+
+/* BN_cbs2unsigned_buggy acts like |BN_cbs2unsigned| but tolerates some invalid
+ * encodings. Do not use this function. */
+OPENSSL_EXPORT int BN_cbs2unsigned_buggy(CBS *cbs, BIGNUM *ret);
+
+/* BN_bn2cbb marshals |bn| as a non-negative DER INTEGER and appends the result
+ * to |cbb|. It returns one on success and zero on failure. */
+OPENSSL_EXPORT int BN_bn2cbb(CBB *cbb, const BIGNUM *bn);
+
+
 /* Internal functions.
  *
  * These functions are useful for code that is doing low-level manipulations of
@@ -311,7 +326,7 @@ OPENSSL_EXPORT void bn_correct_top(BIGNUM *bn);
 /* bn_wexpand ensures that |bn| has at least |words| works of space without
  * altering its value. It returns one on success or zero on allocation
  * failure. */
-OPENSSL_EXPORT BIGNUM *bn_wexpand(BIGNUM *bn, unsigned words);
+OPENSSL_EXPORT BIGNUM *bn_wexpand(BIGNUM *bn, size_t words);
 
 
 /* BIGNUM pools.
@@ -695,6 +710,14 @@ OPENSSL_EXPORT int BN_gcd(BIGNUM *r, const BIGNUM *a, const BIGNUM *b,
 OPENSSL_EXPORT BIGNUM *BN_mod_inverse(BIGNUM *out, const BIGNUM *a,
                                       const BIGNUM *n, BN_CTX *ctx);
 
+/* BN_mod_inverse_ex acts like |BN_mod_inverse| except that, when it returns
+ * zero, it will set |*out_no_inverse| to one if the failure was caused because
+ * |a| has no inverse mod |n|. Otherwise it will set |*out_no_inverse| to
+ * zero. */
+OPENSSL_EXPORT BIGNUM *BN_mod_inverse_ex(BIGNUM *out, int *out_no_inverse,
+                                         const BIGNUM *a, const BIGNUM *n,
+                                         BN_CTX *ctx);
+
 /* BN_kronecker returns the Kronecker symbol of |a| and |b| (which is -1, 0 or
  * 1), or -2 on error. */
 OPENSSL_EXPORT int BN_kronecker(const BIGNUM *a, const BIGNUM *b, BN_CTX *ctx);
@@ -783,6 +806,25 @@ OPENSSL_EXPORT int BN_mod_exp2_mont(BIGNUM *r, const BIGNUM *a1,
                                     BN_CTX *ctx, BN_MONT_CTX *m_ctx);
 
 
+/* Deprecated functions */
+
+/* BN_bn2mpi serialises the value of |in| to |out|, using a format that consists
+ * of the number's length in bytes represented as a 4-byte big-endian number,
+ * and the number itself in big-endian format, where the most significant bit
+ * signals a negative number. (The representation of numbers with the MSB set is
+ * prefixed with null byte). |out| must have sufficient space available; to
+ * find the needed amount of space, call the function with |out| set to NULL. */
+OPENSSL_EXPORT size_t BN_bn2mpi(const BIGNUM *in, uint8_t *out);
+
+/* BN_bin2bn parses |len| bytes from |in| and returns the resulting value. The
+ * bytes at |in| are expected to be in the format emitted by |BN_bn2mpi|.
+ *
+ * If |out| is NULL then a fresh |BIGNUM| is allocated and returned, otherwise
+ * |out| is reused and returned. On error, NULL is returned and the error queue
+ * is updated. */
+OPENSSL_EXPORT BIGNUM *BN_mpi2bn(const uint8_t *in, size_t len, BIGNUM *out);
+
+
 /* Private functions */
 
 struct bignum_st {
@@ -828,33 +870,6 @@ OPENSSL_EXPORT BIGNUM *get_rfc3526_prime_1536(BIGNUM *bn);
 }  /* extern C */
 #endif
 
-#define BN_F_BN_CTX_get 100
-#define BN_F_BN_CTX_new 101
-#define BN_F_BN_CTX_start 102
-#define BN_F_BN_bn2dec 103
-#define BN_F_BN_bn2hex 104
-#define BN_F_BN_div 105
-#define BN_F_BN_div_recp 106
-#define BN_F_BN_exp 107
-#define BN_F_BN_generate_dsa_nonce 108
-#define BN_F_BN_generate_prime_ex 109
-#define BN_F_BN_mod_exp2_mont 110
-#define BN_F_BN_mod_exp_mont 111
-#define BN_F_BN_mod_exp_mont_consttime 112
-#define BN_F_BN_mod_exp_mont_word 113
-#define BN_F_BN_mod_inverse 114
-#define BN_F_BN_mod_inverse_no_branch 115
-#define BN_F_BN_mod_lshift_quick 116
-#define BN_F_BN_mod_sqrt 117
-#define BN_F_BN_new 118
-#define BN_F_BN_rand 119
-#define BN_F_BN_rand_range 120
-#define BN_F_BN_sqrt 121
-#define BN_F_BN_usub 122
-#define BN_F_bn_wexpand 123
-#define BN_F_mod_exp_recp 124
-#define BN_F_BN_lshift 125
-#define BN_F_BN_rshift 126
 #define BN_R_ARG2_LT_ARG3 100
 #define BN_R_BAD_RECIPROCAL 101
 #define BN_R_BIGNUM_TOO_LONG 102
@@ -872,5 +887,7 @@ OPENSSL_EXPORT BIGNUM *get_rfc3526_prime_1536(BIGNUM *bn);
 #define BN_R_P_IS_NOT_PRIME 114
 #define BN_R_TOO_MANY_ITERATIONS 115
 #define BN_R_TOO_MANY_TEMPORARY_VARIABLES 116
+#define BN_R_BAD_ENCODING 117
+#define BN_R_ENCODE_ERROR 118
 
 #endif  /* OPENSSL_HEADER_BN_H */

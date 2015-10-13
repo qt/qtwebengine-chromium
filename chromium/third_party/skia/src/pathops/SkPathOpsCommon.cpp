@@ -18,7 +18,7 @@ const SkOpAngle* AngleWinding(SkOpSpanBase* start, SkOpSpanBase* end, int* windi
     const SkOpAngle* angle = segment->spanToAngle(start, end);
     if (!angle) {
         *windingPtr = SK_MinS32;
-        return NULL;
+        return nullptr;
     }
     bool computeWinding = false;
     const SkOpAngle* firstAngle = angle;
@@ -70,7 +70,7 @@ SkOpSegment* FindUndone(SkOpContourHead* contourList, SkOpSpanBase** startPtr,
             return result;
         }
     } while ((contour = contour->next()));
-    return NULL;
+    return nullptr;
 }
 
 SkOpSegment* FindChase(SkTDArray<SkOpSpanBase*>* chase, SkOpSpanBase** startPtr,
@@ -81,7 +81,7 @@ SkOpSegment* FindChase(SkTDArray<SkOpSpanBase*>* chase, SkOpSpanBase** startPtr,
         SkOpSegment* segment = span->segment();
         *startPtr = span->ptT()->next()->span();
         bool done = true;
-        *endPtr = NULL;
+        *endPtr = nullptr;
         if (SkOpAngle* last = segment->activeAngle(*startPtr, startPtr, endPtr, &done)) {
             *startPtr = last->start();
             *endPtr = last->end();
@@ -107,7 +107,7 @@ SkOpSegment* FindChase(SkTDArray<SkOpSpanBase*>* chase, SkOpSpanBase** startPtr,
             segment = angle->segment();
             sumWinding = segment->updateWindingReverse(angle);
         }
-        SkOpSegment* first = NULL;
+        SkOpSegment* first = nullptr;
         const SkOpAngle* firstAngle = angle;
         while ((angle = angle->next()) != firstAngle) {
             segment = angle->segment();
@@ -138,7 +138,7 @@ SkOpSegment* FindChase(SkTDArray<SkOpSpanBase*>* chase, SkOpSpanBase** startPtr,
             return first;
         }
     }
-    return NULL;
+    return nullptr;
 }
 
 #if DEBUG_ACTIVE_SPANS
@@ -175,7 +175,7 @@ bool SortContourList(SkOpContourHead** contourList, bool evenOdd, bool oppEvenOd
         contour->setNext(next);
         contour = next;
     }
-    contour->setNext(NULL);
+    contour->setNext(nullptr);
     return true;
 }
 
@@ -198,7 +198,7 @@ public:
 void Assemble(const SkPathWriter& path, SkPathWriter* simple) {
     SkChunkAlloc allocator(4096);  // FIXME: constant-ize, tune
     SkOpContourHead contour;
-    SkOpGlobalState globalState(NULL, &contour);
+    SkOpGlobalState globalState(nullptr, &contour  SkDEBUGPARAMS(nullptr));
 #if DEBUG_SHOW_TEST_NAME
     SkDebugf("</div>\n");
 #endif
@@ -408,6 +408,13 @@ static void calcAngles(SkOpContourHead* contourList, SkChunkAlloc* allocator) {
     } while ((contour = contour->next()));
 }
 
+static void findCollapsed(SkOpContourHead* contourList) {
+    SkOpContour* contour = contourList;
+    do {
+        contour->findCollapsed();
+    } while ((contour = contour->next()));
+}
+
 static bool missingCoincidence(SkOpContourHead* contourList,
         SkOpCoincidence* coincidence, SkChunkAlloc* allocator) {
     SkOpContour* contour = contourList;
@@ -444,6 +451,7 @@ bool HandleCoincidence(SkOpContourHead* contourList, SkOpCoincidence* coincidenc
     SkOpGlobalState* globalState = contourList->globalState();
     // combine t values when multiple intersections occur on some segments but not others
     moveMultiples(contourList);
+    findCollapsed(contourList);
     // move t values and points together to eliminate small/tiny gaps
     moveNearby(contourList);
     align(contourList);  // give all span members common values

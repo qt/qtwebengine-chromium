@@ -8,6 +8,7 @@
 #include "gm.h"
 #include "SkLightingImageFilter.h"
 #include "SkOffsetImageFilter.h"
+#include "SkPoint3.h"
 
 #define WIDTH 330
 #define HEIGHT 660
@@ -16,7 +17,7 @@ namespace skiagm {
 
 class ImageLightingGM : public GM {
 public:
-    ImageLightingGM() : fInitialized(false) {
+    ImageLightingGM() {
         this->setBGColor(0xFF000000);
     }
 
@@ -24,19 +25,6 @@ protected:
 
     SkString onShortName() override {
         return SkString("lighting");
-    }
-
-    void make_bitmap() {
-        fBitmap.allocN32Pixels(100, 100);
-        SkCanvas canvas(fBitmap);
-        canvas.clear(0x00000000);
-        SkPaint paint;
-        paint.setAntiAlias(true);
-        sk_tool_utils::set_portable_typeface(&paint);
-        paint.setColor(0xFFFFFFFF);
-        paint.setTextSize(SkIntToScalar(96));
-        const char* str = "e";
-        canvas.drawText(str, strlen(str), SkIntToScalar(20), SkIntToScalar(70), paint);
     }
 
     SkISize onISize() override {
@@ -52,14 +40,14 @@ protected:
         canvas->restore();
     }
 
+    void onOnceBeforeDraw() override {
+        fBitmap = sk_tool_utils::create_string_bitmap(100, 100, 0xFFFFFFFF, 20, 70, 96, "e");
+    }
+
     void onDraw(SkCanvas* canvas) override {
-        if (!fInitialized) {
-            make_bitmap();
-            fInitialized = true;
-        }
-        canvas->clear(0xFF101010);
+        canvas->clear(sk_tool_utils::color_to_565(0xFF101010));
         SkPaint checkPaint;
-        checkPaint.setColor(0xFF202020);
+        checkPaint.setColor(sk_tool_utils::color_to_565(0xFF202020));
         for (int y = 0; y < HEIGHT; y += 16) {
           for (int x = 0; x < WIDTH; x += 16) {
             canvas->save();
@@ -69,14 +57,18 @@ protected:
             canvas->restore();
           }
         }
-        SkPoint3 pointLocation(0, 0, SkIntToScalar(10));
+        SkPoint3 pointLocation = SkPoint3::Make(0, 0, SkIntToScalar(10));
         SkScalar azimuthRad = SkDegreesToRadians(SkIntToScalar(225));
         SkScalar elevationRad = SkDegreesToRadians(SkIntToScalar(5));
-        SkPoint3 distantDirection(SkScalarMul(SkScalarCos(azimuthRad), SkScalarCos(elevationRad)),
-                                  SkScalarMul(SkScalarSin(azimuthRad), SkScalarCos(elevationRad)),
-                                  SkScalarSin(elevationRad));
-        SkPoint3 spotLocation(SkIntToScalar(-10), SkIntToScalar(-10), SkIntToScalar(20));
-        SkPoint3 spotTarget(SkIntToScalar(40), SkIntToScalar(40), 0);
+        SkPoint3 distantDirection = SkPoint3::Make(SkScalarMul(SkScalarCos(azimuthRad),
+                                                               SkScalarCos(elevationRad)),
+                                                   SkScalarMul(SkScalarSin(azimuthRad),
+                                                               SkScalarCos(elevationRad)),
+                                                   SkScalarSin(elevationRad));
+        SkPoint3 spotLocation = SkPoint3::Make(SkIntToScalar(-10),
+                                               SkIntToScalar(-10),
+                                               SkIntToScalar(20));
+        SkPoint3 spotTarget = SkPoint3::Make(SkIntToScalar(40), SkIntToScalar(40), 0);
         SkScalar spotExponent = SK_Scalar1;
         SkScalar cutoffAngle = SkIntToScalar(15);
         SkScalar kd = SkIntToScalar(2);
@@ -88,12 +80,12 @@ protected:
 
         SkImageFilter::CropRect cropRect(SkRect::MakeXYWH(20, 10, 60, 65));
         SkImageFilter::CropRect fullSizeCropRect(SkRect::MakeXYWH(0, 0, 100, 100));
-        SkAutoTUnref<SkImageFilter> noopCropped(SkOffsetImageFilter::Create(0, 0, NULL, &cropRect));
+        SkAutoTUnref<SkImageFilter> noopCropped(SkOffsetImageFilter::Create(0, 0, nullptr, &cropRect));
 
         int y = 0;
         for (int i = 0; i < 3; i++) {
-            const SkImageFilter::CropRect* cr = (i == 1) ? &cropRect : (i == 2) ? &fullSizeCropRect : NULL;
-            SkImageFilter* input = (i == 2) ? noopCropped.get() : NULL;
+            const SkImageFilter::CropRect* cr = (i == 1) ? &cropRect : (i == 2) ? &fullSizeCropRect : nullptr;
+            SkImageFilter* input = (i == 2) ? noopCropped.get() : nullptr;
             paint.setImageFilter(SkLightingImageFilter::CreatePointLitDiffuse(pointLocation,
                                                                               white,
                                                                               surfaceScale,
@@ -158,14 +150,12 @@ protected:
     }
 
 private:
-    typedef GM INHERITED;
     SkBitmap fBitmap;
-    bool fInitialized;
+
+    typedef GM INHERITED;
 };
 
 //////////////////////////////////////////////////////////////////////////////
 
-static GM* MyFactory(void*) { return new ImageLightingGM; }
-static GMRegistry reg(MyFactory);
-
+DEF_GM(return new ImageLightingGM;)
 }

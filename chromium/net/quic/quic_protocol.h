@@ -24,6 +24,7 @@
 #include "net/base/iovec.h"
 #include "net/base/ip_endpoint.h"
 #include "net/base/net_export.h"
+#include "net/quic/interval_set.h"
 #include "net/quic/quic_bandwidth.h"
 #include "net/quic/quic_time.h"
 #include "net/quic/quic_types.h"
@@ -37,8 +38,8 @@ struct QuicPacketHeader;
 typedef uint64 QuicConnectionId;
 typedef uint32 QuicStreamId;
 typedef uint64 QuicStreamOffset;
-typedef uint64 QuicPacketSequenceNumber;
-typedef QuicPacketSequenceNumber QuicFecGroupNumber;
+typedef uint64 QuicPacketNumber;
+typedef QuicPacketNumber QuicFecGroupNumber;
 typedef uint64 QuicPublicResetNonceProof;
 typedef uint8 QuicPacketEntropyHash;
 typedef uint32 QuicHeaderId;
@@ -50,7 +51,7 @@ typedef std::map<QuicTag, std::string> QuicTagValueMap;
 // QuicPriority is uint32. Use SpdyPriority when we change the QUIC_VERSION.
 typedef uint32 QuicPriority;
 
-// Default and initial maximum size in bytes of a QUIC packet.
+// Default initial maximum size in bytes of a QUIC packet.
 const QuicByteCount kDefaultMaxPacketSize = 1350;
 // Default initial maximum size in bytes of a QUIC packet for servers.
 const QuicByteCount kDefaultServerMaxPacketSize = 1000;
@@ -74,8 +75,8 @@ const uint32 kMinimumFlowControlSendWindow = 16 * 1024;  // 16 KB
 // Minimum size of the CWND, in packets, when doing bandwidth resumption.
 const QuicPacketCount kMinCongestionWindowForBandwidthResumption = 10;
 
-// Maximum size of the CWND, in packets, for bandwidth resumption.
-const QuicPacketCount kMaxResumptionCwnd = 200;
+// Maximum size of the CWND, in packets.
+const QuicPacketCount kMaxCongestionWindow = 200;
 
 // Maximum number of tracked packets.
 const QuicPacketCount kMaxTrackedPackets = 5000;
@@ -89,6 +90,10 @@ const QuicByteCount kMinSocketReceiveBuffer = 16 * 1024;
 // Fraction of the receive buffer that can be used for encrypted bytes.
 // Allows a 5% overhead for IP and UDP framing, as well as ack only packets.
 static const float kUsableRecieveBufferFraction = 0.95f;
+// Fraction of the receive buffer that can be used, based on conservative
+// estimates and testing on Linux.
+// An alternative to kUsableRecieveBufferFraction.
+static const float kConservativeReceiveBufferFraction = 0.6f;
 
 // Don't allow a client to suggest an RTT shorter than 10ms.
 const uint32 kMinInitialRoundTripTimeUs = 10 * kNumMicrosPerMilli;
@@ -113,9 +118,6 @@ const bool kIncludeVersion = true;
 
 // Index of the first byte in a QUIC packet which is used in hash calculation.
 const size_t kStartOfHashData = 0;
-
-// Limit on the delta between stream IDs.
-const QuicStreamId kMaxStreamIdDelta = 200;
 
 // Reserved ID for the crypto stream.
 const QuicStreamId kCryptoStreamId = 1;
@@ -257,19 +259,19 @@ enum InFecGroup {
   IN_FEC_GROUP,
 };
 
-enum QuicSequenceNumberLength {
-  PACKET_1BYTE_SEQUENCE_NUMBER = 1,
-  PACKET_2BYTE_SEQUENCE_NUMBER = 2,
-  PACKET_4BYTE_SEQUENCE_NUMBER = 4,
-  PACKET_6BYTE_SEQUENCE_NUMBER = 6
+enum QuicPacketNumberLength {
+  PACKET_1BYTE_PACKET_NUMBER = 1,
+  PACKET_2BYTE_PACKET_NUMBER = 2,
+  PACKET_4BYTE_PACKET_NUMBER = 4,
+  PACKET_6BYTE_PACKET_NUMBER = 6
 };
 
 // Used to indicate a QuicSequenceNumberLength using two flag bits.
-enum QuicSequenceNumberLengthFlags {
-  PACKET_FLAGS_1BYTE_SEQUENCE = 0,  // 00
-  PACKET_FLAGS_2BYTE_SEQUENCE = 1,  // 01
-  PACKET_FLAGS_4BYTE_SEQUENCE = 1 << 1,  // 10
-  PACKET_FLAGS_6BYTE_SEQUENCE = 1 << 1 | 1,  // 11
+enum QuicPacketNumberLengthFlags {
+  PACKET_FLAGS_1BYTE_PACKET = 0,           // 00
+  PACKET_FLAGS_2BYTE_PACKET = 1,           // 01
+  PACKET_FLAGS_4BYTE_PACKET = 1 << 1,      // 10
+  PACKET_FLAGS_6BYTE_PACKET = 1 << 1 | 1,  // 11
 };
 
 // The public flags are specified in one byte.
@@ -292,15 +294,15 @@ enum QuicPacketPublicFlags {
   PACKET_PUBLIC_FLAGS_4BYTE_CONNECTION_ID = 1 << 3,
   PACKET_PUBLIC_FLAGS_8BYTE_CONNECTION_ID = 1 << 3 | 1 << 2,
 
-  // Bits 4 and 5 describe the packet sequence number length as follows:
+  // Bits 4 and 5 describe the packet number length as follows:
   // --00----: 1 byte
   // --01----: 2 bytes
   // --10----: 4 bytes
   // --11----: 6 bytes
-  PACKET_PUBLIC_FLAGS_1BYTE_SEQUENCE = PACKET_FLAGS_1BYTE_SEQUENCE << 4,
-  PACKET_PUBLIC_FLAGS_2BYTE_SEQUENCE = PACKET_FLAGS_2BYTE_SEQUENCE << 4,
-  PACKET_PUBLIC_FLAGS_4BYTE_SEQUENCE = PACKET_FLAGS_4BYTE_SEQUENCE << 4,
-  PACKET_PUBLIC_FLAGS_6BYTE_SEQUENCE = PACKET_FLAGS_6BYTE_SEQUENCE << 4,
+  PACKET_PUBLIC_FLAGS_1BYTE_PACKET = PACKET_FLAGS_1BYTE_PACKET << 4,
+  PACKET_PUBLIC_FLAGS_2BYTE_PACKET = PACKET_FLAGS_2BYTE_PACKET << 4,
+  PACKET_PUBLIC_FLAGS_4BYTE_PACKET = PACKET_FLAGS_4BYTE_PACKET << 4,
+  PACKET_PUBLIC_FLAGS_6BYTE_PACKET = PACKET_FLAGS_6BYTE_PACKET << 4,
 
   // All bits set (bits 6 and 7 are not currently used): 00111111
   PACKET_PUBLIC_FLAGS_MAX = (1 << 6) - 1
@@ -336,6 +338,7 @@ enum QuicVersion {
   QUIC_VERSION_24 = 24,  // SPDY/4 header compression.
   QUIC_VERSION_25 = 25,  // SPDY/4 header keys, and removal of error_details
                          // from QuicRstStreamFrame
+  QUIC_VERSION_26 = 26,  // In CHLO, send XLCT tag containing hash of leaf cert
 };
 
 // This vector contains QUIC versions which we currently support.
@@ -345,8 +348,8 @@ enum QuicVersion {
 //
 // IMPORTANT: if you are adding to this list, follow the instructions at
 // http://sites/quic/adding-and-removing-versions
-static const QuicVersion kSupportedQuicVersions[] = {QUIC_VERSION_25,
-                                                     QUIC_VERSION_24};
+static const QuicVersion kSupportedQuicVersions[] = {
+    QUIC_VERSION_26, QUIC_VERSION_25, QUIC_VERSION_24};
 
 typedef std::vector<QuicVersion> QuicVersionVector;
 
@@ -390,22 +393,22 @@ NET_EXPORT_PRIVATE bool ContainsQuicTag(const QuicTagVector& tag_vector,
 // Size in bytes of the data or fec packet header.
 NET_EXPORT_PRIVATE size_t GetPacketHeaderSize(const QuicPacketHeader& header);
 
-NET_EXPORT_PRIVATE size_t GetPacketHeaderSize(
-    QuicConnectionIdLength connection_id_length,
-    bool include_version,
-    QuicSequenceNumberLength sequence_number_length,
-    InFecGroup is_in_fec_group);
+NET_EXPORT_PRIVATE size_t
+GetPacketHeaderSize(QuicConnectionIdLength connection_id_length,
+                    bool include_version,
+                    QuicPacketNumberLength packet_number_length,
+                    InFecGroup is_in_fec_group);
 
 // Index of the first byte in a QUIC packet of FEC protected data.
-NET_EXPORT_PRIVATE size_t GetStartOfFecProtectedData(
-    QuicConnectionIdLength connection_id_length,
-    bool include_version,
-    QuicSequenceNumberLength sequence_number_length);
+NET_EXPORT_PRIVATE size_t
+GetStartOfFecProtectedData(QuicConnectionIdLength connection_id_length,
+                           bool include_version,
+                           QuicPacketNumberLength packet_number_length);
 // Index of the first byte in a QUIC packet of encrypted data.
-NET_EXPORT_PRIVATE size_t GetStartOfEncryptedData(
-    QuicConnectionIdLength connection_id_length,
-    bool include_version,
-    QuicSequenceNumberLength sequence_number_length);
+NET_EXPORT_PRIVATE size_t
+GetStartOfEncryptedData(QuicConnectionIdLength connection_id_length,
+                        bool include_version,
+                        QuicPacketNumberLength packet_number_length);
 
 enum QuicRstStreamErrorCode {
   QUIC_STREAM_NO_ERROR = 0,
@@ -621,12 +624,12 @@ struct NET_EXPORT_PRIVATE QuicPacketPublicHeader {
   QuicConnectionIdLength connection_id_length;
   bool reset_flag;
   bool version_flag;
-  QuicSequenceNumberLength sequence_number_length;
+  QuicPacketNumberLength packet_number_length;
   QuicVersionVector versions;
 };
 
-// An integer which cannot be a packet sequence number.
-const QuicPacketSequenceNumber kInvalidPacketSequenceNumber = 0;
+// An integer which cannot be a packet number.
+const QuicPacketNumber kInvalidPacketNumber = 0;
 
 // Header for Data or FEC packets.
 struct NET_EXPORT_PRIVATE QuicPacketHeader {
@@ -637,7 +640,7 @@ struct NET_EXPORT_PRIVATE QuicPacketHeader {
       std::ostream& os, const QuicPacketHeader& s);
 
   QuicPacketPublicHeader public_header;
-  QuicPacketSequenceNumber packet_sequence_number;
+  QuicPacketNumber packet_packet_number;
   bool fec_flag;
   bool entropy_flag;
   QuicPacketEntropyHash entropy_hash;
@@ -651,7 +654,7 @@ struct NET_EXPORT_PRIVATE QuicPublicResetPacket {
 
   QuicPacketPublicHeader public_header;
   QuicPublicResetNonceProof nonce_proof;
-  QuicPacketSequenceNumber rejected_sequence_number;
+  QuicPacketNumber rejected_packet_number;
   IPEndPoint client_address;
 };
 
@@ -703,11 +706,10 @@ struct NET_EXPORT_PRIVATE QuicStreamFrame {
 
 // TODO(ianswett): Re-evaluate the trade-offs of hash_set vs set when framing
 // is finalized.
-typedef std::set<QuicPacketSequenceNumber> SequenceNumberSet;
-typedef std::list<QuicPacketSequenceNumber> SequenceNumberList;
+typedef std::set<QuicPacketNumber> PacketNumberSet;
+typedef std::list<QuicPacketNumber> PacketNumberList;
 
-typedef std::list<
-    std::pair<QuicPacketSequenceNumber, QuicTime> > PacketTimeList;
+typedef std::list<std::pair<QuicPacketNumber, QuicTime>> PacketTimeList;
 
 struct NET_EXPORT_PRIVATE QuicStopWaitingFrame {
   QuicStopWaitingFrame();
@@ -719,7 +721,104 @@ struct NET_EXPORT_PRIVATE QuicStopWaitingFrame {
   // packet.
   QuicPacketEntropyHash entropy_hash;
   // The lowest packet we've sent which is unacked, and we expect an ack for.
-  QuicPacketSequenceNumber least_unacked;
+  QuicPacketNumber least_unacked;
+};
+
+// A sequence of packet numbers where each number is unique. Intended to be used
+// in a sliding window fashion, where smaller old packet numbers are removed and
+// larger new packet numbers are added, with the occasional random access.
+class NET_EXPORT_PRIVATE PacketNumberQueue {
+ public:
+  // TODO(jdorfman): Once this is completely switched over to IntervalSet,
+  // remove const_iterator and change the callers to iterate over the intervals.
+  class NET_EXPORT_PRIVATE const_iterator
+      : public std::iterator<std::input_iterator_tag,
+                             QuicPacketNumber,
+                             std::ptrdiff_t,
+                             const QuicPacketNumber*,
+                             const QuicPacketNumber&> {
+   public:
+    explicit const_iterator(PacketNumberSet::const_iterator set_iter);
+    const_iterator(
+        IntervalSet<QuicPacketNumber>::const_iterator interval_set_iter,
+        QuicPacketNumber first,
+        QuicPacketNumber last);
+    const_iterator(const const_iterator& other);
+    const_iterator& operator=(const const_iterator& other);
+    // TODO(rtenneti): on windows RValue reference gives errors.
+    // const_iterator(const_iterator&& other);
+    ~const_iterator();
+
+    // TODO(rtenneti): on windows RValue reference gives errors.
+    // const_iterator& operator=(const_iterator&& other);
+    bool operator!=(const const_iterator& other) const;
+    bool operator==(const const_iterator& other) const;
+    value_type operator*() const;
+    const_iterator& operator++();
+    const_iterator operator++(int /* postincrement */);
+
+   private:
+    bool use_interval_set_;
+    PacketNumberSet::const_iterator set_iter_;
+    IntervalSet<QuicPacketNumber>::const_iterator interval_set_iter_;
+    QuicPacketNumber current_;
+    QuicPacketNumber last_;
+  };
+
+  PacketNumberQueue();
+  PacketNumberQueue(const PacketNumberQueue& other);
+  // TODO(rtenneti): on windows RValue reference gives errors.
+  // PacketNumberQueue(PacketNumberQueue&& other);
+  ~PacketNumberQueue();
+
+  PacketNumberQueue& operator=(const PacketNumberQueue& other);
+  // PacketNumberQueue& operator=(PacketNumberQueue&& other);
+
+  // Adds |packet_number| to the set of packets in the queue.
+  void Add(QuicPacketNumber packet_number);
+
+  // Adds packets between [lower, higher) to the set of packets in the queue. It
+  // is undefined behavior to call this with |higher| < |lower|.
+  void Add(QuicPacketNumber lower, QuicPacketNumber higher);
+
+  // Removes |packet_number| from the set of packets in the queue.
+  void Remove(QuicPacketNumber packet_number);
+
+  // Removes packets with values less than |higher| from the set of packets in
+  // the queue. Returns true if packets were removed.
+  bool RemoveUpTo(QuicPacketNumber higher);
+
+  // Returns true if the queue contains |packet_number|.
+  bool Contains(QuicPacketNumber packet_number) const;
+
+  // Returns true if the queue is empty.
+  bool Empty() const;
+
+  // Returns the minimum packet number stored in the queue. It is undefined
+  // behavior to call this if the queue is empty.
+  QuicPacketNumber Min() const;
+
+  // Returns the maximum packet number stored in the queue. It is undefined
+  // behavior to call this if the queue is empty.
+  QuicPacketNumber Max() const;
+
+  // Returns the number of unique packets stored in the queue. Inefficient; only
+  // exposed for testing.
+  size_t NumPacketsSlow() const;
+
+  // Returns iterators over the individual packet numbers.
+  const_iterator begin() const;
+  const_iterator end() const;
+  const_iterator lower_bound(QuicPacketNumber packet_number) const;
+
+  NET_EXPORT_PRIVATE friend std::ostream& operator<<(
+      std::ostream& os,
+      const PacketNumberQueue& q);
+
+ private:
+  bool use_interval_set_;
+  PacketNumberSet packet_number_set_;
+  IntervalSet<QuicPacketNumber> packet_number_intervals_;
 };
 
 struct NET_EXPORT_PRIVATE QuicAckFrame {
@@ -733,7 +832,7 @@ struct NET_EXPORT_PRIVATE QuicAckFrame {
   // packets.
   QuicPacketEntropyHash entropy_hash;
 
-  // The highest packet sequence number we've observed from the peer.
+  // The highest packet number we've observed from the peer.
   //
   // In general, this should be the largest packet number we've received.  In
   // the case of truncated acks, we may have to advertise a lower "upper bound"
@@ -741,40 +840,31 @@ struct NET_EXPORT_PRIVATE QuicAckFrame {
   // don't fit in the missing packet list due to size limitations.  In this
   // case, largest_observed may be a packet which is also in the missing packets
   // list.
-  QuicPacketSequenceNumber largest_observed;
+  QuicPacketNumber largest_observed;
 
   // Time elapsed since largest_observed was received until this Ack frame was
   // sent.
   QuicTime::Delta delta_time_largest_observed;
 
-  // TODO(satyamshekhar): Can be optimized using an interval set like data
-  // structure.
   // The set of packets which we're expecting and have not received.
-  SequenceNumberSet missing_packets;
+  PacketNumberQueue missing_packets;
 
   // Whether the ack had to be truncated when sent.
   bool is_truncated;
 
   // Packets which have been revived via FEC.
   // All of these must also be in missing_packets.
-  SequenceNumberSet revived_packets;
+  PacketNumberSet revived_packets;
 
-  // List of <sequence_number, time> for when packets arrived.
+  // List of <packet_number, time> for when packets arrived.
   PacketTimeList received_packet_times;
 };
 
-// True if the sequence number is greater than largest_observed or is listed
+// True if the packet number is greater than largest_observed or is listed
 // as missing.
-// Always returns false for sequence numbers less than least_unacked.
-bool NET_EXPORT_PRIVATE IsAwaitingPacket(
-    const QuicAckFrame& ack_frame,
-    QuicPacketSequenceNumber sequence_number);
-
-// Inserts missing packets between [lower, higher).
-void NET_EXPORT_PRIVATE InsertMissingPacketsBetween(
-    QuicAckFrame* ack_frame,
-    QuicPacketSequenceNumber lower,
-    QuicPacketSequenceNumber higher);
+// Always returns false for packet numbers less than least_unacked.
+bool NET_EXPORT_PRIVATE IsAwaitingPacket(const QuicAckFrame& ack_frame,
+                                         QuicPacketNumber packet_number);
 
 // Defines for all types of congestion control algorithms that can be used in
 // QUIC. Note that this is separate from the congestion feedback type -
@@ -928,9 +1018,9 @@ typedef std::vector<QuicFrame> QuicFrames;
 struct NET_EXPORT_PRIVATE QuicFecData {
   QuicFecData();
 
-  // The FEC group number is also the sequence number of the first
-  // FEC protected packet.  The last protected packet's sequence number will
-  // be one less than the sequence number of the FEC packet.
+  // The FEC group number is also the packet number of the first
+  // FEC protected packet.  The last protected packet's packet number will
+  // be one less than the packet number of the FEC packet.
   QuicFecGroupNumber fec_group;
   base::StringPiece redundancy;
 };
@@ -964,7 +1054,7 @@ class NET_EXPORT_PRIVATE QuicPacket : public QuicData {
              bool owns_buffer,
              QuicConnectionIdLength connection_id_length,
              bool includes_version,
-             QuicSequenceNumberLength sequence_number_length);
+             QuicPacketNumberLength packet_number_length);
 
   base::StringPiece FecProtectedData() const;
   base::StringPiece AssociatedData() const;
@@ -977,7 +1067,7 @@ class NET_EXPORT_PRIVATE QuicPacket : public QuicData {
   char* buffer_;
   const QuicConnectionIdLength connection_id_length_;
   const bool includes_version_;
-  const QuicSequenceNumberLength sequence_number_length_;
+  const QuicPacketNumberLength packet_number_length_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicPacket);
 };
@@ -1039,19 +1129,23 @@ class NET_EXPORT_PRIVATE RetransmittableFrames {
 };
 
 struct NET_EXPORT_PRIVATE SerializedPacket {
-  SerializedPacket(QuicPacketSequenceNumber sequence_number,
-                   QuicSequenceNumberLength sequence_number_length,
+  SerializedPacket(QuicPacketNumber packet_number,
+                   QuicPacketNumberLength packet_number_length,
                    QuicEncryptedPacket* packet,
                    QuicPacketEntropyHash entropy_hash,
-                   RetransmittableFrames* retransmittable_frames);
+                   RetransmittableFrames* retransmittable_frames,
+                   bool has_ack,
+                   bool has_stop_waiting);
   ~SerializedPacket();
 
   QuicEncryptedPacket* packet;
   RetransmittableFrames* retransmittable_frames;
-  QuicPacketSequenceNumber sequence_number;
-  QuicSequenceNumberLength sequence_number_length;
+  QuicPacketNumber packet_number;
+  QuicPacketNumberLength packet_number_length;
   QuicPacketEntropyHash entropy_hash;
   bool is_fec_packet;
+  bool has_ack;
+  bool has_stop_waiting;
 
   // Optional notifiers which will be informed when this packet has been ACKed.
   std::list<QuicAckNotifier*> notifiers;
@@ -1062,24 +1156,24 @@ struct NET_EXPORT_PRIVATE TransmissionInfo {
   TransmissionInfo();
 
   // Constructs a Transmission with a new all_tranmissions set
-  // containing |sequence_number|.
+  // containing |packet_number|.
   TransmissionInfo(RetransmittableFrames* retransmittable_frames,
-                   QuicSequenceNumberLength sequence_number_length,
+                   QuicPacketNumberLength packet_number_length,
                    TransmissionType transmission_type,
                    QuicTime sent_time,
                    QuicByteCount bytes_sent,
                    bool is_fec_packet);
 
   RetransmittableFrames* retransmittable_frames;
-  QuicSequenceNumberLength sequence_number_length;
+  QuicPacketNumberLength packet_number_length;
   QuicTime sent_time;
   QuicByteCount bytes_sent;
   QuicPacketCount nack_count;
   // Reason why this packet was transmitted.
   TransmissionType transmission_type;
-  // Stores the sequence numbers of all transmissions of this packet.
+  // Stores the packet numbers of all transmissions of this packet.
   // Must always be nullptr or have multiple elements.
-  SequenceNumberList* all_transmissions;
+  PacketNumberList* all_transmissions;
   // In flight packets have not been abandoned or lost.
   bool in_flight;
   // True if the packet can never be acked, so it can be removed.

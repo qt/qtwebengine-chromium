@@ -40,11 +40,10 @@ VideoCaptureInput::VideoCaptureInput(ProcessThread* module_process_thread,
       local_renderer_(local_renderer),
       stats_proxy_(stats_proxy),
       incoming_frame_cs_(CriticalSectionWrapper::CreateCriticalSection()),
-      capture_thread_(ThreadWrapper::CreateThread(CaptureThreadFunction,
+      encoder_thread_(ThreadWrapper::CreateThread(EncoderThreadFunction,
                                                   this,
-                                                  "CaptureThread")),
-      capture_event_(*EventWrapper::Create()),
-      deliver_event_(*EventWrapper::Create()),
+                                                  "EncoderThread")),
+      capture_event_(EventWrapper::Create()),
       stop_(0),
       last_captured_timestamp_(0),
       delta_ntp_internal_ms_(
@@ -54,8 +53,8 @@ VideoCaptureInput::VideoCaptureInput(ProcessThread* module_process_thread,
                                                  CpuOveruseOptions(),
                                                  overuse_observer,
                                                  stats_proxy)) {
-  capture_thread_->Start();
-  capture_thread_->SetPriority(kHighPriority);
+  encoder_thread_->Start();
+  encoder_thread_->SetPriority(kHighPriority);
   module_process_thread_->RegisterModule(overuse_detector_.get());
 }
 
@@ -63,13 +62,9 @@ VideoCaptureInput::~VideoCaptureInput() {
   module_process_thread_->DeRegisterModule(overuse_detector_.get());
 
   // Stop the thread.
-  rtc::AtomicOps::Increment(&stop_);
-  capture_event_.Set();
-
-  // Stop the camera input.
-  capture_thread_->Stop();
-  delete &capture_event_;
-  delete &deliver_event_;
+  rtc::AtomicOps::ReleaseStore(&stop_, 1);
+  capture_event_->Set();
+  encoder_thread_->Stop();
 }
 
 void VideoCaptureInput::IncomingCapturedFrame(const VideoFrame& video_frame) {
@@ -78,7 +73,7 @@ void VideoCaptureInput::IncomingCapturedFrame(const VideoFrame& video_frame) {
   if (local_renderer_)
     local_renderer_->RenderFrame(video_frame, 0);
 
-  stats_proxy_->OnIncomingFrame();
+  stats_proxy_->OnIncomingFrame(video_frame.width(), video_frame.height());
 
   VideoFrame incoming_frame = video_frame;
 
@@ -103,7 +98,10 @@ void VideoCaptureInput::IncomingCapturedFrame(const VideoFrame& video_frame) {
   CriticalSectionScoped cs(capture_cs_.get());
   if (incoming_frame.ntp_time_ms() <= last_captured_timestamp_) {
     // We don't allow the same capture time for two frames, drop this one.
-    LOG(LS_WARNING) << "Same/old NTP timestamp for incoming frame. Dropping.";
+    LOG(LS_WARNING) << "Same/old NTP timestamp ("
+                    << incoming_frame.ntp_time_ms()
+                    << " <= " << last_captured_timestamp_
+                    << ") for incoming frame. Dropping.";
     return;
   }
 
@@ -117,21 +115,20 @@ void VideoCaptureInput::IncomingCapturedFrame(const VideoFrame& video_frame) {
   TRACE_EVENT_ASYNC_BEGIN1("webrtc", "Video", video_frame.render_time_ms(),
                            "render_time", video_frame.render_time_ms());
 
-  capture_event_.Set();
+  capture_event_->Set();
 }
 
-bool VideoCaptureInput::CaptureThreadFunction(void* obj) {
-  return static_cast<VideoCaptureInput*>(obj)->CaptureProcess();
+bool VideoCaptureInput::EncoderThreadFunction(void* obj) {
+  return static_cast<VideoCaptureInput*>(obj)->EncoderProcess();
 }
 
-bool VideoCaptureInput::CaptureProcess() {
+bool VideoCaptureInput::EncoderProcess() {
   static const int kThreadWaitTimeMs = 100;
   int64_t capture_time = -1;
-  if (capture_event_.Wait(kThreadWaitTimeMs) == kEventSignaled) {
-    if (rtc::AtomicOps::Load(&stop_))
+  if (capture_event_->Wait(kThreadWaitTimeMs) == kEventSignaled) {
+    if (rtc::AtomicOps::AcquireLoad(&stop_))
       return false;
 
-    overuse_detector_->FrameProcessingStarted();
     int64_t encode_start_time = -1;
     VideoFrame deliver_frame;
     {
@@ -148,8 +145,10 @@ bool VideoCaptureInput::CaptureProcess() {
     }
     // Update the overuse detector with the duration.
     if (encode_start_time != -1) {
-      overuse_detector_->FrameEncoded(
+      int encode_time_ms = static_cast<int>(
           Clock::GetRealTimeClock()->TimeInMilliseconds() - encode_start_time);
+      overuse_detector_->FrameEncoded(encode_time_ms);
+      stats_proxy_->OnEncodedFrame(encode_time_ms);
     }
   }
   // We're done!

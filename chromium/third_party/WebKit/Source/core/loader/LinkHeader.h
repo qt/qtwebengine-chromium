@@ -7,24 +7,32 @@
 
 #include "core/CoreExport.h"
 #include "core/html/CrossOriginAttribute.h"
+#include "wtf/Allocator.h"
 #include "wtf/text/WTFString.h"
 
 namespace blink {
 
 class LinkHeader {
+    ALLOW_ONLY_INLINE_ALLOCATION();
 public:
     template <typename CharType>
     LinkHeader(CharType*& position, CharType* end);
 
-    const String url() const { return m_url; }
-    const String rel() const { return m_rel; }
+    const String& url() const { return m_url; }
+    const String& rel() const { return m_rel; }
     CrossOriginAttributeValue crossOrigin() const { return m_crossOrigin; }
     bool valid() const { return m_isValid; }
 
     enum LinkParameterName {
-        LinkParameterUnknown,
         LinkParameterRel,
         LinkParameterAnchor,
+        LinkParameterTitle,
+        LinkParameterMedia,
+        LinkParameterType,
+        LinkParameterRev,
+        LinkParameterHreflang,
+        // Beyond this point, only link-extension parameters
+        LinkParameterUnknown,
         LinkParameterCrossOrigin,
     };
 
@@ -38,6 +46,7 @@ private:
 };
 
 class CORE_EXPORT LinkHeaderSet {
+    STACK_ALLOCATED();
 public:
     LinkHeaderSet(const String& header);
 

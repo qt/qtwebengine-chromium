@@ -20,12 +20,9 @@ mojo_sdk_source_set("cpp") {
     "../interfaces",
     "//base",
     "//mojo/application/public/cpp",
-    "//mojo/common",
     "//mojo/environment:chromium",
-  ]
-
-  mojo_sdk_deps = [
-    "mojo/public/c/system",
-    "mojo/public/cpp/system",
+    "//mojo/message_pump",
+    "//third_party/mojo/src/mojo/public/c/system",
+    "//third_party/mojo/src/mojo/public/cpp/system",
   ]
 }

@@ -23,19 +23,21 @@
 
 #include "core/CSSValueKeywords.h"
 #include "core/css/CSSPrimitiveValue.h"
-#include "core/css/CSSSelector.h"
 #include "core/css/CSSValueList.h"
 #include "core/css/parser/CSSParserString.h"
+#include "core/css/parser/CSSParserTokenRange.h"
+#include "wtf/Allocator.h"
 
 namespace blink {
 
 class QualifiedName;
-class CSSParserTokenRange;
 
 struct CSSParserFunction;
+struct CSSParserCalcFunction;
 class CSSParserValueList;
 
 struct CSSParserValue {
+    ALLOW_ONLY_INLINE_ALLOCATION();
     CSSValueID id;
     bool isInt;
     union {
@@ -43,6 +45,7 @@ struct CSSParserValue {
         int iValue;
         CSSParserString string;
         CSSParserFunction* function;
+        CSSParserCalcFunction* calcFunction;
         CSSParserValueList* valueList;
         struct {
             UChar32 start;
@@ -52,18 +55,21 @@ struct CSSParserValue {
     enum {
         Operator  = 0x100000,
         Function  = 0x100001,
-        ValueList = 0x100002,
+        CalcFunction  = 0x100002,
+        ValueList = 0x100003,
         HexColor = 0x100004,
-        // Represents a dimension by a list of two values, a CSS_NUMBER and an CSS_IDENT
+        Identifier = 0x100005,
+        // Represents a dimension by a list of two values, a UnitType::Number and an Identifier
         DimensionList = 0x100006,
         // Represents a unicode range by a pair of UChar32 values
         UnicodeRange = 0x100007,
     };
-    int unit;
+    int m_unit;
+    CSSPrimitiveValue::UnitType unit() const { return static_cast<CSSPrimitiveValue::UnitType>(m_unit); }
+    void setUnit(CSSPrimitiveValue::UnitType unit) { m_unit = static_cast<int>(unit); }
 
-    inline void setFromNumber(double value, int unit = CSSPrimitiveValue::CSS_NUMBER);
+    inline void setFromNumber(double value, CSSPrimitiveValue::UnitType);
     inline void setFromOperator(UChar);
-    inline void setFromFunction(CSSParserFunction*);
     inline void setFromValueList(PassOwnPtr<CSSParserValueList>);
 };
 
@@ -74,14 +80,14 @@ public:
         : m_current(0)
     {
     }
-    CSSParserValueList(CSSParserTokenRange, bool& usesRemUnits);
+    CSSParserValueList(CSSParserTokenRange);
     ~CSSParserValueList();
 
     void addValue(const CSSParserValue&);
 
     unsigned size() const { return m_values.size(); }
     unsigned currentIndex() { return m_current; }
-    CSSParserValue* current() { return m_current < m_values.size() ? &m_values[m_current] : 0; }
+    CSSParserValue* current() { return m_current < m_values.size() ? &m_values[m_current] : nullptr; }
     CSSParserValue* next() { ++m_current; return current(); }
     CSSParserValue* previous()
     {
@@ -97,7 +103,7 @@ public:
             m_current = index;
     }
 
-    CSSParserValue* valueAt(unsigned i) { return i < m_values.size() ? &m_values[i] : 0; }
+    CSSParserValue* valueAt(unsigned i) { return i < m_values.size() ? &m_values[i] : nullptr; }
 
     void clearAndLeakValues() { m_values.clear(); m_current = 0;}
     void destroyAndClear();
@@ -114,83 +120,26 @@ public:
     OwnPtr<CSSParserValueList> args;
 };
 
-class CSSParserSelector {
-    WTF_MAKE_NONCOPYABLE(CSSParserSelector); WTF_MAKE_FAST_ALLOCATED(CSSParserSelector);
+struct CSSParserCalcFunction {
+    WTF_MAKE_FAST_ALLOCATED(CSSParserCalcFunction);
 public:
-    CSSParserSelector();
-    explicit CSSParserSelector(const QualifiedName&, bool isImplicit = false);
-
-    static PassOwnPtr<CSSParserSelector> create() { return adoptPtr(new CSSParserSelector); }
-    static PassOwnPtr<CSSParserSelector> create(const QualifiedName& name, bool isImplicit = false) { return adoptPtr(new CSSParserSelector(name, isImplicit)); }
-
-    ~CSSParserSelector();
-
-    PassOwnPtr<CSSSelector> releaseSelector() { return m_selector.release(); }
-
-    CSSSelector::Relation relation() const { return m_selector->relation(); }
-    void setValue(const AtomicString& value) { m_selector->setValue(value); }
-    void setAttribute(const QualifiedName& value, CSSSelector::AttributeMatchType matchType) { m_selector->setAttribute(value, matchType); }
-    void setArgument(const AtomicString& value) { m_selector->setArgument(value); }
-    void setNth(int a, int b) { m_selector->setNth(a, b); }
-    void setMatch(CSSSelector::Match value) { m_selector->setMatch(value); }
-    void setRelation(CSSSelector::Relation value) { m_selector->setRelation(value); }
-    void setForPage() { m_selector->setForPage(); }
-    void setRelationIsAffectedByPseudoContent() { m_selector->setRelationIsAffectedByPseudoContent(); }
-    bool relationIsAffectedByPseudoContent() const { return m_selector->relationIsAffectedByPseudoContent(); }
-
-    void updatePseudoType(const AtomicString& value, bool hasArguments = false) const { m_selector->updatePseudoType(value, hasArguments); }
-
-    void adoptSelectorVector(Vector<OwnPtr<CSSParserSelector>>& selectorVector);
-    void setSelectorList(PassOwnPtr<CSSSelectorList>);
-
-    bool hasHostPseudoSelector() const;
-
-    CSSSelector::PseudoType pseudoType() const { return m_selector->pseudoType(); }
-
-    // TODO(esprehn): This set of cases doesn't make sense, why PseudoShadow but not a check for ::content or /deep/ ?
-    bool crossesTreeScopes() const { return pseudoType() == CSSSelector::PseudoWebKitCustomElement || pseudoType() == CSSSelector::PseudoCue || pseudoType() == CSSSelector::PseudoShadow; }
-
-    bool isSimple() const;
-    bool hasShadowPseudo() const;
-
-    CSSParserSelector* tagHistory() const { return m_tagHistory.get(); }
-    void setTagHistory(PassOwnPtr<CSSParserSelector> selector) { m_tagHistory = selector; }
-    void clearTagHistory() { m_tagHistory.clear(); }
-    void insertTagHistory(CSSSelector::Relation before, PassOwnPtr<CSSParserSelector>, CSSSelector::Relation after);
-    void appendTagHistory(CSSSelector::Relation, PassOwnPtr<CSSParserSelector>);
-    void prependTagSelector(const QualifiedName&, bool tagIsImplicit = false);
-
-private:
-    OwnPtr<CSSSelector> m_selector;
-    OwnPtr<CSSParserSelector> m_tagHistory;
+    CSSParserCalcFunction(CSSParserTokenRange args_) : args(args_) {}
+    CSSParserTokenRange args;
 };
 
-inline bool CSSParserSelector::hasShadowPseudo() const
-{
-    return m_selector->relation() == CSSSelector::ShadowPseudo;
-}
-
-inline void CSSParserValue::setFromNumber(double value, int unit)
+inline void CSSParserValue::setFromNumber(double value, CSSPrimitiveValue::UnitType unit)
 {
     id = CSSValueInvalid;
     isInt = false;
     fValue = value;
-    this->unit = std::isfinite(value) ? unit : CSSPrimitiveValue::CSS_UNKNOWN;
+    this->setUnit(std::isfinite(value) ? unit : CSSPrimitiveValue::UnitType::Unknown);
 }
 
 inline void CSSParserValue::setFromOperator(UChar c)
 {
     id = CSSValueInvalid;
-    unit = Operator;
+    m_unit = Operator;
     iValue = c;
-    isInt = false;
-}
-
-inline void CSSParserValue::setFromFunction(CSSParserFunction* function)
-{
-    id = CSSValueInvalid;
-    this->function = function;
-    unit = Function;
     isInt = false;
 }
 
@@ -198,7 +147,7 @@ inline void CSSParserValue::setFromValueList(PassOwnPtr<CSSParserValueList> valu
 {
     id = CSSValueInvalid;
     this->valueList = valueList.leakPtr();
-    unit = ValueList;
+    m_unit = ValueList;
     isInt = false;
 }
 

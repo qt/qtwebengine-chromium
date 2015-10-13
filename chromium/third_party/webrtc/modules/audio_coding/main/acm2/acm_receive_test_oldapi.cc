@@ -143,6 +143,15 @@ void AcmReceiveTestOldApi::RegisterNetEqTestCodecs() {
   }
 }
 
+int AcmReceiveTestOldApi::RegisterExternalReceiveCodec(
+    int rtp_payload_type,
+    AudioDecoder* external_decoder,
+    int sample_rate_hz,
+    int num_channels) {
+  return acm_->RegisterExternalReceiveCodec(rtp_payload_type, external_decoder,
+                                            sample_rate_hz, num_channels);
+}
+
 void AcmReceiveTestOldApi::Run() {
   for (rtc::scoped_ptr<Packet> packet(packet_source_->NextPacket()); packet;
        packet.reset(packet_source_->NextPacket())) {
@@ -151,7 +160,8 @@ void AcmReceiveTestOldApi::Run() {
       AudioFrame output_frame;
       EXPECT_EQ(0, acm_->PlayoutData10Ms(output_freq_hz_, &output_frame));
       EXPECT_EQ(output_freq_hz_, output_frame.sample_rate_hz_);
-      const int samples_per_block = output_freq_hz_ * 10 / 1000;
+      const size_t samples_per_block =
+          static_cast<size_t>(output_freq_hz_ * 10 / 1000);
       EXPECT_EQ(samples_per_block, output_frame.samples_per_channel_);
       if (exptected_output_channels_ != kArbitraryChannels) {
         if (output_frame.speech_type_ == webrtc::AudioFrame::kPLC) {

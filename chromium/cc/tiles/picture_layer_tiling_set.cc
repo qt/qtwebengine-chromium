@@ -33,11 +33,11 @@ inline float LargerRatio(float float1, float float2) {
 scoped_ptr<PictureLayerTilingSet> PictureLayerTilingSet::Create(
     WhichTree tree,
     PictureLayerTilingClient* client,
-    size_t max_tiles_for_interest_area,
+    size_t tiling_interest_area_padding,
     float skewport_target_time_in_seconds,
     int skewport_extrapolation_limit_in_content_pixels) {
   return make_scoped_ptr(new PictureLayerTilingSet(
-      tree, client, max_tiles_for_interest_area,
+      tree, client, tiling_interest_area_padding,
       skewport_target_time_in_seconds,
       skewport_extrapolation_limit_in_content_pixels));
 }
@@ -45,16 +45,15 @@ scoped_ptr<PictureLayerTilingSet> PictureLayerTilingSet::Create(
 PictureLayerTilingSet::PictureLayerTilingSet(
     WhichTree tree,
     PictureLayerTilingClient* client,
-    size_t max_tiles_for_interest_area,
+    size_t tiling_interest_area_padding,
     float skewport_target_time_in_seconds,
     int skewport_extrapolation_limit_in_content_pixels)
-    : max_tiles_for_interest_area_(max_tiles_for_interest_area),
+    : tiling_interest_area_padding_(tiling_interest_area_padding),
       skewport_target_time_in_seconds_(skewport_target_time_in_seconds),
       skewport_extrapolation_limit_in_content_pixels_(
           skewport_extrapolation_limit_in_content_pixels),
       tree_(tree),
-      client_(client) {
-}
+      client_(client) {}
 
 PictureLayerTilingSet::~PictureLayerTilingSet() {
 }
@@ -78,7 +77,7 @@ void PictureLayerTilingSet::CopyTilingsAndPropertiesFromPendingTwin(
     if (!this_tiling) {
       scoped_ptr<PictureLayerTiling> new_tiling = PictureLayerTiling::Create(
           tree_, contents_scale, raster_source, client_,
-          max_tiles_for_interest_area_, skewport_target_time_in_seconds_,
+          tiling_interest_area_padding_, skewport_target_time_in_seconds_,
           skewport_extrapolation_limit_in_content_pixels_);
       tilings_.push_back(new_tiling.Pass());
       this_tiling = tilings_.back();
@@ -120,8 +119,12 @@ void PictureLayerTilingSet::UpdateTilingsToCurrentRasterSourceForActivation(
     tiling->CreateMissingTilesInLiveTilesRect();
 
     // |this| is active set and |tiling| is not in the pending set, which means
-    // it is now NON_IDEAL_RESOLUTION.
-    tiling->set_resolution(NON_IDEAL_RESOLUTION);
+    // it is now NON_IDEAL_RESOLUTION. The exception is for LOW_RESOLUTION
+    // tilings, which are computed and created entirely on the active tree.
+    // Since the pending tree does not have them, we should just leave them as
+    // low resolution to not lose them.
+    if (tiling->resolution() != LOW_RESOLUTION)
+      tiling->set_resolution(NON_IDEAL_RESOLUTION);
   }
 
   VerifyTilings(pending_twin_set);
@@ -197,16 +200,7 @@ void PictureLayerTilingSet::CleanUpTilings(
     float min_acceptable_high_res_scale,
     float max_acceptable_high_res_scale,
     const std::vector<PictureLayerTiling*>& needed_tilings,
-    bool should_have_low_res,
     PictureLayerTilingSet* twin_set) {
-  float twin_low_res_scale = 0.f;
-  if (twin_set) {
-    PictureLayerTiling* tiling =
-        twin_set->FindTilingWithResolution(LOW_RESOLUTION);
-    if (tiling)
-      twin_low_res_scale = tiling->contents_scale();
-  }
-
   std::vector<PictureLayerTiling*> to_remove;
   for (auto* tiling : tilings_) {
     // Keep all tilings within the min/max scales.
@@ -215,12 +209,9 @@ void PictureLayerTilingSet::CleanUpTilings(
       continue;
     }
 
-    // Keep low resolution tilings, if the tiling set should have them.
-    if (should_have_low_res &&
-        (tiling->resolution() == LOW_RESOLUTION ||
-         tiling->contents_scale() == twin_low_res_scale)) {
+    // Keep low resolution tilings.
+    if (tiling->resolution() == LOW_RESOLUTION)
       continue;
-    }
 
     // Don't remove tilings that are required.
     if (std::find(needed_tilings.begin(), needed_tilings.end(), tiling) !=
@@ -259,7 +250,7 @@ PictureLayerTiling* PictureLayerTilingSet::AddTiling(
 
   tilings_.push_back(PictureLayerTiling::Create(
       tree_, contents_scale, raster_source, client_,
-      max_tiles_for_interest_area_, skewport_target_time_in_seconds_,
+      tiling_interest_area_padding_, skewport_target_time_in_seconds_,
       skewport_extrapolation_limit_in_content_pixels_));
   PictureLayerTiling* appended = tilings_.back();
 

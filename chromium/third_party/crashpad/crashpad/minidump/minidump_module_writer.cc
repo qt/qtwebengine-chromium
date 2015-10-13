@@ -24,6 +24,7 @@
 #include "minidump/minidump_writer_util.h"
 #include "snapshot/module_snapshot.h"
 #include "util/file/file_writer.h"
+#include "util/misc/implicit_cast.h"
 #include "util/numeric/in_range_cast.h"
 #include "util/numeric/safe_assignment.h"
 
@@ -77,7 +78,7 @@ bool MinidumpModuleCodeViewRecordPDBLinkWriter<CodeViewRecordType>::WriteObject(
 }  // namespace internal
 
 template class internal::MinidumpModuleCodeViewRecordPDBLinkWriter<
-    MinidumpModuleCodeViewRecordPDB20>;
+    CodeViewRecordPDB20>;
 
 MinidumpModuleCodeViewRecordPDB20Writer::
     ~MinidumpModuleCodeViewRecordPDB20Writer() {
@@ -95,7 +96,7 @@ void MinidumpModuleCodeViewRecordPDB20Writer::SetTimestampAndAge(
 }
 
 template class internal::MinidumpModuleCodeViewRecordPDBLinkWriter<
-    MinidumpModuleCodeViewRecordPDB70>;
+    CodeViewRecordPDB70>;
 
 MinidumpModuleCodeViewRecordPDB70Writer::
     ~MinidumpModuleCodeViewRecordPDB70Writer() {

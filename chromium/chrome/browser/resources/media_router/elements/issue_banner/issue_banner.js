@@ -27,8 +27,7 @@ Polymer({
     issueActionTypeToButtonTextResource_: {
       type: Array,
       value: function() {
-        return ['okButton', 'cancelButton', 'dismissButton',
-            'learnMoreButton'];
+        return ['dismissButton', 'learnMoreButton'];
       },
     },
 
@@ -68,6 +67,18 @@ Polymer({
    */
   computeIsNonBlockingIssueHidden_: function(issue) {
     return !issue || issue.isBlocking;
+  },
+
+  /**
+   * @param {?media_router.Issue} issue The current issue.
+   * @return {string} The class for the overall issue-banner.
+   * @private
+   */
+  computeIssueClass_: function(issue) {
+    if (!issue)
+      return '';
+
+    return issue.isBlocking ? 'blocking' : 'non-blocking';
   },
 
   /**

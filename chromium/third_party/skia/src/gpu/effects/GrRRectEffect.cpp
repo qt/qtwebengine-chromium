@@ -12,7 +12,7 @@
 #include "GrInvariantOutput.h"
 #include "GrOvalEffect.h"
 #include "SkRRect.h"
-#include "gl/GrGLProcessor.h"
+#include "gl/GrGLFragmentProcessor.h"
 #include "gl/builders/GrGLProgramBuilder.h"
 
 // The effects defined here only handle rrect radii >= kRadiusMin.
@@ -49,10 +49,6 @@ public:
 
     const char* name() const override { return "CircularRRect"; }
 
-    void getGLProcessorKey(const GrGLSLCaps&, GrProcessorKeyBuilder*) const override;
-
-    GrGLFragmentProcessor* createGLInstance() const override;
-
     const SkRRect& getRRect() const { return fRRect; }
 
     uint32_t getCircularCornerFlags() const { return fCircularCornerFlags; }
@@ -61,6 +57,10 @@ public:
 
 private:
     CircularRRectEffect(GrPrimitiveEdgeType, uint32_t circularCornerFlags, const SkRRect&);
+
+    GrGLFragmentProcessor* onCreateGLInstance() const override;
+
+    void onGetGLProcessorKey(const GrGLSLCaps&, GrProcessorKeyBuilder*) const override;
 
     bool onIsEqual(const GrFragmentProcessor& other) const override;
 
@@ -79,9 +79,9 @@ GrFragmentProcessor* CircularRRectEffect::Create(GrPrimitiveEdgeType edgeType,
                                                  uint32_t circularCornerFlags,
                                                  const SkRRect& rrect) {
     if (kFillAA_GrProcessorEdgeType != edgeType && kInverseFillAA_GrProcessorEdgeType != edgeType) {
-        return NULL;
+        return nullptr;
     }
-    return SkNEW_ARGS(CircularRRectEffect, (edgeType, circularCornerFlags, rrect));
+    return new CircularRRectEffect(edgeType, circularCornerFlags, rrect);
 }
 
 void CircularRRectEffect::onComputeInvariantOutput(GrInvariantOutput* inout) const {
@@ -107,7 +107,7 @@ bool CircularRRectEffect::onIsEqual(const GrFragmentProcessor& other) const {
 
 GR_DEFINE_FRAGMENT_PROCESSOR_TEST(CircularRRectEffect);
 
-GrFragmentProcessor* CircularRRectEffect::TestCreate(GrProcessorTestData* d) {
+const GrFragmentProcessor* CircularRRectEffect::TestCreate(GrProcessorTestData* d) {
     SkScalar w = d->fRandom->nextRangeScalar(20.f, 1000.f);
     SkScalar h = d->fRandom->nextRangeScalar(20.f, 1000.f);
     SkScalar r = d->fRandom->nextRangeF(kRadiusMin, 9.f);
@@ -118,7 +118,7 @@ GrFragmentProcessor* CircularRRectEffect::TestCreate(GrProcessorTestData* d) {
         GrPrimitiveEdgeType et =
                 (GrPrimitiveEdgeType)d->fRandom->nextULessThan(kGrProcessorEdgeTypeCnt);
         fp = GrRRectEffect::Create(et, rrect);
-    } while (NULL == fp);
+    } while (nullptr == fp);
     return fp;
 }
 
@@ -128,16 +128,12 @@ class GLCircularRRectEffect : public GrGLFragmentProcessor {
 public:
     GLCircularRRectEffect(const GrProcessor&);
 
-    virtual void emitCode(GrGLFPBuilder* builder,
-                          const GrFragmentProcessor& fp,
-                          const char* outputColor,
-                          const char* inputColor,
-                          const TransformedCoordsArray&,
-                          const TextureSamplerArray&) override;
+    virtual void emitCode(EmitArgs&) override;
 
     static inline void GenKey(const GrProcessor&, const GrGLSLCaps&, GrProcessorKeyBuilder*);
 
-    void setData(const GrGLProgramDataManager&, const GrProcessor&) override;
+protected:
+    void onSetData(const GrGLProgramDataManager&, const GrProcessor&) override;
 
 private:
     GrGLProgramDataManager::UniformHandle fInnerRectUniform;
@@ -150,29 +146,24 @@ GLCircularRRectEffect::GLCircularRRectEffect(const GrProcessor& ) {
     fPrevRRect.setEmpty();
 }
 
-void GLCircularRRectEffect::emitCode(GrGLFPBuilder* builder,
-                                     const GrFragmentProcessor& fp,
-                                     const char* outputColor,
-                                     const char* inputColor,
-                                     const TransformedCoordsArray&,
-                                     const TextureSamplerArray& samplers) {
-    const CircularRRectEffect& crre = fp.cast<CircularRRectEffect>();
+void GLCircularRRectEffect::emitCode(EmitArgs& args) {
+    const CircularRRectEffect& crre = args.fFp.cast<CircularRRectEffect>();
     const char *rectName;
     const char *radiusPlusHalfName;
     // The inner rect is the rrect bounds inset by the radius. Its left, top, right, and bottom
     // edges correspond to components x, y, z, and w, respectively. When a side of the rrect has
     // only rectangular corners, that side's value corresponds to the rect edge's value outset by
     // half a pixel.
-    fInnerRectUniform = builder->addUniform(GrGLProgramBuilder::kFragment_Visibility,
+    fInnerRectUniform = args.fBuilder->addUniform(GrGLProgramBuilder::kFragment_Visibility,
                                             kVec4f_GrSLType, kDefault_GrSLPrecision,
                                             "innerRect",
                                             &rectName);
-    fRadiusPlusHalfUniform = builder->addUniform(GrGLProgramBuilder::kFragment_Visibility,
+    fRadiusPlusHalfUniform = args.fBuilder->addUniform(GrGLProgramBuilder::kFragment_Visibility,
                                                  kFloat_GrSLType, kDefault_GrSLPrecision,
                                                  "radiusPlusHalf",
                                                  &radiusPlusHalfName);
 
-    GrGLFragmentBuilder* fsBuilder = builder->getFragmentShaderBuilder();
+    GrGLFragmentBuilder* fsBuilder = args.fBuilder->getFragmentShaderBuilder();
     const char* fragmentPos = fsBuilder->fragmentPosition();
     // At each quarter-circle corner we compute a vector that is the offset of the fragment position
     // from the circle center. The vector is pinned in x and y to be in the quarter-plane relevant
@@ -279,8 +270,8 @@ void GLCircularRRectEffect::emitCode(GrGLFPBuilder* builder,
         fsBuilder->codeAppend("\t\talpha = 1.0 - alpha;\n");
     }
 
-    fsBuilder->codeAppendf("\t\t%s = %s;\n", outputColor,
-                           (GrGLSLExpr4(inputColor) * GrGLSLExpr1("alpha")).c_str());
+    fsBuilder->codeAppendf("\t\t%s = %s;\n", args.fOutputColor,
+                           (GrGLSLExpr4(args.fInputColor) * GrGLSLExpr1("alpha")).c_str());
 }
 
 void GLCircularRRectEffect::GenKey(const GrProcessor& processor, const GrGLSLCaps&,
@@ -290,7 +281,7 @@ void GLCircularRRectEffect::GenKey(const GrProcessor& processor, const GrGLSLCap
     b->add32((crre.getCircularCornerFlags() << 3) | crre.getEdgeType());
 }
 
-void GLCircularRRectEffect::setData(const GrGLProgramDataManager& pdman,
+void GLCircularRRectEffect::onSetData(const GrGLProgramDataManager& pdman,
                                     const GrProcessor& processor) {
     const CircularRRectEffect& crre = processor.cast<CircularRRectEffect>();
     const SkRRect& rrect = crre.getRRect();
@@ -371,13 +362,13 @@ void GLCircularRRectEffect::setData(const GrGLProgramDataManager& pdman,
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-void CircularRRectEffect::getGLProcessorKey(const GrGLSLCaps& caps,
+void CircularRRectEffect::onGetGLProcessorKey(const GrGLSLCaps& caps,
                                             GrProcessorKeyBuilder* b) const {
     GLCircularRRectEffect::GenKey(*this, caps, b);
 }
 
-GrGLFragmentProcessor* CircularRRectEffect::createGLInstance() const  {
-    return SkNEW_ARGS(GLCircularRRectEffect, (*this));
+GrGLFragmentProcessor* CircularRRectEffect::onCreateGLInstance() const  {
+    return new GLCircularRRectEffect(*this);
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -390,16 +381,16 @@ public:
 
     const char* name() const override { return "EllipticalRRect"; }
 
-    void getGLProcessorKey(const GrGLSLCaps&, GrProcessorKeyBuilder*) const override;
-
-    GrGLFragmentProcessor* createGLInstance() const override;
-
     const SkRRect& getRRect() const { return fRRect; }
 
     GrPrimitiveEdgeType getEdgeType() const { return fEdgeType; }
 
 private:
     EllipticalRRectEffect(GrPrimitiveEdgeType, const SkRRect&);
+
+    GrGLFragmentProcessor* onCreateGLInstance() const override;
+
+    void onGetGLProcessorKey(const GrGLSLCaps&, GrProcessorKeyBuilder*) const override;
 
     bool onIsEqual(const GrFragmentProcessor& other) const override;
 
@@ -416,9 +407,9 @@ private:
 GrFragmentProcessor*
 EllipticalRRectEffect::Create(GrPrimitiveEdgeType edgeType, const SkRRect& rrect) {
     if (kFillAA_GrProcessorEdgeType != edgeType && kInverseFillAA_GrProcessorEdgeType != edgeType) {
-        return NULL;
+        return nullptr;
     }
-    return SkNEW_ARGS(EllipticalRRectEffect, (edgeType, rrect));
+    return new EllipticalRRectEffect(edgeType, rrect);
 }
 
 void EllipticalRRectEffect::onComputeInvariantOutput(GrInvariantOutput* inout) const {
@@ -441,7 +432,7 @@ bool EllipticalRRectEffect::onIsEqual(const GrFragmentProcessor& other) const {
 
 GR_DEFINE_FRAGMENT_PROCESSOR_TEST(EllipticalRRectEffect);
 
-GrFragmentProcessor* EllipticalRRectEffect::TestCreate(GrProcessorTestData* d) {
+const GrFragmentProcessor* EllipticalRRectEffect::TestCreate(GrProcessorTestData* d) {
     SkScalar w = d->fRandom->nextRangeScalar(20.f, 1000.f);
     SkScalar h = d->fRandom->nextRangeScalar(20.f, 1000.f);
     SkVector r[4];
@@ -473,7 +464,7 @@ GrFragmentProcessor* EllipticalRRectEffect::TestCreate(GrProcessorTestData* d) {
         GrPrimitiveEdgeType et =
                 (GrPrimitiveEdgeType)d->fRandom->nextULessThan(kGrProcessorEdgeTypeCnt);
         fp = GrRRectEffect::Create(et, rrect);
-    } while (NULL == fp);
+    } while (nullptr == fp);
     return fp;
 }
 
@@ -483,16 +474,12 @@ class GLEllipticalRRectEffect : public GrGLFragmentProcessor {
 public:
     GLEllipticalRRectEffect(const GrProcessor&);
 
-    virtual void emitCode(GrGLFPBuilder* builder,
-                          const GrFragmentProcessor& effect,
-                          const char* outputColor,
-                          const char* inputColor,
-                          const TransformedCoordsArray&,
-                          const TextureSamplerArray&) override;
+    virtual void emitCode(EmitArgs&) override;
 
     static inline void GenKey(const GrProcessor&, const GrGLSLCaps&, GrProcessorKeyBuilder*);
 
-    void setData(const GrGLProgramDataManager&, const GrProcessor&) override;
+protected:
+    void onSetData(const GrGLProgramDataManager&, const GrProcessor&) override;
 
 private:
     GrGLProgramDataManager::UniformHandle fInnerRectUniform;
@@ -505,21 +492,16 @@ GLEllipticalRRectEffect::GLEllipticalRRectEffect(const GrProcessor& effect) {
     fPrevRRect.setEmpty();
 }
 
-void GLEllipticalRRectEffect::emitCode(GrGLFPBuilder* builder,
-                                       const GrFragmentProcessor& effect,
-                                       const char* outputColor,
-                                       const char* inputColor,
-                                       const TransformedCoordsArray&,
-                                       const TextureSamplerArray& samplers) {
-    const EllipticalRRectEffect& erre = effect.cast<EllipticalRRectEffect>();
+void GLEllipticalRRectEffect::emitCode(EmitArgs& args) {
+    const EllipticalRRectEffect& erre = args.fFp.cast<EllipticalRRectEffect>();
     const char *rectName;
     // The inner rect is the rrect bounds inset by the x/y radii
-    fInnerRectUniform = builder->addUniform(GrGLProgramBuilder::kFragment_Visibility,
+    fInnerRectUniform = args.fBuilder->addUniform(GrGLProgramBuilder::kFragment_Visibility,
                                             kVec4f_GrSLType, kDefault_GrSLPrecision,
                                             "innerRect",
                                             &rectName);
 
-    GrGLFragmentBuilder* fsBuilder = builder->getFragmentShaderBuilder();
+    GrGLFragmentBuilder* fsBuilder = args.fBuilder->getFragmentShaderBuilder();
     const char* fragmentPos = fsBuilder->fragmentPosition();
     // At each quarter-ellipse corner we compute a vector that is the offset of the fragment pos
     // to the ellipse center. The vector is pinned in x and y to be in the quarter-plane relevant
@@ -529,16 +511,18 @@ void GLEllipticalRRectEffect::emitCode(GrGLFPBuilder* builder,
     // fragments near the other three edges will get the correct AA. Fragments in the interior of
     // the rrect will have a (0,0) vector at all four corners. So long as the radii > 0.5 they will
     // correctly produce an alpha value of 1 at all four corners. We take the min of all the alphas.
+    //
     // The code below is a simplified version of the above that performs maxs on the vector
     // components before computing distances and alpha values so that only one distance computation
     // need be computed to determine the min alpha.
     fsBuilder->codeAppendf("\t\tvec2 dxy0 = %s.xy - %s.xy;\n", rectName, fragmentPos);
     fsBuilder->codeAppendf("\t\tvec2 dxy1 = %s.xy - %s.zw;\n", fragmentPos, rectName);
+    // The uniforms with the inv squared radii are highp to prevent underflow.
     switch (erre.getRRect().getType()) {
         case SkRRect::kSimple_Type: {
             const char *invRadiiXYSqdName;
-            fInvRadiiSqdUniform = builder->addUniform(GrGLProgramBuilder::kFragment_Visibility,
-                                                      kVec2f_GrSLType, kDefault_GrSLPrecision,
+            fInvRadiiSqdUniform = args.fBuilder->addUniform(GrGLProgramBuilder::kFragment_Visibility,
+                                                      kVec2f_GrSLType, kHigh_GrSLPrecision,
                                                       "invRadiiXY",
                                                       &invRadiiXYSqdName);
             fsBuilder->codeAppend("\t\tvec2 dxy = max(max(dxy0, dxy1), 0.0);\n");
@@ -548,8 +532,8 @@ void GLEllipticalRRectEffect::emitCode(GrGLFPBuilder* builder,
         }
         case SkRRect::kNinePatch_Type: {
             const char *invRadiiLTRBSqdName;
-            fInvRadiiSqdUniform = builder->addUniform(GrGLProgramBuilder::kFragment_Visibility,
-                                                      kVec4f_GrSLType, kDefault_GrSLPrecision,
+            fInvRadiiSqdUniform = args.fBuilder->addUniform(GrGLProgramBuilder::kFragment_Visibility,
+                                                      kVec4f_GrSLType, kHigh_GrSLPrecision,
                                                       "invRadiiLTRB",
                                                       &invRadiiLTRBSqdName);
             fsBuilder->codeAppend("\t\tvec2 dxy = max(max(dxy0, dxy1), 0.0);\n");
@@ -577,8 +561,8 @@ void GLEllipticalRRectEffect::emitCode(GrGLFPBuilder* builder,
         fsBuilder->codeAppend("\t\tfloat alpha = clamp(0.5 + approx_dist, 0.0, 1.0);\n");
     }
 
-    fsBuilder->codeAppendf("\t\t%s = %s;\n", outputColor,
-                           (GrGLSLExpr4(inputColor) * GrGLSLExpr1("alpha")).c_str());
+    fsBuilder->codeAppendf("\t\t%s = %s;\n", args.fOutputColor,
+                           (GrGLSLExpr4(args.fInputColor) * GrGLSLExpr1("alpha")).c_str());
 }
 
 void GLEllipticalRRectEffect::GenKey(const GrProcessor& effect, const GrGLSLCaps&,
@@ -588,7 +572,7 @@ void GLEllipticalRRectEffect::GenKey(const GrProcessor& effect, const GrGLSLCaps
     b->add32(erre.getRRect().getType() | erre.getEdgeType() << 3);
 }
 
-void GLEllipticalRRectEffect::setData(const GrGLProgramDataManager& pdman,
+void GLEllipticalRRectEffect::onSetData(const GrGLProgramDataManager& pdman,
                                       const GrProcessor& effect) {
     const EllipticalRRectEffect& erre = effect.cast<EllipticalRRectEffect>();
     const SkRRect& rrect = erre.getRRect();
@@ -627,13 +611,13 @@ void GLEllipticalRRectEffect::setData(const GrGLProgramDataManager& pdman,
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-void EllipticalRRectEffect::getGLProcessorKey(const GrGLSLCaps& caps,
+void EllipticalRRectEffect::onGetGLProcessorKey(const GrGLSLCaps& caps,
                                               GrProcessorKeyBuilder* b) const {
     GLEllipticalRRectEffect::GenKey(*this, caps, b);
 }
 
-GrGLFragmentProcessor* EllipticalRRectEffect::createGLInstance() const  {
-    return SkNEW_ARGS(GLEllipticalRRectEffect, (*this));
+GrGLFragmentProcessor* EllipticalRRectEffect::onCreateGLInstance() const  {
+    return new GLEllipticalRRectEffect(*this);
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -722,15 +706,15 @@ GrFragmentProcessor* GrRRectEffect::Create(GrPrimitiveEdgeType edgeType, const S
                     // If we got here then we squashed some but not all the radii to zero. (If all
                     // had been squashed cornerFlags would be 0.) The elliptical effect doesn't
                     // support some rounded and some square corners.
-                    return NULL;
+                    return nullptr;
                 }
                 if (rrect.isNinePatch()) {
                     return EllipticalRRectEffect::Create(edgeType, rrect);
                 }
-                return NULL;
+                return nullptr;
             }
         }
     }
 
-    return NULL;
+    return nullptr;
 }

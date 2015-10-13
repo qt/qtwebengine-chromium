@@ -23,6 +23,7 @@
 
 #include "core/layout/LayoutObjectInlines.h"
 #include "core/layout/OverflowModel.h"
+#include "core/layout/api/SelectionState.h"
 #include "core/layout/line/InlineBox.h"
 #include "core/style/ShadowData.h"
 
@@ -37,7 +38,7 @@ class VerticalPositionCache;
 
 struct GlyphOverflow;
 
-typedef HashMap<const InlineTextBox*, pair<Vector<const SimpleFontData*>, GlyphOverflow>> GlyphOverflowAndFallbackFontsMap;
+typedef HashMap<const InlineTextBox*, std::pair<Vector<const SimpleFontData*>, GlyphOverflow>> GlyphOverflowAndFallbackFontsMap;
 
 class InlineFlowBox : public InlineBox {
 public:
@@ -71,13 +72,13 @@ public:
     }
 
 #if ENABLE(ASSERT)
-    virtual ~InlineFlowBox();
+    ~InlineFlowBox() override;
 #endif
 
 #ifndef NDEBUG
-    virtual void showLineTreeAndMark(const InlineBox* = nullptr, const char* = nullptr, const InlineBox* = nullptr, const char* = nullptr, const LayoutObject* = nullptr, int = 0) const override;
+    void showLineTreeAndMark(const InlineBox* = nullptr, const char* = nullptr, const InlineBox* = nullptr, const char* = nullptr, const LayoutObject* = nullptr, int = 0) const override;
 #endif
-    virtual const char* boxName() const override;
+    const char* boxName() const override;
 
     InlineFlowBox* prevLineBox() const { return m_prevLineBox; }
     InlineFlowBox* nextLineBox() const { return m_nextLineBox; }
@@ -87,7 +88,7 @@ public:
     InlineBox* firstChild() const { checkConsistency(); return m_firstChild; }
     InlineBox* lastChild() const { checkConsistency(); return m_lastChild; }
 
-    virtual bool isLeaf() const override final { return false; }
+    bool isLeaf() const final { return false; }
 
     InlineBox* firstLeafChild() const;
     InlineBox* lastLeafChild() const;
@@ -95,7 +96,7 @@ public:
     typedef void (*CustomInlineBoxRangeReverse)(void* userData, Vector<InlineBox*>::iterator first, Vector<InlineBox*>::iterator last);
     void collectLeafBoxesInLogicalOrder(Vector<InlineBox*>&, CustomInlineBoxRangeReverse customReverseImplementation = 0, void* userData = nullptr) const;
 
-    virtual void setConstructed() override final
+    void setConstructed() final
     {
         InlineBox::setConstructed();
         for (InlineBox* child = firstChild(); child; child = child->nextOnLine())
@@ -103,21 +104,21 @@ public:
     }
 
     void addToLine(InlineBox* child);
-    virtual void deleteLine() override final;
-    virtual void extractLine() override final;
-    virtual void attachLine() override final;
-    virtual void move(const LayoutSize&) override;
+    void deleteLine() final;
+    void extractLine() final;
+    void attachLine() final;
+    void move(const LayoutSize&) override;
 
     virtual void extractLineBoxFromLayoutObject();
     virtual void attachLineBoxToLayoutObject();
     virtual void removeLineBoxFromLayoutObject();
 
-    virtual void clearTruncation() override;
+    void clearTruncation() override;
 
-    IntRect roundedFrameRect() const;
+    LayoutRect frameRect() const;
 
-    virtual void paint(const PaintInfo&, const LayoutPoint&, LayoutUnit lineTop, LayoutUnit lineBottom) override;
-    virtual bool nodeAtPoint(HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, LayoutUnit lineTop, LayoutUnit lineBottom) override;
+    void paint(const PaintInfo&, const LayoutPoint&, LayoutUnit lineTop, LayoutUnit lineBottom) const override;
+    bool nodeAtPoint(HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, LayoutUnit lineTop, LayoutUnit lineBottom) override;
 
     bool boxShadowCanBeAppliedToBackground(const FillLayer&) const;
 
@@ -130,37 +131,37 @@ public:
     {
         if (!includeLogicalLeftEdge())
             return 0;
-        return isHorizontal() ? boxModelObject()->marginLeft() : boxModelObject()->marginTop();
+        return isHorizontal() ? boxModelObject().marginLeft() : boxModelObject().marginTop();
     }
     LayoutUnit marginLogicalRight() const
     {
         if (!includeLogicalRightEdge())
             return 0;
-        return isHorizontal() ? boxModelObject()->marginRight() : boxModelObject()->marginBottom();
+        return isHorizontal() ? boxModelObject().marginRight() : boxModelObject().marginBottom();
     }
     int borderLogicalLeft() const
     {
         if (!includeLogicalLeftEdge())
             return 0;
-        return isHorizontal() ? layoutObject().style(isFirstLineStyle())->borderLeftWidth() : layoutObject().style(isFirstLineStyle())->borderTopWidth();
+        return isHorizontal() ? lineLayoutItem().style(isFirstLineStyle())->borderLeftWidth() : lineLayoutItem().style(isFirstLineStyle())->borderTopWidth();
     }
     int borderLogicalRight() const
     {
         if (!includeLogicalRightEdge())
             return 0;
-        return isHorizontal() ? layoutObject().style(isFirstLineStyle())->borderRightWidth() : layoutObject().style(isFirstLineStyle())->borderBottomWidth();
+        return isHorizontal() ? lineLayoutItem().style(isFirstLineStyle())->borderRightWidth() : lineLayoutItem().style(isFirstLineStyle())->borderBottomWidth();
     }
     int paddingLogicalLeft() const
     {
         if (!includeLogicalLeftEdge())
             return 0;
-        return isHorizontal() ? boxModelObject()->paddingLeft() : boxModelObject()->paddingTop();
+        return isHorizontal() ? boxModelObject().paddingLeft() : boxModelObject().paddingTop();
     }
     int paddingLogicalRight() const
     {
         if (!includeLogicalRightEdge())
             return 0;
-        return isHorizontal() ? boxModelObject()->paddingRight() : boxModelObject()->paddingBottom();
+        return isHorizontal() ? boxModelObject().paddingRight() : boxModelObject().paddingBottom();
     }
 
     bool includeLogicalLeftEdge() const { return m_includeLogicalLeftEdge; }
@@ -198,10 +199,10 @@ public:
 
     void removeChild(InlineBox* child, MarkLineBoxes);
 
-    virtual LayoutObject::SelectionState selectionState() const override;
+    SelectionState selectionState() const override;
 
-    virtual bool canAccommodateEllipsis(bool ltr, int blockEdge, int ellipsisWidth) const override final;
-    virtual LayoutUnit placeEllipsisBox(bool ltr, LayoutUnit blockLeftEdge, LayoutUnit blockRightEdge, LayoutUnit ellipsisWidth, LayoutUnit &truncatedWidth, bool&) override;
+    bool canAccommodateEllipsis(bool ltr, int blockEdge, int ellipsisWidth) const final;
+    LayoutUnit placeEllipsisBox(bool ltr, LayoutUnit blockLeftEdge, LayoutUnit blockRightEdge, LayoutUnit ellipsisWidth, LayoutUnit &truncatedWidth, bool&) override;
 
     bool hasTextChildren() const { return m_hasTextChildren; }
     bool hasTextDescendants() const { return m_hasTextDescendants; }
@@ -232,7 +233,7 @@ public:
     LayoutRect logicalLayoutOverflowRect(LayoutUnit lineTop, LayoutUnit lineBottom) const
     {
         LayoutRect result = layoutOverflowRect(lineTop, lineBottom);
-        if (!layoutObject().isHorizontalWritingMode())
+        if (!lineLayoutItem().isHorizontalWritingMode())
             result = result.transposedRect();
         return result;
     }
@@ -258,7 +259,7 @@ public:
     LayoutRect logicalVisualOverflowRect(LayoutUnit lineTop, LayoutUnit lineBottom) const
     {
         LayoutRect result = visualOverflowRect(lineTop, lineBottom);
-        if (!layoutObject().isHorizontalWritingMode())
+        if (!lineLayoutItem().isHorizontalWritingMode())
             result = result.transposedRect();
         return result;
     }
@@ -301,7 +302,7 @@ private:
 protected:
     OwnPtr<OverflowModel> m_overflow;
 
-    virtual bool isInlineFlowBox() const override final { return true; }
+    bool isInlineFlowBox() const final { return true; }
 
     InlineBox* m_firstChild;
     InlineBox* m_lastChild;

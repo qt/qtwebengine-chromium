@@ -9,7 +9,8 @@
 #include <vector>
 
 #include "base/logging.h"
-#include "content/common/mac/io_surface_manager.h"
+#include "content/common/gpu/client/gpu_memory_buffer_impl.h"
+#include "ui/gfx/buffer_format_util.h"
 #include "ui/gl/gl_image_io_surface.h"
 
 namespace content {
@@ -23,21 +24,30 @@ void AddIntegerValue(CFMutableDictionaryRef dictionary,
   CFDictionaryAddValue(dictionary, key, number.get());
 }
 
-int32 BytesPerPixel(gfx::GpuMemoryBuffer::Format format) {
+int32 BytesPerElement(gfx::BufferFormat format, int plane) {
   switch (format) {
-    case gfx::GpuMemoryBuffer::R_8:
+    case gfx::BufferFormat::R_8:
+      DCHECK_EQ(plane, 0);
       return 1;
-    case gfx::GpuMemoryBuffer::BGRA_8888:
+    case gfx::BufferFormat::BGRA_8888:
+      DCHECK_EQ(plane, 0);
       return 4;
-    case gfx::GpuMemoryBuffer::ATC:
-    case gfx::GpuMemoryBuffer::ATCIA:
-    case gfx::GpuMemoryBuffer::DXT1:
-    case gfx::GpuMemoryBuffer::DXT5:
-    case gfx::GpuMemoryBuffer::ETC1:
-    case gfx::GpuMemoryBuffer::RGBA_4444:
-    case gfx::GpuMemoryBuffer::RGBA_8888:
-    case gfx::GpuMemoryBuffer::RGBX_8888:
-    case gfx::GpuMemoryBuffer::YUV_420:
+    case gfx::BufferFormat::YUV_420_BIPLANAR:
+      static int32 bytes_per_element[] = {1, 2};
+      DCHECK_LT(static_cast<size_t>(plane), arraysize(bytes_per_element));
+      return bytes_per_element[plane];
+    case gfx::BufferFormat::UYVY_422:
+      DCHECK_EQ(plane, 0);
+      return 2;
+    case gfx::BufferFormat::ATC:
+    case gfx::BufferFormat::ATCIA:
+    case gfx::BufferFormat::DXT1:
+    case gfx::BufferFormat::DXT5:
+    case gfx::BufferFormat::ETC1:
+    case gfx::BufferFormat::RGBA_4444:
+    case gfx::BufferFormat::RGBA_8888:
+    case gfx::BufferFormat::BGRX_8888:
+    case gfx::BufferFormat::YUV_420:
       NOTREACHED();
       return 0;
   }
@@ -46,21 +56,25 @@ int32 BytesPerPixel(gfx::GpuMemoryBuffer::Format format) {
   return 0;
 }
 
-int32 PixelFormat(gfx::GpuMemoryBuffer::Format format) {
+int32 PixelFormat(gfx::BufferFormat format) {
   switch (format) {
-    case gfx::GpuMemoryBuffer::R_8:
+    case gfx::BufferFormat::R_8:
       return 'L008';
-    case gfx::GpuMemoryBuffer::BGRA_8888:
+    case gfx::BufferFormat::BGRA_8888:
       return 'BGRA';
-    case gfx::GpuMemoryBuffer::ATC:
-    case gfx::GpuMemoryBuffer::ATCIA:
-    case gfx::GpuMemoryBuffer::DXT1:
-    case gfx::GpuMemoryBuffer::DXT5:
-    case gfx::GpuMemoryBuffer::ETC1:
-    case gfx::GpuMemoryBuffer::RGBA_4444:
-    case gfx::GpuMemoryBuffer::RGBA_8888:
-    case gfx::GpuMemoryBuffer::RGBX_8888:
-    case gfx::GpuMemoryBuffer::YUV_420:
+    case gfx::BufferFormat::YUV_420_BIPLANAR:
+      return '420v';
+    case gfx::BufferFormat::UYVY_422:
+      return '2vuy';
+    case gfx::BufferFormat::ATC:
+    case gfx::BufferFormat::ATCIA:
+    case gfx::BufferFormat::DXT1:
+    case gfx::BufferFormat::DXT5:
+    case gfx::BufferFormat::ETC1:
+    case gfx::BufferFormat::RGBA_4444:
+    case gfx::BufferFormat::RGBA_8888:
+    case gfx::BufferFormat::BGRX_8888:
+    case gfx::BufferFormat::YUV_420:
       NOTREACHED();
       return 0;
   }
@@ -70,10 +84,16 @@ int32 PixelFormat(gfx::GpuMemoryBuffer::Format format) {
 }
 
 const GpuMemoryBufferFactory::Configuration kSupportedConfigurations[] = {
-    {gfx::GpuMemoryBuffer::R_8, gfx::GpuMemoryBuffer::PERSISTENT_MAP},
-    {gfx::GpuMemoryBuffer::R_8, gfx::GpuMemoryBuffer::MAP},
-    {gfx::GpuMemoryBuffer::BGRA_8888, gfx::GpuMemoryBuffer::PERSISTENT_MAP},
-    {gfx::GpuMemoryBuffer::BGRA_8888, gfx::GpuMemoryBuffer::MAP}};
+    {gfx::BufferFormat::BGRA_8888, gfx::BufferUsage::SCANOUT},
+    {gfx::BufferFormat::R_8, gfx::BufferUsage::PERSISTENT_MAP},
+    {gfx::BufferFormat::R_8, gfx::BufferUsage::MAP},
+    {gfx::BufferFormat::BGRA_8888, gfx::BufferUsage::PERSISTENT_MAP},
+    {gfx::BufferFormat::BGRA_8888, gfx::BufferUsage::MAP},
+    {gfx::BufferFormat::UYVY_422, gfx::BufferUsage::MAP},
+    {gfx::BufferFormat::UYVY_422, gfx::BufferUsage::PERSISTENT_MAP},
+    {gfx::BufferFormat::YUV_420_BIPLANAR, gfx::BufferUsage::MAP},
+    {gfx::BufferFormat::YUV_420_BIPLANAR, gfx::BufferUsage::PERSISTENT_MAP},
+};
 
 }  // namespace
 
@@ -85,8 +105,8 @@ GpuMemoryBufferFactoryIOSurface::~GpuMemoryBufferFactoryIOSurface() {
 
 // static
 bool GpuMemoryBufferFactoryIOSurface::IsGpuMemoryBufferConfigurationSupported(
-    gfx::GpuMemoryBuffer::Format format,
-    gfx::GpuMemoryBuffer::Usage usage) {
+    gfx::BufferFormat format,
+    gfx::BufferUsage usage) {
   for (auto& configuration : kSupportedConfigurations) {
     if (configuration.format == format && configuration.usage == usage)
       return true;
@@ -106,19 +126,37 @@ gfx::GpuMemoryBufferHandle
 GpuMemoryBufferFactoryIOSurface::CreateGpuMemoryBuffer(
     gfx::GpuMemoryBufferId id,
     const gfx::Size& size,
-    gfx::GpuMemoryBuffer::Format format,
-    gfx::GpuMemoryBuffer::Usage usage,
+    gfx::BufferFormat format,
+    gfx::BufferUsage usage,
     int client_id,
     gfx::PluginWindowHandle surface_handle) {
-  base::ScopedCFTypeRef<CFMutableDictionaryRef> properties;
-  properties.reset(CFDictionaryCreateMutable(kCFAllocatorDefault,
-                                             0,
-                                             &kCFTypeDictionaryKeyCallBacks,
-                                             &kCFTypeDictionaryValueCallBacks));
+  size_t num_planes = gfx::NumberOfPlanesForBufferFormat(format);
+  base::ScopedCFTypeRef<CFMutableArrayRef> planes(CFArrayCreateMutable(
+      kCFAllocatorDefault, num_planes, &kCFTypeArrayCallBacks));
+
+  for (size_t plane = 0; plane < num_planes; ++plane) {
+    size_t factor = gfx::SubsamplingFactorForBufferFormat(format, plane);
+
+    base::ScopedCFTypeRef<CFMutableDictionaryRef> plane_info(
+        CFDictionaryCreateMutable(kCFAllocatorDefault, 0,
+                                  &kCFTypeDictionaryKeyCallBacks,
+                                  &kCFTypeDictionaryValueCallBacks));
+    AddIntegerValue(plane_info, kIOSurfacePlaneWidth, size.width() / factor);
+    AddIntegerValue(plane_info, kIOSurfacePlaneHeight, size.height() / factor);
+    AddIntegerValue(plane_info, kIOSurfacePlaneBytesPerElement,
+                    BytesPerElement(format, plane));
+
+    CFArrayAppendValue(planes, plane_info);
+  }
+
+  base::ScopedCFTypeRef<CFMutableDictionaryRef> properties(
+      CFDictionaryCreateMutable(kCFAllocatorDefault, 0,
+                                &kCFTypeDictionaryKeyCallBacks,
+                                &kCFTypeDictionaryValueCallBacks));
   AddIntegerValue(properties, kIOSurfaceWidth, size.width());
   AddIntegerValue(properties, kIOSurfaceHeight, size.height());
-  AddIntegerValue(properties, kIOSurfaceBytesPerElement, BytesPerPixel(format));
   AddIntegerValue(properties, kIOSurfacePixelFormat, PixelFormat(format));
+  CFDictionaryAddValue(properties, kIOSurfacePlaneInfo, planes);
 
   base::ScopedCFTypeRef<IOSurfaceRef> io_surface(IOSurfaceCreate(properties));
   if (!io_surface)
@@ -165,7 +203,7 @@ scoped_refptr<gfx::GLImage>
 GpuMemoryBufferFactoryIOSurface::CreateImageForGpuMemoryBuffer(
     const gfx::GpuMemoryBufferHandle& handle,
     const gfx::Size& size,
-    gfx::GpuMemoryBuffer::Format format,
+    gfx::BufferFormat format,
     unsigned internalformat,
     int client_id) {
   base::AutoLock lock(io_surfaces_lock_);
@@ -177,7 +215,7 @@ GpuMemoryBufferFactoryIOSurface::CreateImageForGpuMemoryBuffer(
     return scoped_refptr<gfx::GLImage>();
 
   scoped_refptr<gfx::GLImageIOSurface> image(
-      new gfx::GLImageIOSurface(size, internalformat));
+      new gfx::GLImageIOSurface(handle.id, size, internalformat));
   if (!image->Initialize(it->second.get(), format))
     return scoped_refptr<gfx::GLImage>();
 

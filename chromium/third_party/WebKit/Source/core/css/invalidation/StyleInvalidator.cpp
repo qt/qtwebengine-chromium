@@ -7,7 +7,7 @@
 
 #include "core/css/invalidation/StyleInvalidator.h"
 
-#include "core/css/invalidation/DescendantInvalidationSet.h"
+#include "core/css/invalidation/InvalidationSet.h"
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
 #include "core/dom/ElementTraversal.h"
@@ -23,7 +23,7 @@ namespace blink {
 // invalidate methods.
 // To minimize performance impact, we wrap trace events with a lookup of
 // cached flag. The cached flag is made "static const" and is not shared
-// with DescendantInvalidationSet to avoid additional GOT lookup cost.
+// with InvalidationSet to avoid additional GOT lookup cost.
 static const unsigned char* s_tracingEnabled = nullptr;
 
 #define TRACE_STYLE_INVALIDATOR_INVALIDATION_IF_ENABLED(element, reason) \
@@ -40,7 +40,7 @@ void StyleInvalidator::invalidate(Document& document)
     clearPendingInvalidations();
 }
 
-void StyleInvalidator::scheduleInvalidation(PassRefPtrWillBeRawPtr<DescendantInvalidationSet> invalidationSet, Element& element)
+void StyleInvalidator::scheduleInvalidation(PassRefPtrWillBeRawPtr<InvalidationSet> invalidationSet, Element& element)
 {
     ASSERT(element.inActiveDocument());
     if (element.styleChangeType() >= SubtreeStyleChange)
@@ -50,10 +50,11 @@ void StyleInvalidator::scheduleInvalidation(PassRefPtrWillBeRawPtr<DescendantInv
         clearInvalidation(element);
         return;
     }
-    if (invalidationSet->isEmpty()) {
+    if (invalidationSet->invalidatesSelf())
         element.setNeedsStyleRecalc(LocalStyleChange, StyleChangeReasonForTracing::create(StyleChangeReason::StyleInvalidator));
+
+    if (invalidationSet->isEmpty())
         return;
-    }
 
     InvalidationList& list = ensurePendingInvalidationList(element);
     list.append(invalidationSet);
@@ -84,14 +85,14 @@ void StyleInvalidator::clearPendingInvalidations()
 StyleInvalidator::StyleInvalidator()
 {
     s_tracingEnabled = TRACE_EVENT_API_GET_CATEGORY_ENABLED(TRACE_DISABLED_BY_DEFAULT("devtools.timeline.invalidationTracking"));
-    DescendantInvalidationSet::cacheTracingFlag();
+    InvalidationSet::cacheTracingFlag();
 }
 
 StyleInvalidator::~StyleInvalidator()
 {
 }
 
-void StyleInvalidator::RecursionData::pushInvalidationSet(const DescendantInvalidationSet& invalidationSet)
+void StyleInvalidator::RecursionData::pushInvalidationSet(const InvalidationSet& invalidationSet)
 {
     ASSERT(!m_wholeSubtreeInvalid);
     ASSERT(!invalidationSet.wholeSubtreeInvalid());
@@ -128,6 +129,7 @@ ALWAYS_INLINE bool StyleInvalidator::checkInvalidationSetsAgainstElement(Element
         recursionData.setWholeSubtreeInvalid();
         return false;
     }
+    bool thisElementNeedsStyleRecalc = recursionData.matchesCurrentInvalidationSets(element);
     if (element.needsStyleInvalidation()) {
         if (InvalidationList* invalidationList = m_pendingInvalidationMap.get(&element)) {
             for (const auto& invalidationSet : *invalidationList)
@@ -138,11 +140,9 @@ ALWAYS_INLINE bool StyleInvalidator::checkInvalidationSetsAgainstElement(Element
                     TRACE_EVENT_SCOPE_THREAD,
                     "data", InspectorStyleInvalidatorInvalidateEvent::invalidationList(element, *invalidationList));
             }
-            return true;
         }
     }
-
-    return recursionData.matchesCurrentInvalidationSets(element);
+    return thisElementNeedsStyleRecalc;
 }
 
 bool StyleInvalidator::invalidateChildren(Element& element, StyleInvalidator::RecursionData& recursionData)

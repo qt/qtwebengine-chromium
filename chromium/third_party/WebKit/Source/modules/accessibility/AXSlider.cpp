@@ -44,9 +44,9 @@ AXSlider::AXSlider(LayoutObject* layoutObject, AXObjectCacheImpl& axObjectCache)
 {
 }
 
-PassRefPtrWillBeRawPtr<AXSlider> AXSlider::create(LayoutObject* layoutObject, AXObjectCacheImpl& axObjectCache)
+AXSlider* AXSlider::create(LayoutObject* layoutObject, AXObjectCacheImpl& axObjectCache)
 {
-    return adoptRefWillBeNoop(new AXSlider(layoutObject, axObjectCache));
+    return new AXSlider(layoutObject, axObjectCache);
 }
 
 AccessibilityRole AXSlider::determineAccessibilityRole()
@@ -127,7 +127,7 @@ void AXSlider::setValue(const String& value)
     if (input->value() == value)
         return;
 
-    input->setValue(value);
+    input->setValue(value, DispatchInputAndChangeEvent);
 
     // Fire change event manually, as LayoutSlider::setValueForPosition does.
     input->dispatchFormControlChangeEvent();
@@ -143,9 +143,9 @@ AXSliderThumb::AXSliderThumb(AXObjectCacheImpl& axObjectCache)
 {
 }
 
-PassRefPtrWillBeRawPtr<AXSliderThumb> AXSliderThumb::create(AXObjectCacheImpl& axObjectCache)
+AXSliderThumb* AXSliderThumb::create(AXObjectCacheImpl& axObjectCache)
 {
-    return adoptRefWillBeNoop(new AXSliderThumb(axObjectCache));
+    return new AXSliderThumb(axObjectCache);
 }
 
 LayoutRect AXSliderThumb::elementRect() const

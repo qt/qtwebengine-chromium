@@ -78,7 +78,16 @@ void LayoutImage::willBeDestroyed()
     LayoutReplaced::willBeDestroyed();
 }
 
-void LayoutImage::setImageResource(PassOwnPtr<LayoutImageResource> imageResource)
+void LayoutImage::styleDidChange(StyleDifference diff, const ComputedStyle* oldStyle)
+{
+    LayoutReplaced::styleDidChange(diff, oldStyle);
+
+    RespectImageOrientationEnum oldOrientation = oldStyle ? oldStyle->respectImageOrientation() : ComputedStyle::initialRespectImageOrientation();
+    if (style() && style()->respectImageOrientation() != oldOrientation)
+        intrinsicSizeChanged();
+}
+
+void LayoutImage::setImageResource(PassOwnPtrWillBeRawPtr<LayoutImageResource> imageResource)
 {
     ASSERT(!m_imageResource);
     m_imageResource = imageResource;
@@ -87,6 +96,8 @@ void LayoutImage::setImageResource(PassOwnPtr<LayoutImageResource> imageResource
 
 void LayoutImage::imageChanged(WrappedImagePtr newImage, const IntRect* rect)
 {
+    ASSERT(view());
+    ASSERT(view()->frameView());
     if (documentBeingDestroyed())
         return;
 
@@ -99,10 +110,17 @@ void LayoutImage::imageChanged(WrappedImagePtr newImage, const IntRect* rect)
     if (newImage != m_imageResource->imagePtr())
         return;
 
+    if (isGeneratedContent() && isHTMLImageElement(node()) && m_imageResource->errorOccurred())  {
+        toHTMLImageElement(node())->ensureFallbackForGeneratedContent();
+        return;
+    }
+
     // Per the spec, we let the server-sent header override srcset/other sources of dpr.
     // https://github.com/igrigorik/http-client-hints/blob/master/draft-grigorik-http-client-hints-01.txt#L255
-    if (m_imageResource->cachedImage() && m_imageResource->cachedImage()->hasDevicePixelRatioHeaderValue())
+    if (m_imageResource->cachedImage() && m_imageResource->cachedImage()->hasDevicePixelRatioHeaderValue()) {
+        UseCounter::count(&(view()->frameView()->frame()), UseCounter::ClientHintsContentDPR);
         m_imageDevicePixelRatio = 1 / m_imageResource->cachedImage()->devicePixelRatioHeaderValue();
+    }
 
     if (!m_didIncrementVisuallyNonEmptyPixelCount) {
         // At a zoom level of 1 the image is guaranteed to have an integer size.
@@ -194,12 +212,12 @@ void LayoutImage::notifyFinished(Resource* newImage)
     }
 }
 
-void LayoutImage::paintReplaced(const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
+void LayoutImage::paintReplaced(const PaintInfo& paintInfo, const LayoutPoint& paintOffset) const
 {
     ImagePainter(*this).paintReplaced(paintInfo, paintOffset);
 }
 
-void LayoutImage::paint(const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
+void LayoutImage::paint(const PaintInfo& paintInfo, const LayoutPoint& paintOffset) const
 {
     ImagePainter(*this).paint(paintInfo, paintOffset);
 }
@@ -215,7 +233,7 @@ void LayoutImage::areaElementFocusChanged(HTMLAreaElement* areaElement)
     invalidatePaintAndMarkForLayoutIfNeeded();
 }
 
-bool LayoutImage::boxShadowShouldBeAppliedToBackground(BackgroundBleedAvoidance bleedAvoidance, InlineFlowBox*) const
+bool LayoutImage::boxShadowShouldBeAppliedToBackground(BackgroundBleedAvoidance bleedAvoidance, const InlineFlowBox*) const
 {
     if (!LayoutBoxModelObject::boxShadowShouldBeAppliedToBackground(bleedAvoidance))
         return false;
@@ -249,7 +267,7 @@ bool LayoutImage::foregroundIsKnownToBeOpaqueInRect(const LayoutRect& localRect,
     return m_imageResource->cachedImage() && m_imageResource->cachedImage()->currentFrameKnownToBeOpaque(this);
 }
 
-bool LayoutImage::computeBackgroundIsKnownToBeObscured()
+bool LayoutImage::computeBackgroundIsKnownToBeObscured() const
 {
     if (!hasBackground())
         return false;

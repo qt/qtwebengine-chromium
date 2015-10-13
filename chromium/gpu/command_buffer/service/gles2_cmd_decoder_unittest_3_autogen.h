@@ -12,6 +12,24 @@
 #ifndef GPU_COMMAND_BUFFER_SERVICE_GLES2_CMD_DECODER_UNITTEST_3_AUTOGEN_H_
 #define GPU_COMMAND_BUFFER_SERVICE_GLES2_CMD_DECODER_UNITTEST_3_AUTOGEN_H_
 
+TEST_P(GLES2DecoderTest3, UniformMatrix2x4fvImmediateValidArgs) {
+  cmds::UniformMatrix2x4fvImmediate& cmd =
+      *GetImmediateAs<cmds::UniformMatrix2x4fvImmediate>();
+  EXPECT_CALL(*gl_,
+              UniformMatrix2x4fv(1, 2, false, reinterpret_cast<GLfloat*>(
+                                                  ImmediateDataAddress(&cmd))));
+  SpecializedSetup<cmds::UniformMatrix2x4fvImmediate, 0>(true);
+  GLfloat temp[8 * 2] = {
+      0,
+  };
+  cmd.Init(1, 2, &temp[0]);
+  decoder_->set_unsafe_es3_apis_enabled(true);
+  EXPECT_EQ(error::kNoError, ExecuteImmediateCmd(cmd, sizeof(temp)));
+  EXPECT_EQ(GL_NO_ERROR, GetGLError());
+  decoder_->set_unsafe_es3_apis_enabled(false);
+  EXPECT_EQ(error::kUnknownCommand, ExecuteImmediateCmd(cmd, sizeof(temp)));
+}
+
 TEST_P(GLES2DecoderTest3, UniformMatrix3fvImmediateValidArgs) {
   cmds::UniformMatrix3fvImmediate& cmd =
       *GetImmediateAs<cmds::UniformMatrix3fvImmediate>();
@@ -325,6 +343,8 @@ TEST_P(GLES2DecoderTest3, ViewportInvalidArgs3_0) {
 // TODO(gman): TexStorage2DEXT
 // TODO(gman): GenQueriesEXTImmediate
 // TODO(gman): DeleteQueriesEXTImmediate
+// TODO(gman): QueryCounterEXT
+
 // TODO(gman): BeginQueryEXT
 
 TEST_P(GLES2DecoderTest3, BeginTransformFeedbackValidArgs) {
@@ -351,6 +371,8 @@ TEST_P(GLES2DecoderTest3, EndTransformFeedbackValidArgs) {
   decoder_->set_unsafe_es3_apis_enabled(false);
   EXPECT_EQ(error::kUnknownCommand, ExecuteCmd(cmd));
 }
+// TODO(gman): SetDisjointValueSyncCHROMIUM
+
 // TODO(gman): InsertEventMarkerEXT
 
 // TODO(gman): PushGroupMarkerEXT
@@ -393,6 +415,7 @@ TEST_P(GLES2DecoderTest3, PopGroupMarkerEXTValidArgs) {
 // TODO(gman): CopyTextureCHROMIUM
 // TODO(gman): CopySubTextureCHROMIUM
 // TODO(gman): CompressedCopyTextureCHROMIUM
+// TODO(gman): CompressedCopySubTextureCHROMIUM
 // TODO(gman): DrawArraysInstancedANGLE
 // TODO(gman): DrawElementsInstancedANGLE
 // TODO(gman): VertexAttribDivisorANGLE
@@ -433,14 +456,6 @@ TEST_P(GLES2DecoderTest3, IsValuebufferCHROMIUMInvalidArgsBadSharedMemoryId) {
 // TODO(gman): TraceBeginCHROMIUM
 
 // TODO(gman): TraceEndCHROMIUM
-// TODO(gman): AsyncTexSubImage2DCHROMIUM
-
-// TODO(gman): AsyncTexImage2DCHROMIUM
-
-// TODO(gman): WaitAsyncTexImage2DCHROMIUM
-
-// TODO(gman): WaitAllAsyncTexImage2DCHROMIUM
-
 // TODO(gman): LoseContextCHROMIUM
 // TODO(gman): InsertSyncPointCHROMIUM
 

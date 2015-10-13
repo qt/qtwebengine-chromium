@@ -28,8 +28,6 @@
 #include "talk/app/webrtc/peerconnectionfactory.h"
 
 #include "talk/app/webrtc/audiotrack.h"
-#include "talk/app/webrtc/dtlsidentityservice.h"
-#include "talk/app/webrtc/dtlsidentitystore.h"
 #include "talk/app/webrtc/localaudiosource.h"
 #include "talk/app/webrtc/mediastreamproxy.h"
 #include "talk/app/webrtc/mediastreamtrackproxy.h"
@@ -40,7 +38,6 @@
 #include "talk/app/webrtc/videosource.h"
 #include "talk/app/webrtc/videosourceproxy.h"
 #include "talk/app/webrtc/videotrack.h"
-#include "talk/media/devices/dummydevicemanager.h"
 #include "talk/media/webrtc/webrtcmediaengine.h"
 #include "talk/media/webrtc/webrtcvideodecoderfactory.h"
 #include "talk/media/webrtc/webrtcvideoencoderfactory.h"
@@ -48,6 +45,30 @@
 #include "webrtc/modules/audio_device/include/audio_device.h"
 
 namespace webrtc {
+
+namespace {
+
+// Passes down the calls to |store_|. See usage in CreatePeerConnection.
+class DtlsIdentityStoreWrapper : public DtlsIdentityStoreInterface {
+ public:
+  DtlsIdentityStoreWrapper(
+      const rtc::scoped_refptr<RefCountedDtlsIdentityStore>& store)
+      : store_(store) {
+    RTC_DCHECK(store_);
+  }
+
+  void RequestIdentity(
+      rtc::KeyType key_type,
+      const rtc::scoped_refptr<webrtc::DtlsIdentityRequestObserver>&
+          observer) override {
+    store_->RequestIdentity(key_type, observer);
+  }
+
+ private:
+  rtc::scoped_refptr<RefCountedDtlsIdentityStore> store_;
+};
+
+}  // anonymous namespace
 
 rtc::scoped_refptr<PeerConnectionFactoryInterface>
 CreatePeerConnectionFactory() {
@@ -129,13 +150,13 @@ PeerConnectionFactory::PeerConnectionFactory(
 }
 
 PeerConnectionFactory::~PeerConnectionFactory() {
-  DCHECK(signaling_thread_->IsCurrent());
-  channel_manager_.reset(NULL);
-  default_allocator_factory_ = NULL;
+  RTC_DCHECK(signaling_thread_->IsCurrent());
+  channel_manager_.reset(nullptr);
+  default_allocator_factory_ = nullptr;
 
   // Make sure |worker_thread_| and |signaling_thread_| outlive
   // |dtls_identity_store_|.
-  dtls_identity_store_.reset(NULL);
+  dtls_identity_store_ = nullptr;
 
   if (owns_ptrs_) {
     if (wraps_current_thread_)
@@ -145,15 +166,12 @@ PeerConnectionFactory::~PeerConnectionFactory() {
 }
 
 bool PeerConnectionFactory::Initialize() {
-  DCHECK(signaling_thread_->IsCurrent());
+  RTC_DCHECK(signaling_thread_->IsCurrent());
   rtc::InitRandom(rtc::Time());
 
   default_allocator_factory_ = PortAllocatorFactory::Create(worker_thread_);
   if (!default_allocator_factory_)
     return false;
-
-  cricket::DummyDeviceManager* device_manager(
-      new cricket::DummyDeviceManager());
 
   // TODO:  Need to make sure only one VoE is created inside
   // WebRtcMediaEngine.
@@ -161,17 +179,16 @@ bool PeerConnectionFactory::Initialize() {
       worker_thread_->Invoke<cricket::MediaEngineInterface*>(rtc::Bind(
       &PeerConnectionFactory::CreateMediaEngine_w, this));
 
-  channel_manager_.reset(new cricket::ChannelManager(
-      media_engine, device_manager, worker_thread_));
+  channel_manager_.reset(
+      new cricket::ChannelManager(media_engine, worker_thread_));
 
   channel_manager_->SetVideoRtxEnabled(true);
   if (!channel_manager_->Init()) {
     return false;
   }
 
-  dtls_identity_store_.reset(
-      new DtlsIdentityStore(signaling_thread_, worker_thread_));
-  dtls_identity_store_->Initialize();
+  dtls_identity_store_ = new RefCountedDtlsIdentityStore(
+      signaling_thread_, worker_thread_);
 
   return true;
 }
@@ -179,7 +196,7 @@ bool PeerConnectionFactory::Initialize() {
 rtc::scoped_refptr<AudioSourceInterface>
 PeerConnectionFactory::CreateAudioSource(
     const MediaConstraintsInterface* constraints) {
-  DCHECK(signaling_thread_->IsCurrent());
+  RTC_DCHECK(signaling_thread_->IsCurrent());
   rtc::scoped_refptr<LocalAudioSource> source(
       LocalAudioSource::Create(options_, constraints));
   return source;
@@ -189,14 +206,14 @@ rtc::scoped_refptr<VideoSourceInterface>
 PeerConnectionFactory::CreateVideoSource(
     cricket::VideoCapturer* capturer,
     const MediaConstraintsInterface* constraints) {
-  DCHECK(signaling_thread_->IsCurrent());
+  RTC_DCHECK(signaling_thread_->IsCurrent());
   rtc::scoped_refptr<VideoSource> source(
       VideoSource::Create(channel_manager_.get(), capturer, constraints));
   return VideoSourceProxy::Create(signaling_thread_, source);
 }
 
 bool PeerConnectionFactory::StartAecDump(rtc::PlatformFile file) {
-  DCHECK(signaling_thread_->IsCurrent());
+  RTC_DCHECK(signaling_thread_->IsCurrent());
   return channel_manager_->StartAecDump(file);
 }
 
@@ -205,13 +222,17 @@ PeerConnectionFactory::CreatePeerConnection(
     const PeerConnectionInterface::RTCConfiguration& configuration,
     const MediaConstraintsInterface* constraints,
     PortAllocatorFactoryInterface* allocator_factory,
-    DTLSIdentityServiceInterface* dtls_identity_service,
+    rtc::scoped_ptr<DtlsIdentityStoreInterface> dtls_identity_store,
     PeerConnectionObserver* observer) {
-  DCHECK(signaling_thread_->IsCurrent());
-  DCHECK(allocator_factory || default_allocator_factory_);
+  RTC_DCHECK(signaling_thread_->IsCurrent());
+  RTC_DCHECK(allocator_factory || default_allocator_factory_);
 
-  if (!dtls_identity_service) {
-    dtls_identity_service = new DtlsIdentityService(dtls_identity_store_.get());
+  if (!dtls_identity_store.get()) {
+    // Because |pc|->Initialize takes ownership of the store we need a new
+    // wrapper object that can be deleted without deleting the underlying
+    // |dtls_identity_store_|, protecting it from being deleted multiple times.
+    dtls_identity_store.reset(
+        new DtlsIdentityStoreWrapper(dtls_identity_store_));
   }
 
   PortAllocatorFactoryInterface* chosen_allocator_factory =
@@ -224,7 +245,7 @@ PeerConnectionFactory::CreatePeerConnection(
       configuration,
       constraints,
       chosen_allocator_factory,
-      dtls_identity_service,
+      dtls_identity_store.Pass(),
       observer)) {
     return NULL;
   }
@@ -233,7 +254,7 @@ PeerConnectionFactory::CreatePeerConnection(
 
 rtc::scoped_refptr<MediaStreamInterface>
 PeerConnectionFactory::CreateLocalMediaStream(const std::string& label) {
-  DCHECK(signaling_thread_->IsCurrent());
+  RTC_DCHECK(signaling_thread_->IsCurrent());
   return MediaStreamProxy::Create(signaling_thread_,
                                   MediaStream::Create(label));
 }
@@ -242,7 +263,7 @@ rtc::scoped_refptr<VideoTrackInterface>
 PeerConnectionFactory::CreateVideoTrack(
     const std::string& id,
     VideoSourceInterface* source) {
-  DCHECK(signaling_thread_->IsCurrent());
+  RTC_DCHECK(signaling_thread_->IsCurrent());
   rtc::scoped_refptr<VideoTrackInterface> track(
       VideoTrack::Create(id, source));
   return VideoTrackProxy::Create(signaling_thread_, track);
@@ -251,14 +272,14 @@ PeerConnectionFactory::CreateVideoTrack(
 rtc::scoped_refptr<AudioTrackInterface>
 PeerConnectionFactory::CreateAudioTrack(const std::string& id,
                                         AudioSourceInterface* source) {
-  DCHECK(signaling_thread_->IsCurrent());
+  RTC_DCHECK(signaling_thread_->IsCurrent());
   rtc::scoped_refptr<AudioTrackInterface> track(
       AudioTrack::Create(id, source));
   return AudioTrackProxy::Create(signaling_thread_, track);
 }
 
 cricket::ChannelManager* PeerConnectionFactory::channel_manager() {
-  DCHECK(signaling_thread_->IsCurrent());
+  RTC_DCHECK(signaling_thread_->IsCurrent());
   return channel_manager_.get();
 }
 
@@ -269,7 +290,7 @@ rtc::Thread* PeerConnectionFactory::signaling_thread() {
 }
 
 rtc::Thread* PeerConnectionFactory::worker_thread() {
-  DCHECK(signaling_thread_->IsCurrent());
+  RTC_DCHECK(signaling_thread_->IsCurrent());
   return worker_thread_;
 }
 

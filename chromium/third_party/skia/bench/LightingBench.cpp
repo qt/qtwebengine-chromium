@@ -5,10 +5,10 @@
  * found in the LICENSE file.
  */
 #include "Benchmark.h"
-#include "SkBitmapSource.h"
 #include "SkCanvas.h"
 #include "SkDevice.h"
 #include "SkLightingImageFilter.h"
+#include "SkPoint3.h"
 
 #define FILTER_WIDTH_SMALL  SkIntToScalar(32)
 #define FILTER_HEIGHT_SMALL SkIntToScalar(32)
@@ -20,7 +20,7 @@ public:
     LightingBaseBench(bool small) : fIsSmall(small) { }
 
 protected:
-    void draw(const int loops, SkCanvas* canvas, SkImageFilter* imageFilter) const {
+    void draw(int loops, SkCanvas* canvas, SkImageFilter* imageFilter) const {
         SkRect r = fIsSmall ? SkRect::MakeWH(FILTER_WIDTH_SMALL, FILTER_HEIGHT_SMALL) :
                               SkRect::MakeWH(FILTER_WIDTH_LARGE, FILTER_HEIGHT_LARGE);
         SkPaint paint;
@@ -30,63 +30,65 @@ protected:
         }
     }
 
-    static SkPoint3 getPointLocation() {
-        static SkPoint3 pointLocation(0, 0, SkIntToScalar(10));
+    static SkPoint3 GetPointLocation() {
+        static SkPoint3 pointLocation = SkPoint3::Make(0, 0, SkIntToScalar(10));
         return pointLocation;
     }
 
-    static SkPoint3 getDistantDirection() {
+    static SkPoint3 GetDistantDirection() {
         static SkScalar azimuthRad = SkDegreesToRadians(SkIntToScalar(225));
         static SkScalar elevationRad = SkDegreesToRadians(SkIntToScalar(5));
-        static SkPoint3 distantDirection(SkScalarMul(SkScalarCos(azimuthRad),
-                                                     SkScalarCos(elevationRad)),
-                                         SkScalarMul(SkScalarSin(azimuthRad),
-                                                     SkScalarCos(elevationRad)),
-                                         SkScalarSin(elevationRad));
+        static SkPoint3 distantDirection = SkPoint3::Make(SkScalarMul(SkScalarCos(azimuthRad),
+                                                                      SkScalarCos(elevationRad)),
+                                                          SkScalarMul(SkScalarSin(azimuthRad),
+                                                                      SkScalarCos(elevationRad)),
+                                                          SkScalarSin(elevationRad));
         return distantDirection;
     }
 
-    static SkPoint3 getSpotLocation() {
-        static SkPoint3 spotLocation(SkIntToScalar(-10), SkIntToScalar(-10), SkIntToScalar(20));
+    static SkPoint3 GetSpotLocation() {
+        static SkPoint3 spotLocation = SkPoint3::Make(SkIntToScalar(-10),
+                                                      SkIntToScalar(-10),
+                                                      SkIntToScalar(20));
         return spotLocation;
     }
 
-    static SkPoint3 getSpotTarget() {
-        static SkPoint3 spotTarget(SkIntToScalar(40), SkIntToScalar(40), 0);
+    static SkPoint3 GetSpotTarget() {
+        static SkPoint3 spotTarget = SkPoint3::Make(SkIntToScalar(40), SkIntToScalar(40), 0);
         return spotTarget;
     }
 
-    static SkScalar getSpotExponent() {
+    static SkScalar GetSpotExponent() {
         static SkScalar spotExponent = SK_Scalar1;
         return spotExponent;
     }
 
-    static SkScalar getCutoffAngle() {
+    static SkScalar GetCutoffAngle() {
         static SkScalar cutoffAngle = SkIntToScalar(15);
         return cutoffAngle;
     }
 
-    static SkScalar getKd() {
+    static SkScalar GetKd() {
         static SkScalar kd = SkIntToScalar(2);
         return kd;
     }
 
-    static SkScalar getKs() {
+    static SkScalar GetKs() {
         static SkScalar ks = SkIntToScalar(1);
         return ks;
     }
 
-    static SkScalar getShininess() {
+    static SkScalar GetShininess() {
         static SkScalar shininess = SkIntToScalar(8);
         return shininess;
     }
 
-    static SkScalar getSurfaceScale() {
+    static SkScalar GetSurfaceScale() {
         static SkScalar surfaceScale = SkIntToScalar(1);
         return surfaceScale;
     }
 
-    static SkColor getWhite() {
+    static SkColor GetWhite() {
         static SkColor white(0xFFFFFFFF);
         return white;
     }
@@ -105,11 +107,11 @@ protected:
         return fIsSmall ? "lightingpointlitdiffuse_small" : "lightingpointlitdiffuse_large";
     }
 
-    void onDraw(const int loops, SkCanvas* canvas) override {
-        draw(loops, canvas, SkLightingImageFilter::CreatePointLitDiffuse(getPointLocation(),
-                                                                         getWhite(),
-                                                                         getSurfaceScale(),
-                                                                         getKd()));
+    void onDraw(int loops, SkCanvas* canvas) override {
+        draw(loops, canvas, SkLightingImageFilter::CreatePointLitDiffuse(GetPointLocation(),
+                                                                         GetWhite(),
+                                                                         GetSurfaceScale(),
+                                                                         GetKd()));
     }
 
 private:
@@ -126,11 +128,11 @@ protected:
         return fIsSmall ? "lightingdistantlitdiffuse_small" : "lightingdistantlitdiffuse_large";
     }
 
-    void onDraw(const int loops, SkCanvas* canvas) override {
-        draw(loops, canvas, SkLightingImageFilter::CreateDistantLitDiffuse(getDistantDirection(),
-                                                                           getWhite(),
-                                                                           getSurfaceScale(),
-                                                                           getKd()));
+    void onDraw(int loops, SkCanvas* canvas) override {
+        draw(loops, canvas, SkLightingImageFilter::CreateDistantLitDiffuse(GetDistantDirection(),
+                                                                           GetWhite(),
+                                                                           GetSurfaceScale(),
+                                                                           GetKd()));
     }
 
 private:
@@ -147,14 +149,14 @@ protected:
         return fIsSmall ? "lightingspotlitdiffuse_small" : "lightingspotlitdiffuse_large";
     }
 
-    void onDraw(const int loops, SkCanvas* canvas) override {
-        draw(loops, canvas, SkLightingImageFilter::CreateSpotLitDiffuse(getSpotLocation(),
-                                                                        getSpotTarget(),
-                                                                        getSpotExponent(),
-                                                                        getCutoffAngle(),
-                                                                        getWhite(),
-                                                                        getSurfaceScale(),
-                                                                        getKd()));
+    void onDraw(int loops, SkCanvas* canvas) override {
+        draw(loops, canvas, SkLightingImageFilter::CreateSpotLitDiffuse(GetSpotLocation(),
+                                                                        GetSpotTarget(),
+                                                                        GetSpotExponent(),
+                                                                        GetCutoffAngle(),
+                                                                        GetWhite(),
+                                                                        GetSurfaceScale(),
+                                                                        GetKd()));
     }
 
 private:
@@ -171,12 +173,12 @@ protected:
         return fIsSmall ? "lightingpointlitspecular_small" : "lightingpointlitspecular_large";
     }
 
-    void onDraw(const int loops, SkCanvas* canvas) override {
-        draw(loops, canvas, SkLightingImageFilter::CreatePointLitSpecular(getPointLocation(),
-                                                                          getWhite(),
-                                                                          getSurfaceScale(),
-                                                                          getKs(),
-                                                                          getShininess()));
+    void onDraw(int loops, SkCanvas* canvas) override {
+        draw(loops, canvas, SkLightingImageFilter::CreatePointLitSpecular(GetPointLocation(),
+                                                                          GetWhite(),
+                                                                          GetSurfaceScale(),
+                                                                          GetKs(),
+                                                                          GetShininess()));
     }
 
 private:
@@ -193,12 +195,12 @@ protected:
         return fIsSmall ? "lightingdistantlitspecular_small" : "lightingdistantlitspecular_large";
     }
 
-    void onDraw(const int loops, SkCanvas* canvas) override {
-        draw(loops, canvas, SkLightingImageFilter::CreateDistantLitSpecular(getDistantDirection(),
-                                                                            getWhite(),
-                                                                            getSurfaceScale(),
-                                                                            getKs(),
-                                                                            getShininess()));
+    void onDraw(int loops, SkCanvas* canvas) override {
+        draw(loops, canvas, SkLightingImageFilter::CreateDistantLitSpecular(GetDistantDirection(),
+                                                                            GetWhite(),
+                                                                            GetSurfaceScale(),
+                                                                            GetKs(),
+                                                                            GetShininess()));
     }
 
 private:
@@ -215,15 +217,15 @@ protected:
         return fIsSmall ? "lightingspotlitspecular_small" : "lightingspotlitspecular_large";
     }
 
-    void onDraw(const int loops, SkCanvas* canvas) override {
-        draw(loops, canvas, SkLightingImageFilter::CreateSpotLitSpecular(getSpotLocation(),
-                                                                         getSpotTarget(),
-                                                                         getSpotExponent(),
-                                                                         getCutoffAngle(),
-                                                                         getWhite(),
-                                                                         getSurfaceScale(),
-                                                                         getKs(),
-                                                                         getShininess()));
+    void onDraw(int loops, SkCanvas* canvas) override {
+        draw(loops, canvas, SkLightingImageFilter::CreateSpotLitSpecular(GetSpotLocation(),
+                                                                         GetSpotTarget(),
+                                                                         GetSpotExponent(),
+                                                                         GetCutoffAngle(),
+                                                                         GetWhite(),
+                                                                         GetSurfaceScale(),
+                                                                         GetKs(),
+                                                                         GetShininess()));
     }
 
 private:

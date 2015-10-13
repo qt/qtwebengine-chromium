@@ -57,17 +57,12 @@ class NET_EXPORT_PRIVATE QuicDataStream : public ReliableQuicStream {
 
   // ReliableQuicStream implementation
   void OnClose() override;
-  uint32 ProcessRawData(const char* data, uint32 data_len) override;
 
   // By default, this is the same as priority(), however it allows streams
   // to temporarily alter effective priority.   For example if a SPDY stream has
   // compressed but not written headers it can write the headers with a higher
   // priority.
   QuicPriority EffectivePriority() const override;
-
-  // Overridden by subclasses to process data.  The headers will be delivered
-  // via OnStreamHeaders, so only data will be delivered through this method.
-  virtual uint32 ProcessData(const char* data, uint32 data_len) = 0;
 
   // Called by the session when decompressed headers data is received
   // for this stream.
@@ -99,6 +94,8 @@ class NET_EXPORT_PRIVATE QuicDataStream : public ReliableQuicStream {
   // been fully processed.  Then they simply delegate to the sequencer.
   virtual size_t Readv(const struct iovec* iov, size_t iov_len);
   virtual int GetReadableRegions(iovec* iov, size_t iov_len) const;
+  void MarkConsumed(size_t num_bytes);
+
   // Returns true when all data has been read from the peer, including the fin.
   bool IsDoneReading() const;
   bool HasBytesToRead() const;

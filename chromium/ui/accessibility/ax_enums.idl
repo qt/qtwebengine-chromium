@@ -191,14 +191,14 @@
   };
 
   // TODO(dmazzoni): switch content/ to use AX_STATE_DISABLED instead of
-  // !AX_STATE_ENABLED, and AX_STATE_EDITABLE instead of !AX_STATE_READONLY.
+  // !AX_STATE_ENABLED.
   enum AXState {
     busy,
     checked,
     collapsed,
     default,
     disabled,  // ui/views only
-    editable,  // ui/views only
+    editable,
     enabled,   // content only
     expanded,
     focusable,
@@ -216,6 +216,7 @@
     protected,
     read_only,
     required,
+    richly_editable,
     selectable,
     selected,
     vertical,
@@ -268,7 +269,11 @@
     scroll_y_min,
     scroll_y_max,
 
-    // Editable text attributes.
+    // Attributes for retrieving the endpoints of a selection.
+    anchor_object_id,
+    anchor_offset,
+    focus_object_id,
+    focus_offset,
     text_sel_start,
     text_sel_end,
 
@@ -304,6 +309,9 @@
 
     // Identifies a child tree which this node hosts.
     child_tree_id,
+
+    // Identifies the parent tree that hosts this tree's root node.
+    parent_tree_id,
 
     // Position or Number of items in current set of listitems or treeitems
     set_size,
@@ -368,12 +376,7 @@
     update_location_only,
 
     // Set on a canvas element if it has fallback content.
-    canvas_has_fallback,
-
-    // Set if this node is the host of an external AXTree, for
-    // example a web view that's a child of a native view, or a
-    // web iframe that's the child of another web frame.
-    is_ax_tree_host
+    canvas_has_fallback
   };
 
   [cpp_enum_prefix_override="ax_attr"] enum AXIntListAttribute {

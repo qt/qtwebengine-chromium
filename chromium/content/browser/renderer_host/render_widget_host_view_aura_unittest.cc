@@ -6,7 +6,6 @@
 
 #include "base/basictypes.h"
 #include "base/command_line.h"
-#include "base/memory/scoped_vector.h"
 #include "base/memory/shared_memory.h"
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
@@ -200,10 +199,8 @@ class FakeFrameSubscriber : public RenderWidgetHostViewFrameSubscriber {
                           scoped_refptr<media::VideoFrame>* storage,
                           DeliverFrameCallback* callback) override {
     last_present_time_ = present_time;
-    *storage = media::VideoFrame::CreateFrame(media::VideoFrame::YV12,
-                                              size_,
-                                              gfx::Rect(size_),
-                                              size_,
+    *storage = media::VideoFrame::CreateFrame(media::PIXEL_FORMAT_YV12, size_,
+                                              gfx::Rect(size_), size_,
                                               base::TimeDelta());
     *callback = base::Bind(&FakeFrameSubscriber::CallbackMethod, callback_);
     return true;
@@ -390,8 +387,9 @@ class RenderWidgetHostViewAuraTest : public testing::Test {
 
     sink_ = &process_host_->sink();
 
-    parent_host_ = new RenderWidgetHostImpl(
-        &delegate_, process_host_, MSG_ROUTING_NONE, false);
+    int32 routing_id = process_host_->GetNextRoutingID();
+    parent_host_ =
+        new RenderWidgetHostImpl(&delegate_, process_host_, routing_id, false);
     parent_view_ = new RenderWidgetHostViewAura(parent_host_,
                                                 is_guest_view_hack_);
     parent_view_->InitAsChild(NULL);
@@ -399,8 +397,9 @@ class RenderWidgetHostViewAuraTest : public testing::Test {
                                           aura_test_helper_->root_window(),
                                           gfx::Rect());
 
-    widget_host_ = new RenderWidgetHostImpl(
-        &delegate_, process_host_, MSG_ROUTING_NONE, false);
+    routing_id = process_host_->GetNextRoutingID();
+    widget_host_ =
+        new RenderWidgetHostImpl(&delegate_, process_host_, routing_id, false);
     widget_host_->Init();
     view_ = new FakeRenderWidgetHostViewAura(widget_host_, is_guest_view_hack_);
   }
@@ -1903,8 +1902,9 @@ TEST_F(RenderWidgetHostViewAuraTest, DiscardDelegatedFrames) {
 
   // Create a bunch of renderers.
   for (size_t i = 0; i < renderer_count; ++i) {
-    hosts[i] = new RenderWidgetHostImpl(
-        &delegate_, process_host_, MSG_ROUTING_NONE, false);
+    int32 routing_id = process_host_->GetNextRoutingID();
+    hosts[i] =
+        new RenderWidgetHostImpl(&delegate_, process_host_, routing_id, false);
     hosts[i]->Init();
     views[i] = new FakeRenderWidgetHostViewAura(hosts[i], false);
     views[i]->InitAsChild(NULL);
@@ -2066,8 +2066,9 @@ TEST_F(RenderWidgetHostViewAuraTest, DiscardDelegatedFramesWithLocking) {
 
   // Create a bunch of renderers.
   for (size_t i = 0; i < renderer_count; ++i) {
-    hosts[i] = new RenderWidgetHostImpl(
-        &delegate_, process_host_, MSG_ROUTING_NONE, false);
+    int32 routing_id = process_host_->GetNextRoutingID();
+    hosts[i] =
+        new RenderWidgetHostImpl(&delegate_, process_host_, routing_id, false);
     hosts[i]->Init();
     views[i] = new FakeRenderWidgetHostViewAura(hosts[i], false);
     views[i]->InitAsChild(NULL);
@@ -2134,8 +2135,9 @@ TEST_F(RenderWidgetHostViewAuraTest, DiscardDelegatedFramesWithMemoryPressure) {
 
   // Create a bunch of renderers.
   for (size_t i = 0; i < renderer_count; ++i) {
-    hosts[i] = new RenderWidgetHostImpl(
-        &delegate_, process_host_, MSG_ROUTING_NONE, false);
+    int32 routing_id = process_host_->GetNextRoutingID();
+    hosts[i] =
+        new RenderWidgetHostImpl(&delegate_, process_host_, routing_id, false);
     hosts[i]->Init();
     views[i] = new FakeRenderWidgetHostViewAura(hosts[i], false);
     views[i]->InitAsChild(NULL);
@@ -2588,8 +2590,10 @@ TEST_F(RenderWidgetHostViewAuraOverscrollTest,
   EXPECT_EQ(OVERSCROLL_NONE, overscroll_mode());
 
   // Indicate the end of the scrolling from the touchpad.
+  SimulateGestureEvent(WebInputEvent::GestureScrollBegin,
+                       blink::WebGestureDeviceTouchscreen);
   SimulateGestureFlingStartEvent(-1200.f, 0.f, blink::WebGestureDeviceTouchpad);
-  EXPECT_EQ(1U, GetSentMessageCountAndResetSink());
+  EXPECT_EQ(2U, GetSentMessageCountAndResetSink());
 
   // Start another scroll. This time, do not consume any scroll events.
   SimulateWheelEvent(0, -5, 0, true);    // sent directly
@@ -2708,9 +2712,11 @@ TEST_F(RenderWidgetHostViewAuraOverscrollTest,
   // Send a fling start, but with a small velocity, so that the overscroll is
   // aborted. The fling should proceed to the renderer, through the gesture
   // event filter.
+  SimulateGestureEvent(WebInputEvent::GestureScrollBegin,
+                       blink::WebGestureDeviceTouchscreen);
   SimulateGestureFlingStartEvent(0.f, 0.1f, blink::WebGestureDeviceTouchpad);
   EXPECT_EQ(OVERSCROLL_NONE, overscroll_mode());
-  EXPECT_EQ(1U, sink_->message_count());
+  EXPECT_EQ(2U, sink_->message_count());
 }
 
 // Same as ScrollEventsOverscrollWithFling, but with zero velocity. Checks that
@@ -2750,9 +2756,11 @@ TEST_F(RenderWidgetHostViewAuraOverscrollTest,
   // Send a fling start, but with a small velocity, so that the overscroll is
   // aborted. The fling should proceed to the renderer, through the gesture
   // event filter.
+  SimulateGestureEvent(WebInputEvent::GestureScrollBegin,
+                       blink::WebGestureDeviceTouchscreen);
   SimulateGestureFlingStartEvent(10.f, 0.f, blink::WebGestureDeviceTouchpad);
   EXPECT_EQ(OVERSCROLL_NONE, overscroll_mode());
-  EXPECT_EQ(1U, sink_->message_count());
+  EXPECT_EQ(2U, sink_->message_count());
 }
 
 // Tests that a fling in the opposite direction of the overscroll cancels the
@@ -3335,9 +3343,11 @@ TEST_F(RenderWidgetHostViewAuraOverscrollTest,
 
   // Touchpad scroll can end with a zero-velocity fling. But it is not
   // dispatched, but it should still reset the overscroll controller state.
+  SimulateGestureEvent(WebInputEvent::GestureScrollBegin,
+                       blink::WebGestureDeviceTouchscreen);
   SimulateGestureFlingStartEvent(0.f, 0.f, blink::WebGestureDeviceTouchpad);
   EXPECT_TRUE(ScrollStateIsUnknown());
-  EXPECT_EQ(0U, sink_->message_count());
+  EXPECT_EQ(1U, sink_->message_count());
 
   // Dropped flings should neither propagate *nor* indicate that they were
   // consumed and have triggered a fling animation (as tracked by the router).
@@ -3347,7 +3357,7 @@ TEST_F(RenderWidgetHostViewAuraOverscrollTest,
   SimulateWheelEvent(-60, 0, 0, true);   // enqueued
   SimulateWheelEvent(-100, 0, 0, true);  // coalesced into previous event
   EXPECT_TRUE(ScrollStateIsUnknown());
-  EXPECT_EQ(1U, GetSentMessageCountAndResetSink());
+  EXPECT_EQ(2U, GetSentMessageCountAndResetSink());
 
   // The first wheel scroll did not scroll content. Overscroll should not start
   // yet, since enough hasn't been scrolled.
@@ -3362,11 +3372,14 @@ TEST_F(RenderWidgetHostViewAuraOverscrollTest,
   EXPECT_TRUE(ScrollStateIsOverscrolling());
   EXPECT_EQ(0U, sink_->message_count());
 
+  // The GestureScrollBegin will reset the delegate's mode, so check it here.
+  EXPECT_EQ(OVERSCROLL_WEST, overscroll_delegate()->current_mode());
+  SimulateGestureEvent(WebInputEvent::GestureScrollBegin,
+                       blink::WebGestureDeviceTouchscreen);
   SimulateGestureFlingStartEvent(0.f, 0.f, blink::WebGestureDeviceTouchpad);
   EXPECT_EQ(OVERSCROLL_NONE, overscroll_mode());
-  EXPECT_EQ(OVERSCROLL_WEST, overscroll_delegate()->completed_mode());
   EXPECT_TRUE(ScrollStateIsUnknown());
-  EXPECT_EQ(0U, sink_->message_count());
+  EXPECT_EQ(1U, sink_->message_count());
   EXPECT_FALSE(parent_host_->input_router()->HasPendingEvents());
 }
 
@@ -3586,6 +3599,8 @@ TEST_F(RenderWidgetHostViewAuraOverscrollTest, ScrollDeltasResetOnEnd) {
   EXPECT_EQ(OVERSCROLL_NONE, overscroll_mode());
   EXPECT_EQ(15.f, overscroll_delta_x());
   EXPECT_EQ(-5.f, overscroll_delta_y());
+  SimulateGestureEvent(WebInputEvent::GestureScrollBegin,
+                       blink::WebGestureDeviceTouchscreen);
   SimulateGestureFlingStartEvent(0.f, 0.1f, blink::WebGestureDeviceTouchpad);
   EXPECT_EQ(0.f, overscroll_delta_x());
   EXPECT_EQ(0.f, overscroll_delta_y());

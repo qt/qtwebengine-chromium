@@ -18,7 +18,7 @@ namespace {
 std::string BuildDescription(const std::vector<std::string>& families,
                              int style,
                              int size_pixels) {
-  std::string description = JoinString(families, ',');
+  std::string description = base::JoinString(families, ",");
   description += ",";
 
   if (style & gfx::Font::BOLD)
@@ -44,7 +44,8 @@ FontListImpl::FontListImpl(const std::string& font_description_string)
       font_size_(-1) {
   DCHECK(!font_description_string.empty());
   // DCHECK description string ends with "px" for size in pixel.
-  DCHECK(base::EndsWith(font_description_string, "px", true));
+  DCHECK(base::EndsWith(font_description_string, "px",
+                        base::CompareCase::SENSITIVE));
 }
 
 FontListImpl::FontListImpl(const std::vector<std::string>& font_names,

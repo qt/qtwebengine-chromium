@@ -34,6 +34,7 @@
 #include "core/html/HTMLInputElement.h"
 #include "core/html/HTMLLegendElement.h"
 #include "core/html/ValidityState.h"
+#include "core/html/parser/HTMLParserIdioms.h"
 #include "core/inspector/ConsoleMessage.h"
 #include "core/layout/LayoutBox.h"
 #include "core/layout/LayoutTheme.h"
@@ -83,6 +84,19 @@ DEFINE_TRACE(HTMLFormControlElement)
 {
     FormAssociatedElement::trace(visitor);
     LabelableElement::trace(visitor);
+}
+
+String HTMLFormControlElement::formAction() const
+{
+    const AtomicString& action = fastGetAttribute(formactionAttr);
+    if (action.isEmpty())
+        return document().url();
+    return document().completeURL(stripLeadingAndTrailingHTMLSpaces(action));
+}
+
+void HTMLFormControlElement::setFormAction(const AtomicString& value)
+{
+    setAttribute(formactionAttr, value);
 }
 
 String HTMLFormControlElement::formEnctype() const
@@ -386,12 +400,12 @@ bool HTMLFormControlElement::shouldHaveFocusAppearance() const
     return !m_wasFocusedByMouse || shouldShowFocusRingOnMouseFocus();
 }
 
-void HTMLFormControlElement::dispatchFocusEvent(Element* oldFocusedElement, WebFocusType type)
+void HTMLFormControlElement::dispatchFocusEvent(Element* oldFocusedElement, WebFocusType type, InputDeviceCapabilities* sourceCapabilities)
 {
     if (type != WebFocusTypePage)
         m_wasFocusedByMouse = type == WebFocusTypeMouse;
     // ContainerNode::handleStyleChangeOnFocusStateChange() will inform LayoutTheme about the focus state change.
-    HTMLElement::dispatchFocusEvent(oldFocusedElement, type);
+    HTMLElement::dispatchFocusEvent(oldFocusedElement, type, sourceCapabilities);
 }
 
 void HTMLFormControlElement::willCallDefaultEventHandler(const Event& event)
@@ -604,11 +618,11 @@ void HTMLFormControlElement::setCustomValidity(const String& error)
     setNeedsValidityCheck();
 }
 
-void HTMLFormControlElement::dispatchBlurEvent(Element* newFocusedElement, WebFocusType type)
+void HTMLFormControlElement::dispatchBlurEvent(Element* newFocusedElement, WebFocusType type, InputDeviceCapabilities* sourceCapabilities)
 {
     if (type != WebFocusTypePage)
         m_wasFocusedByMouse = false;
-    HTMLElement::dispatchBlurEvent(newFocusedElement, type);
+    HTMLElement::dispatchBlurEvent(newFocusedElement, type, sourceCapabilities);
     hideVisibleValidationMessage();
 }
 

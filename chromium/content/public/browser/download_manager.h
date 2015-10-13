@@ -33,7 +33,6 @@
 #include "base/basictypes.h"
 #include "base/callback.h"
 #include "base/files/file_path.h"
-#include "base/gtest_prod_util.h"
 #include "base/sequenced_task_runner_helpers.h"
 #include "base/time/time.h"
 #include "content/public/browser/download_interrupt_reasons.h"
@@ -43,6 +42,10 @@
 #include "net/log/net_log.h"
 
 class GURL;
+
+namespace url {
+class Origin;
+}
 
 namespace content {
 
@@ -109,6 +112,12 @@ class CONTENT_EXPORT DownloadManager : public base::SupportsUserData::Data {
       scoped_ptr<DownloadCreateInfo> info,
       scoped_ptr<ByteStreamReader> stream,
       const DownloadUrlParameters::OnStartedCallback& on_started) = 0;
+
+  // Remove downloads which are same-origin with the given origin and pertain to
+  // the given time constraints. (See |RemoveDownloadsBetween|.)
+  virtual int RemoveDownloadsByOriginAndTime(const url::Origin& origin,
+                                             base::Time remove_begin,
+                                             base::Time remove_end) = 0;
 
   // Remove downloads after remove_begin (inclusive) and before remove_end
   // (exclusive). You may pass in null Time values to do an unbounded delete

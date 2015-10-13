@@ -60,19 +60,9 @@ IDBRequest* IDBRequest::create(ScriptState* scriptState, IDBAny* source, IDBTran
 
 IDBRequest::IDBRequest(ScriptState* scriptState, IDBAny* source, IDBTransaction* transaction)
     : ActiveDOMObject(scriptState->executionContext())
-    , m_contextStopped(false)
     , m_transaction(transaction)
-    , m_readyState(PENDING)
-    , m_requestAborted(false)
     , m_scriptState(scriptState)
     , m_source(source)
-    , m_hasPendingActivity(true)
-    , m_cursorType(IndexedDB::CursorKeyAndValue)
-    , m_cursorDirection(WebIDBCursorDirectionNext)
-    , m_pendingCursor(nullptr)
-    , m_didFireUpgradeNeededEvent(false)
-    , m_preventPropagation(false)
-    , m_resultDirty(true)
 {
 }
 
@@ -87,9 +77,7 @@ DEFINE_TRACE(IDBRequest)
     visitor->trace(m_source);
     visitor->trace(m_result);
     visitor->trace(m_error);
-#if ENABLE(OILPAN)
     visitor->trace(m_enqueuedEvents);
-#endif
     visitor->trace(m_pendingCursor);
     visitor->trace(m_cursorKey);
     visitor->trace(m_cursorPrimaryKey);
@@ -421,7 +409,7 @@ ExecutionContext* IDBRequest::executionContext() const
     return ActiveDOMObject::executionContext();
 }
 
-bool IDBRequest::dispatchEvent(PassRefPtrWillBeRawPtr<Event> event)
+bool IDBRequest::dispatchEventInternal(PassRefPtrWillBeRawPtr<Event> event)
 {
     IDB_TRACE("IDBRequest::dispatchEvent");
     if (m_contextStopped || !executionContext())

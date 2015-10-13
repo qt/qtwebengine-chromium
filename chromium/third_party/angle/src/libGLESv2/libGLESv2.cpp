@@ -9,7 +9,6 @@
 #include "libGLESv2/entry_points_gles_2_0.h"
 #include "libGLESv2/entry_points_gles_2_0_ext.h"
 #include "libGLESv2/entry_points_gles_3_0.h"
-#include "libGLESv2/entry_points_gles_3_0_ext.h"
 
 #include "common/event_tracer.h"
 
@@ -1431,4 +1430,13 @@ void GL_APIENTRY glPopGroupMarkerEXT()
     return gl::PopGroupMarkerEXT();
 }
 
+void GL_APIENTRY glEGLImageTargetTexture2DOES(GLenum target, GLeglImageOES image)
+{
+    return gl::EGLImageTargetTexture2DOES(target, image);
+}
+
+void GL_APIENTRY glEGLImageTargetRenderbufferStorageOES(GLenum target, GLeglImageOES image)
+{
+    return gl::EGLImageTargetRenderbufferStorageOES(target, image);
+}
 }

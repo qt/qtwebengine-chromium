@@ -116,8 +116,11 @@ const char* FindMimeType(const MimeInfo* mappings,
     const char* extensions = mappings[i].extensions;
     for (;;) {
       size_t end_pos = strcspn(extensions, ",");
+      // The length check is required to prevent the StringPiece below from
+      // including uninitialized memory if ext is longer than extensions.
       if (end_pos == ext.size() &&
-          base::strncasecmp(extensions, ext.data(), ext.size()) == 0)
+          base::EqualsCaseInsensitiveASCII(
+              base::StringPiece(extensions, ext.size()), ext))
         return mappings[i].mime_type;
       extensions += end_pos;
       if (!*extensions)
@@ -221,12 +224,12 @@ bool MatchesMimeTypeParameters(const std::string& mime_type_pattern,
     // Put the parameters to maps with the keys converted to lower case.
     StringPairMap pattern_parameter_map;
     for (const auto& pair : pattern_parameters) {
-      pattern_parameter_map[base::StringToLowerASCII(pair.first)] = pair.second;
+      pattern_parameter_map[base::ToLowerASCII(pair.first)] = pair.second;
     }
 
     StringPairMap test_parameter_map;
     for (const auto& pair : test_parameters) {
-      test_parameter_map[base::StringToLowerASCII(pair.first)] = pair.second;
+      test_parameter_map[base::ToLowerASCII(pair.first)] = pair.second;
     }
 
     if (pattern_parameter_map.size() > test_parameter_map.size())
@@ -268,13 +271,10 @@ bool MimeUtil::MatchesMimeType(const std::string& mime_type_pattern,
 
   const std::string::size_type star = base_pattern.find('*');
   if (star == std::string::npos) {
-    if (base_pattern.size() == base_type.size() &&
-        base::strncasecmp(base_pattern.data(), base_type.data(),
-                          base_pattern.size()) == 0) {
+    if (base::EqualsCaseInsensitiveASCII(base_pattern, base_type))
       return MatchesMimeTypeParameters(mime_type_pattern, mime_type);
-    } else {
+    else
       return false;
-    }
   }
 
   // Test length to prevent overlap between |left| and |right|.
@@ -327,7 +327,7 @@ bool MimeUtil::ParseMimeTypeWithoutParameter(
 }
 
 bool MimeUtil::IsValidTopLevelMimeType(const std::string& type_string) const {
-  std::string lower_type = base::StringToLowerASCII(type_string);
+  std::string lower_type = base::ToLowerASCII(type_string);
   for (size_t i = 0; i < arraysize(legal_top_level_types); ++i) {
     if (lower_type.compare(legal_top_level_types[i]) == 0)
       return true;
@@ -521,10 +521,10 @@ void GetExtensionsForMimeType(
   if (unsafe_mime_type == "*/*" || unsafe_mime_type == "*")
     return;
 
-  const std::string mime_type = base::StringToLowerASCII(unsafe_mime_type);
+  const std::string mime_type = base::ToLowerASCII(unsafe_mime_type);
   base::hash_set<base::FilePath::StringType> unique_extensions;
 
-  if (base::EndsWith(mime_type, "/*", false)) {
+  if (base::EndsWith(mime_type, "/*", base::CompareCase::INSENSITIVE_ASCII)) {
     std::string leading_mime_type = mime_type.substr(0, mime_type.length() - 1);
 
     // Find the matching StandardType from within kStandardTypes, or fall

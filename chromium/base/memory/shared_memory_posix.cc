@@ -147,7 +147,7 @@ SharedMemoryHandle SharedMemory::NULLHandle() {
 // static
 void SharedMemory::CloseHandle(const SharedMemoryHandle& handle) {
   DCHECK_GE(handle.fd, 0);
-  if (close(handle.fd) < 0)
+  if (IGNORE_EINTR(close(handle.fd)) < 0)
     DPLOG(ERROR) << "close";
 }
 
@@ -177,12 +177,16 @@ bool SharedMemory::CreateAndMapAnonymous(size_t size) {
 
 #if !defined(OS_ANDROID)
 // static
-int SharedMemory::GetSizeFromSharedMemoryHandle(
-    const SharedMemoryHandle& handle) {
+bool SharedMemory::GetSizeFromSharedMemoryHandle(
+    const SharedMemoryHandle& handle,
+    size_t* size) {
   struct stat st;
   if (fstat(handle.fd, &st) != 0)
-    return -1;
-  return st.st_size;
+    return false;
+  if (st.st_size < 0)
+    return false;
+  *size = st.st_size;
+  return true;
 }
 
 // Chromium mostly only uses the unique/private shmem as specified by
@@ -388,12 +392,12 @@ SharedMemoryHandle SharedMemory::handle() const {
 
 void SharedMemory::Close() {
   if (mapped_file_ > 0) {
-    if (close(mapped_file_) < 0)
+    if (IGNORE_EINTR(close(mapped_file_)) < 0)
       PLOG(ERROR) << "close";
     mapped_file_ = -1;
   }
   if (readonly_mapped_file_ > 0) {
-    if (close(readonly_mapped_file_) < 0)
+    if (IGNORE_EINTR(close(readonly_mapped_file_)) < 0)
       PLOG(ERROR) << "close";
     readonly_mapped_file_ = -1;
   }

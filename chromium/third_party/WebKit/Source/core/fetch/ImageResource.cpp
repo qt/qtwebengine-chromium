@@ -45,34 +45,6 @@
 
 namespace blink {
 
-void ImageResource::preCacheDataURIImage(const FetchRequest& request, ResourceFetcher* fetcher)
-{
-    const KURL& url = request.resourceRequest().url();
-    ASSERT(url.protocolIsData());
-
-    const String cacheIdentifier = fetcher->getCacheIdentifier();
-    if (memoryCache()->resourceForURL(url, cacheIdentifier))
-        return;
-
-    WebString mimetype;
-    WebString charset;
-    RefPtr<SharedBuffer> data = PassRefPtr<SharedBuffer>(Platform::current()->parseDataURL(url, mimetype, charset));
-    if (!data)
-        return;
-    ResourceResponse response(url, mimetype, data->size(), charset, String());
-
-    Resource* resource = new ImageResource(request.resourceRequest());
-    resource->setOptions(request.options());
-    // FIXME: We should provide a body stream here.
-    resource->responseReceived(response, nullptr);
-    if (data->size())
-        resource->setResourceBuffer(data);
-    resource->setCacheIdentifier(cacheIdentifier);
-    resource->finish();
-    memoryCache()->add(resource);
-    fetcher->scheduleDocumentResourcesGC();
-}
-
 ResourcePtr<ImageResource> ImageResource::fetch(FetchRequest& request, ResourceFetcher* fetcher)
 {
     if (request.resourceRequest().requestContext() == WebURLRequest::RequestContextUnspecified)
@@ -83,9 +55,6 @@ ResourcePtr<ImageResource> ImageResource::fetch(FetchRequest& request, ResourceF
             fetcher->context().sendImagePing(requestURL);
         return 0;
     }
-
-    if (request.resourceRequest().url().protocolIsData())
-        ImageResource::preCacheDataURIImage(request, fetcher);
 
     if (fetcher->clientDefersImage(request.resourceRequest().url()))
         request.setDefer(FetchRequest::DeferredByClient);
@@ -187,7 +156,7 @@ void ImageResource::allClientsRemoved()
     Resource::allClientsRemoved();
 }
 
-pair<blink::Image*, float> ImageResource::brokenImage(float deviceScaleFactor)
+std::pair<blink::Image*, float> ImageResource::brokenImage(float deviceScaleFactor)
 {
     if (deviceScaleFactor >= 2) {
         DEFINE_STATIC_REF(blink::Image, brokenImageHiRes, (blink::Image::loadPlatformResource("missingImage@2x")));
@@ -508,10 +477,9 @@ bool ImageResource::currentFrameKnownToBeOpaque(const LayoutObject* layoutObject
     blink::Image* image = imageForLayoutObject(layoutObject);
     if (image->isBitmapImage()) {
         TRACE_EVENT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "PaintImage", "data", InspectorPaintImageEvent::data(layoutObject, *this));
-        SkBitmap dummy;
-        if (!image->bitmapForCurrentFrame(&dummy)) { // force decode
-            // We don't care about failures here, since we don't use "dummy"
-        }
+        // BitmapImage::currentFrameKnownToBeOpaque() conservatively returns true for uncached
+        // frames. To get an accurate answer, we pre-cache the current frame metadata.
+        image->imageForCurrentFrame();
     }
     return image->currentFrameKnownToBeOpaque();
 }

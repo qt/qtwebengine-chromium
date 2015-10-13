@@ -19,9 +19,7 @@ namespace bad_message {
 //
 // NOTE: Do not remove or reorder elements in this list. Add new entries at the
 // end. Items may be renamed but do not change the values. We rely on the enum
-// values in histograms. Also update histograms.xml with any new values by
-// running:
-//    python tools/metrics/histograms/update_bad_message_reasons.py
+// values in histograms.
 enum BadMessageReason {
   NC_IN_PAGE_NAVIGATION = 0,
   RFH_CAN_COMMIT_URL_BLOCKED = 1,
@@ -101,8 +99,8 @@ enum BadMessageReason {
   FAMF_APPEND_SHARED_MEMORY_TO_STREAM = 75,
   IDBDH_CAN_READ_FILE = 76,
   IDBDH_GET_OR_TERMINATE = 77,
-  RMF_SET_COOKIE_BAD_ORIGIN = 78,
-  RMF_GET_COOKIES_BAD_ORIGIN = 79,
+  RFMF_SET_COOKIE_BAD_ORIGIN = 78,
+  RFMF_GET_COOKIES_BAD_ORIGIN = 79,
   SWDH_GET_REGISTRATIONS_NO_HOST = 80,
   SWDH_GET_REGISTRATIONS_INVALID_ORIGIN = 81,
   ARH_UNAUTHORIZED_URL = 82,
@@ -114,10 +112,18 @@ enum BadMessageReason {
   SWDH_UPDATE_CANNOT = 88,
   SWDH_UNREGISTER_BAD_REGISTRATION_ID = 89,
   BDH_INVALID_WRITE_VALUE_LENGTH = 90,
+  WC_MEMORY_CACHE_RESOURCE_BAD_SECURITY_INFO = 91,
+  WC_RENDERER_DID_NAVIGATE_BAD_SECURITY_INFO = 92,
+  OBSOLETE_BDH_DUPLICATE_REQUEST_DEVICE_ID = 93,
+  CSDH_INVALID_ORIGIN = 94,
+  RDH_ILLEGAL_ORIGIN = 95,
+  RDH_UNAUTHORIZED_HEADER_REQUEST = 96,
+  RDH_INVALID_URL = 97,
 
   // Please add new elements here. The naming convention is abbreviated class
   // name (e.g. RenderFrameHost becomes RFH) plus a unique description of the
-  // reason.
+  // reason. After making changes, you MUST update histograms.xml by running:
+  // "python tools/metrics/histograms/update_bad_message_reasons.py"
   BAD_MESSAGE_MAX
 };
 

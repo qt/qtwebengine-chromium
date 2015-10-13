@@ -29,49 +29,51 @@
 
 namespace blink {
 
-    class CORE_EXPORT UIEventWithKeyState : public UIEvent {
-    public:
-        bool ctrlKey() const { return m_ctrlKey; }
-        bool shiftKey() const { return m_shiftKey; }
-        bool altKey() const { return m_altKey; }
-        bool metaKey() const { return m_metaKey; }
+class CORE_EXPORT UIEventWithKeyState : public UIEvent {
+public:
+    bool ctrlKey() const { return m_ctrlKey; }
+    bool shiftKey() const { return m_shiftKey; }
+    bool altKey() const { return m_altKey; }
+    bool metaKey() const { return m_metaKey; }
 
-        // We ignore the new tab modifiers (ctrl or meta, depending on OS) set by JavaScript when processing events.
-        // However, scripts running in isolated worlds (aka content scripts) are not subject to this restriction. Since it is possible that an event created by a content script is caught and recreated by the web page's script, we resort to a global flag.
-        static bool newTabModifierSetFromIsolatedWorld() { return s_newTabModifierSetFromIsolatedWorld; }
-        static void clearNewTabModifierSetFromIsolatedWorld() { s_newTabModifierSetFromIsolatedWorld = false; }
-        static void didCreateEventInIsolatedWorld(bool ctrlKey, bool shiftKey, bool altKey, bool metaKey);
+    // We ignore the new tab modifiers (ctrl or meta, depending on OS) set by JavaScript when processing events.
+    // However, scripts running in isolated worlds (aka content scripts) are not subject to this restriction. Since it is possible that an event created by a content script is caught and recreated by the web page's script, we resort to a global flag.
+    static bool newTabModifierSetFromIsolatedWorld() { return s_newTabModifierSetFromIsolatedWorld; }
+    static void clearNewTabModifierSetFromIsolatedWorld() { s_newTabModifierSetFromIsolatedWorld = false; }
+    static void didCreateEventInIsolatedWorld(bool ctrlKey, bool shiftKey, bool altKey, bool metaKey);
 
-    protected:
-        UIEventWithKeyState()
-            : m_ctrlKey(false)
-            , m_altKey(false)
-            , m_shiftKey(false)
-            , m_metaKey(false)
-        {
-        }
+    bool getModifierState(const String& keyIdentifier) const;
 
-        UIEventWithKeyState(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtrWillBeRawPtr<AbstractView> view,
-            int detail, bool ctrlKey, bool altKey, bool shiftKey, bool metaKey, InputDevice* sourceDevice = nullptr)
-            : UIEvent(type, canBubble, cancelable, view, detail, sourceDevice)
-            , m_ctrlKey(ctrlKey)
-            , m_altKey(altKey)
-            , m_shiftKey(shiftKey)
-            , m_metaKey(metaKey)
-        {
-        }
+protected:
+    UIEventWithKeyState()
+        : m_ctrlKey(false)
+        , m_altKey(false)
+        , m_shiftKey(false)
+        , m_metaKey(false)
+    {
+    }
 
-        // Expose these so init functions can set them.
-        bool m_ctrlKey : 1;
-        bool m_altKey : 1;
-        bool m_shiftKey : 1;
-        bool m_metaKey : 1;
+    UIEventWithKeyState(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtrWillBeRawPtr<AbstractView> view,
+        int detail, bool ctrlKey, bool altKey, bool shiftKey, bool metaKey, InputDeviceCapabilities* sourceCapabilities = nullptr)
+        : UIEvent(type, canBubble, cancelable, view, detail, sourceCapabilities)
+        , m_ctrlKey(ctrlKey)
+        , m_altKey(altKey)
+        , m_shiftKey(shiftKey)
+        , m_metaKey(metaKey)
+    {
+    }
 
-    private:
-        static bool s_newTabModifierSetFromIsolatedWorld;
-    };
+    // Expose these so init functions can set them.
+    bool m_ctrlKey : 1;
+    bool m_altKey : 1;
+    bool m_shiftKey : 1;
+    bool m_metaKey : 1;
 
-    UIEventWithKeyState* findEventWithKeyState(Event*);
+private:
+    static bool s_newTabModifierSetFromIsolatedWorld;
+};
+
+UIEventWithKeyState* findEventWithKeyState(Event*);
 
 } // namespace blink
 

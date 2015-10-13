@@ -4,7 +4,7 @@
             "type": "@WebInspector.PanelFactory",
             "name": "network",
             "title": "Network",
-            "order": 1,
+            "order": 40,
             "className": "WebInspector.NetworkPanelFactory"
         },
         {
@@ -33,10 +33,38 @@
             "settingName": "networkColorCodeResourceTypes",
             "settingType": "boolean",
             "defaultValue": false
+        },
+        {
+            "type": "@WebInspector.ActionDelegate",
+            "actionId": "network.blocked-urls.show",
+            "className": "WebInspector.BlockedURLsPane.ActionDelegate"
+        },
+        {
+            "type": "@WebInspector.ActionDelegate",
+            "actionId": "network.toggle-recording",
+            "iconClass": "record-toolbar-item",
+            "contextTypes": ["WebInspector.NetworkPanel"],
+            "className": "WebInspector.NetworkPanel.RecordActionDelegate",
+            "bindings": [
+                {
+                    "platform": "windows,linux",
+                    "shortcut": "Ctrl+E"
+                },
+                {
+                    "platform": "mac",
+                    "shortcut": "Meta+E"
+                }
+            ]
         }
     ],
-    "dependencies": ["source_frame", "components_lazy", "ui_lazy"],
+    "dependencies": [
+        "source_frame",
+        "components",
+        "components_lazy",
+        "ui_lazy"
+    ],
     "scripts": [
+        "BlockedURLsPane.js",
         "EventSourceMessagesView.js",
         "FilterSuggestionBuilder.js",
         "HARWriter.js",
@@ -58,6 +86,7 @@
         "XMLView.js"
     ],
     "resources": [
+        "blockedURLsPane.css",
         "eventSourceMessagesView.css",
         "networkLogView.css",
         "networkPanel.css",

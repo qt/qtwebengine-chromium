@@ -37,7 +37,7 @@ protected:
 
     void onDrawBackground(SkCanvas* canvas) override {
         SkPaint bgPaint;
-        bgPaint.setColor(0xFF70D0E0);
+        bgPaint.setColor(sk_tool_utils::color_to_565(0xFF70D0E0));
         canvas->drawPaint(bgPaint);
     }
 
@@ -122,14 +122,14 @@ private:
      * dimensions exactly matching the layer size.
      */
     SkCanvas* possiblyCreateTempCanvas(SkCanvas* baseCanvas, int w, int h) {
-        SkCanvas* tempCanvas = NULL;
+        SkCanvas* tempCanvas = nullptr;
 #if SK_SUPPORT_GPU
         GrContext* context = baseCanvas->getGrContext();
         SkImageInfo baseInfo = baseCanvas->imageInfo();
         SkImageInfo info = SkImageInfo::Make(w, h, baseInfo.colorType(), baseInfo.alphaType(),
                                              baseInfo.profileType());
         SkAutoTUnref<SkSurface> surface(SkSurface::NewRenderTarget(context, SkSurface::kNo_Budgeted,
-                                        info, 0, NULL));
+                                        info, 0, nullptr));
         if (surface) {
             tempCanvas = SkRef(surface->getCanvas());
         }
@@ -147,8 +147,8 @@ private:
         SkRect r = SkRect::MakeWH(SkIntToScalar(w), SkIntToScalar(h));
 
         SkCanvas* modeCanvas;
-        if (NULL == layerCanvas) {
-            canvas->saveLayer(&r, NULL);
+        if (nullptr == layerCanvas) {
+            canvas->saveLayer(&r, nullptr);
             modeCanvas = canvas;
         } else {
             modeCanvas = layerCanvas;
@@ -159,9 +159,9 @@ private:
         bgPaint.setShader(fBGShader);
         modeCanvas->drawRect(r, bgPaint);
         modeCanvas->drawRect(r, modePaint);
-        modeCanvas = NULL;
+        modeCanvas = nullptr;
 
-        if (NULL == layerCanvas) {
+        if (nullptr == layerCanvas) {
             canvas->restore();
         } else {
             SkAutoROCanvasPixels ropixels(layerCanvas);
@@ -181,10 +181,10 @@ private:
 
     void onOnceBeforeDraw() override {
         static const uint32_t kCheckData[] = {
-            SkPackARGB32(0xFF, 0x40, 0x40, 0x40),
-            SkPackARGB32(0xFF, 0xD0, 0xD0, 0xD0),
-            SkPackARGB32(0xFF, 0xD0, 0xD0, 0xD0),
-            SkPackARGB32(0xFF, 0x40, 0x40, 0x40)
+            SkPackARGB32(0xFF, 0x42, 0x41, 0x42),
+            SkPackARGB32(0xFF, 0xD6, 0xD3, 0xD6),
+            SkPackARGB32(0xFF, 0xD6, 0xD3, 0xD6),
+            SkPackARGB32(0xFF, 0x42, 0x41, 0x42)
         };
         SkBitmap bg;
         bg.allocN32Pixels(2, 2, true);
@@ -205,7 +205,7 @@ private:
         bmpPaint.setShader(SkGradientShader::CreateRadial(kCenter,
                                                           3 * SkIntToScalar(kSize) / 4,
                                                           kColors,
-                                                          NULL,
+                                                          nullptr,
                                                           SK_ARRAY_COUNT(kColors),
                                                           SkShader::kRepeat_TileMode))->unref();
 

@@ -54,6 +54,10 @@ class OZONE_EXPORT CrtcController
                         bool test_only,
                         scoped_refptr<PageFlipRequest> page_flip_request);
 
+  // Returns list of plane id's which can support |plane| configuration.
+  std::vector<uint32_t> GetCompatibleHardwarePlaneIds(
+      const OverlayPlane& plane) const;
+
   // Called if the page flip for this CRTC fails after being scheduled.
   void PageFlipFailed();
 
@@ -76,8 +80,6 @@ class OZONE_EXPORT CrtcController
   void SignalPageFlipRequest();
 
   scoped_refptr<DrmDevice> drm_;
-
-  HardwareDisplayPlaneManager* overlay_plane_manager_;  // Not owned.
 
   // Buffers need to be declared first so that they are destroyed last. Needed
   // since the controllers may reference the buffers.

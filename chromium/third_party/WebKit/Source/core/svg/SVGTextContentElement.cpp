@@ -121,7 +121,7 @@ PassRefPtrWillBeRawPtr<SVGPointTearOff> SVGTextContentElement::getStartPositionO
 {
     document().updateLayoutIgnorePendingStylesheets();
 
-    if (charnum > getNumberOfChars()) {
+    if (charnum >= getNumberOfChars()) {
         exceptionState.throwDOMException(IndexSizeError, ExceptionMessages::indexExceedsMaximumBound("charnum", charnum, getNumberOfChars()));
         return nullptr;
     }
@@ -134,7 +134,7 @@ PassRefPtrWillBeRawPtr<SVGPointTearOff> SVGTextContentElement::getEndPositionOfC
 {
     document().updateLayoutIgnorePendingStylesheets();
 
-    if (charnum > getNumberOfChars()) {
+    if (charnum >= getNumberOfChars()) {
         exceptionState.throwDOMException(IndexSizeError, ExceptionMessages::indexExceedsMaximumBound("charnum", charnum, getNumberOfChars()));
         return nullptr;
     }
@@ -147,7 +147,7 @@ PassRefPtrWillBeRawPtr<SVGRectTearOff> SVGTextContentElement::getExtentOfChar(un
 {
     document().updateLayoutIgnorePendingStylesheets();
 
-    if (charnum > getNumberOfChars()) {
+    if (charnum >= getNumberOfChars()) {
         exceptionState.throwDOMException(IndexSizeError, ExceptionMessages::indexExceedsMaximumBound("charnum", charnum, getNumberOfChars()));
         return nullptr;
     }
@@ -160,7 +160,7 @@ float SVGTextContentElement::getRotationOfChar(unsigned charnum, ExceptionState&
 {
     document().updateLayoutIgnorePendingStylesheets();
 
-    if (charnum > getNumberOfChars()) {
+    if (charnum >= getNumberOfChars()) {
         exceptionState.throwDOMException(IndexSizeError, ExceptionMessages::indexExceedsMaximumBound("charnum", charnum, getNumberOfChars()));
         return 0.0f;
     }
@@ -188,14 +188,14 @@ void SVGTextContentElement::selectSubString(unsigned charnum, unsigned nchars, E
     ASSERT(document().frame());
 
     // Find selection start
-    VisiblePosition start(firstPositionInNode(const_cast<SVGTextContentElement*>(this)));
+    VisiblePosition start = createVisiblePosition(firstPositionInNode(const_cast<SVGTextContentElement*>(this)));
     for (unsigned i = 0; i < charnum; ++i)
-        start = start.next();
+        start = nextPositionOf(start);
 
     // Find selection end
     VisiblePosition end(start);
     for (unsigned i = 0; i < nchars; ++i)
-        end = end.next();
+        end = nextPositionOf(end);
 
     document().frame()->selection().setSelection(VisibleSelection(start, end));
 }

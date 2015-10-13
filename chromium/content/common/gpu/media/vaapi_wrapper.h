@@ -21,6 +21,7 @@
 #include "content/common/gpu/media/va_surface.h"
 #include "media/base/video_decoder_config.h"
 #include "media/base/video_frame.h"
+#include "media/video/jpeg_decode_accelerator.h"
 #include "media/video/video_decode_accelerator.h"
 #include "media/video/video_encode_accelerator.h"
 #include "third_party/libva/va/va.h"
@@ -67,24 +68,29 @@ class CONTENT_EXPORT VaapiWrapper {
       media::VideoCodecProfile profile,
       const base::Closure& report_error_to_uma_cb);
 
-  // Return the supported encode profiles.
+  // Return the supported video encode profiles.
   static media::VideoEncodeAccelerator::SupportedProfiles
       GetSupportedEncodeProfiles();
 
-  // Return the supported decode profiles.
+  // Return the supported video decode profiles.
   static media::VideoDecodeAccelerator::SupportedProfiles
       GetSupportedDecodeProfiles();
 
+  // Return true when JPEG decode is supported.
+  static bool IsJpegDecodeSupported();
+
   ~VaapiWrapper();
 
-  // Create |num_surfaces| backing surfaces in driver for VASurfaces, each
-  // of size |size|. Returns true when successful, with the created IDs in
-  // |va_surfaces| to be managed and later wrapped in VASurfaces.
+  // Create |num_surfaces| backing surfaces in driver for VASurfaces of
+  // |va_format|, each of size |size|. Returns true when successful, with the
+  // created IDs in |va_surfaces| to be managed and later wrapped in
+  // VASurfaces.
   // The client must DestroySurfaces() each time before calling this method
   // again to free the allocated surfaces first, but is not required to do so
   // at destruction time, as this will be done automatically from
   // the destructor.
-  bool CreateSurfaces(const gfx::Size& size,
+  bool CreateSurfaces(unsigned int va_format,
+                      const gfx::Size& size,
                       size_t num_surfaces,
                       std::vector<VASurfaceID>* va_surfaces);
 

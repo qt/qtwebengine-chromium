@@ -30,34 +30,31 @@
 #include "core/dom/Element.h"
 #include "core/dom/ScriptLoader.h"
 #include "platform/heap/Handle.h"
+#include "platform/scheduler/CancellableTaskFactory.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebScheduler.h"
 #include "public/platform/WebThread.h"
-#include "wtf/Functional.h"
-
-// This bit of magic is needed by oilpan to prevent the ScriptRunner from leaking.
-namespace WTF {
-template<>
-struct ParamStorageTraits<blink::ScriptRunner*> : public PointerParamStorageTraits<blink::ScriptRunner*, false> {
-};
-}
 
 namespace blink {
 
 
 ScriptRunner::ScriptRunner(Document* document)
     : m_document(document)
-    , m_executeScriptsTaskFactory(WTF::bind(&ScriptRunner::executeScripts, this))
+    , m_executeScriptsTaskFactory(CancellableTaskFactory::create(this, &ScriptRunner::executeScripts))
 {
     ASSERT(document);
-#if ENABLE(LAZY_SWEEPING) && defined(ADDRESS_SANITIZER)
-    m_executeScriptsTaskFactory.setUnpoisonBeforeUpdate();
-#endif
 }
 
 ScriptRunner::~ScriptRunner()
 {
 #if !ENABLE(OILPAN)
+    dispose();
+#endif
+}
+
+#if !ENABLE(OILPAN)
+void ScriptRunner::dispose()
+{
     // Make sure that ScriptLoaders don't keep their PendingScripts alive.
     for (ScriptLoader* scriptLoader : m_scriptsToExecuteInOrder)
         scriptLoader->detach();
@@ -65,8 +62,12 @@ ScriptRunner::~ScriptRunner()
         scriptLoader->detach();
     for (ScriptLoader* scriptLoader : m_pendingAsyncScripts)
         scriptLoader->detach();
-#endif
+
+    m_scriptsToExecuteInOrder.clear();
+    m_scriptsToExecuteSoon.clear();
+    m_pendingAsyncScripts.clear();
 }
+#endif
 
 void ScriptRunner::addPendingAsyncScript(ScriptLoader* scriptLoader)
 {
@@ -92,7 +93,7 @@ void ScriptRunner::queueScriptForExecution(ScriptLoader* scriptLoader, Execution
 
 void ScriptRunner::suspend()
 {
-    m_executeScriptsTaskFactory.cancel();
+    m_executeScriptsTaskFactory->cancel();
 }
 
 void ScriptRunner::resume()
@@ -224,11 +225,10 @@ bool ScriptRunner::yieldForHighPriorityWork()
 
 void ScriptRunner::postTaskIfOneIsNotAlreadyInFlight()
 {
-    if (m_executeScriptsTaskFactory.isPending())
+    if (m_executeScriptsTaskFactory->isPending())
         return;
 
-    // FIXME: Rename task() so that it's obvious it cancels any pending task.
-    Platform::current()->currentThread()->scheduler()->postLoadingTask(FROM_HERE, m_executeScriptsTaskFactory.cancelAndCreate());
+    Platform::current()->currentThread()->scheduler()->loadingTaskRunner()->postTask(FROM_HERE, m_executeScriptsTaskFactory->cancelAndCreate());
 }
 
 DEFINE_TRACE(ScriptRunner)
@@ -241,4 +241,4 @@ DEFINE_TRACE(ScriptRunner)
 #endif
 }
 
-}
+} // namespace blink

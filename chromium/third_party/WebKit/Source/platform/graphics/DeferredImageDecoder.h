@@ -32,11 +32,12 @@
 #include "platform/geometry/IntSize.h"
 #include "platform/graphics/FrameData.h"
 #include "platform/graphics/ImageFrameGenerator.h"
-#include "platform/graphics/ImageSource.h"
 #include "platform/image-decoders/ImageDecoder.h"
 #include "wtf/Forward.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/Vector.h"
+
+class SkImage;
 
 namespace blink {
 
@@ -47,18 +48,16 @@ class PLATFORM_EXPORT DeferredImageDecoder {
     WTF_MAKE_NONCOPYABLE(DeferredImageDecoder);
 public:
     ~DeferredImageDecoder();
-    static PassOwnPtr<DeferredImageDecoder> create(const SharedBuffer& data, ImageSource::AlphaOption, ImageSource::GammaAndColorProfileOption);
+    static PassOwnPtr<DeferredImageDecoder> create(const SharedBuffer& data, ImageDecoder::AlphaOption, ImageDecoder::GammaAndColorProfileOption);
 
     static PassOwnPtr<DeferredImageDecoder> createForTesting(PassOwnPtr<ImageDecoder>);
-
-    static bool isLazyDecoded(const SkBitmap&);
 
     static void setEnabled(bool);
     static bool enabled();
 
     String filenameExtension() const;
 
-    bool createFrameAtIndex(size_t, SkBitmap*);
+    PassRefPtr<SkImage> createFrameAtIndex(size_t);
 
     void setData(SharedBuffer& data, bool allDataReceived);
 
@@ -82,7 +81,7 @@ public:
 private:
     explicit DeferredImageDecoder(PassOwnPtr<ImageDecoder> actualDecoder);
     void prepareLazyDecodedFrames();
-    SkBitmap createBitmap(size_t index);
+    PassRefPtr<SkImage> createImage(size_t index, bool knownToBeOpaque) const;
     void activateLazyDecoding();
 
     RefPtr<SharedBuffer> m_data;

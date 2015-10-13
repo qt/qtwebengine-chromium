@@ -4,6 +4,8 @@
 
 #include "net/http/failing_http_transaction_factory.h"
 
+#include <stdint.h>
+
 #include "base/bind.h"
 #include "base/compiler_specific.h"
 #include "base/location.h"
@@ -48,13 +50,15 @@ class FailingHttpTransaction : public HttpTransaction {
            const CompletionCallback& callback) override;
   void StopCaching() override;
   bool GetFullRequestHeaders(HttpRequestHeaders* headers) const override;
-  int64 GetTotalReceivedBytes() const override;
+  int64_t GetTotalReceivedBytes() const override;
+  int64_t GetTotalSentBytes() const override;
   void DoneReading() override;
   const HttpResponseInfo* GetResponseInfo() const override;
   LoadState GetLoadState() const override;
   UploadProgress GetUploadProgress() const override;
   void SetQuicServerInfo(QuicServerInfo* quic_server_info) override;
   bool GetLoadTimingInfo(LoadTimingInfo* load_timing_info) const override;
+  bool GetRemoteEndpoint(IPEndPoint* endpoint) const override;
   void SetPriority(RequestPriority priority) override;
   void SetWebSocketHandshakeStreamCreateHelper(
       WebSocketHandshakeStreamBase::CreateHelper* create_helper) override;
@@ -122,6 +126,10 @@ int64 FailingHttpTransaction::GetTotalReceivedBytes() const  {
   return 0;
 }
 
+int64_t FailingHttpTransaction::GetTotalSentBytes() const {
+  return 0;
+}
+
 void FailingHttpTransaction::DoneReading()  {
   NOTREACHED();
 }
@@ -144,6 +152,10 @@ void FailingHttpTransaction::SetQuicServerInfo(
 
 bool FailingHttpTransaction::GetLoadTimingInfo(
     LoadTimingInfo* load_timing_info) const  {
+  return false;
+}
+
+bool FailingHttpTransaction::GetRemoteEndpoint(IPEndPoint* endpoint) const {
   return false;
 }
 

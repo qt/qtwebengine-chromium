@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/config/compiler/compiler.gni")
 import("//build/config/ui.gni")
 import("//testing/test.gni")
 
@@ -64,8 +65,6 @@ component("base") {
   sources = [
     "allocator/allocator_extension.cc",
     "allocator/allocator_extension.h",
-    "allocator/type_profiler_control.cc",
-    "allocator/type_profiler_control.h",
     "android/animation_frame_time_histogram.cc",
     "android/animation_frame_time_histogram.h",
     "android/apk_assets.cc",
@@ -132,9 +131,6 @@ component("base") {
     "android/thread_utils.h",
     "android/trace_event_binding.cc",
     "android/trace_event_binding.h",
-    "async_socket_io_handler.h",
-    "async_socket_io_handler_posix.cc",
-    "async_socket_io_handler_win.cc",
     "at_exit.cc",
     "at_exit.h",
     "atomic_ref_count.h",
@@ -186,6 +182,8 @@ component("base") {
     "deferred_sequenced_task_runner.h",
     "environment.cc",
     "environment.h",
+    "feature_list.cc",
+    "feature_list.h",
     "file_descriptor_posix.h",
     "file_version_info.h",
     "file_version_info_mac.h",
@@ -246,10 +244,14 @@ component("base") {
     "hash.cc",
     "hash.h",
     "id_map.h",
+    "ios/crb_protocol_observers.h",
+    "ios/crb_protocol_observers.mm",
     "ios/device_util.h",
     "ios/device_util.mm",
     "ios/ios_util.h",
     "ios/ios_util.mm",
+    "ios/ns_error_util.h",
+    "ios/ns_error_util.mm",
     "ios/scoped_critical_action.h",
     "ios/scoped_critical_action.mm",
     "ios/weak_nsobject.h",
@@ -306,8 +308,6 @@ component("base") {
     "mac/scoped_mach_vm.h",
     "mac/scoped_nsautorelease_pool.h",
     "mac/scoped_nsautorelease_pool.mm",
-    "mac/scoped_nsexception_enabler.h",
-    "mac/scoped_nsexception_enabler.mm",
     "mac/scoped_nsobject.h",
     "mac/scoped_objc_class_swizzler.h",
     "mac/scoped_objc_class_swizzler.mm",
@@ -392,14 +392,14 @@ component("base") {
     "profiler/alternate_timer.h",
     "profiler/native_stack_sampler.cc",
     "profiler/native_stack_sampler.h",
+    "profiler/native_stack_sampler_posix.cc",
+    "profiler/native_stack_sampler_win.cc",
     "profiler/scoped_profile.cc",
     "profiler/scoped_profile.h",
     "profiler/scoped_tracker.cc",
     "profiler/scoped_tracker.h",
     "profiler/stack_sampling_profiler.cc",
     "profiler/stack_sampling_profiler.h",
-    "profiler/stack_sampling_profiler_posix.cc",
-    "profiler/stack_sampling_profiler_win.cc",
     "profiler/tracked_time.cc",
     "profiler/tracked_time.h",
     "rand_util.cc",
@@ -640,12 +640,34 @@ component("base") {
     "win/wrapped_window_proc.h",
   ]
 
+  if (is_ios) {
+    sources -= [
+      "files/file_path_watcher.cc",
+      "files/file_path_watcher.h",
+      "files/file_path_watcher_fsevents.cc",
+      "files/file_path_watcher_fsevents.h",
+      "files/file_path_watcher_kqueue.cc",
+      "files/file_path_watcher_kqueue.h",
+      "message_loop/message_pump_libevent.cc",
+      "message_loop/message_pump_libevent.h",
+
+      # These don't work and are unused on iOS.
+      "sync_socket.h",
+      "sync_socket_posix.cc",
+    ]
+  }
+
   sources -= [
     "sys_info_freebsd.cc",
     "sys_info_openbsd.cc",
   ]
 
-  configs += [ ":base_implementation" ]
+  data = []
+
+  configs += [
+    ":base_implementation",
+    "//build/config:precompiled_headers",
+  ]
 
   deps = [
     ":base_static",
@@ -708,9 +730,6 @@ component("base") {
     set_sources_assignment_filter(sources_assignment_filter)
 
     sources -= [
-      "allocator/type_profiler_control.cc",
-      "allocator/type_profiler_control.h",
-      "async_socket_io_handler_posix.cc",
       "cpu.cc",
       "files/file_enumerator_posix.cc",
       "files/file_proxy.cc",
@@ -740,6 +759,11 @@ component("base") {
 
   # Windows.
   if (is_win) {
+    sources += [
+      "profiler/win32_stack_frame_unwinder.cc",
+      "profiler/win32_stack_frame_unwinder.h",
+    ]
+
     sources -= [
       "message_loop/message_pump_libevent.cc",
       "strings/string16.cc",
@@ -748,6 +772,30 @@ component("base") {
       # regression to page cycler moz.
       "sha1_win.cc",
     ]
+
+    # Required for base/stack_trace_win.cc to symbolize correctly.
+    data += [ "$root_build_dir/dbghelp.dll" ]
+
+    if (is_component_build) {
+      # Copy the VS runtime DLLs into the isolate so that they don't have to be
+      # preinstalled on the target machine. The debug runtimes have a "d" at
+      # the end.
+      if (is_debug) {
+        vcrt_suffix = "d"
+      } else {
+        vcrt_suffix = ""
+      }
+
+      # These runtime files are copied to the output directory by the
+      # vs_toolchain script that runs as part of toolchain configuration.
+      data += [
+        "$root_out_dir/msvcp120${vcrt_suffix}.dll",
+        "$root_out_dir/msvcr120${vcrt_suffix}.dll",
+      ]
+      if (is_asan) {
+        data += [ "//third_party/llvm-build/Release+Asserts/lib/clang/3.8.0/lib/windows/clang_rt.asan_dynamic-i386.dll" ]
+      }
+    }
 
     # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
     configs += [ "//build/config/compiler:no_size_t_to_int_warning" ]
@@ -773,11 +821,9 @@ component("base") {
       "threading/platform_thread_internal_posix.cc",
     ]
 
-    if (is_ios) {
-      sources -= [
-        "files/file_path_watcher_fsevents.cc",
-        "files/file_path_watcher_fsevents.h",
-      ]
+    if (is_asan) {
+      # TODO(GYP) hook up asan on Mac. GYP has this extra dylib:
+      #data += [ "$root_out_dir/libclang_rt.asan_osx_dynamic.dylib" ]
     }
   } else {
     # Non-Mac.
@@ -791,6 +837,11 @@ component("base") {
 
   # Linux.
   if (is_linux) {
+    if (is_asan || is_lsan || is_msan || is_tsan) {
+      # For llvm-sanitizer.
+      data += [ "//third_party/llvm-build/Release+Asserts/lib/libstdc++.so.6" ]
+    }
+
     # TODO(brettw) this will need to be parameterized at some point.
     linux_configs = []
     if (use_glib) {
@@ -872,9 +923,19 @@ component("base") {
     ]
   }
 
+  if (is_asan || is_lsan || is_msan || is_tsan) {
+    data += [ "//tools/valgrind/asan/" ]
+    if (is_win) {
+      data +=
+          [ "//third_party/llvm-build/Release+Asserts/bin/llvm-symbolizer.exe" ]
+    } else {
+      data += [ "//third_party/llvm-build/Release+Asserts/bin/llvm-symbolizer" ]
+    }
+  }
+
   configs += [ "//build/config/compiler:wexit_time_destructors" ]
   if (!is_debug) {
-    configs -= [ "//build/config/compiler:optimize" ]
+    configs -= [ "//build/config/compiler:default_optimization" ]
     configs += [ "//build/config/compiler:optimize_max" ]
   }
 
@@ -893,7 +954,7 @@ source_set("base_static") {
   ]
 
   if (!is_debug) {
-    configs -= [ "//build/config/compiler:optimize" ]
+    configs -= [ "//build/config/compiler:default_optimization" ]
     configs += [ "//build/config/compiler:optimize_max" ]
   }
 }
@@ -920,6 +981,8 @@ component("i18n") {
     "i18n/icu_string_conversions.h",
     "i18n/icu_util.cc",
     "i18n/icu_util.h",
+    "i18n/message_formatter.cc",
+    "i18n/message_formatter.h",
     "i18n/number_formatting.cc",
     "i18n/number_formatting.h",
     "i18n/rtl.cc",
@@ -939,14 +1002,16 @@ component("i18n") {
   ]
   defines = [ "BASE_I18N_IMPLEMENTATION" ]
   configs += [ "//build/config/compiler:wexit_time_destructors" ]
+  public_deps = [
+    "//third_party/icu",
+  ]
   deps = [
     ":base",
     "//base/third_party/dynamic_annotations",
-    "//third_party/icu",
   ]
 
   if (!is_debug) {
-    configs -= [ "//build/config/compiler:optimize" ]
+    configs -= [ "//build/config/compiler:default_optimization" ]
     configs += [ "//build/config/compiler:optimize_max" ]
   }
 
@@ -954,7 +1019,7 @@ component("i18n") {
   configs += [ "//build/config/compiler:no_size_t_to_int_warning" ]
 }
 
-if (is_win || (is_linux && !is_chromeos)) {
+if (is_ios || is_win || (is_linux && !is_chromeos)) {
   # TODO(GYP): Figure out which of these work and are needed on other platforms.
   test("base_perftests") {
     sources = [
@@ -996,6 +1061,7 @@ if (is_win || (is_linux && !is_chromeos)) {
       ]
       deps = [
         ":base",
+        "//build/config/sanitizers:deps",
         "//third_party/icu:icuuc",
       ]
     }
@@ -1006,6 +1072,7 @@ if (is_win || (is_linux && !is_chromeos)) {
       ]
       deps = [
         ":base",
+        "//build/config/sanitizers:deps",
       ]
     }
   }
@@ -1013,23 +1080,18 @@ if (is_win || (is_linux && !is_chromeos)) {
 
 component("prefs") {
   sources = [
-    "prefs/base_prefs_export.h",
     "prefs/default_pref_store.cc",
     "prefs/default_pref_store.h",
     "prefs/json_pref_store.cc",
     "prefs/json_pref_store.h",
     "prefs/overlay_user_pref_store.cc",
     "prefs/overlay_user_pref_store.h",
-    "prefs/persistent_pref_store.h",
     "prefs/pref_change_registrar.cc",
     "prefs/pref_change_registrar.h",
-    "prefs/pref_filter.h",
     "prefs/pref_member.cc",
     "prefs/pref_member.h",
-    "prefs/pref_notifier.h",
     "prefs/pref_notifier_impl.cc",
     "prefs/pref_notifier_impl.h",
-    "prefs/pref_observer.h",
     "prefs/pref_registry.cc",
     "prefs/pref_registry.h",
     "prefs/pref_registry_simple.cc",
@@ -1048,8 +1110,17 @@ component("prefs") {
     "prefs/scoped_user_pref_update.h",
     "prefs/value_map_pref_store.cc",
     "prefs/value_map_pref_store.h",
-    "prefs/writeable_pref_store.h",
   ]
+  if (!is_ios) {
+    sources += [
+      "prefs/base_prefs_export.h",
+      "prefs/persistent_pref_store.h",
+      "prefs/pref_filter.h",
+      "prefs/pref_notifier.h",
+      "prefs/pref_observer.h",
+      "prefs/writeable_pref_store.h",
+    ]
+  }
 
   defines = [ "BASE_PREFS_IMPLEMENTATION" ]
 
@@ -1058,7 +1129,7 @@ component("prefs") {
   ]
 
   if (!is_debug) {
-    configs -= [ "//build/config/compiler:optimize" ]
+    configs -= [ "//build/config/compiler:default_optimization" ]
     configs += [ "//build/config/compiler:optimize_max" ]
   }
 }
@@ -1115,6 +1186,9 @@ if (is_win) {
       "cfgmgr32.lib",
       "shell32.lib",
     ]
+    deps = [
+      "//build/config/sanitizers:deps",
+    ]
   }
 }
 
@@ -1138,7 +1212,6 @@ test("base_unittests") {
     "android/path_utils_unittest.cc",
     "android/scoped_java_ref_unittest.cc",
     "android/sys_utils_unittest.cc",
-    "async_socket_io_handler_unittest.cc",
     "at_exit_unittest.cc",
     "atomicops_unittest.cc",
     "barrier_closure_unittest.cc",
@@ -1181,6 +1254,7 @@ test("base_unittests") {
     "files/file_util_proxy_unittest.cc",
     "files/file_util_unittest.cc",
     "files/important_file_writer_unittest.cc",
+    "files/memory_mapped_file_unittest.cc",
     "files/scoped_temp_dir_unittest.cc",
     "gmock_unittest.cc",
     "guid_unittest.cc",
@@ -1190,6 +1264,7 @@ test("base_unittests") {
     "i18n/char_iterator_unittest.cc",
     "i18n/file_util_icu_unittest.cc",
     "i18n/icu_string_conversions_unittest.cc",
+    "i18n/message_formatter_unittest.cc",
     "i18n/number_formatting_unittest.cc",
     "i18n/rtl_unittest.cc",
     "i18n/streaming_utf8_validator_unittest.cc",
@@ -1228,6 +1303,7 @@ test("base_unittests") {
     "memory/scoped_ptr_unittest.cc",
     "memory/scoped_ptr_unittest.nc",
     "memory/scoped_vector_unittest.cc",
+    "memory/shared_memory_mac_unittest.cc",
     "memory/shared_memory_unittest.cc",
     "memory/singleton_unittest.cc",
     "memory/weak_ptr_unittest.cc",
@@ -1240,6 +1316,7 @@ test("base_unittests") {
     "metrics/field_trial_unittest.cc",
     "metrics/histogram_base_unittest.cc",
     "metrics/histogram_delta_serialization_unittest.cc",
+    "metrics/histogram_macros_unittest.cc",
     "metrics/histogram_snapshot_manager_unittest.cc",
     "metrics/histogram_unittest.cc",
     "metrics/sample_map_unittest.cc",
@@ -1272,7 +1349,6 @@ test("base_unittests") {
     "process/process_metrics_unittest_ios.cc",
     "process/process_unittest.cc",
     "process/process_util_unittest.cc",
-    "process/process_util_unittest_ios.cc",
     "profiler/stack_sampling_profiler_unittest.cc",
     "profiler/tracked_time_unittest.cc",
     "rand_util_unittest.cc",
@@ -1310,9 +1386,10 @@ test("base_unittests") {
     "task/cancelable_task_tracker_unittest.cc",
     "task_runner_util_unittest.cc",
     "template_util_unittest.cc",
-    "test/expectations/expectation_unittest.cc",
-    "test/expectations/parser_unittest.cc",
     "test/histogram_tester_unittest.cc",
+    "test/icu_test_util.cc",
+    "test/icu_test_util.h",
+    "test/test_pending_task_unittest.cc",
     "test/test_reg_util_win_unittest.cc",
     "test/trace_event_analyzer_unittest.cc",
     "test/user_action_tester_unittest.cc",
@@ -1354,6 +1431,7 @@ test("base_unittests") {
     "win/registry_unittest.cc",
     "win/scoped_bstr_unittest.cc",
     "win/scoped_comptr_unittest.cc",
+    "win/scoped_handle_unittest.cc",
     "win/scoped_process_information_unittest.cc",
     "win/scoped_variant_unittest.cc",
     "win/shortcut_unittest.cc",
@@ -1380,9 +1458,6 @@ test("base_unittests") {
 
   data = [
     "test/data/",
-
-    # TODO(dpranke): Remove when icu declares this directly.
-    "$root_out_dir/icudtl.dat",
   ]
 
   # Allow more direct string conversions on platforms with native utf8
@@ -1396,14 +1471,21 @@ test("base_unittests") {
       ":base_java",
       ":base_java_unittest_support",
     ]
+
+    # TODO(brettw) I think this should not be here, we should not be using
+    # isolate files.
     isolate_file = "base_unittests.isolate"
   }
 
   if (is_ios) {
     sources -= [
+      "files/file_path_watcher_unittest.cc",
+      "memory/discardable_shared_memory_unittest.cc",
+      "memory/shared_memory_unittest.cc",
       "process/memory_unittest.cc",
       "process/process_unittest.cc",
       "process/process_util_unittest.cc",
+      "sync_socket_unittest.cc",
     ]
 
     # Pull in specific Mac files for iOS (which have been filtered out by file
@@ -1414,7 +1496,7 @@ test("base_unittests") {
       "mac/foundation_util_unittest.mm",
       "mac/objc_property_releaser_unittest.mm",
       "mac/scoped_nsobject_unittest.mm",
-      "sys_string_conversions_mac_unittest.mm",
+      "strings/sys_string_conversions_mac_unittest.mm",
     ]
     set_sources_assignment_filter(sources_assignment_filter)
 
@@ -1435,7 +1517,7 @@ test("base_unittests") {
     sources -= [ "message_loop/message_pump_glib_unittest.cc" ]
   }
 
-  if (is_posix || is_ios) {
+  if (is_posix && !is_ios) {
     sources += [ "message_loop/message_pump_libevent_unittest.cc" ]
     deps += [ "//third_party/libevent" ]
   }
@@ -1449,6 +1531,15 @@ test("base_unittests") {
 
   # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
   configs += [ "//build/config/compiler:no_size_t_to_int_warning" ]
+
+  # Symbols for crashes when running tests on swarming.
+  if (symbol_level > 0) {
+    if (is_win) {
+      data += [ "$root_out_dir/base_unittests.exe.pdb" ]
+    } else if (is_mac) {
+      data += [ "$root_out_dir/base_unittests.dSYM/" ]
+    }
+  }
 }
 
 if (is_android) {
@@ -1481,7 +1572,7 @@ if (is_android) {
       "android/java/src/org/chromium/base/metrics/RecordUserAction.java",
     ]
 
-    deps = [
+    public_deps = [
       ":android_runtime_jni_headers",
     ]
 
@@ -1502,6 +1593,7 @@ if (is_android) {
     ]
 
     deps = [
+      "//third_party/android_tools:android_support_multidex_java",
       "//third_party/jsr-305:jsr_305_javalib",
     ]
 
@@ -1533,12 +1625,29 @@ if (is_android) {
     DEPRECATED_java_in_dir = "test/android/javatests/src"
   }
 
+  # TODO(jbudorick): Remove this once we roll to robolectric 3.0 and pull
+  # in the multidex shadow library. crbug.com/522043
+  # GYP: //base.gyp:base_junit_test_support
+  java_library("base_junit_test_support") {
+    testonly = true
+    java_files = [ "test/android/junit/src/org/chromium/base/test/shadows/ShadowMultiDex.java" ]
+    deps = [
+      "//third_party/android_tools:android_support_multidex_java",
+      "//third_party/robolectric:android-all-4.3_r2-robolectric-0",
+      "//third_party/robolectric:robolectric_java",
+    ]
+  }
+
   # GYP: //base.gyp:base_junit_tests
   junit_binary("base_junit_tests") {
-    java_files = [ "android/junit/src/org/chromium/base/LogTest.java" ]
+    java_files = [
+      "android/junit/src/org/chromium/base/BaseChromiumApplicationTest.java",
+      "android/junit/src/org/chromium/base/LogTest.java",
+    ]
     deps = [
       ":base_java",
       ":base_java_test_support",
+      ":base_junit_test_support",
     ]
   }
 

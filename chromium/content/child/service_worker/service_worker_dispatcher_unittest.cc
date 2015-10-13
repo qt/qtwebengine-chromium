@@ -38,7 +38,7 @@ class ServiceWorkerDispatcherTest : public testing::Test {
 
   void SetUp() override {
     sender_ = new ServiceWorkerTestSender(&ipc_sink_);
-    dispatcher_.reset(new ServiceWorkerDispatcher(sender_.get()));
+    dispatcher_.reset(new ServiceWorkerDispatcher(sender_.get(), nullptr));
   }
 
   void CreateObjectInfoAndVersionAttributes(
@@ -53,12 +53,6 @@ class ServiceWorkerDispatcherTest : public testing::Test {
     attrs->waiting.version_id = 201;
     attrs->installing.handle_id = 102;
     attrs->installing.version_id = 202;
-  }
-
-  WebServiceWorkerRegistrationImpl* FindOrCreateRegistration(
-      const ServiceWorkerRegistrationObjectInfo& info,
-      const ServiceWorkerVersionAttributes& attrs) {
-    return dispatcher_->FindOrCreateRegistration(info, attrs);
   }
 
   bool ContainsServiceWorker(int handle_id) {
@@ -139,79 +133,99 @@ TEST_F(ServiceWorkerDispatcherTest, GetServiceWorker) {
   EXPECT_EQ(0UL, ipc_sink()->message_count());
 }
 
-TEST_F(ServiceWorkerDispatcherTest, CreateServiceWorkerRegistration) {
+TEST_F(ServiceWorkerDispatcherTest, GetOrCreateRegistration) {
   ServiceWorkerRegistrationObjectInfo info;
   ServiceWorkerVersionAttributes attrs;
   CreateObjectInfoAndVersionAttributes(&info, &attrs);
 
   // Should return a registration object newly created with incrementing
-  // refcount.
-  bool adopt_handle = false;
-  scoped_ptr<WebServiceWorkerRegistrationImpl> registration(
-      dispatcher()->CreateServiceWorkerRegistration(info, adopt_handle));
-  EXPECT_TRUE(registration);
+  // the refcounts.
+  scoped_refptr<WebServiceWorkerRegistrationImpl> registration1(
+      dispatcher()->GetOrCreateRegistration(info, attrs));
+  EXPECT_TRUE(registration1);
   EXPECT_TRUE(ContainsRegistration(info.handle_id));
-  ASSERT_EQ(1UL, ipc_sink()->message_count());
+  EXPECT_EQ(info.registration_id, registration1->registration_id());
+  ASSERT_EQ(4UL, ipc_sink()->message_count());
   EXPECT_EQ(ServiceWorkerHostMsg_IncrementRegistrationRefCount::ID,
             ipc_sink()->GetMessageAt(0)->type());
+  EXPECT_EQ(ServiceWorkerHostMsg_IncrementServiceWorkerRefCount::ID,
+            ipc_sink()->GetMessageAt(1)->type());
+  EXPECT_EQ(ServiceWorkerHostMsg_IncrementServiceWorkerRefCount::ID,
+            ipc_sink()->GetMessageAt(2)->type());
+  EXPECT_EQ(ServiceWorkerHostMsg_IncrementServiceWorkerRefCount::ID,
+            ipc_sink()->GetMessageAt(3)->type());
 
-  registration.reset();
-  EXPECT_FALSE(ContainsRegistration(info.handle_id));
   ipc_sink()->ClearMessages();
 
-  // Should return another registration object newly created with adopting
-  // refcount.
-  adopt_handle = true;
-  scoped_ptr<WebServiceWorkerRegistrationImpl> another_registration(
-      dispatcher()->CreateServiceWorkerRegistration(info, adopt_handle));
-  EXPECT_TRUE(another_registration);
-  EXPECT_TRUE(ContainsRegistration(info.handle_id));
+  // Should return the same registration object without incrementing the
+  // refcounts.
+  scoped_refptr<WebServiceWorkerRegistrationImpl> registration2(
+      dispatcher()->GetOrCreateRegistration(info, attrs));
+  EXPECT_TRUE(registration2);
+  EXPECT_EQ(registration1, registration2);
   EXPECT_EQ(0UL, ipc_sink()->message_count());
 
-  another_registration.reset();
   ipc_sink()->ClearMessages();
 
-  // should return nullptr when a given object info is invalid.
-  adopt_handle = false;
-  scoped_ptr<WebServiceWorkerRegistrationImpl> invalid_registration(
-      dispatcher()->CreateServiceWorkerRegistration(
-          ServiceWorkerRegistrationObjectInfo(), adopt_handle));
-  EXPECT_FALSE(invalid_registration);
-  EXPECT_FALSE(ContainsRegistration(info.handle_id));
-  EXPECT_EQ(0UL, ipc_sink()->message_count());
-
-  adopt_handle = true;
-  invalid_registration.reset(dispatcher()->CreateServiceWorkerRegistration(
-      ServiceWorkerRegistrationObjectInfo(), adopt_handle));
-  EXPECT_FALSE(invalid_registration);
-  EXPECT_FALSE(ContainsRegistration(info.handle_id));
-  EXPECT_EQ(0UL, ipc_sink()->message_count());
-}
-
-TEST_F(ServiceWorkerDispatcherTest, FindOrCreateRegistration) {
-  ServiceWorkerRegistrationObjectInfo info;
-  ServiceWorkerVersionAttributes attrs;
-  CreateObjectInfoAndVersionAttributes(&info, &attrs);
-
-  // Should return a registration object newly created with adopting refcounts.
-  scoped_ptr<WebServiceWorkerRegistrationImpl> registration(
-      FindOrCreateRegistration(info, attrs));
-  EXPECT_TRUE(registration);
-  EXPECT_EQ(info.registration_id, registration->registration_id());
-  EXPECT_EQ(0UL, ipc_sink()->message_count());
-
-  // Should return the existing registration object with adopting refcounts.
-  WebServiceWorkerRegistrationImpl* existing_registration =
-      FindOrCreateRegistration(info, attrs);
-  EXPECT_EQ(registration, existing_registration);
+  // The registration dtor decrements the refcounts.
+  registration1 = nullptr;
+  registration2 = nullptr;
   ASSERT_EQ(4UL, ipc_sink()->message_count());
-  EXPECT_EQ(ServiceWorkerHostMsg_DecrementRegistrationRefCount::ID,
+  EXPECT_EQ(ServiceWorkerHostMsg_DecrementServiceWorkerRefCount::ID,
             ipc_sink()->GetMessageAt(0)->type());
   EXPECT_EQ(ServiceWorkerHostMsg_DecrementServiceWorkerRefCount::ID,
             ipc_sink()->GetMessageAt(1)->type());
   EXPECT_EQ(ServiceWorkerHostMsg_DecrementServiceWorkerRefCount::ID,
             ipc_sink()->GetMessageAt(2)->type());
+  EXPECT_EQ(ServiceWorkerHostMsg_DecrementRegistrationRefCount::ID,
+            ipc_sink()->GetMessageAt(3)->type());
+}
+
+TEST_F(ServiceWorkerDispatcherTest, GetOrAdoptRegistration) {
+  ServiceWorkerRegistrationObjectInfo info;
+  ServiceWorkerVersionAttributes attrs;
+  CreateObjectInfoAndVersionAttributes(&info, &attrs);
+
+  // Should return a registration object newly created with adopting the
+  // refcounts.
+  scoped_refptr<WebServiceWorkerRegistrationImpl> registration1(
+      dispatcher()->GetOrAdoptRegistration(info, attrs));
+  EXPECT_TRUE(registration1);
+  EXPECT_TRUE(ContainsRegistration(info.handle_id));
+  EXPECT_EQ(info.registration_id, registration1->registration_id());
+  EXPECT_EQ(0UL, ipc_sink()->message_count());
+
+  ipc_sink()->ClearMessages();
+
+  // Should return the same registration object without incrementing the
+  // refcounts.
+  scoped_refptr<WebServiceWorkerRegistrationImpl> registration2(
+      dispatcher()->GetOrAdoptRegistration(info, attrs));
+  EXPECT_TRUE(registration2);
+  EXPECT_EQ(registration1, registration2);
+  ASSERT_EQ(4UL, ipc_sink()->message_count());
   EXPECT_EQ(ServiceWorkerHostMsg_DecrementServiceWorkerRefCount::ID,
+            ipc_sink()->GetMessageAt(0)->type());
+  EXPECT_EQ(ServiceWorkerHostMsg_DecrementServiceWorkerRefCount::ID,
+            ipc_sink()->GetMessageAt(1)->type());
+  EXPECT_EQ(ServiceWorkerHostMsg_DecrementServiceWorkerRefCount::ID,
+            ipc_sink()->GetMessageAt(2)->type());
+  EXPECT_EQ(ServiceWorkerHostMsg_DecrementRegistrationRefCount::ID,
+            ipc_sink()->GetMessageAt(3)->type());
+
+  ipc_sink()->ClearMessages();
+
+  // The registration dtor decrements the refcounts.
+  registration1 = nullptr;
+  registration2 = nullptr;
+  ASSERT_EQ(4UL, ipc_sink()->message_count());
+  EXPECT_EQ(ServiceWorkerHostMsg_DecrementServiceWorkerRefCount::ID,
+            ipc_sink()->GetMessageAt(0)->type());
+  EXPECT_EQ(ServiceWorkerHostMsg_DecrementServiceWorkerRefCount::ID,
+            ipc_sink()->GetMessageAt(1)->type());
+  EXPECT_EQ(ServiceWorkerHostMsg_DecrementServiceWorkerRefCount::ID,
+            ipc_sink()->GetMessageAt(2)->type());
+  EXPECT_EQ(ServiceWorkerHostMsg_DecrementRegistrationRefCount::ID,
             ipc_sink()->GetMessageAt(3)->type());
 }
 

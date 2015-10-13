@@ -39,10 +39,8 @@ namespace blink {
 class WebCompositorAnimationCurve;
 class WebCompositorAnimationPlayer;
 class WebCompositorAnimationTimeline;
-class WebCompositorOutputSurface;
 class WebContentLayer;
 class WebContentLayerClient;
-class WebDisplayItemList;
 class WebExternalTextureLayer;
 class WebExternalTextureLayerClient;
 class WebFilterAnimationCurve;
@@ -50,7 +48,6 @@ class WebFilterOperations;
 class WebFloatAnimationCurve;
 class WebGraphicsContext3D;
 class WebImageLayer;
-class WebNinePatchLayer;
 class WebLayer;
 class WebScrollbarLayer;
 class WebScrollbarThemeGeometry;
@@ -60,11 +57,6 @@ class WebTransformOperations;
 
 class WebCompositorSupport {
 public:
-    // Creates an output surface for the compositor backed by a 3d context.
-    virtual WebCompositorOutputSurface* createOutputSurfaceFor3D(WebGraphicsContext3D*) { return nullptr; }
-
-    // Creates an output surface for the compositor backed by a software device.
-    virtual WebCompositorOutputSurface* createOutputSurfaceForSoftware() { return nullptr; }
 
     // Layers -------------------------------------------------------
 
@@ -75,8 +67,6 @@ public:
     virtual WebExternalTextureLayer* createExternalTextureLayer(WebExternalTextureLayerClient*) { return nullptr; }
 
     virtual WebImageLayer* createImageLayer() { return nullptr; }
-
-    virtual WebNinePatchLayer* createNinePatchLayer() { return nullptr; }
 
     // The ownership of the WebScrollbarThemeGeometry pointer is passed to Chromium.
     virtual WebScrollbarLayer* createScrollbarLayer(WebScrollbar*, WebScrollbarThemePainter, WebScrollbarThemeGeometry*) { return nullptr; }
@@ -102,8 +92,6 @@ public:
     virtual WebCompositorAnimationPlayer* createAnimationPlayer() { return nullptr; }
 
     virtual WebCompositorAnimationTimeline* createAnimationTimeline() { return nullptr; }
-
-    virtual WebDisplayItemList* createDisplayItemList() { return nullptr; }
 
 protected:
     virtual ~WebCompositorSupport() { }

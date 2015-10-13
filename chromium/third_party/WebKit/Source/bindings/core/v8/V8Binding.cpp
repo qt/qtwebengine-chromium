@@ -33,6 +33,7 @@
 
 #include "bindings/core/v8/ScriptController.h"
 #include "bindings/core/v8/V8AbstractEventListener.h"
+#include "bindings/core/v8/V8ArrayBufferView.h"
 #include "bindings/core/v8/V8BindingMacros.h"
 #include "bindings/core/v8/V8Element.h"
 #include "bindings/core/v8/V8EventTarget.h"
@@ -47,6 +48,7 @@
 #include "bindings/core/v8/custom/V8CustomXPathNSResolver.h"
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
+#include "core/dom/FlexibleArrayBufferView.h"
 #include "core/dom/NodeFilter.h"
 #include "core/dom/QualifiedName.h"
 #include "core/frame/LocalDOMWindow.h"
@@ -756,6 +758,19 @@ EventTarget* toEventTarget(v8::Isolate* isolate, v8::Local<v8::Value> value)
     return 0;
 }
 
+void toFlexibleArrayBufferView(v8::Isolate* isolate, v8::Local<v8::Value> value, FlexibleArrayBufferView& result, void* storage)
+{
+    ASSERT(value->IsArrayBufferView());
+    v8::Local<v8::ArrayBufferView> buffer = value.As<v8::ArrayBufferView>();
+    if (!storage) {
+        result.setFull(V8ArrayBufferView::toImpl(buffer));
+        return;
+    }
+    size_t length = buffer->ByteLength();
+    buffer->CopyContents(storage, length);
+    result.setSmall(storage, length);
+}
+
 v8::Local<v8::Context> toV8Context(ExecutionContext* context, DOMWrapperWorld& world)
 {
     ASSERT(context);
@@ -884,6 +899,11 @@ v8::Isolate* toIsolate(LocalFrame* frame)
 
 JSONValuePtr NativeValueTraits<JSONValuePtr>::nativeValue(v8::Isolate* isolate, v8::Local<v8::Value> value, ExceptionState& exceptionState, int maxDepth)
 {
+    return toJSONValue(isolate, value, maxDepth);
+}
+
+JSONValuePtr toJSONValue(v8::Isolate* isolate, v8::Local<v8::Value> value, int maxDepth)
+{
     if (value.IsEmpty()) {
         ASSERT_NOT_REACHED();
         return nullptr;
@@ -910,7 +930,7 @@ JSONValuePtr NativeValueTraits<JSONValuePtr>::nativeValue(v8::Isolate* isolate, 
             v8::Local<v8::Value> value;
             if (!array->Get(context, i).ToLocal(&value))
                 return nullptr;
-            RefPtr<JSONValue> element = nativeValue(isolate, value, exceptionState, maxDepth);
+            RefPtr<JSONValue> element = toJSONValue(isolate, value, maxDepth);
             if (!element)
                 return nullptr;
             inspectorArray->pushValue(element);
@@ -934,7 +954,7 @@ JSONValuePtr NativeValueTraits<JSONValuePtr>::nativeValue(v8::Isolate* isolate, 
             v8::Local<v8::Value> property;
             if (!object->Get(context, name).ToLocal(&property))
                 return nullptr;
-            RefPtr<JSONValue> propertyValue = nativeValue(isolate, property, exceptionState, maxDepth);
+            RefPtr<JSONValue> propertyValue = toJSONValue(isolate, property, maxDepth);
             if (!propertyValue)
                 return nullptr;
             TOSTRING_DEFAULT(V8StringResource<TreatNullAsNullString>, nameString, name, nullptr);

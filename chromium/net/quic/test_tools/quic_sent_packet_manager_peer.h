@@ -22,6 +22,9 @@ class QuicSentPacketManagerPeer {
   static void SetMaxTailLossProbes(
       QuicSentPacketManager* sent_packet_manager, size_t max_tail_loss_probes);
 
+  static bool GetEnableHalfRttTailLossProbe(
+      QuicSentPacketManager* sent_packet_manager);
+
   static bool GetUseNewRto(QuicSentPacketManager* sent_packet_manager);
 
   static QuicByteCount GetReceiveWindow(
@@ -48,14 +51,14 @@ class QuicSentPacketManagerPeer {
       const QuicSentPacketManager* sent_packet_manager);
 
   static QuicTime GetSentTime(const QuicSentPacketManager* sent_packet_manager,
-                              QuicPacketSequenceNumber sequence_number);
+                              QuicPacketNumber packet_number);
 
-  // Returns true if |sequence_number| is a retransmission of a packet.
+  // Returns true if |packet_number| is a retransmission of a packet.
   static bool IsRetransmission(QuicSentPacketManager* sent_packet_manager,
-                               QuicPacketSequenceNumber sequence_number);
+                               QuicPacketNumber packet_number);
 
   static void MarkForRetransmission(QuicSentPacketManager* sent_packet_manager,
-                                    QuicPacketSequenceNumber sequence_number,
+                                    QuicPacketNumber packet_number,
                                     TransmissionType transmission_type);
 
   static QuicTime::Delta GetRetransmissionDelay(

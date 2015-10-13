@@ -34,7 +34,7 @@
 #include "core/CoreExport.h"
 #include "core/css/CSSPrimitiveValue.h"
 #include "core/css/CSSValue.h"
-#include "core/css/parser/CSSParserValues.h"
+#include "core/css/parser/CSSParserTokenRange.h"
 #include "platform/CalculationValue.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/RefCounted.h"
@@ -42,7 +42,6 @@
 
 namespace blink {
 
-class CSSParserValueList;
 class CalculationValue;
 
 enum CalcOperator {
@@ -84,7 +83,7 @@ public:
     virtual Type type() const = 0;
 
     CalculationCategory category() const { return m_category; }
-    virtual CSSPrimitiveValue::UnitType primitiveType() const = 0;
+    virtual CSSPrimitiveValue::UnitType typeWithCalcResolved() const = 0;
     bool isInteger() const { return m_isInteger; }
 
     DEFINE_INLINE_VIRTUAL_TRACE() { }
@@ -101,9 +100,9 @@ protected:
     bool m_isInteger;
 };
 
-class CORE_EXPORT CSSCalcValue : public CSSValue {
+class CORE_EXPORT CSSCalcValue : public RefCountedWillBeGarbageCollected<CSSCalcValue> {
 public:
-    static PassRefPtrWillBeRawPtr<CSSCalcValue> create(CSSParserValueList*, ValueRange);
+    static PassRefPtrWillBeRawPtr<CSSCalcValue> create(const CSSParserTokenRange&, ValueRange);
     static PassRefPtrWillBeRawPtr<CSSCalcValue> create(PassRefPtrWillBeRawPtr<CSSCalcExpressionNode>, ValueRange = ValueRangeAll);
 
     static PassRefPtrWillBeRawPtr<CSSCalcExpressionNode> createExpressionNode(PassRefPtrWillBeRawPtr<CSSPrimitiveValue>, bool isInteger = false);
@@ -128,12 +127,14 @@ public:
     String customCSSText() const;
     bool equals(const CSSCalcValue&) const;
 
-    DECLARE_TRACE_AFTER_DISPATCH();
+    DEFINE_INLINE_TRACE()
+    {
+        visitor->trace(m_expression);
+    }
 
 private:
     CSSCalcValue(PassRefPtrWillBeRawPtr<CSSCalcExpressionNode> expression, ValueRange range)
-        : CSSValue(CalculationClass)
-        , m_expression(expression)
+        : m_expression(expression)
         , m_nonNegative(range == ValueRangeNonNegative)
     {
     }
@@ -144,9 +145,6 @@ private:
     const bool m_nonNegative;
 };
 
-DEFINE_CSS_VALUE_TYPE_CASTS(CSSCalcValue, isCalcValue());
-
 } // namespace blink
-
 
 #endif // CSSCalculationValue_h

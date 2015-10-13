@@ -160,7 +160,7 @@ void LayoutTableCell::computePreferredLogicalWidths()
     }
 }
 
-void LayoutTableCell::addLayerHitTestRects(LayerHitTestRects& layerRects, const DeprecatedPaintLayer* currentLayer, const LayoutPoint& layerOffset, const LayoutRect& containerRect) const
+void LayoutTableCell::addLayerHitTestRects(LayerHitTestRects& layerRects, const PaintLayer* currentLayer, const LayoutPoint& layerOffset, const LayoutRect& containerRect) const
 {
     LayoutPoint adjustedLayerOffset = layerOffset;
     // LayoutTableCell's location includes the offset of it's containing LayoutTableRow, so
@@ -322,11 +322,11 @@ LayoutRect LayoutTableCell::clippedOverflowRectForPaintInvalidation(const Layout
         return LayoutBlockFlow::clippedOverflowRectForPaintInvalidation(paintInvalidationContainer, paintInvalidationState);
 
     bool rtl = !styleForCellFlow().isLeftToRightDirection();
-    int outlineSize = style()->outlineSize();
-    int left = std::max(borderHalfLeft(true), outlineSize);
-    int right = std::max(borderHalfRight(true), outlineSize);
-    int top = std::max(borderHalfTop(true), outlineSize);
-    int bottom = std::max(borderHalfBottom(true), outlineSize);
+    int outlineOutset = style()->outlineOutsetExtent();
+    int left = std::max(borderHalfLeft(true), outlineOutset);
+    int right = std::max(borderHalfRight(true), outlineOutset);
+    int top = std::max(borderHalfTop(true), outlineOutset);
+    int bottom = std::max(borderHalfBottom(true), outlineOutset);
     if ((left && !rtl) || (right && rtl)) {
         if (LayoutTableCell* before = table()->cellBefore(this)) {
             top = std::max(top, before->borderHalfTop(true));
@@ -926,7 +926,7 @@ int LayoutTableCell::borderHalfAfter(bool outer) const
     return 0;
 }
 
-void LayoutTableCell::paint(const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
+void LayoutTableCell::paint(const PaintInfo& paintInfo, const LayoutPoint& paintOffset) const
 {
     TableCellPainter(*this).paint(paintInfo, paintOffset);
 }
@@ -958,8 +958,8 @@ void LayoutTableCell::collectBorderValues(LayoutTable::CollapsedBorderValues& bo
 
     // In slimming paint mode, we need to invalidate all cells with collapsed border changed.
     // FIXME: Need a way to invalidate/repaint the borders only. crbug.com/451090#c5.
-    if (changed && RuntimeEnabledFeatures::slimmingPaintEnabled())
-        invalidateDisplayItemClient(*this);
+    if (changed)
+        table()->invalidateDisplayItemClient(*this);
 
     addBorderStyle(borderValues, startBorder);
     addBorderStyle(borderValues, endBorder);
@@ -982,17 +982,17 @@ void LayoutTableCell::sortBorderValues(LayoutTable::CollapsedBorderValues& borde
         compareBorderValuesForQSort);
 }
 
-void LayoutTableCell::paintBoxDecorationBackground(const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
+void LayoutTableCell::paintBoxDecorationBackground(const PaintInfo& paintInfo, const LayoutPoint& paintOffset) const
 {
     TableCellPainter(*this).paintBoxDecorationBackground(paintInfo, paintOffset);
 }
 
-void LayoutTableCell::paintMask(const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
+void LayoutTableCell::paintMask(const PaintInfo& paintInfo, const LayoutPoint& paintOffset) const
 {
     TableCellPainter(*this).paintMask(paintInfo, paintOffset);
 }
 
-bool LayoutTableCell::boxShadowShouldBeAppliedToBackground(BackgroundBleedAvoidance, InlineFlowBox*) const
+bool LayoutTableCell::boxShadowShouldBeAppliedToBackground(BackgroundBleedAvoidance, const InlineFlowBox*) const
 {
     return false;
 }

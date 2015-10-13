@@ -30,7 +30,6 @@
 #include "config.h"
 #include "core/css/MediaQueryExp.h"
 
-#include "core/css/CSSPrimitiveValue.h"
 #include "core/css/parser/CSSParserToken.h"
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "platform/Decimal.h"
@@ -84,7 +83,7 @@ static inline bool featureWithValidPositiveLength(const String& mediaFeature, co
 
 static inline bool featureWithValidDensity(const String& mediaFeature, const CSSParserToken& token)
 {
-    if ((token.unitType() != CSSPrimitiveValue::CSS_DPPX && token.unitType() != CSSPrimitiveValue::CSS_DPI && token.unitType() != CSSPrimitiveValue::CSS_DPCM) || token.numericValue() <= 0)
+    if ((token.unitType() != CSSPrimitiveValue::UnitType::DotsPerPixel && token.unitType() != CSSPrimitiveValue::UnitType::DotsPerInch && token.unitType() != CSSPrimitiveValue::UnitType::DotsPerCentimeter) || token.numericValue() <= 0)
         return false;
 
     return mediaFeature == resolutionMediaFeature
@@ -189,8 +188,6 @@ MediaQueryExp::MediaQueryExp(const String& mediaFeature, const MediaQueryExpValu
 {
 }
 
-CSSValueID cssValueKeywordID(const CSSParserString&);
-
 PassOwnPtrWillBeRawPtr<MediaQueryExp> MediaQueryExp::createIfValid(const String& mediaFeature, const Vector<CSSParserToken, 4>& tokenList)
 {
     ASSERT(!mediaFeature.isNull());
@@ -205,11 +202,11 @@ PassOwnPtrWillBeRawPtr<MediaQueryExp> MediaQueryExp::createIfValid(const String&
         CSSParserToken token = tokenList.first();
 
         if (token.type() == IdentToken) {
-            CSSValueID ident = cssValueKeywordID(token.value());
+            CSSValueID ident = token.id();
             if (!featureWithValidIdent(lowerMediaFeature, ident))
                 return nullptr;
             expValue.id = ident;
-            expValue.unit = CSSPrimitiveValue::CSS_VALUE_ID;
+            expValue.unit = CSSPrimitiveValue::UnitType::ValueID;
             expValue.isID = true;
         } else if (token.type() == NumberToken || token.type() == PercentageToken || token.type() == DimensionToken) {
             // Check for numeric token types since it is only safe for these types to call numericValue.
@@ -227,7 +224,7 @@ PassOwnPtrWillBeRawPtr<MediaQueryExp> MediaQueryExp::createIfValid(const String&
                 // or media features that must have non-negative number value,
                 // or media features that must have (0|1) value.
                 expValue.value = token.numericValue();
-                expValue.unit = CSSPrimitiveValue::CSS_NUMBER;
+                expValue.unit = CSSPrimitiveValue::UnitType::Number;
                 expValue.isValue = true;
             } else {
                 return nullptr;

@@ -11,11 +11,11 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/sequenced_task_runner.h"
-#include "chromeos/dbus/bluetooth_device_client.h"
-#include "chromeos/dbus/bluetooth_gatt_service_client.h"
 #include "dbus/object_path.h"
 #include "device/bluetooth/bluetooth_device.h"
 #include "device/bluetooth/bluetooth_export.h"
+#include "device/bluetooth/dbus/bluetooth_device_client.h"
+#include "device/bluetooth/dbus/bluetooth_gatt_service_client.h"
 
 namespace device {
 class BluetoothSocketThread;
@@ -35,7 +35,7 @@ class BluetoothPairingChromeOS;
 // thread.
 class DEVICE_BLUETOOTH_EXPORT BluetoothDeviceChromeOS
     : public device::BluetoothDevice,
-      public BluetoothGattServiceClient::Observer {
+      public bluez::BluetoothGattServiceClient::Observer {
  public:
   // BluetoothDevice override
   uint32 GetBluetoothClass() const override;
@@ -46,6 +46,7 @@ class DEVICE_BLUETOOTH_EXPORT BluetoothDeviceChromeOS
   uint16 GetDeviceID() const override;
   bool IsPaired() const override;
   bool IsConnected() const override;
+  bool IsGattConnected() const override;
   bool IsConnectable() const override;
   bool IsConnecting() const override;
   UUIDList GetUUIDs() const override;
@@ -78,6 +79,9 @@ class DEVICE_BLUETOOTH_EXPORT BluetoothDeviceChromeOS
   void CreateGattConnection(
       const GattConnectionCallback& callback,
       const ConnectErrorCallback& error_callback) override;
+  void Pair(device::BluetoothDevice::PairingDelegate* pairing_delegate,
+            const base::Closure& callback,
+            const ConnectErrorCallback& error_callback) override;
 
   // Creates a pairing object with the given delegate |pairing_delegate| and
   // establishes it as the pairing context for this device. All pairing-related
@@ -96,11 +100,13 @@ class DEVICE_BLUETOOTH_EXPORT BluetoothDeviceChromeOS
   const dbus::ObjectPath& object_path() const { return object_path_; }
 
   // Returns the adapter which owns this device instance.
-  BluetoothAdapterChromeOS* adapter() const { return adapter_; }
+  BluetoothAdapterChromeOS* adapter() const;
 
  protected:
   // BluetoothDevice override
   std::string GetDeviceName() const override;
+  void CreateGattConnectionImpl() override;
+  void DisconnectGatt() override;
 
  private:
   friend class BluetoothAdapterChromeOS;
@@ -112,7 +118,7 @@ class DEVICE_BLUETOOTH_EXPORT BluetoothDeviceChromeOS
       scoped_refptr<device::BluetoothSocketThread> socket_thread);
   ~BluetoothDeviceChromeOS() override;
 
-  // BluetoothGattServiceClient::Observer overrides.
+  // bluez::BluetoothGattServiceClient::Observer overrides.
   void GattServiceAdded(const dbus::ObjectPath& object_path) override;
   void GattServiceRemoved(const dbus::ObjectPath& object_path) override;
 
@@ -139,9 +145,17 @@ class DEVICE_BLUETOOTH_EXPORT BluetoothDeviceChromeOS
                       const std::string& error_name,
                       const std::string& error_message);
 
-  // Called by dbus:: on completion of the D-Bus method call to pair the device.
-  void OnPair(const base::Closure& callback,
-              const ConnectErrorCallback& error_callback);
+  // Called by dbus:: on completion of the D-Bus method call to pair the device,
+  // made inside |Connect()|.
+  void OnPairDuringConnect(const base::Closure& callback,
+                           const ConnectErrorCallback& error_callback);
+  void OnPairDuringConnectError(const ConnectErrorCallback& error_callback,
+                                const std::string& error_name,
+                                const std::string& error_message);
+
+  // Called by dbus: on completion of the D-Bus method call to pair the device,
+  // made inside |Pair()|.
+  void OnPair(const base::Closure& callback);
   void OnPairError(const ConnectErrorCallback& error_callback,
                    const std::string& error_name,
                    const std::string& error_message);
@@ -172,9 +186,6 @@ class DEVICE_BLUETOOTH_EXPORT BluetoothDeviceChromeOS
   void OnForgetError(const ErrorCallback& error_callback,
                      const std::string& error_name,
                      const std::string& error_message);
-
-  // The adapter that owns this device instance.
-  BluetoothAdapterChromeOS* adapter_;
 
   // The dbus object path of the device object.
   dbus::ObjectPath object_path_;

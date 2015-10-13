@@ -35,6 +35,7 @@
 #include "platform/geometry/LayoutPoint.h"
 #include "platform/geometry/LayoutRectOutsets.h"
 #include "wtf/Vector.h"
+#include <iosfwd>
 
 namespace blink {
 
@@ -159,6 +160,10 @@ public:
     void unite(const LayoutRect&);
     void uniteIfNonZero(const LayoutRect&);
 
+    // Besides non-empty rects, this method also unites empty rects (as points or line segments).
+    // For example, union of (100, 100, 0x0) and (200, 200, 50x0) is (100, 100, 150x100).
+    void uniteEvenIfEmpty(const LayoutRect&);
+
     void inflateX(LayoutUnit dx)
     {
         m_location.setX(m_location.x() - dx);
@@ -216,6 +221,15 @@ inline LayoutRect unionRect(const LayoutRect& a, const LayoutRect& b)
 
 PLATFORM_EXPORT LayoutRect unionRect(const Vector<LayoutRect>&);
 
+inline LayoutRect unionRectEvenIfEmpty(const LayoutRect& a, const LayoutRect& b)
+{
+    LayoutRect c = a;
+    c.uniteEvenIfEmpty(b);
+    return c;
+}
+
+PLATFORM_EXPORT LayoutRect unionRectEvenIfEmpty(const Vector<LayoutRect>&);
+
 ALWAYS_INLINE bool operator==(const LayoutRect& a, const LayoutRect& b)
 {
     return a.location() == b.location() && a.size() == b.size();
@@ -250,6 +264,10 @@ inline IntRect pixelSnappedIntRect(LayoutPoint location, LayoutSize size)
 {
     return IntRect(roundedIntPoint(location), pixelSnappedIntSize(size, location));
 }
+
+// Redeclared here to avoid ODR issues.
+// See platform/testing/GeometryPrinters.h.
+void PrintTo(const LayoutRect&, std::ostream*);
 
 } // namespace blink
 

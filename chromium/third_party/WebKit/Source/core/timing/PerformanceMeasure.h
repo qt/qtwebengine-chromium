@@ -41,8 +41,6 @@ public:
         return new PerformanceMeasure(name, startTime, endTime);
     }
 
-    virtual bool isMeasure() override { return true; }
-
     DEFINE_INLINE_VIRTUAL_TRACE()
     {
         PerformanceEntry::trace(visitor);
@@ -51,7 +49,7 @@ public:
 private:
     PerformanceMeasure(const String& name, double startTime, double endTime)
         : PerformanceEntry(name, "measure", startTime, endTime) { }
-    virtual ~PerformanceMeasure() { }
+    ~PerformanceMeasure() override { }
 };
 
 } // namespace blink

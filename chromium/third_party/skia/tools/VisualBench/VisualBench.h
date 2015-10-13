@@ -14,8 +14,8 @@
 #include "SkPicture.h"
 #include "SkString.h"
 #include "SkSurface.h"
-#include "Timer.h"
-#include "VisualBenchmarkStream.h"
+#include "VisualFlags.h"
+#include "VisualModule.h"
 #include "gl/SkGLContext.h"
 
 class GrContext;
@@ -31,6 +31,10 @@ public:
     VisualBench(void* hwnd, int argc, char** argv);
     ~VisualBench() override;
 
+    void reset() { this->resetContext(); }
+
+    void clear(SkCanvas* canvas, SkColor color, int frames);
+
 protected:
     SkSurface* createSurface() override;
 
@@ -44,33 +48,9 @@ private:
     void resetContext();
     void setupRenderTarget();
     bool onHandleChar(SkUnichar unichar) override;
-    void printStats();
-    bool advanceRecordIfNecessary(SkCanvas*);
-    inline void renderFrame(SkCanvas*);
-
-    struct Record {
-        SkTArray<double> fMeasurements;
-    };
-
-    enum State {
-        kPreWarmLoops_State,
-        kTuneLoops_State,
-        kPreWarmTiming_State,
-        kTiming_State,
-    };
-    void preWarm(State nextState);
-
-    int fCurrentSample;
-    int fCurrentFrame;
-    int fFlushes;
-    int fLoops;
-    SkTArray<Record> fRecords;
-    WallTimer fTimer;
-    State fState;
-    SkAutoTDelete<VisualBenchmarkStream> fBenchmarkStream;
-    Benchmark* fBenchmark;
 
     // support framework
+    SkAutoTDelete<VisualModule> fModule;
     SkAutoTUnref<SkSurface> fSurface;
     SkAutoTUnref<GrContext> fContext;
     SkAutoTUnref<GrRenderTarget> fRenderTarget;

@@ -36,13 +36,14 @@
 #include "core/dom/Range.h"
 #include "core/dom/shadow/ElementShadow.h"
 #include "core/dom/shadow/ShadowRoot.h"
+#include "core/editing/EditingUtilities.h" // For firstPositionInOrBeforeNode
 #include "core/editing/Editor.h"
 #include "core/editing/FrameSelection.h"
-#include "core/editing/htmlediting.h" // For firstPositionInOrBeforeNode
 #include "core/events/Event.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalDOMWindow.h"
 #include "core/frame/LocalFrame.h"
+#include "core/frame/Settings.h"
 #include "core/html/HTMLAreaElement.h"
 #include "core/html/HTMLImageElement.h"
 #include "core/html/HTMLPlugInElement.h"
@@ -52,7 +53,6 @@
 #include "core/page/ChromeClient.h"
 #include "core/page/FrameTree.h"
 #include "core/page/Page.h"
-#include "core/frame/Settings.h"
 #include "core/layout/HitTestResult.h"
 #include "core/page/SpatialNavigation.h"
 #include <limits>
@@ -233,7 +233,7 @@ inline bool isNonFocusableFocusScopeOwner(Element& element)
 
 inline bool isShadowHostDelegatesFocus(const Element& element)
 {
-    return element.shadowRoot() && element.shadowRoot()->delegatesFocus();
+    return element.authorShadowRoot() && element.authorShadowRoot()->delegatesFocus();
 }
 
 inline int adjustedTabIndex(Node& node)
@@ -655,12 +655,12 @@ bool FocusController::setInitialFocus(WebFocusType type)
     return didAdvanceFocus;
 }
 
-bool FocusController::advanceFocus(WebFocusType type, bool initialFocus)
+bool FocusController::advanceFocus(WebFocusType type, bool initialFocus, InputDeviceCapabilities* sourceCapabilities)
 {
     switch (type) {
     case WebFocusTypeForward:
     case WebFocusTypeBackward:
-        return advanceFocusInDocumentOrder(type, initialFocus);
+        return advanceFocusInDocumentOrder(type, initialFocus, sourceCapabilities);
     case WebFocusTypeLeft:
     case WebFocusTypeRight:
     case WebFocusTypeUp:
@@ -673,7 +673,7 @@ bool FocusController::advanceFocus(WebFocusType type, bool initialFocus)
     return false;
 }
 
-bool FocusController::advanceFocusInDocumentOrder(WebFocusType type, bool initialFocus)
+bool FocusController::advanceFocusInDocumentOrder(WebFocusType type, bool initialFocus, InputDeviceCapabilities* sourceCapabilities)
 {
     // FIXME: Focus advancement won't work with externally rendered frames until after
     // inter-frame focus control is moved out of Blink.
@@ -688,7 +688,7 @@ bool FocusController::advanceFocusInDocumentOrder(WebFocusType type, bool initia
     bool caretBrowsing = frame->settings() && frame->settings()->caretBrowsingEnabled();
 
     if (caretBrowsing && !currentNode)
-        currentNode = frame->selection().start().deprecatedNode();
+        currentNode = frame->selection().start().anchorNode();
 
     document->updateLayoutIgnorePendingStylesheets();
 
@@ -715,9 +715,10 @@ bool FocusController::advanceFocusInDocumentOrder(WebFocusType type, bool initia
 
     ASSERT(element);
 
-    if (element == document->focusedElement())
+    if (element == document->focusedElement()) {
         // Focus wrapped around to the same node.
         return true;
+    }
 
     if (element->isFrameOwnerElement() && (!isHTMLPlugInElement(*element) || !element->isKeyboardFocusable())) {
         // We focus frames rather than frame owners.
@@ -745,11 +746,11 @@ bool FocusController::advanceFocusInDocumentOrder(WebFocusType type, bool initia
 
     if (caretBrowsing) {
         Position position = firstPositionInOrBeforeNode(element.get());
-        VisibleSelection newSelection(position, position, DOWNSTREAM);
+        VisibleSelection newSelection(position, position);
         frame->selection().setSelection(newSelection);
     }
 
-    element->focus(false, type);
+    element->focus(false, type, sourceCapabilities);
     return true;
 }
 
@@ -783,7 +784,7 @@ static void clearSelectionIfNeeded(LocalFrame* oldFocusedFrame, LocalFrame* newF
     if (caretBrowsing)
         return;
 
-    Node* selectionStartNode = selection.selection().start().deprecatedNode();
+    Node* selectionStartNode = selection.selection().start().anchorNode();
     if (selectionStartNode == newFocusedElement || selectionStartNode->isDescendantOf(newFocusedElement))
         return;
 
@@ -796,9 +797,9 @@ static void clearSelectionIfNeeded(LocalFrame* oldFocusedFrame, LocalFrame* newF
     selection.clear();
 }
 
-bool FocusController::setFocusedElement(Element* element, PassRefPtrWillBeRawPtr<Frame> newFocusedFrame, WebFocusType type)
+bool FocusController::setFocusedElement(Element* element, PassRefPtrWillBeRawPtr<Frame> newFocusedFrame, WebFocusType type, InputDeviceCapabilities* sourceCapabilities)
 {
-    RefPtrWillBeRawPtr<LocalFrame> oldFocusedFrame = toLocalFrame(focusedFrame());
+    RefPtrWillBeRawPtr<LocalFrame> oldFocusedFrame = focusedFrame() && focusedFrame()->isLocalFrame() ? toLocalFrame(focusedFrame()) : nullptr;
     RefPtrWillBeRawPtr<Document> oldDocument = oldFocusedFrame ? oldFocusedFrame->document() : nullptr;
 
     Element* oldFocusedElement = oldDocument ? oldDocument->focusedElement() : nullptr;
@@ -835,7 +836,7 @@ bool FocusController::setFocusedElement(Element* element, PassRefPtrWillBeRawPtr
     RefPtrWillBeRawPtr<Element> protect = element;
     ALLOW_UNUSED_LOCAL(protect);
     if (newDocument) {
-        bool successfullyFocused = newDocument->setFocusedElement(element, type);
+        bool successfullyFocused = newDocument->setFocusedElement(element, type, sourceCapabilities);
         if (!successfullyFocused)
             return false;
     }

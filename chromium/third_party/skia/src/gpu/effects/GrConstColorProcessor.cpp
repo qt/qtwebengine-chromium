@@ -6,38 +6,40 @@
  */
 
 #include "effects/GrConstColorProcessor.h"
-#include "gl/GrGLProcessor.h"
+#include "gl/GrGLFragmentProcessor.h"
 #include "gl/builders/GrGLProgramBuilder.h"
 
 class GLConstColorProcessor : public GrGLFragmentProcessor {
 public:
     GLConstColorProcessor() : fPrevColor(GrColor_ILLEGAL) {}
 
-    void emitCode(GrGLFPBuilder* builder,
-                  const GrFragmentProcessor& fp,
-                  const char* outputColor,
-                  const char* inputColor,
-                  const TransformedCoordsArray& coords,
-                  const TextureSamplerArray& samplers) override {
-        GrGLFragmentBuilder* fsBuilder = builder->getFragmentShaderBuilder();
+    void emitCode(EmitArgs& args) override {
+        GrGLFragmentBuilder* fsBuilder = args.fBuilder->getFragmentShaderBuilder();
         const char* colorUni;
-        fColorUniform = builder->addUniform(GrGLProgramBuilder::kFragment_Visibility,
+        fColorUniform = args.fBuilder->addUniform(GrGLProgramBuilder::kFragment_Visibility,
                                             kVec4f_GrSLType, kMedium_GrSLPrecision, "constantColor",
                                             &colorUni);
-        switch (fp.cast<GrConstColorProcessor>().inputMode()) {
+        GrConstColorProcessor::InputMode mode = args.fFp.cast<GrConstColorProcessor>().inputMode();
+        if (!args.fInputColor) {
+            mode = GrConstColorProcessor::kIgnore_InputMode;
+        }
+        switch (mode) {
             case GrConstColorProcessor::kIgnore_InputMode:
-                fsBuilder->codeAppendf("%s = %s;", outputColor, colorUni);
+                fsBuilder->codeAppendf("%s = %s;", args.fOutputColor, colorUni);
                 break;
             case GrConstColorProcessor::kModulateRGBA_InputMode:
-                fsBuilder->codeAppendf("%s = %s * %s;", outputColor, inputColor, colorUni);
+                fsBuilder->codeAppendf("%s = %s * %s;", args.fOutputColor, args.fInputColor,
+                                       colorUni);
                 break;
             case GrConstColorProcessor::kModulateA_InputMode:
-                fsBuilder->codeAppendf("%s = %s.a * %s;", outputColor, inputColor, colorUni);
+                fsBuilder->codeAppendf("%s = %s.a * %s;", args.fOutputColor, args.fInputColor,
+                                       colorUni);
                 break;
         }
     }
 
-    void setData(const GrGLProgramDataManager& pdm, const GrProcessor& processor) override {
+protected:
+    void onSetData(const GrGLProgramDataManager& pdm, const GrProcessor& processor) override {
         GrColor color = processor.cast<GrConstColorProcessor>().color();
         // We use the "illegal" color value as an uninit sentinel. However, ut isn't inherently
         // illegal to use this processor with unpremul colors. So we correctly handle the case
@@ -88,12 +90,12 @@ void GrConstColorProcessor::onComputeInvariantOutput(GrInvariantOutput* inout) c
     }
 }
 
-void GrConstColorProcessor::getGLProcessorKey(const GrGLSLCaps&, GrProcessorKeyBuilder* b) const {
+void GrConstColorProcessor::onGetGLProcessorKey(const GrGLSLCaps&, GrProcessorKeyBuilder* b) const {
     b->add32(fMode);
 }
 
-GrGLFragmentProcessor* GrConstColorProcessor::createGLInstance() const  {
-    return SkNEW(GLConstColorProcessor);
+GrGLFragmentProcessor* GrConstColorProcessor::onCreateGLInstance() const  {
+    return new GLConstColorProcessor;
 }
 
 bool GrConstColorProcessor::onIsEqual(const GrFragmentProcessor& other) const {
@@ -105,7 +107,7 @@ bool GrConstColorProcessor::onIsEqual(const GrFragmentProcessor& other) const {
 
 GR_DEFINE_FRAGMENT_PROCESSOR_TEST(GrConstColorProcessor);
 
-GrFragmentProcessor* GrConstColorProcessor::TestCreate(GrProcessorTestData* d) {
+const GrFragmentProcessor* GrConstColorProcessor::TestCreate(GrProcessorTestData* d) {
     GrColor color;
     int colorPicker = d->fRandom->nextULessThan(3);
     switch (colorPicker) {

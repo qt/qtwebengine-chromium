@@ -76,11 +76,6 @@ const int JsepSessionDescription::kMaxVideoCodecHeight = 1080;
 const int JsepSessionDescription::kDefaultVideoCodecPreference = 1;
 
 SessionDescriptionInterface* CreateSessionDescription(const std::string& type,
-                                                      const std::string& sdp) {
-  return CreateSessionDescription(type, sdp, NULL);
-}
-
-SessionDescriptionInterface* CreateSessionDescription(const std::string& type,
                                                       const std::string& sdp,
                                                       SdpParseError* error) {
   if (!IsTypeSupported(type)) {
@@ -130,7 +125,7 @@ bool JsepSessionDescription::AddCandidate(
   }
   if (mediasection_index >= number_of_mediasections())
     return false;
-  const std::string content_name =
+  const std::string& content_name =
       description_->contents()[mediasection_index].name;
   const cricket::TransportInfo* transport_info =
       description_->GetTransportInfoByName(content_name);

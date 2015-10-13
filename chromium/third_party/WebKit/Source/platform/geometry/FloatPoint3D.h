@@ -24,6 +24,7 @@
 #define FloatPoint3D_h
 
 #include "platform/geometry/FloatPoint.h"
+#include "third_party/skia/include/core/SkPoint3.h"
 
 namespace blink {
 
@@ -127,6 +128,8 @@ public:
 
     float distanceTo(const FloatPoint3D& a) const;
 
+    operator SkPoint3() const { return SkPoint3::Make(m_x, m_y, m_z); }
+
 private:
     float m_x;
     float m_y;
@@ -185,6 +188,10 @@ inline float FloatPoint3D::distanceTo(const FloatPoint3D& a) const
 {
     return (*this - a).length();
 }
+
+// Redeclared here to avoid ODR issues.
+// See platform/testing/GeometryPrinters.h.
+void PrintTo(const FloatPoint3D&, std::ostream*);
 
 } // namespace blink
 

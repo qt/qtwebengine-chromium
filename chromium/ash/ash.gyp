@@ -69,8 +69,8 @@
       'display/display_change_observer_chromeos.h',
       'display/display_configurator_animation.cc',
       'display/display_configurator_animation.h',
-      'display/display_controller.cc',
-      'display/display_controller.h',
+      'display/window_tree_host_manager.cc',
+      'display/window_tree_host_manager.h',
       'display/display_error_observer_chromeos.cc',
       'display/display_error_observer_chromeos.h',
       'display/display_info.cc',
@@ -674,6 +674,15 @@
       'wm/workspace_controller.cc',
       'wm/workspace_controller.h',
     ],
+    'ash_with_content_sources': [
+      'content/ash_with_content_export.h',
+      'content/gpu_support_impl.cc',
+      'content/gpu_support_impl.h',
+      'keyboard_overlay/keyboard_overlay_delegate.cc',
+      'keyboard_overlay/keyboard_overlay_delegate.h',
+      'keyboard_overlay/keyboard_overlay_view.cc',
+      'keyboard_overlay/keyboard_overlay_view.h',
+    ],
     'ash_test_support_sources': [
       'desktop_background/desktop_background_controller_test_api.cc',
       'desktop_background/desktop_background_controller_test_api.h',
@@ -741,6 +750,8 @@
       'test/test_user_wallpaper_delegate.h',
       'test/test_volume_control_delegate.cc',
       'test/test_volume_control_delegate.h',
+      'test/tray_cast_test_api.cc',
+      'test/tray_cast_test_api.h',
       'test/ui_controls_factory_ash.cc',
       'test/ui_controls_factory_ash.h',
       'test/user_metrics_recorder_test_api.cc',
@@ -752,12 +763,6 @@
       '../ui/views/test/test_views_delegate_aura.cc',
       'shell/app_list.cc',
       'shell/bubble.cc',
-      'shell/content_client/shell_browser_main_parts.cc',
-      'shell/content_client/shell_browser_main_parts.h',
-      'shell/content_client/shell_content_browser_client.cc',
-      'shell/content_client/shell_content_browser_client.h',
-      'shell/content_client/shell_main_delegate.cc',
-      'shell/content_client/shell_main_delegate.h',
       'shell/context_menu.cc',
       'shell/context_menu.h',
       'shell/example_factory.h',
@@ -770,8 +775,6 @@
       'shell/shelf_delegate_impl.h',
       'shell/shell_delegate_impl.cc',
       'shell/shell_delegate_impl.h',
-      'shell/shell_main_parts.cc',
-      'shell/shell_main_parts.h',
       'shell/toplevel_window.cc',
       'shell/toplevel_window.h',
       'shell/widgets.cc',
@@ -781,6 +784,16 @@
       'shell/window_watcher.h',
       'shell/window_watcher_shelf_item_delegate.cc',
       'shell/window_watcher_shelf_item_delegate.h',
+    ],
+    'ash_shell_with_content_lib_sources': [
+      'shell/content/client/shell_browser_main_parts.cc',
+      'shell/content/client/shell_browser_main_parts.h',
+      'shell/content/client/shell_content_browser_client.cc',
+      'shell/content/client/shell_content_browser_client.h',
+      'shell/content/client/shell_main_delegate.cc',
+      'shell/content/client/shell_main_delegate.h',
+      'shell/content/shell_main_parts.cc',
+      'shell/content/shell_main_parts.h',
     ],
     'ash_unittests_sources': [
       'accelerators/accelerator_commands_unittest.cc',
@@ -796,7 +809,7 @@
       'dip_unittest.cc',
       'display/cursor_window_controller_unittest.cc',
       'display/display_change_observer_chromeos_unittest.cc',
-      'display/display_controller_unittest.cc',
+      'display/window_tree_host_manager_unittest.cc',
       'display/display_error_observer_chromeos_unittest.cc',
       'display/display_info_unittest.cc',
       'display/display_manager_unittest.cc',
@@ -1058,14 +1071,7 @@
         'ASH_WITH_CONTENT_IMPLEMENTATION',
       ],
       'sources': [
-        # Note: sources list duplicated in GN build.
-        'content_support/ash_with_content_export.h',
-        'content_support/gpu_support_impl.cc',
-        'content_support/gpu_support_impl.h',
-        'keyboard_overlay/keyboard_overlay_delegate.cc',
-        'keyboard_overlay/keyboard_overlay_delegate.h',
-        'keyboard_overlay/keyboard_overlay_view.cc',
-        'keyboard_overlay/keyboard_overlay_view.h',
+        '<@(ash_with_content_sources)',
       ],
     },
     {
@@ -1100,6 +1106,21 @@
             'test/test_metro_viewer_process_host.h',
           ],
         }],
+      ],
+    },
+    {
+      # GN version: //ash:interactive_ui_test_support
+      'target_name': 'ash_interactive_ui_test_support',
+      'type': 'static_library',
+      'dependencies': [
+        '../skia/skia.gyp:skia',
+        '../testing/gtest.gyp:gtest',
+        'ash',
+        'ash_test_support',
+      ],
+      'sources': [
+        'test/ash_interactive_ui_test_base.cc',
+        'test/ash_interactive_ui_test_base.h',
       ],
     },
     {
@@ -1211,11 +1232,6 @@
             'ldflags': ['-rdynamic'],
           },
         }],
-        ['use_ozone==1', {
-          'sources!': [
-            'sticky_keys/sticky_keys_unittest.cc',  # crbug.com/354035
-          ],
-        }],
       ],
     },
     {
@@ -1226,8 +1242,6 @@
         '../base/base.gyp:base',
         '../base/base.gyp:base_i18n',
         '../chrome/chrome_resources.gyp:packed_resources',
-        '../content/content_shell_and_tests.gyp:content_shell_lib',
-        '../content/content.gyp:content',
         '../skia/skia.gyp:skia',
         '../third_party/icu/icu.gyp:icui18n',
         '../third_party/icu/icu.gyp:icuuc',
@@ -1255,6 +1269,20 @@
       'sources': [
         '<@(ash_shell_lib_sources)',
       ],
+    },
+    {
+      # GN version: //ash:ash_shell_lib_with_content
+      'target_name': 'ash_shell_lib_with_content',
+      'type': 'static_library',
+      'dependencies': [
+        'ash_shell_lib',
+        '../content/content_shell_and_tests.gyp:content_shell_lib',
+        '../content/content.gyp:content',     
+        '../skia/skia.gyp:skia',
+      ],
+      'sources': [
+        '<@(ash_shell_with_content_lib_sources)',
+      ],
       'conditions': [
         ['OS=="win"', {
           'dependencies': [
@@ -1264,15 +1292,15 @@
       ],
     },
     {
-      # GN version: //ash:ash_shell
-      'target_name': 'ash_shell',
+      # GN version: //ash:ash_shell_with_content
+      'target_name': 'ash_shell_with_content',
       'type': 'executable',
       'dependencies': [
-        'ash_shell_lib',
+        'ash_shell_lib_with_content',
         '../components/components.gyp:user_manager',
       ],
       'sources': [
-        'shell/shell_main.cc',
+        'shell/content/shell_with_content_main.cc',
       ],
       'conditions': [
         ['OS=="win"', {
@@ -1288,38 +1316,6 @@
         ['chromeos==1', {
           'dependencies': [
             '../device/bluetooth/bluetooth.gyp:device_bluetooth',
-          ],
-        }],
-        ['OS=="win" and component!="shared_library" and win_use_allocator_shim==1', {
-          'dependencies': [
-            '<(DEPTH)/base/allocator/allocator.gyp:allocator',
-          ],
-        }],
-      ],
-    },
-    {
-      # GN version: //ash:ash_shell_unittests
-      'target_name': 'ash_shell_unittests',
-      'type': 'executable',
-      'dependencies': [
-        '../base/base.gyp:test_support_base',
-        '../components/components.gyp:user_manager',
-        '../content/content_shell_and_tests.gyp:test_support_content',
-        '../skia/skia.gyp:skia',
-        '../testing/gtest.gyp:gtest',
-        '../ui/accessibility/accessibility.gyp:ax_gen',
-        'ash_shell_lib',
-        'ash_test_support',
-      ],
-      'sources': [
-        # Note: file list duplicated in GN build.
-        'shell/window_watcher_unittest.cc',
-        'test/ash_unittests.cc',
-      ],
-      'conditions': [
-        ['chromeos==1', {
-          'dependencies': [
-            '../ui/display/display.gyp:display',
           ],
         }],
         ['OS=="win" and component!="shared_library" and win_use_allocator_shim==1', {

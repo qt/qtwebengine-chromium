@@ -10,7 +10,7 @@
 
 namespace blink {
 
-VRGetDevicesCallback::VRGetDevicesCallback(PassRefPtrWillBeRawPtr<ScriptPromiseResolver> resolver, VRHardwareUnitCollection* hardwareUnits)
+VRGetDevicesCallback::VRGetDevicesCallback(ScriptPromiseResolver* resolver, VRHardwareUnitCollection* hardwareUnits)
     : m_resolver(resolver)
     , m_hardwareUnits(hardwareUnits)
 {
@@ -20,7 +20,7 @@ VRGetDevicesCallback::~VRGetDevicesCallback()
 {
 }
 
-void VRGetDevicesCallback::onSuccess(WebVector<WebVRDevice>* devices)
+void VRGetDevicesCallback::onSuccess(const WebVector<WebVRDevice>& devices)
 {
     m_resolver->resolve(m_hardwareUnits->updateVRHardwareUnits(devices));
 }

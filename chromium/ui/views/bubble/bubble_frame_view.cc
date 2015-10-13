@@ -123,8 +123,8 @@ gfx::Rect BubbleFrameView::GetBoundsForClientView() const {
 
 gfx::Rect BubbleFrameView::GetWindowBoundsForClientBounds(
     const gfx::Rect& client_bounds) const {
-  return const_cast<BubbleFrameView*>(this)->GetUpdatedWindowBounds(
-      gfx::Rect(), client_bounds.size(), false);
+  gfx::Size size(GetSizeForClientSize(client_bounds.size()));
+  return bubble_border_->GetBounds(gfx::Rect(), size);
 }
 
 int BubbleFrameView::NonClientHitTest(const gfx::Point& point) {
@@ -225,7 +225,6 @@ gfx::Size BubbleFrameView::GetMinimumSize() const {
 }
 
 gfx::Size BubbleFrameView::GetMaximumSize() const {
-  // A bubble should be non-resizable, so its max size is its preferred size.
 #if defined(OS_WIN)
   // On Windows, this causes problems, so do not set a maximum size (it doesn't
   // take the drop shadow area into account, resulting in a too-small window;
@@ -233,6 +232,17 @@ gfx::Size BubbleFrameView::GetMaximumSize() const {
   // the OS doesn't give the user controls to resize a bubble.
   return gfx::Size();
 #else
+#if defined(OS_MACOSX)
+  // Allow BubbleFrameView dialogs to be resizable on Mac.
+  if (GetWidget()->widget_delegate()->CanResize()) {
+    gfx::Size client_size = GetWidget()->client_view()->GetMaximumSize();
+    if (client_size.IsEmpty())
+      return client_size;
+    return GetWindowBoundsForClientBounds(gfx::Rect(client_size)).size();
+  }
+#endif  // OS_MACOSX
+  // Non-dialog bubbles should be non-resizable, so its max size is its
+  // preferred size.
   return GetPreferredSize();
 #endif
 }
@@ -352,7 +362,8 @@ gfx::Rect BubbleFrameView::GetUpdatedWindowBounds(const gfx::Rect& anchor_rect,
   return bubble_border_->GetBounds(anchor_rect, size);
 }
 
-gfx::Rect BubbleFrameView::GetAvailableScreenBounds(const gfx::Rect& rect) {
+gfx::Rect BubbleFrameView::GetAvailableScreenBounds(
+    const gfx::Rect& rect) const {
   // The bubble attempts to fit within the current screen bounds.
   // TODO(scottmg): Native is wrong. http://crbug.com/133312
   return gfx::Screen::GetNativeScreen()->GetDisplayNearestPoint(
@@ -386,10 +397,13 @@ void BubbleFrameView::MirrorArrowIfOffScreen(
     // Otherwise it should invoke parent's Layout() to layout the content based
     // on the new bubble border.
     if (GetOffScreenLength(available_bounds, mirror_bounds, vertical) >=
-        GetOffScreenLength(available_bounds, window_bounds, vertical))
+        GetOffScreenLength(available_bounds, window_bounds, vertical)) {
       bubble_border_->set_arrow(arrow);
-    else if (parent())
-      parent()->Layout();
+    } else {
+      if (parent())
+        parent()->Layout();
+      SchedulePaint();
+    }
   }
 }
 

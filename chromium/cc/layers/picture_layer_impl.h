@@ -12,7 +12,6 @@
 #include "cc/base/cc_export.h"
 #include "cc/base/scoped_ptr_vector.h"
 #include "cc/layers/layer_impl.h"
-#include "cc/playback/picture_pile_impl.h"
 #include "cc/tiles/picture_layer_tiling.h"
 #include "cc/tiles/picture_layer_tiling_set.h"
 #include "cc/tiles/tiling_set_eviction_queue.h"
@@ -55,8 +54,7 @@ class CC_EXPORT PictureLayerImpl
   Region GetInvalidationRegion() override;
 
   // PictureLayerTilingClient overrides.
-  ScopedTilePtr CreateTile(float contents_scale,
-                           const gfx::Rect& content_rect) override;
+  ScopedTilePtr CreateTile(const Tile::CreateInfo& info) override;
   gfx::Size CalculateTileSize(const gfx::Size& content_bounds) const override;
   const Region* GetPendingInvalidation() override;
   const PictureLayerTiling* GetPendingOrActiveTwinTiling(
@@ -108,6 +106,7 @@ class CC_EXPORT PictureLayerImpl
   PictureLayerTiling* AddTiling(float contents_scale);
   void RemoveAllTilings();
   void AddTilingsForRasterScale();
+  void AddLowResolutionTilingIfNeeded();
   virtual bool ShouldAdjustRasterScale() const;
   virtual void RecalculateRasterScales();
   void CleanUpTilingsOnActiveLayer(

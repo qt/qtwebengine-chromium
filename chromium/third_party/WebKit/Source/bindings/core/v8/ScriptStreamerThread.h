@@ -7,6 +7,7 @@
 
 #include "core/CoreExport.h"
 #include "platform/TaskSynchronizer.h"
+#include "public/platform/WebTaskRunner.h"
 #include "public/platform/WebThread.h"
 #include "wtf/OwnPtr.h"
 
@@ -18,13 +19,14 @@ class ScriptStreamer;
 
 // A singleton thread for running background tasks for script streaming.
 class CORE_EXPORT ScriptStreamerThread {
+    WTF_MAKE_FAST_ALLOCATED(ScriptStreamerThread);
     WTF_MAKE_NONCOPYABLE(ScriptStreamerThread);
 public:
     static void init();
     static void shutdown();
     static ScriptStreamerThread* shared();
 
-    void postTask(WebThread::Task*);
+    void postTask(WebTaskRunner::Task*);
 
     bool isRunningTask() const
     {

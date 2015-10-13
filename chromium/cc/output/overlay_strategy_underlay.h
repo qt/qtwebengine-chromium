@@ -16,15 +16,17 @@ class TextureDrawQuad;
 // for the video quad. The overlay content can then be blended in by the
 // hardware under the the scene. This is only valid for overlay contents that
 // are fully opaque.
-class CC_EXPORT OverlayStrategyUnderlay : public OverlayStrategyCommon {
+class CC_EXPORT OverlayStrategyUnderlay : public OverlayStrategyCommonDelegate {
  public:
-  explicit OverlayStrategyUnderlay(
-      OverlayCandidateValidator* capability_checker);
-  bool TryOverlay(OverlayCandidateValidator* capability_checker,
-                  RenderPassList* render_passes_in_draw_order,
-                  OverlayCandidateList* candidate_list,
-                  const OverlayCandidate& candidate,
-                  QuadList::Iterator candidate_iterator) override;
+  OverlayStrategyUnderlay() {}
+  ~OverlayStrategyUnderlay() override;
+
+  OverlayResult TryOverlay(OverlayCandidateValidator* capability_checker,
+                           RenderPassList* render_passes_in_draw_order,
+                           OverlayCandidateList* candidate_list,
+                           const OverlayCandidate& candidate,
+                           QuadList::Iterator* candidate_iterator,
+                           float device_scale_factor) override;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(OverlayStrategyUnderlay);

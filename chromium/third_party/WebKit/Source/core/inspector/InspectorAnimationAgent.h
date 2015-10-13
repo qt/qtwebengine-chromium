@@ -36,18 +36,19 @@ public:
     void didCommitLoadForLocalFrame(LocalFrame*) override;
 
     // Protocol method implementations
-    virtual void getPlaybackRate(ErrorString*, double* playbackRate) override;
-    virtual void setPlaybackRate(ErrorString*, double playbackRate) override;
-    virtual void setCurrentTime(ErrorString*, double currentTime) override;
-    virtual void setTiming(ErrorString*, const String& animationId, double duration, double delay) override;
+    void getPlaybackRate(ErrorString*, double* playbackRate) override;
+    void setPlaybackRate(ErrorString*, double playbackRate) override;
+    void getCurrentTime(ErrorString*, const String& animationId, double* currentTime) override;
+    void setTiming(ErrorString*, const String& animationId, double duration, double delay) override;
+    void seekAnimations(ErrorString*, const RefPtr<JSONArray>& animationIds, double currentTime) override;
 
     // API for InspectorInstrumentation
-    void didCreateAnimation(Animation*);
-    void didCancelAnimation(Animation*);
+    void didCreateAnimation(unsigned);
+    void didStartAnimation(Animation*);
     void didClearDocumentOfWindowObject(LocalFrame*);
 
     // API for InspectorFrontend
-    virtual void enable(ErrorString*) override;
+    void enable(ErrorString*) override;
 
     // Methods for other agents to use.
     Animation* assertAnimation(ErrorString*, const String& id);
@@ -63,12 +64,14 @@ private:
     PassRefPtr<TypeBuilder::Animation::Animation> buildObjectForAnimation(Animation&, AnimationType, PassRefPtr<TypeBuilder::Animation::KeyframesRule> keyframeRule = nullptr);
     double normalizedStartTime(Animation&);
     AnimationTimeline& referenceTimeline();
+    Animation* animationClone(Animation*);
 
     RawPtrWillBeMember<InspectorPageAgent> m_pageAgent;
     RawPtrWillBeMember<InspectorDOMAgent> m_domAgent;
-    WillBeHeapHashMap<String, RefPtrWillBeMember<Animation>> m_idToAnimation;
+    PersistentHeapHashMapWillBeHeapHashMap<String, Member<Animation>> m_idToAnimation;
+    PersistentHeapHashMapWillBeHeapHashMap<String, Member<Animation>> m_idToAnimationClone;
     WillBeHeapHashMap<String, AnimationType> m_idToAnimationType;
-    double m_latestStartTime;
+    bool m_isCloning;
 };
 
 }

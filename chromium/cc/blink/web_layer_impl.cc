@@ -51,18 +51,19 @@ base::LazyInstance<cc::LayerSettings> g_layer_settings =
 
 }  // namespace
 
-WebLayerImpl::WebLayerImpl() : layer_(Layer::Create(LayerSettings())) {
+WebLayerImpl::WebLayerImpl()
+    : layer_(Layer::Create(LayerSettings())), contents_opaque_is_fixed_(false) {
   web_layer_client_ = nullptr;
   layer_->SetLayerClient(this);
 }
 
-WebLayerImpl::WebLayerImpl(scoped_refptr<Layer> layer) : layer_(layer) {
+WebLayerImpl::WebLayerImpl(scoped_refptr<Layer> layer)
+    : layer_(layer), contents_opaque_is_fixed_(false) {
   web_layer_client_ = nullptr;
   layer_->SetLayerClient(this);
 }
 
 WebLayerImpl::~WebLayerImpl() {
-  layer_->ClearRenderSurface();
   if (animation_delegate_adapter_.get())
     layer_->set_layer_animation_delegate(nullptr);
   web_layer_client_ = nullptr;
@@ -162,6 +163,8 @@ bool WebLayerImpl::isRootForIsolatedGroup() {
 }
 
 void WebLayerImpl::setOpaque(bool opaque) {
+  if (contents_opaque_is_fixed_)
+    return;
   layer_->SetContentsOpaque(opaque);
 }
 
@@ -535,6 +538,10 @@ void WebLayerImpl::setClipParent(blink::WebLayer* parent) {
 
 Layer* WebLayerImpl::layer() const {
   return layer_.get();
+}
+
+void WebLayerImpl::SetContentsOpaqueIsFixed(bool fixed) {
+  contents_opaque_is_fixed_ = fixed;
 }
 
 }  // namespace cc_blink

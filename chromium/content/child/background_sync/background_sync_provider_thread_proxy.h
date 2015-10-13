@@ -7,6 +7,8 @@
 
 #include "base/macros.h"
 #include "content/child/worker_task_runner.h"
+#include "content/common/background_sync_service.mojom.h"
+#include "content/public/child/worker_thread.h"
 #include "third_party/WebKit/public/platform/modules/background_sync/WebSyncProvider.h"
 
 namespace base {
@@ -25,8 +27,11 @@ class BackgroundSyncProvider;
 // call the WebSyncProvider methods, and wrapping the callbacks passed in with
 // code to switch back to the original calling thread.
 class BackgroundSyncProviderThreadProxy : public blink::WebSyncProvider,
-                                          public WorkerTaskRunner::Observer {
+                                          public WorkerThread::Observer {
  public:
+  using DuplicateRegistrationHandleCallback =
+      base::Callback<void(BackgroundSyncError, SyncRegistrationPtr)>;
+
   static BackgroundSyncProviderThreadProxy* GetThreadInstance(
       base::SingleThreadTaskRunner* main_thread_task_runner,
       BackgroundSyncProvider* permissions_dispatcher);
@@ -35,36 +40,45 @@ class BackgroundSyncProviderThreadProxy : public blink::WebSyncProvider,
   void registerBackgroundSync(
       const blink::WebSyncRegistration* options,
       blink::WebServiceWorkerRegistration* service_worker_registration,
-      blink::WebSyncRegistrationCallbacks* callbacks);
+      bool requested_from_service_worker,
+      blink::WebSyncRegistrationCallbacks* callbacks) override;
   void unregisterBackgroundSync(
-      blink::WebSyncRegistration::Periodicity periodicity,
-      int64_t id,
-      const blink::WebString& tag,
+      int64_t handle_id,
       blink::WebServiceWorkerRegistration* service_worker_registration,
-      blink::WebSyncUnregistrationCallbacks* callbacks);
+      blink::WebSyncUnregistrationCallbacks* callbacks) override;
   void getRegistration(
       blink::WebSyncRegistration::Periodicity,
       const blink::WebString& tag,
       blink::WebServiceWorkerRegistration* service_worker_registration,
-      blink::WebSyncRegistrationCallbacks* callbacks);
+      blink::WebSyncRegistrationCallbacks* callbacks) override;
   void getRegistrations(
       blink::WebSyncRegistration::Periodicity periodicity,
       blink::WebServiceWorkerRegistration* service_worker_registration,
-      blink::WebSyncGetRegistrationsCallbacks* callbacks);
+      blink::WebSyncGetRegistrationsCallbacks* callbacks) override;
   void getPermissionStatus(
       blink::WebSyncRegistration::Periodicity periodicity,
       blink::WebServiceWorkerRegistration* service_worker_registration,
-      blink::WebSyncGetPermissionStatusCallbacks* callbacks);
+      blink::WebSyncGetPermissionStatusCallbacks* callbacks) override;
+  void releaseRegistration(int64_t handle_id) override;
+  void notifyWhenDone(
+      int64_t handle_id,
+      blink::WebSyncNotifyWhenDoneCallbacks* callbacks) override;
 
-  // WorkerTaskRunner::Observer implementation.
-  void OnWorkerRunLoopStopped() override;
+  // Given |handle_id|, ask the provider for a new handle with the same
+  // underlying registration.
+  void DuplicateRegistrationHandle(
+      int64_t handle_id,
+      const DuplicateRegistrationHandleCallback& callback);
+
+  // WorkerThread::Observer implementation.
+  void WillStopCurrentWorkerThread() override;
 
  private:
   BackgroundSyncProviderThreadProxy(
       base::SingleThreadTaskRunner* main_thread_task_runner,
       BackgroundSyncProvider* sync_provider);
 
-  virtual ~BackgroundSyncProviderThreadProxy();
+  ~BackgroundSyncProviderThreadProxy() override;
 
   scoped_refptr<base::SingleThreadTaskRunner> main_thread_task_runner_;
 

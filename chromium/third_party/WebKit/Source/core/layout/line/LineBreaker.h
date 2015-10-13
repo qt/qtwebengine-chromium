@@ -26,6 +26,7 @@
 #include "core/layout/api/LineLayoutBlockFlow.h"
 #include "core/layout/line/InlineIterator.h"
 #include "core/layout/line/LineInfo.h"
+#include "wtf/Allocator.h"
 #include "wtf/Vector.h"
 
 namespace blink {
@@ -35,6 +36,7 @@ enum WhitespacePosition { LeadingWhitespace, TrailingWhitespace };
 struct LayoutTextInfo;
 
 class LineBreaker {
+    STACK_ALLOCATED();
 public:
     friend class BreakingContext;
     LineBreaker(LineLayoutBlockFlow block)
@@ -47,7 +49,7 @@ public:
         FloatingObject* lastFloatFromPreviousLine, WordMeasurements&);
 
     bool lineWasHyphenated() { return m_hyphenated; }
-    const Vector<LayoutBox*>& positionedObjects() { return m_positionedObjects; }
+    const Vector<LineLayoutBox>& positionedObjects() { return m_positionedObjects; }
     EClear clear() { return m_clear; }
 private:
     void reset();
@@ -57,7 +59,7 @@ private:
     LineLayoutBlockFlow m_block;
     bool m_hyphenated;
     EClear m_clear;
-    Vector<LayoutBox*> m_positionedObjects;
+    Vector<LineLayoutBox> m_positionedObjects;
 };
 
 }

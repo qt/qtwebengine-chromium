@@ -22,11 +22,17 @@ function toggleHelpBox() {
 }
 
 function diagnoseErrors() {
+<if expr="not chromeos">
+    if (window.errorPageController)
+      errorPageController.diagnoseErrorsButtonClick();
+</if>
+<if expr="chromeos">
   var extensionId = 'idddmepepmjcgiedknnmlbadcokidhoa';
   var diagnoseFrame = document.getElementById('diagnose-frame');
   diagnoseFrame.innerHTML =
       '<iframe src="chrome-extension://' + extensionId +
       '/index.html"></iframe>';
+</if>
 }
 
 // Subframes use a different layout but the same html file.  This is to make it
@@ -126,8 +132,7 @@ function setUpCachedButton(buttonStrings) {
     e.preventDefault();
     trackClick(trackingId);
     if (window.errorPageController) {
-      errorPageController.trackCachedCopyButtonClick(
-          buttonStrings.defaultLabel);
+      errorPageController.trackCachedCopyButtonClick();
     }
     location = url;
   };
@@ -164,6 +169,11 @@ function onDocumentLoad() {
     controlButtonDiv.insertBefore(primaryButton, secondaryButton);
   }
 
+  // Check for Google cached copy suggestion.
+  if (loadTimeData.valueExists('cacheButton')) {
+    setUpCachedButton(loadTimeData.getValue('cacheButton'));
+  }
+
   if (reloadButton.style.display == 'none' &&
       showSavedCopyButton.style.display == 'none') {
     detailsButton.classList.add('singular');
@@ -198,11 +208,6 @@ function onDocumentLoad() {
     var p = document.querySelector('#main-message p');
     p.innerHTML = loadTimeData.getString('primaryParagraph');
     p.hidden = false;
-  }
-
-  // Check for Google cached copy suggestion.
-  if (loadTimeData.valueExists('cacheButton')) {
-    setUpCachedButton(loadTimeData.getValue('cacheButton'));
   }
 }
 

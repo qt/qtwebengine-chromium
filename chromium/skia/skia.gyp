@@ -20,7 +20,7 @@
             # Disable LTO due to compiler error
             # in mems_in_disjoint_alias_sets_p, at alias.c:393
             # crbug.com/422255
-            '../build/android/disable_lto.gypi',
+            '../build/android/disable_gcc_lto.gypi',
           ],
         },
       ],
@@ -38,6 +38,15 @@
             'skia_library',
             'skia_chrome',
           ],
+          'direct_dependent_settings': {
+            'conditions': [
+              [ 'OS == "win"', {
+                'defines': [
+                  'GR_GL_FUNCTION_TYPE=__stdcall',
+                ],
+              }],
+            ],
+          },
         },
         {
           'target_name': 'skia_chrome',
@@ -70,6 +79,13 @@
             'GR_GL_IGNORE_ES3_MSAA=0',
           ],
           'direct_dependent_settings': {
+            'conditions': [
+              [ 'OS == "win"', {
+                'defines': [
+                  'GR_GL_FUNCTION_TYPE=__stdcall',
+                ],
+              }],
+            ],
             'defines': [
               'SKIA_DLL',
               'GR_GL_IGNORE_ES3_MSAA=0',

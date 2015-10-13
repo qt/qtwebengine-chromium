@@ -50,8 +50,7 @@ TEST(HttpUtilTest, IsSafeHeader) {
   for (size_t i = 0; i < arraysize(unsafe_headers); ++i) {
     EXPECT_FALSE(HttpUtil::IsSafeHeader(unsafe_headers[i]))
       << unsafe_headers[i];
-    EXPECT_FALSE(HttpUtil::IsSafeHeader(
-        base::StringToUpperASCII(std::string(unsafe_headers[i]))))
+    EXPECT_FALSE(HttpUtil::IsSafeHeader(base::ToUpperASCII(unsafe_headers[i])))
         << unsafe_headers[i];
   }
   static const char* const safe_headers[] = {
@@ -96,8 +95,7 @@ TEST(HttpUtilTest, IsSafeHeader) {
   };
   for (size_t i = 0; i < arraysize(safe_headers); ++i) {
     EXPECT_TRUE(HttpUtil::IsSafeHeader(safe_headers[i])) << safe_headers[i];
-    EXPECT_TRUE(HttpUtil::IsSafeHeader(
-        base::StringToUpperASCII(std::string(safe_headers[i]))))
+    EXPECT_TRUE(HttpUtil::IsSafeHeader(base::ToUpperASCII(safe_headers[i])))
         << safe_headers[i];
   }
 }
@@ -1090,6 +1088,48 @@ TEST(HttpUtilTest, NameValuePairsIterator) {
       CheckNextNameValuePair(&parser, true, true, "h", "hello"));
   ASSERT_NO_FATAL_FAILURE(CheckNextNameValuePair(
       &parser, false, true, std::string(), std::string()));
+}
+
+TEST(HttpUtilTest, NameValuePairsIteratorOptionalValues) {
+  std::string data = "alpha=1; beta;cappa ;  delta; e    ; f=1";
+  // Test that the default parser requires values.
+  HttpUtil::NameValuePairsIterator default_parser(data.begin(), data.end(),
+                                                  ';');
+  EXPECT_TRUE(default_parser.valid());
+  ASSERT_NO_FATAL_FAILURE(
+      CheckNextNameValuePair(&default_parser, true, true, "alpha", "1"));
+  ASSERT_NO_FATAL_FAILURE(CheckNextNameValuePair(&default_parser, false, false,
+                                                 std::string(), std::string()));
+
+  HttpUtil::NameValuePairsIterator values_required_parser(
+      data.begin(), data.end(), ';',
+      HttpUtil::NameValuePairsIterator::VALUES_NOT_OPTIONAL);
+  EXPECT_TRUE(values_required_parser.valid());
+  ASSERT_NO_FATAL_FAILURE(CheckNextNameValuePair(&values_required_parser, true,
+                                                 true, "alpha", "1"));
+  ASSERT_NO_FATAL_FAILURE(CheckNextNameValuePair(
+      &values_required_parser, false, false, std::string(), std::string()));
+
+  HttpUtil::NameValuePairsIterator parser(
+      data.begin(), data.end(), ';',
+      HttpUtil::NameValuePairsIterator::VALUES_OPTIONAL);
+  EXPECT_TRUE(parser.valid());
+
+  ASSERT_NO_FATAL_FAILURE(
+      CheckNextNameValuePair(&parser, true, true, "alpha", "1"));
+  ASSERT_NO_FATAL_FAILURE(
+      CheckNextNameValuePair(&parser, true, true, "beta", std::string()));
+  ASSERT_NO_FATAL_FAILURE(
+      CheckNextNameValuePair(&parser, true, true, "cappa", std::string()));
+  ASSERT_NO_FATAL_FAILURE(
+      CheckNextNameValuePair(&parser, true, true, "delta", std::string()));
+  ASSERT_NO_FATAL_FAILURE(
+      CheckNextNameValuePair(&parser, true, true, "e", std::string()));
+  ASSERT_NO_FATAL_FAILURE(
+      CheckNextNameValuePair(&parser, true, true, "f", "1"));
+  ASSERT_NO_FATAL_FAILURE(CheckNextNameValuePair(&parser, false, true,
+                                                 std::string(), std::string()));
+  EXPECT_TRUE(parser.valid());
 }
 
 TEST(HttpUtilTest, NameValuePairsIteratorIllegalInputs) {

@@ -17,7 +17,6 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
-#include "base/timer/timer.h"
 #include "cc/animation/animation_events.h"
 #include "cc/base/cc_export.h"
 #include "cc/base/scoped_ptr_vector.h"
@@ -107,11 +106,11 @@ class CC_EXPORT LayerTreeHost : public MutatorHostClient {
   void AnimateLayers(base::TimeTicks monotonic_frame_begin_time);
   void DidStopFlinging();
   void Layout();
-  void BeginCommitOnImplThread(LayerTreeHostImpl* host_impl);
   void FinishCommitOnImplThread(LayerTreeHostImpl* host_impl);
   void WillCommit();
   void CommitComplete();
   void SetOutputSurface(scoped_ptr<OutputSurface> output_surface);
+  scoped_ptr<OutputSurface> ReleaseOutputSurface();
   void RequestNewOutputSurface();
   void DidInitializeOutputSurface();
   void DidFailToInitializeOutputSurface();
@@ -211,6 +210,10 @@ class CC_EXPORT LayerTreeHost : public MutatorHostClient {
   void SetTopControlsHeight(float height, bool shrink);
   void SetTopControlsShownRatio(float ratio);
 
+  void set_hide_pinch_scrollbars_near_min_scale(bool hide) {
+    hide_pinch_scrollbars_near_min_scale_ = hide;
+  }
+
   gfx::Size device_viewport_size() const { return device_viewport_size_; }
 
   void ApplyPageScaleDeltaFromImplSide(float page_scale_delta);
@@ -239,12 +242,6 @@ class CC_EXPORT LayerTreeHost : public MutatorHostClient {
 
   void ApplyScrollAndScale(ScrollAndScaleSet* info);
   void SetImplTransform(const gfx::Transform& transform);
-
-  // Virtual for tests.
-  virtual void StartRateLimiter();
-  virtual void StopRateLimiter();
-
-  void RateLimit();
 
   void SetDeviceScaleFactor(float device_scale_factor);
   float device_scale_factor() const { return device_scale_factor_; }
@@ -339,6 +336,9 @@ class CC_EXPORT LayerTreeHost : public MutatorHostClient {
       int layer_id,
       LayerTreeType tree_type,
       const gfx::ScrollOffset& scroll_offset) override;
+  void LayerTransformIsPotentiallyAnimatingChanged(int layer_id,
+                                                   LayerTreeType tree_type,
+                                                   bool is_animating) override;
   void ScrollOffsetAnimationFinished() override {}
   gfx::ScrollOffset GetScrollOffsetForAnimation(int layer_id) const override;
 
@@ -346,8 +346,15 @@ class CC_EXPORT LayerTreeHost : public MutatorHostClient {
   bool IsAnimatingFilterProperty(const Layer* layer) const;
   bool IsAnimatingOpacityProperty(const Layer* layer) const;
   bool IsAnimatingTransformProperty(const Layer* layer) const;
+  bool HasPotentiallyRunningFilterAnimation(const Layer* layer) const;
   bool HasPotentiallyRunningOpacityAnimation(const Layer* layer) const;
   bool HasPotentiallyRunningTransformAnimation(const Layer* layer) const;
+  bool HasOnlyTranslationTransforms(const Layer* layer) const;
+  bool MaximumTargetScale(const Layer* layer, float* max_scale) const;
+  bool AnimationStartScale(const Layer* layer, float* start_scale) const;
+  bool HasAnyAnimationTargetingProperty(
+      const Layer* layer,
+      Animation::TargetProperty property) const;
   bool AnimationsPreserveAxisAlignment(const Layer* layer) const;
   bool HasAnyAnimation(const Layer* layer) const;
   bool HasActiveAnimation(const Layer* layer) const;
@@ -388,8 +395,6 @@ class CC_EXPORT LayerTreeHost : public MutatorHostClient {
   bool DoUpdateLayers(Layer* root_layer);
   void UpdateHudLayer();
 
-  void ReduceMemoryUsage();
-
   bool AnimateLayersRecursive(Layer* current, base::TimeTicks time);
 
   struct UIResourceClientData {
@@ -410,7 +415,8 @@ class CC_EXPORT LayerTreeHost : public MutatorHostClient {
 
   void NotifySwapPromiseMonitorsOfSetNeedsCommit();
 
-  bool inside_begin_main_frame_;
+  void SetPropertyTreesNeedRebuild();
+
   bool needs_full_tree_sync_;
   bool needs_meta_info_recomputation_;
 
@@ -421,6 +427,13 @@ class CC_EXPORT LayerTreeHost : public MutatorHostClient {
   int meta_information_sequence_number_;
   scoped_ptr<RenderingStatsInstrumentation> rendering_stats_instrumentation_;
 
+  // |current_output_surface_| can't be updated until we've successfully
+  // initialized a new output surface. |new_output_surface_| contains the
+  // new output surface that is currently being initialized. If initialization
+  // is successful then |new_output_surface_| replaces
+  // |current_output_surface_|.
+  scoped_ptr<OutputSurface> new_output_surface_;
+  scoped_ptr<OutputSurface> current_output_surface_;
   bool output_surface_lost_;
 
   scoped_refptr<Layer> root_layer_;
@@ -436,11 +449,10 @@ class CC_EXPORT LayerTreeHost : public MutatorHostClient {
   bool top_controls_shrink_blink_size_;
   float top_controls_height_;
   float top_controls_shown_ratio_;
+  bool hide_pinch_scrollbars_near_min_scale_;
   float device_scale_factor_;
 
   bool visible_;
-
-  base::OneShotTimer<LayerTreeHost> rate_limit_timer_;
 
   float page_scale_factor_;
   float min_page_scale_factor_;

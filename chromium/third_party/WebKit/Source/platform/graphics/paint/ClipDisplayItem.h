@@ -15,10 +15,10 @@
 
 namespace blink {
 
-class PLATFORM_EXPORT ClipDisplayItem : public PairedBeginDisplayItem {
+class PLATFORM_EXPORT ClipDisplayItem final : public PairedBeginDisplayItem {
 public:
     ClipDisplayItem(const DisplayItemClientWrapper& client, Type type, const IntRect& clipRect)
-        : PairedBeginDisplayItem(client, type)
+        : PairedBeginDisplayItem(client, type, sizeof(*this))
         , m_clipRect(clipRect)
     {
         ASSERT(isClipType(type));
@@ -37,14 +37,23 @@ private:
 #ifndef NDEBUG
     void dumpPropertiesAsDebugString(WTF::StringBuilder&) const override;
 #endif
+#if ENABLE(ASSERT)
+    bool equals(const DisplayItem& other) const final
+    {
+        return DisplayItem::equals(other)
+            && m_clipRect == static_cast<const ClipDisplayItem&>(other).m_clipRect
+            && m_roundedRectClips == static_cast<const ClipDisplayItem&>(other).m_roundedRectClips;
+    }
+#endif
+
     const IntRect m_clipRect;
     Vector<FloatRoundedRect> m_roundedRectClips;
 };
 
-class PLATFORM_EXPORT EndClipDisplayItem : public PairedEndDisplayItem {
+class PLATFORM_EXPORT EndClipDisplayItem final : public PairedEndDisplayItem {
 public:
     EndClipDisplayItem(const DisplayItemClientWrapper& client, Type type)
-        : PairedEndDisplayItem(client, type)
+        : PairedEndDisplayItem(client, type, sizeof(*this))
     {
         ASSERT(isEndClipType(type));
     }

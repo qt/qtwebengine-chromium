@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "mojo/edk/system/platform_handle_dispatcher.h"
+#include "third_party/mojo/src/mojo/edk/system/platform_handle_dispatcher.h"
 
 #include <algorithm>
 
@@ -22,7 +22,7 @@ struct SerializedPlatformHandleDispatcher {
 }  // namespace
 
 embedder::ScopedPlatformHandle PlatformHandleDispatcher::PassPlatformHandle() {
-  base::AutoLock locker(lock());
+  MutexLocker locker(&mutex());
   return platform_handle_.Pass();
 }
 
@@ -73,13 +73,13 @@ PlatformHandleDispatcher::~PlatformHandleDispatcher() {
 }
 
 void PlatformHandleDispatcher::CloseImplNoLock() {
-  lock().AssertAcquired();
+  mutex().AssertHeld();
   platform_handle_.reset();
 }
 
 scoped_refptr<Dispatcher>
 PlatformHandleDispatcher::CreateEquivalentDispatcherAndCloseImplNoLock() {
-  lock().AssertAcquired();
+  mutex().AssertHeld();
   return Create(platform_handle_.Pass());
 }
 

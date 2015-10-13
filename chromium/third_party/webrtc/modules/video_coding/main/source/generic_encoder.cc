@@ -21,7 +21,7 @@ namespace {
 // Map information from info into rtp. If no relevant information is found
 // in info, rtp is set to NULL.
 void CopyCodecSpecific(const CodecSpecificInfo* info, RTPVideoHeader* rtp) {
-  DCHECK(info);
+  RTC_DCHECK(info);
   switch (info->codecType) {
     case kVideoCodecVP8: {
       rtp->codec = kRtpVideoVp8;
@@ -34,6 +34,43 @@ void CopyCodecSpecific(const CodecSpecificInfo* info, RTPVideoHeader* rtp) {
       rtp->codecHeader.VP8.tl0PicIdx = info->codecSpecific.VP8.tl0PicIdx;
       rtp->codecHeader.VP8.keyIdx = info->codecSpecific.VP8.keyIdx;
       rtp->simulcastIdx = info->codecSpecific.VP8.simulcastIdx;
+      return;
+    }
+    case kVideoCodecVP9: {
+      rtp->codec = kRtpVideoVp9;
+      rtp->codecHeader.VP9.InitRTPVideoHeaderVP9();
+      rtp->codecHeader.VP9.inter_pic_predicted =
+          info->codecSpecific.VP9.inter_pic_predicted;
+      rtp->codecHeader.VP9.flexible_mode =
+          info->codecSpecific.VP9.flexible_mode;
+      rtp->codecHeader.VP9.ss_data_available =
+          info->codecSpecific.VP9.ss_data_available;
+      rtp->codecHeader.VP9.picture_id = info->codecSpecific.VP9.picture_id;
+      rtp->codecHeader.VP9.tl0_pic_idx = info->codecSpecific.VP9.tl0_pic_idx;
+      rtp->codecHeader.VP9.temporal_idx = info->codecSpecific.VP9.temporal_idx;
+      rtp->codecHeader.VP9.spatial_idx = info->codecSpecific.VP9.spatial_idx;
+      rtp->codecHeader.VP9.temporal_up_switch =
+          info->codecSpecific.VP9.temporal_up_switch;
+      rtp->codecHeader.VP9.inter_layer_predicted =
+          info->codecSpecific.VP9.inter_layer_predicted;
+      rtp->codecHeader.VP9.gof_idx = info->codecSpecific.VP9.gof_idx;
+
+      // Packetizer needs to know the number of spatial layers to correctly set
+      // the marker bit, even when the number won't be written in the packet.
+      rtp->codecHeader.VP9.num_spatial_layers =
+          info->codecSpecific.VP9.num_spatial_layers;
+      if (info->codecSpecific.VP9.ss_data_available) {
+        rtp->codecHeader.VP9.spatial_layer_resolution_present =
+            info->codecSpecific.VP9.spatial_layer_resolution_present;
+        if (info->codecSpecific.VP9.spatial_layer_resolution_present) {
+          for (size_t i = 0; i < info->codecSpecific.VP9.num_spatial_layers;
+               ++i) {
+            rtp->codecHeader.VP9.width[i] = info->codecSpecific.VP9.width[i];
+            rtp->codecHeader.VP9.height[i] = info->codecSpecific.VP9.height[i];
+          }
+        }
+        rtp->codecHeader.VP9.gof.CopyGofInfoVP9(info->codecSpecific.VP9.gof);
+      }
       return;
     }
     case kVideoCodecH264:
@@ -212,6 +249,10 @@ void VCMGenericEncoder::OnDroppedFrame() {
 
 bool VCMGenericEncoder::SupportsNativeHandle() const {
   return encoder_->SupportsNativeHandle();
+}
+
+int VCMGenericEncoder::GetTargetFramerate() {
+  return encoder_->GetTargetFramerate();
 }
 
  /***************************

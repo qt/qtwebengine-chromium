@@ -1007,19 +1007,17 @@ int MockTCPClientSocket::Write(IOBuffer* buf, int buf_len,
 }
 
 void MockTCPClientSocket::GetConnectionAttempts(ConnectionAttempts* out) const {
-  int connect_result = data_->connect_data().result;
-
-  out->clear();
-  if (connected_ && connect_result != OK)
-    out->push_back(ConnectionAttempt(addresses_[0], connect_result));
+  *out = connection_attempts_;
 }
 
 void MockTCPClientSocket::ClearConnectionAttempts() {
-  NOTIMPLEMENTED();
+  connection_attempts_.clear();
 }
 
-void MockTCPClientSocket::AddConnectionAttempts(const ConnectionAttempts& in) {
-  NOTIMPLEMENTED();
+void MockTCPClientSocket::AddConnectionAttempts(
+    const ConnectionAttempts& attempts) {
+  connection_attempts_.insert(connection_attempts_.begin(), attempts.begin(),
+                              attempts.end());
 }
 
 int MockTCPClientSocket::Connect(const CompletionCallback& callback) {
@@ -1027,18 +1025,29 @@ int MockTCPClientSocket::Connect(const CompletionCallback& callback) {
     return OK;
   connected_ = true;
   peer_closed_connection_ = false;
-  if (data_->connect_data().mode == ASYNC) {
-    if (data_->connect_data().result == ERR_IO_PENDING)
-      pending_read_callback_ = callback;
-    else
-      RunCallbackAsync(callback, data_->connect_data().result);
-    return ERR_IO_PENDING;
+
+  int result = data_->connect_data().result;
+  IoMode mode = data_->connect_data().mode;
+
+  if (result != OK && result != ERR_IO_PENDING) {
+    IPEndPoint address;
+    if (GetPeerAddress(&address) == OK)
+      connection_attempts_.push_back(ConnectionAttempt(address, result));
   }
-  return data_->connect_data().result;
+
+  if (mode == SYNCHRONOUS)
+    return result;
+
+  if (result == ERR_IO_PENDING)
+    pending_connect_callback_ = callback;
+  else
+    RunCallbackAsync(callback, result);
+  return ERR_IO_PENDING;
 }
 
 void MockTCPClientSocket::Disconnect() {
   MockClientSocket::Disconnect();
+  pending_connect_callback_.Reset();
   pending_read_callback_.Reset();
 }
 
@@ -1102,7 +1111,7 @@ void MockTCPClientSocket::OnWriteComplete(int rv) {
 }
 
 void MockTCPClientSocket::OnConnectComplete(const MockConnect& data) {
-  CompletionCallback callback = pending_read_callback_;
+  CompletionCallback callback = pending_connect_callback_;
   RunCallback(callback, data.result);
 }
 
@@ -2037,5 +2046,19 @@ const int kSOCKS5OkRequestLength = arraysize(kSOCKS5OkRequest);
 const char kSOCKS5OkResponse[] =
     { 0x05, 0x00, 0x00, 0x01, 127, 0, 0, 1, 0x00, 0x50 };
 const int kSOCKS5OkResponseLength = arraysize(kSOCKS5OkResponse);
+
+int64_t CountReadBytes(const MockRead reads[], size_t reads_size) {
+  int64_t total = 0;
+  for (const MockRead* read = reads; read != reads + reads_size; ++read)
+    total += read->data_len;
+  return total;
+}
+
+int64_t CountWriteBytes(const MockWrite writes[], size_t writes_size) {
+  int64_t total = 0;
+  for (const MockWrite* write = writes; write != writes + writes_size; ++write)
+    total += write->data_len;
+  return total;
+}
 
 }  // namespace net

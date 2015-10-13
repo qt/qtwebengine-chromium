@@ -4,7 +4,6 @@
 
 #include "content/browser/frame_host/render_widget_host_view_child_frame.h"
 
-#include "base/command_line.h"
 #include "cc/surfaces/surface.h"
 #include "cc/surfaces/surface_factory.h"
 #include "cc/surfaces/surface_manager.h"
@@ -15,11 +14,15 @@
 #include "content/browser/frame_host/cross_process_frame_connector.h"
 #include "content/browser/gpu/compositor_util.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
+#include "content/browser/renderer_host/render_widget_host_delegate.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
+#include "content/browser/renderer_host/render_widget_host_input_event_router.h"
 #include "content/common/gpu/gpu_messages.h"
 #include "content/common/view_messages.h"
 #include "content/public/browser/render_process_host.h"
-#include "content/public/common/content_switches.h"
+#include "content/public/common/browser_plugin_guest_mode.h"
+#include "ui/gfx/geometry/size_conversions.h"
+#include "ui/gfx/geometry/size_f.h"
 
 namespace content {
 
@@ -33,8 +36,13 @@ RenderWidgetHostViewChildFrame::RenderWidgetHostViewChildFrame(
       ack_pending_count_(0),
       frame_connector_(nullptr),
       weak_factory_(this) {
-  if (use_surfaces_)
+  if (use_surfaces_) {
     id_allocator_ = CreateSurfaceIdAllocator();
+    if (host_->delegate() && host_->delegate()->GetInputEventRouter()) {
+      host_->delegate()->GetInputEventRouter()->AddSurfaceIdNamespaceOwner(
+          GetSurfaceIdNamespace(), this);
+    }
+  }
 
   host_->SetView(this);
 }
@@ -121,8 +129,10 @@ void RenderWidgetHostViewChildFrame::SetBackgroundColor(SkColor color) {
 
 gfx::Size RenderWidgetHostViewChildFrame::GetPhysicalBackingSize() const {
   gfx::Size size;
-  if (frame_connector_)
-    size = frame_connector_->ChildFrameRect().size();
+  if (frame_connector_) {
+    size = gfx::ScaleToCeiledSize(frame_connector_->ChildFrameRect().size(),
+                                  frame_connector_->device_scale_factor());
+  }
   return size;
 }
 
@@ -138,13 +148,13 @@ void RenderWidgetHostViewChildFrame::InitAsFullscreen(
 }
 
 void RenderWidgetHostViewChildFrame::ImeCancelComposition() {
-  NOTREACHED();
+  // TODO(kenrb): Fix OOPIF Ime.
 }
 
 void RenderWidgetHostViewChildFrame::ImeCompositionRangeChanged(
     const gfx::Range& range,
     const std::vector<gfx::Rect>& character_bounds) {
-  NOTREACHED();
+  // TODO(kenrb): Fix OOPIF Ime.
 }
 
 void RenderWidgetHostViewChildFrame::MovePluginWindows(
@@ -160,8 +170,7 @@ void RenderWidgetHostViewChildFrame::SetIsLoading(bool is_loading) {
   // is a RenderWidgetHostViewChildFrame. In contrast, when there is no
   // inner/outer WebContents, only subframe's RenderWidgetHostView can be a
   // RenderWidgetHostViewChildFrame which do not get a SetIsLoading() call.
-  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kSitePerProcess) &&
+  if (BrowserPluginGuestMode::UseCrossProcessFramesForGuests() &&
       BrowserPluginGuest::IsGuest(
           static_cast<RenderViewHostImpl*>(RenderViewHost::From(host_)))) {
     return;
@@ -170,11 +179,8 @@ void RenderWidgetHostViewChildFrame::SetIsLoading(bool is_loading) {
   NOTREACHED();
 }
 
-void RenderWidgetHostViewChildFrame::TextInputTypeChanged(
-    ui::TextInputType type,
-    ui::TextInputMode input_mode,
-    bool can_compose_inline,
-    int flags) {
+void RenderWidgetHostViewChildFrame::TextInputStateChanged(
+    const ViewHostMsg_TextInputState_Params& params) {
   // TODO(kenrb): Implement.
 }
 
@@ -190,6 +196,12 @@ void RenderWidgetHostViewChildFrame::Destroy() {
   if (frame_connector_) {
     frame_connector_->set_view(NULL);
     frame_connector_ = NULL;
+  }
+
+  if (use_surfaces_ && host_->delegate() &&
+      host_->delegate()->GetInputEventRouter()) {
+    host_->delegate()->GetInputEventRouter()->RemoveSurfaceIdNamespaceOwner(
+        GetSurfaceIdNamespace());
   }
 
   host_->SetView(NULL);
@@ -222,7 +234,7 @@ void RenderWidgetHostViewChildFrame::UnlockCompositingSurface() {
 void RenderWidgetHostViewChildFrame::SurfaceDrawn(uint32 output_surface_id,
                                                   cc::SurfaceDrawStatus drawn) {
   cc::CompositorFrameAck ack;
-  DCHECK(ack_pending_count_ > 0);
+  DCHECK_GT(ack_pending_count_, 0U);
   if (!surface_returned_resources_.empty())
     ack.resources.swap(surface_returned_resources_);
   if (host_) {
@@ -296,8 +308,9 @@ void RenderWidgetHostViewChildFrame::OnSwapCompositorFrame(
                  output_surface_id);
   ack_pending_count_++;
   // If this value grows very large, something is going wrong.
-  DCHECK(ack_pending_count_ < 1000);
-  surface_factory_->SubmitFrame(surface_id_, frame.Pass(), ack_callback);
+  DCHECK_LT(ack_pending_count_, 1000U);
+  surface_factory_->SubmitCompositorFrame(surface_id_, frame.Pass(),
+                                          ack_callback);
 }
 
 void RenderWidgetHostViewChildFrame::GetScreenInfo(
@@ -305,6 +318,15 @@ void RenderWidgetHostViewChildFrame::GetScreenInfo(
   if (!frame_connector_)
     return;
   frame_connector_->GetScreenInfo(results);
+}
+
+bool RenderWidgetHostViewChildFrame::GetScreenColorProfile(
+    std::vector<char>* color_profile) {
+  if (!frame_connector_)
+    return false;
+  DCHECK(color_profile->empty());
+  NOTIMPLEMENTED();
+  return false;
 }
 
 gfx::Rect RenderWidgetHostViewChildFrame::GetBoundsInRootWindow() {
@@ -331,6 +353,22 @@ uint32_t RenderWidgetHostViewChildFrame::GetSurfaceIdNamespace() {
     return 0;
 
   return id_allocator_->id_namespace();
+}
+
+void RenderWidgetHostViewChildFrame::ProcessKeyboardEvent(
+    const NativeWebKeyboardEvent& event) {
+  host_->ForwardKeyboardEvent(event);
+}
+
+void RenderWidgetHostViewChildFrame::ProcessMouseEvent(
+    const blink::WebMouseEvent& event) {
+  host_->ForwardMouseEvent(event);
+}
+
+void RenderWidgetHostViewChildFrame::ProcessMouseWheelEvent(
+    const blink::WebMouseWheelEvent& event) {
+  if (event.deltaX != 0 || event.deltaY != 0)
+    host_->ForwardWheelEvent(event);
 }
 
 #if defined(OS_MACOSX)
@@ -364,13 +402,13 @@ bool RenderWidgetHostViewChildFrame::PostProcessEventForPluginIme(
       const NativeWebKeyboardEvent& event) {
   return false;
 }
-#endif // defined(OS_MACOSX)
+#endif  // defined(OS_MACOSX)
 
 void RenderWidgetHostViewChildFrame::CopyFromCompositingSurface(
-    const gfx::Rect& src_subrect,
+    const gfx::Rect& /* src_subrect */,
     const gfx::Size& /* dst_size */,
-    ReadbackRequestCallback& callback,
-    const SkColorType preferred_color_type) {
+    const ReadbackRequestCallback& callback,
+    const SkColorType /* preferred_color_type */) {
   callback.Run(SkBitmap(), READBACK_FAILED);
 }
 
@@ -391,10 +429,6 @@ bool RenderWidgetHostViewChildFrame::HasAcceleratedSurface(
   return false;
 }
 
-gfx::GLSurfaceHandle RenderWidgetHostViewChildFrame::GetCompositingSurface() {
-  return gfx::GLSurfaceHandle(gfx::kNullPluginWindow, gfx::NULL_TRANSPORT);
-}
-
 #if defined(OS_WIN)
 void RenderWidgetHostViewChildFrame::SetParentNativeViewAccessible(
     gfx::NativeViewAccessible accessible_parent) {
@@ -404,7 +438,7 @@ gfx::NativeViewId RenderWidgetHostViewChildFrame::GetParentForWindowlessPlugin()
     const {
   return NULL;
 }
-#endif // defined(OS_WIN)
+#endif  // defined(OS_WIN)
 
 // cc::SurfaceFactoryClient implementation.
 void RenderWidgetHostViewChildFrame::ReturnResources(

@@ -8,6 +8,9 @@
 #ifndef GrProcessorDataManager_DEFINED
 #define GrProcessorDataManager_DEFINED
 
-class GrProcessorDataManager {};
+// TODO this class is just an empty stub for now
+
+class GrProcessorDataManager {
+};
 
 #endif

@@ -133,7 +133,6 @@ void QueryTracker::Query::Begin(GLES2Implementation* gl) {
       // tell service about id, shared memory and count
       gl->helper()->BeginQueryEXT(target(), id(), shm_id(), shm_offset());
       break;
-    case GL_ASYNC_PIXEL_UNPACK_COMPLETED_CHROMIUM:
     case GL_ASYNC_PIXEL_PACK_COMPLETED_CHROMIUM:
     default:
       // tell service about id, shared memory and count
@@ -166,6 +165,14 @@ void QueryTracker::Query::End(GLES2Implementation* gl) {
   MarkAsPending(gl->helper()->InsertToken());
 }
 
+void QueryTracker::Query::QueryCounter(GLES2Implementation* gl) {
+  MarkAsActive();
+  flush_count_ = gl->helper()->flush_generation();
+  gl->helper()->QueryCounterEXT(id(), target(), shm_id(), shm_offset(),
+                                submit_count());
+  MarkAsPending(gl->helper()->InsertToken());
+}
+
 bool QueryTracker::Query::CheckResultsAvailable(
     CommandBufferHelper* helper) {
   if (Pending()) {
@@ -181,7 +188,6 @@ bool QueryTracker::Query::CheckResultsAvailable(
           //DCHECK(info_.sync->result >= client_begin_time_us_);
           result_ = info_.sync->result - client_begin_time_us_;
           break;
-        case GL_ASYNC_PIXEL_UNPACK_COMPLETED_CHROMIUM:
         case GL_ASYNC_PIXEL_PACK_COMPLETED_CHROMIUM:
         default:
           result_ = info_.sync->result;
@@ -206,7 +212,12 @@ uint64 QueryTracker::Query::GetResult() const {
 }
 
 QueryTracker::QueryTracker(MappedMemoryManager* manager)
-    : query_sync_manager_(manager) {
+    : query_sync_manager_(manager),
+      mapped_memory_(manager),
+      disjoint_count_sync_shm_id_(-1),
+      disjoint_count_sync_shm_offset_(0),
+      disjoint_count_sync_(nullptr),
+      local_disjoint_count_(0) {
 }
 
 QueryTracker::~QueryTracker() {
@@ -217,6 +228,10 @@ QueryTracker::~QueryTracker() {
   while (!removed_queries_.empty()) {
     delete removed_queries_.front();
     removed_queries_.pop_front();
+  }
+  if (disjoint_count_sync_) {
+    mapped_memory_->Free(disjoint_count_sync_);
+    disjoint_count_sync_ = nullptr;
   }
 }
 
@@ -322,6 +337,58 @@ bool QueryTracker::EndQuery(GLenum target, GLES2Implementation* gl) {
   target_it->second->End(gl);
   current_queries_.erase(target_it);
   return true;
+}
+
+bool QueryTracker::QueryCounter(GLuint id, GLenum target,
+                                GLES2Implementation* gl) {
+  QueryTracker::Query* query = GetQuery(id);
+  if (!query) {
+    query = CreateQuery(id, target);
+    if (!query) {
+      gl->SetGLError(GL_OUT_OF_MEMORY,
+                     "glQueryCounterEXT",
+                     "transfer buffer allocation failed");
+      return false;
+    }
+  } else if (query->target() != target) {
+    gl->SetGLError(GL_INVALID_OPERATION,
+                   "glQueryCounterEXT",
+                   "target does not match");
+    return false;
+  }
+
+  query->QueryCounter(gl);
+  return true;
+}
+
+bool QueryTracker::SetDisjointSync(GLES2Implementation* gl) {
+  if (!disjoint_count_sync_) {
+    // Allocate memory for disjoint value sync.
+    int32_t shm_id = -1;
+    uint32_t shm_offset;
+    void* mem = mapped_memory_->Alloc(sizeof(*disjoint_count_sync_),
+                                      &shm_id,
+                                      &shm_offset);
+    if (mem) {
+      disjoint_count_sync_shm_id_ = shm_id;
+      disjoint_count_sync_shm_offset_ = shm_offset;
+      disjoint_count_sync_ = static_cast<DisjointValueSync*>(mem);
+      disjoint_count_sync_->Reset();
+      gl->helper()->SetDisjointValueSyncCHROMIUM(shm_id, shm_offset);
+    }
+  }
+  return disjoint_count_sync_ != nullptr;
+}
+
+bool QueryTracker::CheckAndResetDisjoint() {
+  if (disjoint_count_sync_) {
+    const uint32_t disjoint_count = disjoint_count_sync_->GetDisjointCount();
+    if (local_disjoint_count_ != disjoint_count) {
+      local_disjoint_count_ = disjoint_count;
+      return true;
+    }
+  }
+  return false;
 }
 
 }  // namespace gles2

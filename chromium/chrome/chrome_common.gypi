@@ -12,6 +12,13 @@
       'common/auto_start_linux.h',
       'common/badge_util.cc',
       'common/badge_util.h',
+      'common/channel_info.cc',
+      'common/channel_info.h',
+      'common/channel_info_android.cc',
+      'common/channel_info_chromeos.cc',
+      'common/channel_info_mac.mm',
+      'common/channel_info_posix.cc',
+      'common/channel_info_win.cc',
       'common/child_process_logging.h',
       'common/child_process_logging_win.cc',
       'common/chrome_content_client.cc',
@@ -21,13 +28,6 @@
       'common/chrome_result_codes.h',
       'common/chrome_utility_messages.h',
       'common/chrome_utility_printing_messages.h',
-      'common/chrome_version_info.cc',
-      'common/chrome_version_info.h',
-      'common/chrome_version_info_android.cc',
-      'common/chrome_version_info_chromeos.cc',
-      'common/chrome_version_info_mac.mm',
-      'common/chrome_version_info_posix.cc',
-      'common/chrome_version_info_win.cc',
       'common/cloud_print/cloud_print_cdd_conversion.cc',
       'common/cloud_print/cloud_print_cdd_conversion.h',
       'common/cloud_print/cloud_print_class_mac.h',
@@ -43,6 +43,8 @@
       'common/common_param_traits.cc',
       'common/common_param_traits.h',
       'common/common_param_traits_macros.h',
+      'common/component_flash_hint_file_linux.cc',
+      'common/component_flash_hint_file_linux.h',
       'common/content_restriction.h',
       'common/content_settings_pattern_serializer.cc',
       'common/content_settings_pattern_serializer.h',
@@ -67,14 +69,12 @@
       'common/mac/cfbundle_blocker.mm',
       'common/mac/launchd.h',
       'common/mac/launchd.mm',
-      'common/mac/objc_zombie.h',
-      'common/mac/objc_zombie.mm',
+      'common/media/media_resource_provider.cc',
+      'common/media/media_resource_provider.h',
       'common/media/webrtc_logging_message_data.cc',
       'common/media/webrtc_logging_message_data.h',
       'common/media/webrtc_logging_messages.h',
       'common/media_galleries/metadata_types.h',
-      'common/metrics/version_utils.cc',
-      'common/metrics/version_utils.h',
       'common/multi_process_lock.h',
       'common/multi_process_lock_linux.cc',
       'common/multi_process_lock_mac.cc',
@@ -98,6 +98,7 @@
       'common/search_urls.h',
       'common/secure_origin_whitelist.cc',
       'common/secure_origin_whitelist.h',
+      'common/spellcheck_bdict_language.h',
       'common/spellcheck_common.cc',
       'common/spellcheck_common.h',
       'common/spellcheck_marker.h',
@@ -114,8 +115,6 @@
       'common/url_constants.h',
       'common/v8_breakpad_support_win.cc',
       'common/v8_breakpad_support_win.h',
-      'common/variations/experiment_labels.cc',
-      'common/variations/experiment_labels.h',
       'common/variations/variations_util.cc',
       'common/variations/variations_util.h',
       'common/web_application_info.cc',
@@ -278,17 +277,10 @@
       'common/media_galleries/picasa_types.h',
       'common/media_galleries/pmp_constants.h',
     ],
-    'chrome_common_networking_private_sources_openssl' : [
+    'chrome_common_networking_private_sources' : [
       'common/extensions/api/networking_private/networking_private_crypto.cc',
       'common/extensions/api/networking_private/networking_private_crypto.h',
-      'common/extensions/api/networking_private/networking_private_crypto_openssl.cc',
     ],
-    'chrome_common_networking_private_sources_nss' : [
-      'common/extensions/api/networking_private/networking_private_crypto.cc',
-      'common/extensions/api/networking_private/networking_private_crypto.h',
-      'common/extensions/api/networking_private/networking_private_crypto_nss.cc',
-    ],
-
     'chrome_common_mac_sources': [
       'common/media_galleries/iphoto_library.cc',
       'common/media_galleries/iphoto_library.h',
@@ -316,8 +308,6 @@
         # TODO(gregoryd): chrome_resources and chrome_strings could be
         #  shared with the 64-bit target, but it does not work due to a gyp
         # issue.
-        'common_net',
-        'common_version',
         'installer_util',
         'safe_browsing_proto',
         '<(DEPTH)/base/base.gyp:base',
@@ -328,16 +318,23 @@
         '<(DEPTH)/chrome/chrome_resources.gyp:chrome_strings',
         '<(DEPTH)/chrome/chrome_resources.gyp:theme_resources',
         '<(DEPTH)/chrome/common_constants.gyp:common_constants',
+        '<(DEPTH)/chrome/common/variations/fieldtrial_testing_config.gyp:fieldtrial_testing_config',
         '<(DEPTH)/components/components.gyp:cloud_devices_common',
         '<(DEPTH)/components/components.gyp:component_updater',
         '<(DEPTH)/components/components.gyp:content_settings_core_common',
+        '<(DEPTH)/components/components.gyp:crash_core_common',
         '<(DEPTH)/components/components.gyp:favicon_base',
+        '<(DEPTH)/components/components.gyp:gcm_driver_common',
         '<(DEPTH)/components/components.gyp:json_schema',
         '<(DEPTH)/components/components.gyp:metrics',
+        '<(DEPTH)/components/components.gyp:metrics_net',
         '<(DEPTH)/components/components.gyp:omnibox_common',
         '<(DEPTH)/components/components.gyp:policy_component_common',
         '<(DEPTH)/components/components.gyp:translate_core_common',
         '<(DEPTH)/components/components.gyp:variations',
+        '<(DEPTH)/components/components.gyp:version_info',
+        '<(DEPTH)/components/components_strings.gyp:components_strings',
+        '<(DEPTH)/components/url_formatter/url_formatter.gyp:url_formatter',
         '<(DEPTH)/content/content.gyp:content_common',
         '<(DEPTH)/crypto/crypto.gyp:crypto',
         '<(DEPTH)/net/net.gyp:net',
@@ -345,8 +342,6 @@
         '<(DEPTH)/skia/skia.gyp:skia_library',
         '<(DEPTH)/third_party/icu/icu.gyp:icui18n',
         '<(DEPTH)/third_party/icu/icu.gyp:icuuc',
-        '<(DEPTH)/third_party/libxml/libxml.gyp:libxml',
-        '<(DEPTH)/third_party/sqlite/sqlite.gyp:sqlite',
         '<(DEPTH)/third_party/zlib/google/zip.gyp:zip',
         '<(DEPTH)/ui/gfx/ipc/gfx_ipc.gyp:gfx_ipc',
         '<(DEPTH)/ui/resources/ui_resources.gyp:ui_resources',
@@ -382,14 +377,11 @@
         ['OS=="win" or OS=="mac"', {
           'sources': [ '<@(chrome_common_win_mac_sources)' ],
         }],
-        ['(OS=="win" or OS=="mac" or chromeos==1) and use_openssl==1', {
-          'sources': [ '<@(chrome_common_networking_private_sources_openssl)' ],
+        ['OS=="win" or OS=="mac" or chromeos==1', {
+          'sources': [ '<@(chrome_common_networking_private_sources)' ],
           'dependencies': [
             '../third_party/boringssl/boringssl.gyp:boringssl',
           ],
-        }],
-        ['(OS=="win" or OS=="mac" or chromeos==1) and use_openssl!=1', {
-          'sources': [ '<@(chrome_common_networking_private_sources_nss)' ],
         }],
         ['OS=="mac"', {
           'sources': [ '<@(chrome_common_mac_sources)' ],
@@ -407,6 +399,7 @@
             '<(DEPTH)/components/components.gyp:visitedlink_common',
             '<(DEPTH)/extensions/extensions.gyp:extensions_common_constants',
             '<(DEPTH)/ipc/ipc.gyp:ipc',
+            '<(DEPTH)/media/media.gyp:media',
             '<(DEPTH)/third_party/re2/re2.gyp:re2',
             '<(DEPTH)/third_party/widevine/cdm/widevine_cdm.gyp:widevine_cdm_version_h',
           ],
@@ -420,6 +413,7 @@
             ['exclude', '^common/custom_handlers/'],
             ['exclude', '^common/extensions/'],
             ['exclude', '^common/logging_chrome\\.'],
+            ['exclude', '^common/media/media_resource_provider'],
             ['exclude', '^common/media_galleries/'],
             ['exclude', '^common/multi_process_'],
             ['exclude', '^common/profiling\\.'],
@@ -490,14 +484,12 @@
         ['OS=="android"', {
           'sources!': [
             'common/badge_util.cc',
-            'common/chrome_version_info_posix.cc',
+            'common/channel_info_posix.cc',
             'common/extensions/api/spellcheck/spellcheck_handler.cc',
             'common/extensions/manifest_handlers/extension_action_handler.cc',
             'common/extensions/manifest_handlers/minimum_chrome_version_checker.cc',
             'common/icon_with_badge_image_source.cc',
             'common/media_galleries/metadata_types.h',
-            'common/net/url_util.cc',
-            'common/spellcheck_common.cc',
           ],
         }, {
           # Non-Android.
@@ -526,7 +518,7 @@
             '<(DEPTH)/breakpad/src',
           ],
           'sources!': [
-            'common/chrome_version_info_posix.cc',
+            'common/channel_info_posix.cc',
           ],
         }],
         ['enable_webrtc==0', {
@@ -557,58 +549,12 @@
       ],
     },
     {
-      # GN version: //chrome/common:version
-      'target_name': 'common_version',
-      'type': 'none',
-      'direct_dependent_settings': {
-        'include_dirs': [
-          '<(SHARED_INTERMEDIATE_DIR)',
-        ],
-      },
-      # Because generate_version generates a header, we must set the
-      # hard_dependency flag.
-      'hard_dependency': 1,
-      'actions': [
-        {
-          'action_name': 'generate_version',
-          'variables': {
-            'lastchange_path': '<(DEPTH)/build/util/LASTCHANGE',
-            'version_py_path': '<(DEPTH)/build/util/version.py',
-            'version_path': 'VERSION',
-            'template_input_path': 'common/chrome_version_info_values.h.version',
-            'branding_path': 'app/theme/<(branding_path_component)/BRANDING',
-          },
-          'inputs': [
-            '<(template_input_path)',
-            '<(version_path)',
-            '<(branding_path)',
-            '<(lastchange_path)',
-          ],
-          'outputs': [
-            '<(SHARED_INTERMEDIATE_DIR)/chrome/common/chrome_version_info_values.h',
-          ],
-          'action': [
-            'python',
-            '<(version_py_path)',
-            '-f', '<(version_path)',
-            '-f', '<(branding_path)',
-            '-f', '<(lastchange_path)',
-            '<(template_input_path)',
-            '<@(_outputs)',
-          ],
-          'message': 'Generating version information',
-        },
-      ],
-    },
-    {
       # GN version: //chrome/common/net
       'target_name': 'common_net',
       'type': 'static_library',
       'sources': [
         'common/net/net_resource_provider.cc',
         'common/net/net_resource_provider.h',
-        'common/net/url_util.cc',
-        'common/net/url_util.h',
         'common/net/x509_certificate_model.cc',
         'common/net/x509_certificate_model.h',
         'common/net/x509_certificate_model_nss.cc',
@@ -618,21 +564,16 @@
         '<(DEPTH)/base/base.gyp:base',
         '<(DEPTH)/chrome/chrome_resources.gyp:chrome_resources',
         '<(DEPTH)/chrome/chrome_resources.gyp:chrome_strings',
-        '<(DEPTH)/components/components.gyp:network_hints_common',
-        '<(DEPTH)/components/components.gyp:error_page_common',
+        '<(DEPTH)/components/url_formatter/url_formatter.gyp:url_formatter',
         '<(DEPTH)/crypto/crypto.gyp:crypto',
-        '<(DEPTH)/net/net.gyp:net_resources',
         '<(DEPTH)/net/net.gyp:net',
+        '<(DEPTH)/net/net.gyp:net_resources',
         '<(DEPTH)/third_party/icu/icu.gyp:icui18n',
         '<(DEPTH)/third_party/icu/icu.gyp:icuuc',
         '<(DEPTH)/ui/base/ui_base.gyp:ui_base',
       ],
       'conditions': [
-        ['OS != "ios"', {
-          'dependencies': [
-            '<(DEPTH)/gpu/gpu.gyp:gpu_ipc',
-          ],
-        }, {  # OS == ios
+        ['OS == "ios"', {
           'sources!': [
             'common/net/net_resource_provider.cc',
           ],
@@ -643,30 +584,27 @@
           ],
         }],
         ['use_openssl_certs == 1 and OS != "android"', {
-            'dependencies': [
-              '<(DEPTH)/third_party/boringssl/boringssl.gyp:boringssl',
-            ],
+          'dependencies': [
+            '<(DEPTH)/third_party/boringssl/boringssl.gyp:boringssl',
+          ],
         }, {
-            'sources!': [
-              'common/net/x509_certificate_model_openssl.cc',
-            ],
-          },
-        ],
+          'sources!': [
+            'common/net/x509_certificate_model_openssl.cc',
+          ],
+        }],
         ['use_nss_certs == 1', {
-            'dependencies': [
-              '../build/linux/system.gyp:ssl',
-            ],
+          'dependencies': [
+            '../build/linux/system.gyp:ssl',
+          ],
         }, {
-            'sources!': [
-              'common/net/x509_certificate_model_nss.cc',
-            ],
-          },
-        ],
+          'sources!': [
+            'common/net/x509_certificate_model_nss.cc',
+          ],
+        }],
         ['OS=="win"', {
-            # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
-            'msvs_disabled_warnings': [4267, ],
-          },
-        ],
+          # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+          'msvs_disabled_warnings': [4267, ],
+        }],
       ],
     },
     {

@@ -18,27 +18,16 @@ FtpNetworkLayer::FtpNetworkLayer(HostResolver* host_resolver)
 FtpNetworkLayer::~FtpNetworkLayer() {
 }
 
-// static
-FtpTransactionFactory* FtpNetworkLayer::CreateFactory(
-    HostResolver* host_resolver) {
-  return new FtpNetworkLayer(host_resolver);
-}
-
 FtpTransaction* FtpNetworkLayer::CreateTransaction() {
   if (suspended_)
     return NULL;
 
-  return new FtpNetworkTransaction(session_.get(),
+  return new FtpNetworkTransaction(session_->host_resolver(),
                                    ClientSocketFactory::GetDefaultFactory());
 }
 
 void FtpNetworkLayer::Suspend(bool suspend) {
   suspended_ = suspend;
-
-  /* TODO(darin): We'll need this code once we have a connection manager.
-  if (suspend)
-    session_->connection_manager()->CloseIdleSockets();
-  */
 }
 
 }  // namespace net

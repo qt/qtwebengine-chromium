@@ -7,12 +7,12 @@
 #include "base/command_line.h"
 #include "base/location.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/memory/shared_memory.h"
 #include "base/single_thread_task_runner.h"
 #include "base/thread_task_runner_handle.h"
 #include "base/timer/timer.h"
 #include "content/browser/browser_thread_impl.h"
 #include "content/browser/gpu/compositor_util.h"
+#include "content/browser/gpu/gpu_surface_tracker.h"
 #include "content/browser/renderer_host/input/input_router_impl.h"
 #include "content/browser/renderer_host/render_widget_host_delegate.h"
 #include "content/browser/renderer_host/render_widget_host_view_base.h"
@@ -39,7 +39,6 @@
 #if defined(USE_AURA)
 #include "content/browser/renderer_host/render_widget_host_view_aura.h"
 #include "content/browser/renderer_host/ui_events_helper.h"
-#include "ui/aura/env.h"
 #include "ui/aura/test/test_screen.h"
 #include "ui/events/event.h"
 #endif
@@ -84,8 +83,7 @@ class MockInputRouter : public InputRouter {
       const MouseWheelEventWithLatencyInfo& wheel_event) override {
     sent_wheel_event_ = true;
   }
-  void SendKeyboardEvent(const NativeWebKeyboardEvent& key_event,
-                         const ui::LatencyInfo& latency_info,
+  void SendKeyboardEvent(const NativeWebKeyboardEventWithLatencyInfo& key_event,
                          bool is_shortcut) override {
     sent_keyboard_event_ = true;
   }
@@ -130,12 +128,16 @@ class MockInputRouter : public InputRouter {
 
 class MockRenderWidgetHost : public RenderWidgetHostImpl {
  public:
-  MockRenderWidgetHost(
-      RenderWidgetHostDelegate* delegate,
-      RenderProcessHost* process,
-      int routing_id)
-      : RenderWidgetHostImpl(delegate, process, routing_id, false),
-        unresponsive_timer_fired_(false) {
+  MockRenderWidgetHost(RenderWidgetHostDelegate* delegate,
+                       RenderProcessHost* process,
+                       int routing_id)
+      : RenderWidgetHostImpl(
+            delegate,
+            process,
+            routing_id,
+            false),
+        unresponsive_timer_fired_(false),
+        new_content_rendering_timeout_fired_(false) {
     acked_touch_event_type_ = blink::WebInputEvent::Undefined;
   }
 
@@ -160,6 +162,10 @@ class MockRenderWidgetHost : public RenderWidgetHostImpl {
     return unresponsive_timer_fired_;
   }
 
+  bool new_content_rendering_timeout_fired() const {
+    return new_content_rendering_timeout_fired_;
+  }
+
   void DisableGestureDebounce() {
     input_router_.reset(new InputRouterImpl(
         process_, this, this, routing_id_, InputRouterImpl::Config()));
@@ -182,9 +188,15 @@ class MockRenderWidgetHost : public RenderWidgetHostImpl {
     unresponsive_timer_fired_ = true;
   }
 
+  void NotifyNewContentRenderingTimeoutForTesting() override {
+    new_content_rendering_timeout_fired_ = true;
+  }
+
   bool unresponsive_timer_fired_;
+  bool new_content_rendering_timeout_fired_;
   WebInputEvent::Type acked_touch_event_type_;
 
+ private:
   DISALLOW_COPY_AND_ASSIGN(MockRenderWidgetHost);
 };
 
@@ -201,7 +213,7 @@ class RenderWidgetHostProcess : public MockRenderProcessHost {
 
   bool HasConnection() const override { return true; }
 
- protected:
+ private:
   DISALLOW_COPY_AND_ASSIGN(RenderWidgetHostProcess);
 };
 
@@ -284,10 +296,12 @@ class TestView : public TestRenderWidgetHostView {
     // Simulate the mouse exit event dispatched when an aura window is
     // destroyed. (MakeWebMouseEventFromAuraEvent translates ET_MOUSE_EXITED
     // into WebInputEvent::MouseMove.)
+    WebMouseEvent event =
+        SyntheticWebMouseEventBuilder::Build(WebInputEvent::MouseMove);
+    event.timeStampSeconds =
+        (base::TimeTicks::Now() - base::TimeTicks()).InSecondsF();
     rwh_->input_router()->SendMouseEvent(
-        MouseEventWithLatencyInfo(
-            SyntheticWebMouseEventBuilder::Build(WebInputEvent::MouseMove),
-            ui::LatencyInfo()));
+        MouseEventWithLatencyInfo(event, ui::LatencyInfo()));
   }
 #endif
 
@@ -303,6 +317,7 @@ class TestView : public TestRenderWidgetHostView {
   InputEventAckState ack_result_;
   blink::WebScreenInfo screen_info_;
 
+ private:
   DISALLOW_COPY_AND_ASSIGN(TestView);
 };
 
@@ -417,19 +432,16 @@ class RenderWidgetHostTest : public testing::Test {
     delegate_.reset(new MockRenderWidgetHostDelegate());
     process_ = new RenderWidgetHostProcess(browser_context_.get());
 #if defined(USE_AURA) || (defined(OS_MACOSX) && !defined(OS_IOS))
-    if (IsDelegatedRendererEnabled()) {
-      ImageTransportFactory::InitializeForUnitTests(
-          scoped_ptr<ImageTransportFactory>(
-              new NoTransportImageTransportFactory));
-    }
+    ImageTransportFactory::InitializeForUnitTests(
+        scoped_ptr<ImageTransportFactory>(
+            new NoTransportImageTransportFactory));
 #endif
 #if defined(USE_AURA)
-    aura::Env::CreateInstance(true);
     screen_.reset(aura::TestScreen::Create(gfx::Size()));
     gfx::Screen::SetScreenInstance(gfx::SCREEN_TYPE_NATIVE, screen_.get());
 #endif
-    host_.reset(
-        new MockRenderWidgetHost(delegate_.get(), process_, MSG_ROUTING_NONE));
+    host_.reset(new MockRenderWidgetHost(delegate_.get(), process_,
+                                         process_->GetNextRoutingID()));
     view_.reset(new TestView(host_.get()));
     ConfigureView(view_.get());
     host_->SetView(view_.get());
@@ -446,13 +458,11 @@ class RenderWidgetHostTest : public testing::Test {
     browser_context_.reset();
 
 #if defined(USE_AURA)
-    aura::Env::DeleteInstance();
     gfx::Screen::SetScreenInstance(gfx::SCREEN_TYPE_NATIVE, nullptr);
     screen_.reset();
 #endif
 #if defined(USE_AURA) || (defined(OS_MACOSX) && !defined(OS_IOS))
-    if (IsDelegatedRendererEnabled())
-      ImageTransportFactory::Terminate();
+    ImageTransportFactory::Terminate();
 #endif
 
     // Process all pending tasks to avoid leaks.
@@ -1088,6 +1098,42 @@ TEST_F(RenderWidgetHostTest, MultipleInputEvents) {
   EXPECT_TRUE(host_->unresponsive_timer_fired());
 }
 
+// Test that the rendering timeout for newly loaded content fires
+// when enough time passes without receiving a new compositor frame.
+TEST_F(RenderWidgetHostTest, NewContentRenderingTimeout) {
+  host_->set_new_content_rendering_delay_for_testing(
+      base::TimeDelta::FromMicroseconds(10));
+
+  // Test immediate start and stop, ensuring that the timeout doesn't fire.
+  host_->StartNewContentRenderingTimeout();
+  host_->OnFirstPaintAfterLoad();
+  base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
+      FROM_HERE, base::MessageLoop::QuitClosure(),
+      TimeDelta::FromMicroseconds(20));
+  base::MessageLoop::current()->Run();
+
+  EXPECT_FALSE(host_->new_content_rendering_timeout_fired());
+
+  // Test that the timer doesn't fire if it receives a stop before
+  // a start.
+  host_->OnFirstPaintAfterLoad();
+  host_->StartNewContentRenderingTimeout();
+  base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
+      FROM_HERE, base::MessageLoop::QuitClosure(),
+      TimeDelta::FromMicroseconds(20));
+  base::MessageLoop::current()->Run();
+
+  EXPECT_FALSE(host_->new_content_rendering_timeout_fired());
+
+  // Test with a long delay to ensure that it does fire this time.
+  host_->StartNewContentRenderingTimeout();
+  base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
+      FROM_HERE, base::MessageLoop::QuitClosure(),
+      TimeDelta::FromMicroseconds(20));
+  base::MessageLoop::current()->Run();
+  EXPECT_TRUE(host_->new_content_rendering_timeout_fired());
+}
+
 std::string GetInputMessageTypes(RenderWidgetHostProcess* process) {
   std::string result;
   for (size_t i = 0; i < process->sink().message_count(); ++i) {
@@ -1501,15 +1547,15 @@ TEST_F(RenderWidgetHostTest, RendererExitedResetsInputRouter) {
   ASSERT_FALSE(host_->input_router()->HasPendingEvents());
 }
 
-// Regression test for http://crbug.com/401859.
+// Regression test for http://crbug.com/401859 and http://crbug.com/522795.
 TEST_F(RenderWidgetHostTest, RendererExitedResetsIsHidden) {
   // RendererExited will delete the view.
   host_->SetView(new TestView(host_.get()));
-  host_->WasHidden();
+  host_->WasShown(ui::LatencyInfo());
 
-  ASSERT_TRUE(host_->is_hidden());
-  host_->RendererExited(base::TERMINATION_STATUS_PROCESS_CRASHED, -1);
   ASSERT_FALSE(host_->is_hidden());
+  host_->RendererExited(base::TERMINATION_STATUS_PROCESS_CRASHED, -1);
+  ASSERT_TRUE(host_->is_hidden());
 
   // Make sure the input router is in a fresh state.
   ASSERT_FALSE(host_->input_router()->HasPendingEvents());

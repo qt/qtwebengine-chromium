@@ -5,6 +5,7 @@
  * found in the LICENSE file.
  */
 
+#include "SkCodecPriv.h"
 #include "SkWebpCodec.h"
 #include "SkTemplates.h"
 
@@ -76,28 +77,32 @@ SkCodec* SkWebpCodec::NewFromStream(SkStream* stream) {
     SkAutoTDelete<SkStream> streamDeleter(stream);
     SkImageInfo info;
     if (webp_parse_header(stream, &info)) {
-        return SkNEW_ARGS(SkWebpCodec, (info, streamDeleter.detach()));
+        return new SkWebpCodec(info, streamDeleter.detach());
     }
-    return NULL;
+    return nullptr;
 }
 
-static bool conversion_possible(const SkImageInfo& dst, const SkImageInfo& src) {
+// This version is slightly different from SkCodecPriv's version of conversion_possible. It
+// supports both byte orders for 8888.
+static bool webp_conversion_possible(const SkImageInfo& dst, const SkImageInfo& src) {
+    if (dst.profileType() != src.profileType()) {
+        return false;
+    }
+
+    if (!valid_alpha(dst.alphaType(), src.alphaType())) {
+        return false;
+    }
+
     switch (dst.colorType()) {
         // Both byte orders are supported.
         case kBGRA_8888_SkColorType:
         case kRGBA_8888_SkColorType:
-            break;
+            return true;
+        case kRGB_565_SkColorType:
+            return src.alphaType() == kOpaque_SkAlphaType;
         default:
             return false;
     }
-    if (dst.profileType() != src.profileType()) {
-        return false;
-    }
-    if (dst.alphaType() == src.alphaType()) {
-        return true;
-    }
-    return kPremul_SkAlphaType == dst.alphaType() &&
-            kUnpremul_SkAlphaType == src.alphaType();
 }
 
 SkISize SkWebpCodec::onGetScaledDimensions(float desiredScale) const {
@@ -115,6 +120,8 @@ static WEBP_CSP_MODE webp_decode_mode(SkColorType ct, bool premultiply) {
             return premultiply ? MODE_bgrA : MODE_BGRA;
         case kRGBA_8888_SkColorType:
             return premultiply ? MODE_rgbA : MODE_RGBA;
+        case kRGB_565_SkColorType:
+            return MODE_RGB_565;
         default:
             return MODE_LAST;
     }
@@ -125,21 +132,27 @@ static WEBP_CSP_MODE webp_decode_mode(SkColorType ct, bool premultiply) {
 // is arbitrary.
 static const size_t BUFFER_SIZE = 4096;
 
-SkCodec::Result SkWebpCodec::onGetPixels(const SkImageInfo& dstInfo, void* dst, size_t rowBytes,
-                                         const Options&, SkPMColor*, int*) {
-    switch (this->rewindIfNeeded()) {
-        case kCouldNotRewind_RewindState:
-            return kCouldNotRewind;
-        case kRewound_RewindState:
-            // Rewound to the beginning. Since creation only does a peek, the stream is at the
-            // correct position.
-            break;
-        case kNoRewindNecessary_RewindState:
-            // Already at the right spot for decoding.
-            break;
+bool SkWebpCodec::onGetValidSubset(SkIRect* desiredSubset) const {
+    if (!desiredSubset) {
+        return false;
     }
 
-    if (!conversion_possible(dstInfo, this->getInfo())) {
+    SkIRect bounds = SkIRect::MakeSize(this->getInfo().dimensions());
+    if (!desiredSubset->intersect(bounds)) {
+        return false;
+    }
+
+    // As stated below, libwebp snaps to even left and top. Make sure top and left are even, so we
+    // decode this exact subset.
+    // Leave right and bottom unmodified, so we suggest a slightly larger subset than requested.
+    desiredSubset->fLeft = (desiredSubset->fLeft >> 1) << 1;
+    desiredSubset->fTop = (desiredSubset->fTop >> 1) << 1;
+    return true;
+}
+
+SkCodec::Result SkWebpCodec::onGetPixels(const SkImageInfo& dstInfo, void* dst, size_t rowBytes,
+                                         const Options& options, SkPMColor*, int*) {
+    if (!webp_conversion_possible(dstInfo, this->getInfo())) {
         return kInvalidConversion;
     }
 
@@ -153,12 +166,48 @@ SkCodec::Result SkWebpCodec::onGetPixels(const SkImageInfo& dstInfo, void* dst, 
     // Free any memory associated with the buffer. Must be called last, so we declare it first.
     SkAutoTCallVProc<WebPDecBuffer, WebPFreeDecBuffer> autoFree(&(config.output));
 
-    SkISize dimensions = dstInfo.dimensions();
-    if (this->getInfo().dimensions() != dimensions) {
+    SkIRect bounds = SkIRect::MakeSize(this->getInfo().dimensions());
+    if (options.fSubset) {
+        // Caller is requesting a subset.
+        if (!bounds.contains(*options.fSubset)) {
+            // The subset is out of bounds.
+            return kInvalidParameters;
+        }
+
+        bounds = *options.fSubset;
+
+        // This is tricky. libwebp snaps the top and left to even values. We could let libwebp
+        // do the snap, and return a subset which is a different one than requested. The problem
+        // with that approach is that the caller may try to stitch subsets together, and if we
+        // returned different subsets than requested, there would be artifacts at the boundaries.
+        // Instead, we report that we cannot support odd values for top and left..
+        if (!SkIsAlign2(bounds.fLeft) || !SkIsAlign2(bounds.fTop)) {
+            return kInvalidParameters;
+        }
+
+#ifdef SK_DEBUG
+        {
+            // Make a copy, since getValidSubset can change its input.
+            SkIRect subset(bounds);
+            // That said, getValidSubset should *not* change its input, in this case; otherwise
+            // getValidSubset does not match the actual subsets we can do.
+            SkASSERT(this->getValidSubset(&subset) && subset == bounds);
+        }
+#endif
+
+        config.options.use_cropping = 1;
+        config.options.crop_left = bounds.fLeft;
+        config.options.crop_top = bounds.fTop;
+        config.options.crop_width = bounds.width();
+        config.options.crop_height = bounds.height();
+    }
+
+    SkISize dstDimensions = dstInfo.dimensions();
+    if (bounds.size() != dstDimensions) {
         // Caller is requesting scaling.
         config.options.use_scaling = 1;
-        config.options.scaled_width = dimensions.width();
-        config.options.scaled_height = dimensions.height();
+        config.options.scaled_width = dstDimensions.width();
+        config.options.scaled_height = dstDimensions.height();
     }
 
     config.output.colorspace = webp_decode_mode(dstInfo.colorType(),
@@ -168,7 +217,7 @@ SkCodec::Result SkWebpCodec::onGetPixels(const SkImageInfo& dstInfo, void* dst, 
     config.output.u.RGBA.size = dstInfo.getSafeSize(rowBytes);
     config.output.is_external_memory = 1;
 
-    SkAutoTCallVProc<WebPIDecoder, WebPIDelete> idec(WebPIDecode(NULL, 0, &config));
+    SkAutoTCallVProc<WebPIDecoder, WebPIDelete> idec(WebPIDecode(nullptr, 0, &config));
     if (!idec) {
         return kInvalidInput;
     }

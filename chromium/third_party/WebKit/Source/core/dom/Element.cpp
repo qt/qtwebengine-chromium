@@ -46,6 +46,7 @@
 #include "core/css/parser/CSSParser.h"
 #include "core/css/resolver/StyleResolver.h"
 #include "core/css/resolver/StyleResolverParentScope.h"
+#include "core/css/resolver/StyleResolverStats.h"
 #include "core/dom/AXObjectCache.h"
 #include "core/dom/Attr.h"
 #include "core/dom/CSSSelectorWatch.h"
@@ -75,10 +76,10 @@
 #include "core/dom/shadow/InsertionPoint.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/dom/shadow/ShadowRootInit.h"
+#include "core/editing/EditingUtilities.h"
 #include "core/editing/FrameSelection.h"
-#include "core/editing/htmlediting.h"
 #include "core/editing/iterators/TextIterator.h"
-#include "core/editing/markup.h"
+#include "core/editing/serializers/Serialization.h"
 #include "core/events/EventDispatcher.h"
 #include "core/events/FocusEvent.h"
 #include "core/frame/FrameHost.h"
@@ -86,7 +87,6 @@
 #include "core/frame/LocalDOMWindow.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/OriginsUsingFeatures.h"
-#include "core/frame/PinchViewport.h"
 #include "core/frame/ScrollToOptions.h"
 #include "core/frame/Settings.h"
 #include "core/frame/UseCounter.h"
@@ -107,13 +107,16 @@
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/layout/LayoutTextFragment.h"
 #include "core/layout/LayoutView.h"
+#include "core/loader/DocumentLoader.h"
 #include "core/page/ChromeClient.h"
 #include "core/page/FocusController.h"
 #include "core/page/Page.h"
 #include "core/page/PointerLockController.h"
 #include "core/page/SpatialNavigation.h"
+#include "core/page/scrolling/ScrollCustomizationCallbacks.h"
 #include "core/page/scrolling/ScrollState.h"
-#include "core/paint/DeprecatedPaintLayer.h"
+#include "core/page/scrolling/ScrollStateCallback.h"
+#include "core/paint/PaintLayer.h"
 #include "core/svg/SVGDocumentExtensions.h"
 #include "core/svg/SVGElement.h"
 #include "platform/EventDispatchForbiddenScope.h"
@@ -127,6 +130,25 @@
 #include "wtf/text/TextPosition.h"
 
 namespace blink {
+
+namespace {
+
+// We need to retain the scroll customization callbacks until the element
+// they're associated with is destroyed. It would be simplest if the callbacks
+// could be stored in ElementRareData, but we can't afford the space
+// increase. Instead, keep the scroll customization callbacks here. The other
+// option would be to store these callbacks on the FrameHost or document, but
+// that necessitates a bunch more logic for transferring the callbacks between
+// FrameHosts when elements are moved around.
+ScrollCustomizationCallbacks& scrollCustomizationCallbacks()
+{
+    ASSERT(RuntimeEnabledFeatures::scrollCustomizationEnabled());
+    DEFINE_STATIC_LOCAL(Persistent<ScrollCustomizationCallbacks>,
+        scrollCustomizationCallbacks, (new ScrollCustomizationCallbacks()));
+    return *scrollCustomizationCallbacks;
+}
+
+} // namespace
 
 using namespace HTMLNames;
 using namespace XMLNames;
@@ -154,6 +176,9 @@ Element::~Element()
 
     if (isCustomElement())
         CustomElement::wasDestroyed(this);
+
+    if (RuntimeEnabledFeatures::scrollCustomizationEnabled())
+        scrollCustomizationCallbacks().removeCallbacksForElement(this);
 
     // With Oilpan, either the Element has been removed from the Document
     // or the Document is dead as well. If the Element has been removed from
@@ -342,7 +367,7 @@ ElementAnimations& Element::ensureElementAnimations()
 {
     ElementRareData& rareData = ensureElementRareData();
     if (!rareData.elementAnimations())
-        rareData.setElementAnimations(adoptPtrWillBeNoop(new ElementAnimations()));
+        rareData.setElementAnimations(new ElementAnimations());
     return *rareData.elementAnimations();
 }
 
@@ -470,7 +495,19 @@ void Element::scrollIntoViewIfNeeded(bool centerIfNeeded)
         layoutObject()->scrollRectToVisible(bounds, ScrollAlignment::alignToEdgeIfNeeded, ScrollAlignment::alignToEdgeIfNeeded);
 }
 
-void Element::distributeScroll(ScrollState& scrollState)
+void Element::setDistributeScroll(ScrollStateCallback* scrollStateCallback, String nativeScrollBehavior)
+{
+    scrollStateCallback->setNativeScrollBehavior(ScrollStateCallback::toNativeScrollBehavior(nativeScrollBehavior));
+    scrollCustomizationCallbacks().setDistributeScroll(this, scrollStateCallback);
+}
+
+void Element::setApplyScroll(ScrollStateCallback* scrollStateCallback, String nativeScrollBehavior)
+{
+    scrollStateCallback->setNativeScrollBehavior(ScrollStateCallback::toNativeScrollBehavior(nativeScrollBehavior));
+    scrollCustomizationCallbacks().setApplyScroll(this, scrollStateCallback);
+}
+
+void Element::nativeDistributeScroll(ScrollState& scrollState)
 {
     ASSERT(RuntimeEnabledFeatures::scrollCustomizationEnabled());
     if (scrollState.fullyConsumed())
@@ -490,13 +527,29 @@ void Element::distributeScroll(ScrollState& scrollState)
     const double deltaX = scrollState.deltaX();
     const double deltaY = scrollState.deltaY();
 
-    applyScroll(scrollState);
+    callApplyScroll(scrollState);
 
     if (deltaX != scrollState.deltaX() || deltaY != scrollState.deltaY())
         scrollState.setCurrentNativeScrollingElement(this);
 }
 
-void Element::applyScroll(ScrollState& scrollState)
+void Element::callDistributeScroll(ScrollState& scrollState)
+{
+    ScrollStateCallback* callback = scrollCustomizationCallbacks().getDistributeScroll(this);
+    if (!callback) {
+        nativeDistributeScroll(scrollState);
+        return;
+    }
+
+    if (callback->nativeScrollBehavior() != NativeScrollBehavior::PerformAfterNativeScroll)
+        callback->handleEvent(&scrollState);
+    if (callback->nativeScrollBehavior() != NativeScrollBehavior::DisableNativeScroll)
+        nativeDistributeScroll(scrollState);
+    if (callback->nativeScrollBehavior() == NativeScrollBehavior::PerformAfterNativeScroll)
+        callback->handleEvent(&scrollState);
+};
+
+void Element::nativeApplyScroll(ScrollState& scrollState)
 {
     ASSERT(RuntimeEnabledFeatures::scrollCustomizationEnabled());
     if (scrollState.fullyConsumed())
@@ -506,8 +559,11 @@ void Element::applyScroll(ScrollState& scrollState)
     const double deltaY = scrollState.deltaY();
     bool scrolled = false;
 
-    // Handle the documentElement separately, as it scrolls the FrameView.
-    if (this == document().documentElement()) {
+    if (deltaY || deltaX)
+        document().updateLayoutIgnorePendingStylesheets();
+
+    // Handle the scrollingElement separately, as it scrolls the viewport.
+    if (this == document().scrollingElement()) {
         FloatSize delta(deltaX, deltaY);
         if (document().frame()->applyScrollDelta(delta, scrollState.isBeginning()).didScroll()) {
             scrolled = true;
@@ -538,8 +594,26 @@ void Element::applyScroll(ScrollState& scrollState)
     // that if JS overrides one of these methods, but not the
     // other, this bookkeeping remains accurate.
     scrollState.setCurrentNativeScrollingElement(this);
-    if (scrollState.fromUserInput())
-        document().frame()->view()->setWasScrolledByUser(true);
+    if (scrollState.fromUserInput()) {
+        if (DocumentLoader* documentLoader = document().loader())
+            documentLoader->initialScrollState().wasScrolledByUser = true;
+    }
+};
+
+void Element::callApplyScroll(ScrollState& scrollState)
+{
+    ScrollStateCallback* callback = scrollCustomizationCallbacks().getApplyScroll(this);
+    if (!callback) {
+        nativeApplyScroll(scrollState);
+        return;
+    }
+
+    if (callback->nativeScrollBehavior() != NativeScrollBehavior::PerformAfterNativeScroll)
+        callback->handleEvent(&scrollState);
+    if (callback->nativeScrollBehavior() != NativeScrollBehavior::DisableNativeScroll)
+        nativeApplyScroll(scrollState);
+    if (callback->nativeScrollBehavior() == NativeScrollBehavior::PerformAfterNativeScroll)
+        callback->handleEvent(&scrollState);
 };
 
 static float localZoomForLayoutObject(LayoutObject& layoutObject)
@@ -617,7 +691,7 @@ Element* Element::offsetParent()
     if (!element)
         return nullptr;
 
-    if (element->isInShadowTree() && !element->containingShadowRoot()->shouldExposeToBindings())
+    if (element->isInShadowTree() && !element->containingShadowRoot()->isOpen())
         return nullptr;
 
     return element;
@@ -650,12 +724,10 @@ int Element::clientWidth()
     bool inQuirksMode = document().inQuirksMode();
     if ((!inQuirksMode && document().documentElement() == this)
         || (inQuirksMode && isHTMLElement() && document().body() == this)) {
-        if (FrameView* view = document().view()) {
-            if (LayoutView* layoutView = document().layoutView()) {
-                if (document().page()->settings().forceZeroLayoutHeight())
-                    return adjustLayoutUnitForAbsoluteZoom(view->visibleContentSize().width(), *layoutView);
-                return adjustLayoutUnitForAbsoluteZoom(view->layoutSize().width(), *layoutView);
-            }
+        if (LayoutView* layoutView = document().layoutView()) {
+            if (document().page()->settings().forceZeroLayoutHeight())
+                return adjustLayoutUnitForAbsoluteZoom(layoutView->overflowClipRect(LayoutPoint()).width(), *layoutView);
+            return adjustLayoutUnitForAbsoluteZoom(layoutView->layoutSize().width(), *layoutView);
         }
     }
 
@@ -674,12 +746,10 @@ int Element::clientHeight()
 
     if ((!inQuirksMode && document().documentElement() == this)
         || (inQuirksMode && isHTMLElement() && document().body() == this)) {
-        if (FrameView* view = document().view()) {
-            if (LayoutView* layoutView = document().layoutView()) {
-                if (document().page()->settings().forceZeroLayoutHeight())
-                    return adjustLayoutUnitForAbsoluteZoom(view->visibleContentSize().height(), *layoutView);
-                return adjustLayoutUnitForAbsoluteZoom(view->layoutSize().height(), *layoutView);
-            }
+        if (LayoutView* layoutView = document().layoutView()) {
+            if (document().page()->settings().forceZeroLayoutHeight())
+                return adjustLayoutUnitForAbsoluteZoom(layoutView->overflowClipRect(LayoutPoint()).height(), *layoutView);
+            return adjustLayoutUnitForAbsoluteZoom(layoutView->layoutSize().height(), *layoutView);
         }
     }
 
@@ -763,7 +833,7 @@ int Element::scrollWidth()
     }
 
     if (LayoutBox* box = layoutBox())
-        return adjustLayoutUnitForAbsoluteZoom(box->scrollWidth(), *box).round();
+        return adjustForAbsoluteZoom(box->pixelSnappedScrollWidth(), box);
     return 0;
 }
 
@@ -778,7 +848,7 @@ int Element::scrollHeight()
     }
 
     if (LayoutBox* box = layoutBox())
-        return adjustLayoutUnitForAbsoluteZoom(box->scrollHeight(), *box).round();
+        return adjustForAbsoluteZoom(box->pixelSnappedScrollHeight(), box);
     return 0;
 }
 
@@ -868,13 +938,13 @@ void Element::scrollFrameBy(const ScrollToOptions& scrollToOptions)
     LocalFrame* frame = document().frame();
     if (!frame)
         return;
-    FrameView* view = frame->view();
-    if (!view)
+    ScrollableArea* viewport = frame->view() ? frame->view()->scrollableArea() : 0;
+    if (!viewport)
         return;
 
-    double newScaledLeft = left * frame->pageZoomFactor() + view->scrollPositionDouble().x();
-    double newScaledTop = top * frame->pageZoomFactor() + view->scrollPositionDouble().y();
-    view->setScrollPosition(DoublePoint(newScaledLeft, newScaledTop), ProgrammaticScroll, scrollBehavior);
+    double newScaledLeft = left * frame->pageZoomFactor() + viewport->scrollPositionDouble().x();
+    double newScaledTop = top * frame->pageZoomFactor() + viewport->scrollPositionDouble().y();
+    viewport->setScrollPosition(DoublePoint(newScaledLeft, newScaledTop), ProgrammaticScroll, scrollBehavior);
 }
 
 void Element::scrollFrameTo(const ScrollToOptions& scrollToOptions)
@@ -884,17 +954,17 @@ void Element::scrollFrameTo(const ScrollToOptions& scrollToOptions)
     LocalFrame* frame = document().frame();
     if (!frame)
         return;
-    FrameView* view = frame->view();
-    if (!view)
+    ScrollableArea* viewport = frame->view() ? frame->view()->scrollableArea() : 0;
+    if (!viewport)
         return;
 
-    double scaledLeft = view->scrollPositionDouble().x();
-    double scaledTop = view->scrollPositionDouble().y();
+    double scaledLeft = viewport->scrollPositionDouble().x();
+    double scaledTop = viewport->scrollPositionDouble().y();
     if (scrollToOptions.hasLeft())
         scaledLeft = ScrollableArea::normalizeNonFiniteScroll(scrollToOptions.left()) * frame->pageZoomFactor();
     if (scrollToOptions.hasTop())
         scaledTop = ScrollableArea::normalizeNonFiniteScroll(scrollToOptions.top()) * frame->pageZoomFactor();
-    view->setScrollPosition(DoublePoint(scaledLeft, scaledTop), ProgrammaticScroll, scrollBehavior);
+    viewport->setScrollPosition(DoublePoint(scaledLeft, scaledTop), ProgrammaticScroll, scrollBehavior);
 }
 
 void Element::incrementProxyCount()
@@ -929,10 +999,8 @@ IntRect Element::boundsInViewportSpace()
     Vector<FloatQuad> quads;
     if (isSVGElement() && layoutObject()) {
         // Get the bounding rectangle from the SVG model.
-        SVGElement* svgElement = toSVGElement(this);
-        FloatRect localRect;
-        if (svgElement->getBoundingBox(localRect))
-            quads.append(layoutObject()->localToAbsoluteQuad(localRect));
+        if (toSVGElement(this)->isSVGGraphicsElement())
+            quads.append(layoutObject()->localToAbsoluteQuad(layoutObject()->objectBoundingBox()));
     } else {
         // Get the bounding rectangle from the box model.
         if (layoutBoxModelObject())
@@ -975,10 +1043,8 @@ ClientRect* Element::getBoundingClientRect()
     if (elementLayoutObject) {
         if (isSVGElement() && !elementLayoutObject->isSVGRoot()) {
             // Get the bounding rectangle from the SVG model.
-            SVGElement* svgElement = toSVGElement(this);
-            FloatRect localRect;
-            if (svgElement->getBoundingBox(localRect))
-                quads.append(elementLayoutObject->localToAbsoluteQuad(localRect));
+            if (toSVGElement(this)->isSVGGraphicsElement())
+                quads.append(elementLayoutObject->localToAbsoluteQuad(elementLayoutObject->objectBoundingBox()));
         } else if (elementLayoutObject->isBoxModelObject() || elementLayoutObject->isBR()) {
             elementLayoutObject->absoluteQuads(quads);
         }
@@ -1586,7 +1652,7 @@ PassRefPtr<ComputedStyle> Element::styleForLayoutObject()
     // FIXME: Instead of clearing updates that may have been added from calls to styleForElement
     // outside recalcStyle, we should just never set them if we're not inside recalcStyle.
     if (ElementAnimations* elementAnimations = this->elementAnimations())
-        elementAnimations->cssAnimations().setPendingUpdate(nullptr);
+        elementAnimations->cssAnimations().clearPendingUpdate();
 
     if (hasCustomStyleCallbacks())
         style = customStyleForLayoutObject();
@@ -1685,9 +1751,14 @@ StyleRecalcChange Element::recalcOwnStyle(StyleRecalcChange change)
 
     RefPtr<ComputedStyle> oldStyle = mutableComputedStyle();
     RefPtr<ComputedStyle> newStyle = styleForLayoutObject();
-    StyleRecalcChange localChange = ComputedStyle::stylePropagationDiff(oldStyle.get(), newStyle.get());
-
     ASSERT(newStyle);
+
+    StyleRecalcChange localChange = ComputedStyle::stylePropagationDiff(oldStyle.get(), newStyle.get());
+    if (localChange == NoChange) {
+        INCREMENT_STYLE_STATS_COUNTER(*document().styleResolver(), stylesUnchanged, 1);
+    } else {
+        INCREMENT_STYLE_STATS_COUNTER(*document().styleResolver(), stylesChanged, 1);
+    }
 
     if (localChange == Reattach) {
         AttachContext reattachContext;
@@ -1816,6 +1887,9 @@ void Element::setNeedsCompositingUpdate()
     if (!layoutObject->hasLayer())
         return;
     layoutObject->layer()->setNeedsCompositingInputsUpdate();
+    // Changes in the return value of requiresAcceleratedCompositing change if
+    // the PaintLayer is self-painting.
+    layoutObject->layer()->updateSelfPaintingLayer();
 }
 
 void Element::setCustomElementDefinition(PassRefPtrWillBeRawPtr<CustomElementDefinition> definition)
@@ -1835,8 +1909,13 @@ CustomElementDefinition* Element::customElementDefinition() const
 
 PassRefPtrWillBeRawPtr<ShadowRoot> Element::createShadowRoot(const ScriptState* scriptState, ExceptionState& exceptionState)
 {
-    OriginsUsingFeatures::count(scriptState, document(), OriginsUsingFeatures::Feature::ElementCreateShadowRoot);
-    return createShadowRoot(exceptionState);
+    OriginsUsingFeatures::countMainWorldOnly(scriptState, document(), OriginsUsingFeatures::Feature::ElementCreateShadowRoot);
+    ShadowRoot* root = shadowRoot();
+    if (root && (root->type() == ShadowRootType::Open || root->type() == ShadowRootType::Closed)) {
+        exceptionState.throwDOMException(InvalidStateError, "Shadow root cannot be created on a host which already hosts this type of shadow tree.");
+        return nullptr;
+    }
+    return createShadowRootInternal(ShadowRootType::OpenByDefault, exceptionState);
 }
 
 PassRefPtrWillBeRawPtr<ShadowRoot> Element::createShadowRoot(const ScriptState* scriptState, const ShadowRootInit& shadowRootInitDict, ExceptionState& exceptionState)
@@ -1844,21 +1923,28 @@ PassRefPtrWillBeRawPtr<ShadowRoot> Element::createShadowRoot(const ScriptState* 
     ASSERT(RuntimeEnabledFeatures::createShadowRootWithParameterEnabled());
     UseCounter::count(document(), UseCounter::ElementCreateShadowRootWithParameter);
 
-    OriginsUsingFeatures::count(scriptState, document(), OriginsUsingFeatures::Feature::ElementCreateShadowRoot);
+    OriginsUsingFeatures::countMainWorldOnly(scriptState, document(), OriginsUsingFeatures::Feature::ElementCreateShadowRoot);
 
-    if (shadowRootInitDict.hasMode()) {
-        if (shadowRoot()) {
-            exceptionState.throwDOMException(InvalidStateError, "Shadow root cannot be created on a host which already hosts a shadow tree.");
-            return nullptr;
-        }
-        // TODO(kochi): Add support for closed shadow root. crbug.com/459136
-        if (shadowRootInitDict.mode() == "closed") {
-            exceptionState.throwDOMException(NotSupportedError, "Closed shadow root is not implemented yet.");
-            return nullptr;
-        }
+    if (shadowRootInitDict.hasMode() && shadowRoot()) {
+        exceptionState.throwDOMException(InvalidStateError, "Shadow root cannot be created on a host which already hosts a shadow tree.");
+        return nullptr;
     }
 
-    RefPtrWillBeRawPtr<ShadowRoot> shadowRoot = createShadowRoot(exceptionState);
+    ShadowRootType type = ShadowRootType::OpenByDefault;
+    if (shadowRootInitDict.hasMode())
+        type = shadowRootInitDict.mode() == "open" ? ShadowRootType::Open : ShadowRootType::Closed;
+
+    if (type == ShadowRootType::Closed) {
+        if (!RuntimeEnabledFeatures::shadowRootClosedModeEnabled()) {
+            exceptionState.throwDOMException(NotSupportedError, "Closed shadow root is not supported yet.");
+            return nullptr;
+        }
+        UseCounter::count(document(), UseCounter::ElementCreateShadowRootClosed);
+    } else if (type == ShadowRootType::Open) {
+        UseCounter::count(document(), UseCounter::ElementCreateShadowRootOpen);
+    }
+
+    RefPtrWillBeRawPtr<ShadowRoot> shadowRoot = createShadowRootInternal(type, exceptionState);
 
     if (shadowRootInitDict.hasDelegatesFocus())
         shadowRoot->setDelegatesFocus(shadowRootInitDict.delegatesFocus());
@@ -1866,8 +1952,10 @@ PassRefPtrWillBeRawPtr<ShadowRoot> Element::createShadowRoot(const ScriptState* 
     return shadowRoot.release();
 }
 
-PassRefPtrWillBeRawPtr<ShadowRoot> Element::createShadowRoot(ExceptionState& exceptionState)
+PassRefPtrWillBeRawPtr<ShadowRoot> Element::createShadowRootInternal(ShadowRootType type, ExceptionState& exceptionState)
 {
+    ASSERT(!closedShadowRoot());
+
     if (alwaysCreateUserAgentShadowRoot())
         ensureUserAgentShadowRoot();
 
@@ -1879,7 +1967,7 @@ PassRefPtrWillBeRawPtr<ShadowRoot> Element::createShadowRoot(ExceptionState& exc
         return nullptr;
     }
 
-    return PassRefPtrWillBeRawPtr<ShadowRoot>(ensureShadow().addShadowRoot(*this, ShadowRootType::Open));
+    return PassRefPtrWillBeRawPtr<ShadowRoot>(ensureShadow().addShadowRoot(*this, type));
 }
 
 ShadowRoot* Element::shadowRoot() const
@@ -1887,18 +1975,39 @@ ShadowRoot* Element::shadowRoot() const
     ElementShadow* elementShadow = shadow();
     if (!elementShadow)
         return nullptr;
-    ShadowRoot* shadowRoot = elementShadow->youngestShadowRoot();
-    if (shadowRoot->type() == ShadowRootType::Open)
-        return shadowRoot;
-    return nullptr;
+    return elementShadow->youngestShadowRoot();
+}
+
+ShadowRoot* Element::openShadowRoot() const
+{
+    ShadowRoot* root = shadowRoot();
+    if (!root)
+        return nullptr;
+    return root->type() == ShadowRootType::OpenByDefault || root->type() == ShadowRootType::Open ? root : nullptr;
+}
+
+ShadowRoot* Element::closedShadowRoot() const
+{
+    ShadowRoot* root = shadowRoot();
+    if (!root)
+        return nullptr;
+    return root->type() == ShadowRootType::Closed ? root : nullptr;
+}
+
+ShadowRoot* Element::authorShadowRoot() const
+{
+    ShadowRoot* root = shadowRoot();
+    if (!root)
+        return nullptr;
+    return root->type() != ShadowRootType::UserAgent ? root : nullptr;
 }
 
 ShadowRoot* Element::userAgentShadowRoot() const
 {
     if (ElementShadow* elementShadow = shadow()) {
-        if (ShadowRoot* shadowRoot = elementShadow->oldestShadowRoot()) {
-            ASSERT(shadowRoot->type() == ShadowRootType::UserAgent);
-            return shadowRoot;
+        if (ShadowRoot* root = elementShadow->oldestShadowRoot()) {
+            ASSERT(root->type() == ShadowRootType::UserAgent);
+            return root;
         }
     }
 
@@ -2225,7 +2334,7 @@ bool Element::hasAttributeNS(const AtomicString& namespaceURI, const AtomicStrin
     return elementData()->attributes().find(qName);
 }
 
-void Element::focus(bool restorePreviousSelection, WebFocusType type)
+void Element::focus(bool restorePreviousSelection, WebFocusType type, InputDeviceCapabilities* sourceCapabilities)
 {
     if (!inDocument())
         return;
@@ -2240,7 +2349,7 @@ void Element::focus(bool restorePreviousSelection, WebFocusType type)
     if (!isFocusable())
         return;
 
-    if (shadowRoot() && shadowRoot()->delegatesFocus()) {
+    if (authorShadowRoot() && authorShadowRoot()->delegatesFocus()) {
         if (containsIncludingShadowDOM(document().focusedElement()))
             return;
 
@@ -2253,7 +2362,7 @@ void Element::focus(bool restorePreviousSelection, WebFocusType type)
     }
 
     RefPtrWillBeRawPtr<Node> protect(this);
-    if (!document().page()->focusController().setFocusedElement(this, document().frame(), type))
+    if (!document().page()->focusController().setFocusedElement(this, document().frame(), type, sourceCapabilities))
         return;
 
     // Setting the focused node above might have invalidated the layout due to scripts.
@@ -2286,7 +2395,7 @@ void Element::updateFocusAppearance(bool /*restorePreviousSelection*/)
             return;
 
         // FIXME: We should restore the previous selection if there is one.
-        VisibleSelection newSelection = VisibleSelection(firstPositionInOrBeforeNode(this), DOWNSTREAM);
+        VisibleSelection newSelection = VisibleSelection(firstPositionInOrBeforeNode(this), TextAffinity::Downstream);
         // Passing DoNotSetFocus as this function is called after FocusController::setFocusedElement()
         // and we don't want to change the focus to a new Element.
         frame->selection().setSelection(newSelection,  FrameSelection::CloseTyping | FrameSelection::ClearTypingStyle | FrameSelection::DoNotSetFocus);
@@ -2316,7 +2425,7 @@ bool Element::supportsFocus() const
     // it won't be focusable. Furthermore, supportsFocus cannot just return true
     // always or else tabIndex() will change for all HTML elements.
     return hasElementFlag(TabIndexWasSetExplicitly) || (hasEditableStyle() && parentNode() && !parentNode()->hasEditableStyle())
-        || (isShadowHost(this) && shadowRoot() && shadowRoot()->delegatesFocus())
+        || (isShadowHost(this) && authorShadowRoot() && authorShadowRoot()->delegatesFocus())
         || supportsSpatialNavigationFocus();
 }
 
@@ -2362,30 +2471,28 @@ bool Element::isFocusedElementInDocument() const
     return this == document().focusedElement();
 }
 
-void Element::dispatchFocusEvent(Element* oldFocusedElement, WebFocusType type)
+void Element::dispatchFocusEvent(Element* oldFocusedElement, WebFocusType type, InputDeviceCapabilities* sourceCapabilities)
 {
-    RefPtrWillBeRawPtr<FocusEvent> event = FocusEvent::create(EventTypeNames::focus, false, false, document().domWindow(), 0, oldFocusedElement);
-    EventDispatcher::dispatchEvent(*this, FocusEventDispatchMediator::create(event.release()));
+    dispatchEvent(FocusEvent::create(EventTypeNames::focus, false, false, document().domWindow(), 0, oldFocusedElement, sourceCapabilities));
 }
 
-void Element::dispatchBlurEvent(Element* newFocusedElement, WebFocusType type)
+void Element::dispatchBlurEvent(Element* newFocusedElement, WebFocusType type, InputDeviceCapabilities* sourceCapabilities)
 {
-    RefPtrWillBeRawPtr<FocusEvent> event = FocusEvent::create(EventTypeNames::blur, false, false, document().domWindow(), 0, newFocusedElement);
-    EventDispatcher::dispatchEvent(*this, BlurEventDispatchMediator::create(event.release()));
+    dispatchEvent(FocusEvent::create(EventTypeNames::blur, false, false, document().domWindow(), 0, newFocusedElement, sourceCapabilities));
 }
 
-void Element::dispatchFocusInEvent(const AtomicString& eventType, Element* oldFocusedElement, WebFocusType)
+void Element::dispatchFocusInEvent(const AtomicString& eventType, Element* oldFocusedElement, WebFocusType, InputDeviceCapabilities* sourceCapabilities)
 {
     ASSERT(!EventDispatchForbiddenScope::isEventDispatchForbidden());
     ASSERT(eventType == EventTypeNames::focusin || eventType == EventTypeNames::DOMFocusIn);
-    dispatchScopedEventDispatchMediator(FocusInEventDispatchMediator::create(FocusEvent::create(eventType, true, false, document().domWindow(), 0, oldFocusedElement)));
+    dispatchScopedEvent(FocusEvent::create(eventType, true, false, document().domWindow(), 0, oldFocusedElement, sourceCapabilities));
 }
 
-void Element::dispatchFocusOutEvent(const AtomicString& eventType, Element* newFocusedElement)
+void Element::dispatchFocusOutEvent(const AtomicString& eventType, Element* newFocusedElement, InputDeviceCapabilities* sourceCapabilities)
 {
     ASSERT(!EventDispatchForbiddenScope::isEventDispatchForbidden());
     ASSERT(eventType == EventTypeNames::focusout || eventType == EventTypeNames::DOMFocusOut);
-    dispatchScopedEventDispatchMediator(FocusOutEventDispatchMediator::create(FocusEvent::create(eventType, true, false, document().domWindow(), 0, newFocusedElement)));
+    dispatchScopedEvent(FocusEvent::create(eventType, true, false, document().domWindow(), 0, newFocusedElement, sourceCapabilities));
 }
 
 String Element::innerHTML() const
@@ -2521,7 +2628,7 @@ String Element::innerText()
     if (!layoutObject())
         return textContent(true);
 
-    return plainText(Position(this, PositionAnchorType::BeforeChildren), Position(this, PositionAnchorType::AfterChildren), TextIteratorForInnerText);
+    return plainText(EphemeralRange::rangeOfContents(*this), TextIteratorForInnerText);
 }
 
 String Element::outerText()
@@ -3327,7 +3434,7 @@ void Element::styleAttributeChanged(const AtomicString& newStyleString, Attribut
 
     if (newStyleString.isNull()) {
         ensureUniqueElementData().m_inlineStyle.clear();
-    } else if (modificationReason == ModifiedByCloning || document().contentSecurityPolicy()->allowInlineStyle(document().url(), startLineNumber, newStyleString)) {
+    } else if (modificationReason == ModifiedByCloning || ContentSecurityPolicy::shouldBypassMainWorld(&document()) || document().contentSecurityPolicy()->allowInlineStyle(document().url(), startLineNumber, newStyleString)) {
         setInlineStyleFromString(newStyleString);
     }
 

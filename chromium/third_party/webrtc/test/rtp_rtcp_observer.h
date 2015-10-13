@@ -27,11 +27,11 @@ namespace test {
 class RtpRtcpObserver {
  public:
   virtual ~RtpRtcpObserver() {}
-  newapi::Transport* SendTransport() {
+  Transport* SendTransport() {
     return &send_transport_;
   }
 
-  newapi::Transport* ReceiveTransport() {
+  Transport* ReceiveTransport() {
     return &receive_transport_;
   }
 
@@ -126,7 +126,9 @@ class RtpRtcpObserver {
           on_rtcp_(on_rtcp) {}
 
   private:
-   bool SendRtp(const uint8_t* packet, size_t length) override {
+   bool SendRtp(const uint8_t* packet,
+                size_t length,
+                const PacketOptions& options) override {
       EXPECT_FALSE(RtpHeaderParser::IsRtcp(packet, length));
       Action action;
       {
@@ -138,7 +140,7 @@ class RtpRtcpObserver {
           // Drop packet silently.
           return true;
         case SEND_PACKET:
-          return test::DirectTransport::SendRtp(packet, length);
+          return test::DirectTransport::SendRtp(packet, length, options);
       }
       return true;  // Will never happen, makes compiler happy.
     }
@@ -171,9 +173,9 @@ class RtpRtcpObserver {
   rtc::CriticalSection crit_;
   const rtc::scoped_ptr<EventWrapper> observation_complete_;
   const rtc::scoped_ptr<RtpHeaderParser> parser_;
+  PacketTransport send_transport_, receive_transport_;
 
  private:
-  PacketTransport send_transport_, receive_transport_;
   unsigned int timeout_ms_;
 };
 }  // namespace test

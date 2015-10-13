@@ -92,6 +92,7 @@ private:
 class CORE_EXPORT InspectorCompositeState final : public NoBaseWillBeGarbageCollectedFinalized<InspectorCompositeState>, public InspectorStateUpdateListener {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(InspectorCompositeState);
     WTF_MAKE_NONCOPYABLE(InspectorCompositeState);
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(InspectorCompositeState);
 public:
     InspectorCompositeState(InspectorStateClient* inspectorStateClient)
         : m_client(inspectorStateClient)
@@ -112,7 +113,7 @@ private:
     typedef WillBeHeapHashMap<String, OwnPtrWillBeMember<InspectorState> > InspectorStateMap;
 
     // From InspectorStateUpdateListener.
-    virtual void inspectorStateUpdated() override;
+    void inspectorStateUpdated() override;
 
     InspectorStateClient* m_client;
     RefPtr<JSONObject> m_stateObject;

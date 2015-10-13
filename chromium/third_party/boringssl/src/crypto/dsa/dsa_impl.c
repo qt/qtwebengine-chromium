@@ -83,7 +83,7 @@ static int sign_setup(const DSA *dsa, BN_CTX *ctx_in, BIGNUM **kinvp,
   int ret = 0;
 
   if (!dsa->p || !dsa->q || !dsa->g) {
-    OPENSSL_PUT_ERROR(DSA, sign_setup, DSA_R_MISSING_PARAMETERS);
+    OPENSSL_PUT_ERROR(DSA, DSA_R_MISSING_PARAMETERS);
     return 0;
   }
 
@@ -171,7 +171,7 @@ static int sign_setup(const DSA *dsa, BN_CTX *ctx_in, BIGNUM **kinvp,
 
 err:
   if (!ret) {
-    OPENSSL_PUT_ERROR(DSA, sign_setup, ERR_R_BN_LIB);
+    OPENSSL_PUT_ERROR(DSA, ERR_R_BN_LIB);
     if (r != NULL) {
       BN_clear_free(r);
     }
@@ -269,7 +269,7 @@ redo:
 
 err:
   if (!ret) {
-    OPENSSL_PUT_ERROR(DSA, sign, reason);
+    OPENSSL_PUT_ERROR(DSA, reason);
     BN_free(r);
     BN_free(s);
   }
@@ -292,19 +292,19 @@ static int verify(int *out_valid, const uint8_t *dgst, size_t digest_len,
   *out_valid = 0;
 
   if (!dsa->p || !dsa->q || !dsa->g) {
-    OPENSSL_PUT_ERROR(DSA, verify, DSA_R_MISSING_PARAMETERS);
+    OPENSSL_PUT_ERROR(DSA, DSA_R_MISSING_PARAMETERS);
     return 0;
   }
 
   i = BN_num_bits(dsa->q);
   /* fips 186-3 allows only different sizes for q */
   if (i != 160 && i != 224 && i != 256) {
-    OPENSSL_PUT_ERROR(DSA, verify, DSA_R_BAD_Q_VALUE);
+    OPENSSL_PUT_ERROR(DSA, DSA_R_BAD_Q_VALUE);
     return 0;
   }
 
   if (BN_num_bits(dsa->p) > OPENSSL_DSA_MAX_MODULUS_BITS) {
-    OPENSSL_PUT_ERROR(DSA, verify, DSA_R_MODULUS_TOO_LARGE);
+    OPENSSL_PUT_ERROR(DSA, DSA_R_MODULUS_TOO_LARGE);
     return 0;
   }
 
@@ -381,7 +381,7 @@ static int verify(int *out_valid, const uint8_t *dgst, size_t digest_len,
 
 err:
   if (ret != 1) {
-    OPENSSL_PUT_ERROR(DSA, verify, ERR_R_BN_LIB);
+    OPENSSL_PUT_ERROR(DSA, ERR_R_BN_LIB);
   }
   BN_CTX_free(ctx);
   BN_free(&u1);
@@ -487,16 +487,14 @@ static int paramgen(DSA *ret, unsigned bits, const uint8_t *seed_in,
 
   bits = (bits + 63) / 64 * 64;
 
-  /* NB: seed_len == 0 is special case: copy generated seed to
-   * seed_in if it is not NULL. */
-  if (seed_len && (seed_len < (size_t)qsize)) {
-    seed_in = NULL; /* seed buffer too small -- ignore */
-  }
-  if (seed_len > (size_t)qsize) {
-    seed_len = qsize; /* App. 2.2 of FIPS PUB 186 allows larger SEED,
-                       * but our internal buffers are restricted to 160 bits*/
-  }
   if (seed_in != NULL) {
+    if (seed_len < (size_t)qsize) {
+      return 0;
+    }
+    if (seed_len > (size_t)qsize) {
+      /* Only consume as much seed as is expected. */
+      seed_len = qsize;
+    }
     memcpy(seed, seed_in, seed_len);
   }
 
@@ -527,21 +525,19 @@ static int paramgen(DSA *ret, unsigned bits, const uint8_t *seed_in,
   for (;;) {
     /* Find q. */
     for (;;) {
-      int seed_is_random;
-
       /* step 1 */
       if (!BN_GENCB_call(cb, 0, m++)) {
         goto err;
       }
 
-      if (!seed_len) {
+      int use_random_seed = (seed_in == NULL);
+      if (use_random_seed) {
         if (!RAND_bytes(seed, qsize)) {
           goto err;
         }
-        seed_is_random = 1;
       } else {
-        seed_is_random = 0;
-        seed_len = 0; /* use random seed if 'seed_in' turns out to be bad*/
+        /* If we come back through, use random seed next time. */
+        seed_in = NULL;
       }
       memcpy(buf, seed, qsize);
       memcpy(buf2, seed, qsize);
@@ -570,7 +566,7 @@ static int paramgen(DSA *ret, unsigned bits, const uint8_t *seed_in,
       }
 
       /* step 4 */
-      r = BN_is_prime_fasttest_ex(q, DSS_prime_checks, ctx, seed_is_random, cb);
+      r = BN_is_prime_fasttest_ex(q, DSS_prime_checks, ctx, use_random_seed, cb);
       if (r > 0) {
         break;
       }

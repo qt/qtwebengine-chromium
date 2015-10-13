@@ -36,15 +36,13 @@ SoftwareOutputDeviceX11::~SoftwareOutputDeviceX11() {
   XFreeGC(display_, gc_);
 }
 
-void SoftwareOutputDeviceX11::EndPaint(cc::SoftwareFrameData* frame_data) {
+void SoftwareOutputDeviceX11::EndPaint() {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
-  DCHECK(surface_);
-  DCHECK(frame_data);
+
+  SoftwareOutputDevice::EndPaint();
 
   if (!surface_)
     return;
-
-  SoftwareOutputDevice::EndPaint(frame_data);
 
   gfx::Rect rect = damage_rect_;
   rect.Intersect(gfx::Rect(viewport_pixel_size_));

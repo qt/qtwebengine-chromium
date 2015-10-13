@@ -52,13 +52,12 @@ class ExceptionState;
 class WebCompositorAnimationPlayer;
 
 class CORE_EXPORT Animation final
-    : public EventTargetWithInlineData
-    , public RefCountedWillBeNoBase<Animation>
+    : public RefCountedGarbageCollectedEventTargetWithInlineData<Animation>
     , public ActiveDOMObject
     , public WebCompositorAnimationDelegate
     , public WebCompositorAnimationPlayerClient {
     DEFINE_WRAPPERTYPEINFO();
-    REFCOUNTED_EVENT_TARGET(Animation);
+    REFCOUNTED_GARBAGE_COLLECTED_EVENT_TARGET(Animation);
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(Animation);
 public:
     enum AnimationPlayState {
@@ -70,7 +69,7 @@ public:
     };
 
     ~Animation();
-    static PassRefPtrWillBeRawPtr<Animation> create(AnimationEffect*, AnimationTimeline*);
+    static Animation* create(AnimationEffect*, AnimationTimeline*);
 
     // Returns whether the animation is finished.
     bool update(TimingUpdateReason);
@@ -110,20 +109,15 @@ public:
 
     DEFINE_ATTRIBUTE_EVENT_LISTENER(finish);
 
-    virtual const AtomicString& interfaceName() const override;
-    virtual ExecutionContext* executionContext() const override;
-    virtual bool hasPendingActivity() const override;
-    virtual void stop() override;
-    virtual bool dispatchEvent(PassRefPtrWillBeRawPtr<Event>) override;
+    const AtomicString& interfaceName() const override;
+    ExecutionContext* executionContext() const override;
+    bool hasPendingActivity() const override;
+    void stop() override;
 
     double playbackRate() const;
     void setPlaybackRate(double);
     const AnimationTimeline* timeline() const { return m_timeline; }
     AnimationTimeline* timeline() { return m_timeline; }
-
-#if !ENABLE(OILPAN)
-    void detachFromTimeline();
-#endif
 
     double calculateStartTime(double currentTime) const;
     bool hasStartTime() const { return !isNull(m_startTime); }
@@ -145,6 +139,8 @@ public:
     // Pausing via this method is not reflected in the value returned by
     // paused() and must never overlap with pausing via pause().
     void pauseForTesting(double pauseTime);
+    void disableCompositedAnimationForTesting();
+
     // This should only be used for CSS
     void unpause();
 
@@ -166,7 +162,8 @@ public:
 
     bool affects(const Element&, CSSPropertyID) const;
 
-    void preCommit(int compositorGroup, bool startOnCompositor);
+    // Returns whether we should continue with the commit for this animation or wait until next commit.
+    bool preCommit(int compositorGroup, bool startOnCompositor);
     void postCommit(double timelineTime);
 
     unsigned sequenceNumber() const { return m_sequenceNumber; }
@@ -177,9 +174,12 @@ public:
         return animation1->sequenceNumber() < animation2->sequenceNumber();
     }
 
-    virtual bool addEventListener(const AtomicString& eventType, PassRefPtr<EventListener>, bool useCapture = false) override;
+    bool addEventListener(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener>, bool useCapture = false) override;
 
     DECLARE_VIRTUAL_TRACE();
+
+protected:
+    bool dispatchEventInternal(PassRefPtrWillBeRawPtr<Event>) override;
 
 private:
     Animation(ExecutionContext*, AnimationTimeline&, AnimationEffect*);
@@ -225,16 +225,17 @@ private:
 
     unsigned m_sequenceNumber;
 
-    typedef ScriptPromiseProperty<RawPtrWillBeMember<Animation>, RawPtrWillBeMember<Animation>, Member<DOMException>> AnimationPromise;
-    PersistentWillBeMember<AnimationPromise> m_finishedPromise;
-    PersistentWillBeMember<AnimationPromise> m_readyPromise;
+    typedef ScriptPromiseProperty<Member<Animation>, Member<Animation>, Member<DOMException>> AnimationPromise;
+    Member<AnimationPromise> m_finishedPromise;
+    Member<AnimationPromise> m_readyPromise;
 
-    RefPtrWillBeMember<AnimationEffect> m_content;
-    RawPtrWillBeMember<AnimationTimeline> m_timeline;
+    Member<AnimationEffect> m_content;
+    Member<AnimationTimeline> m_timeline;
     // Reflects all pausing, including via pauseForTesting().
     bool m_paused;
     bool m_held;
     bool m_isPausedForTesting;
+    bool m_isCompositedAnimationDisabledForTesting;
 
     // This indicates timing information relevant to the animation's effect
     // has changed by means other than the ordinary progression of time
@@ -254,6 +255,8 @@ private:
     };
 
     class CompositorState {
+        WTF_MAKE_FAST_ALLOCATED(CompositorState);
+        WTF_MAKE_NONCOPYABLE(CompositorState);
     public:
         CompositorState(Animation& animation)
             : startTime(animation.m_startTime)
@@ -281,7 +284,7 @@ private:
         PlayStateUpdateScope(Animation&, TimingUpdateReason, CompositorPendingChange = SetCompositorPending);
         ~PlayStateUpdateScope();
     private:
-        RawPtrWillBeMember<Animation> m_animation;
+        Member<Animation> m_animation;
         AnimationPlayState m_initialPlayState;
         CompositorPendingChange m_compositorPendingChange;
     };

@@ -10,6 +10,7 @@
 #include "base/command_line.h"
 #include "base/logging.h"
 #include "base/strings/string_number_conversions.h"
+#include "ui/gfx/buffer_types.h"
 
 namespace cc {
 
@@ -24,7 +25,6 @@ LayerTreeSettings::LayerTreeSettings()
       use_external_begin_frame_source(false),
       main_frame_before_activation_enabled(false),
       using_synchronous_renderer_compositor(false),
-      report_overscroll_only_for_scrollable_axes(false),
       accelerated_animation_enabled(true),
       can_use_lcd_text(true),
       use_distance_field_text(false),
@@ -37,7 +37,6 @@ LayerTreeSettings::LayerTreeSettings()
       scrollbar_fade_delay_ms(0),
       scrollbar_fade_resize_delay_ms(0),
       scrollbar_fade_duration_ms(0),
-      scrollbar_show_scale_threshold(1.0f),
       solid_color_scrollbar_color(SK_ColorWHITE),
       timeout_and_draw_when_animation_checkerboards(true),
       layer_transforms_should_scale_layer_contents(false),
@@ -47,33 +46,30 @@ LayerTreeSettings::LayerTreeSettings()
       top_controls_show_threshold(0.5f),
       top_controls_hide_threshold(0.5f),
       background_animation_rate(1.0),
-      max_partial_texture_updates(std::numeric_limits<size_t>::max()),
       default_tile_size(gfx::Size(256, 256)),
       max_untiled_layer_size(gfx::Size(512, 512)),
-      default_tile_grid_size(gfx::Size(256, 256)),
       minimum_occlusion_tracking_size(gfx::Size(160, 160)),
-      // At 256x256 tiles, 128 tiles cover an area of 2048x4096 pixels.
-      max_tiles_for_interest_area(128),
+      // 3000 pixels should give sufficient area for prepainting.
+      tiling_interest_area_padding(3000),
       skewport_target_time_in_seconds(1.0f),
       skewport_extrapolation_limit_in_content_pixels(2000),
-      max_unused_resource_memory_percentage(100),
       max_memory_for_prepaint_percentage(100),
       strict_layer_property_change_checking(false),
-      use_one_copy(true),
       use_zero_copy(false),
       use_persistent_map_for_gpu_memory_buffers(false),
       enable_elastic_overscroll(false),
-      use_image_texture_target(GL_TEXTURE_2D),
+      use_image_texture_targets(
+          static_cast<size_t>(gfx::BufferFormat::LAST) + 1,
+          GL_TEXTURE_2D),
       ignore_root_layer_flings(false),
       scheduled_raster_task_limit(32),
       use_occlusion_for_tile_prioritization(false),
       record_full_layer(false),
-      use_display_lists(false),
       verify_property_trees(false),
-      gather_pixel_refs(false),
+      image_decode_tasks_enabled(false),
       use_compositor_animation_timelines(false),
-      invert_viewport_scroll_order(false) {
-}
+      wait_for_beginframe_interval(true),
+      max_staging_buffer_usage_in_bytes(32 * 1024 * 1024) {}
 
 LayerTreeSettings::~LayerTreeSettings() {}
 
@@ -87,8 +83,7 @@ SchedulerSettings LayerTreeSettings::ToSchedulerSettings() const {
       timeout_and_draw_when_animation_checkerboards;
   scheduler_settings.using_synchronous_renderer_compositor =
       using_synchronous_renderer_compositor;
-  scheduler_settings.throttle_frame_production =
-      !renderer_settings.disable_gpu_vsync;
+  scheduler_settings.throttle_frame_production = wait_for_beginframe_interval;
   scheduler_settings.background_frame_interval =
       base::TimeDelta::FromSecondsD(1.0 / background_animation_rate);
   return scheduler_settings;

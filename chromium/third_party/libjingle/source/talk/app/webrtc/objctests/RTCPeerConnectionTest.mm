@@ -46,6 +46,8 @@
 #error "This file requires ARC support."
 #endif
 
+const NSTimeInterval kRTCPeerConnectionTestTimeout = 20;
+
 @interface RTCFakeRenderer : NSObject <RTCVideoRenderer>
 @end
 
@@ -182,7 +184,10 @@
   EXPECT_GT([answerSDP.description length], 0);
 
   [offeringExpectations expectICECandidates:2];
-  [answeringExpectations expectICECandidates:2];
+  // It's possible to only have 1 ICE candidate for the answerer, since we use
+  // BUNDLE and rtcp-mux by default, and don't provide any ICE servers in this
+  // test.
+  [answeringExpectations expectICECandidates:1];
 
   sdpObserver = [[RTCSessionDescriptionSyncObserver alloc] init];
   [answeringExpectations expectSignalingChange:RTCSignalingStable];
@@ -235,8 +240,12 @@
     [pcOffer addICECandidate:candidate];
   }
 
-  [offeringExpectations waitForAllExpectationsToBeSatisfied];
-  [answeringExpectations waitForAllExpectationsToBeSatisfied];
+  EXPECT_TRUE(
+      [offeringExpectations waitForAllExpectationsToBeSatisfiedWithTimeout:
+                                kRTCPeerConnectionTestTimeout]);
+  EXPECT_TRUE(
+      [answeringExpectations waitForAllExpectationsToBeSatisfiedWithTimeout:
+                                 kRTCPeerConnectionTestTimeout]);
 
   EXPECT_EQ(pcOffer.signalingState, RTCSignalingStable);
   EXPECT_EQ(pcAnswer.signalingState, RTCSignalingStable);
@@ -248,7 +257,9 @@
       [[RTCDataBuffer alloc] initWithData:textData isBinary:NO];
   [answeringExpectations expectMessage:[textData copy] isBinary:NO];
   EXPECT_TRUE([offeringExpectations.dataChannel sendData:buffer]);
-  [answeringExpectations waitForAllExpectationsToBeSatisfied];
+  EXPECT_TRUE(
+      [answeringExpectations waitForAllExpectationsToBeSatisfiedWithTimeout:
+                                 kRTCPeerConnectionTestTimeout]);
 
   // Test send and receive binary data
   const size_t byteLength = 5;
@@ -257,7 +268,9 @@
   buffer = [[RTCDataBuffer alloc] initWithData:byteData isBinary:YES];
   [answeringExpectations expectMessage:[byteData copy] isBinary:YES];
   EXPECT_TRUE([offeringExpectations.dataChannel sendData:buffer]);
-  [answeringExpectations waitForAllExpectationsToBeSatisfied];
+  EXPECT_TRUE(
+      [answeringExpectations waitForAllExpectationsToBeSatisfiedWithTimeout:
+                                 kRTCPeerConnectionTestTimeout]);
 
   [offeringExpectations expectStateChange:kRTCDataChannelStateClosing];
   [answeringExpectations expectStateChange:kRTCDataChannelStateClosing];
@@ -267,8 +280,12 @@
   [answeringExpectations.dataChannel close];
   [offeringExpectations.dataChannel close];
 
-  [offeringExpectations waitForAllExpectationsToBeSatisfied];
-  [answeringExpectations waitForAllExpectationsToBeSatisfied];
+  EXPECT_TRUE(
+      [offeringExpectations waitForAllExpectationsToBeSatisfiedWithTimeout:
+                                kRTCPeerConnectionTestTimeout]);
+  EXPECT_TRUE(
+      [answeringExpectations waitForAllExpectationsToBeSatisfiedWithTimeout:
+                                 kRTCPeerConnectionTestTimeout]);
   // Don't need to listen to further state changes.
   // TODO(tkchin): figure out why Closed->Closing without this.
   offeringExpectations.dataChannel.delegate = nil;
@@ -288,8 +305,12 @@
   [pcOffer close];
   [pcAnswer close];
 
-  [offeringExpectations waitForAllExpectationsToBeSatisfied];
-  [answeringExpectations waitForAllExpectationsToBeSatisfied];
+  EXPECT_TRUE(
+      [offeringExpectations waitForAllExpectationsToBeSatisfiedWithTimeout:
+                                kRTCPeerConnectionTestTimeout]);
+  EXPECT_TRUE(
+      [answeringExpectations waitForAllExpectationsToBeSatisfiedWithTimeout:
+                                 kRTCPeerConnectionTestTimeout]);
 
   capturer = nil;
   videoSource = nil;

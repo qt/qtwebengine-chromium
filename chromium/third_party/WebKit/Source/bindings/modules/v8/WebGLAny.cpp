@@ -40,6 +40,11 @@ ScriptValue WebGLAny(ScriptState* scriptState, int64_t value)
     return ScriptValue(scriptState, v8::Number::New(scriptState->isolate(), static_cast<double>(value)));
 }
 
+ScriptValue WebGLAny(ScriptState* scriptState, uint64_t value)
+{
+    return ScriptValue(scriptState, v8::Number::New(scriptState->isolate(), static_cast<double>(value)));
+}
+
 ScriptValue WebGLAny(ScriptState* scriptState, float value)
 {
     return ScriptValue(scriptState, v8::Number::New(scriptState->isolate(), value));
@@ -50,7 +55,7 @@ ScriptValue WebGLAny(ScriptState* scriptState, String value)
     return ScriptValue(scriptState, v8String(scriptState->isolate(), value));
 }
 
-ScriptValue WebGLAny(ScriptState* scriptState, PassRefPtrWillBeRawPtr<WebGLObject> value)
+ScriptValue WebGLAny(ScriptState* scriptState, WebGLObject* value)
 {
     return ScriptValue(scriptState, toV8(value, scriptState->context()->Global(), scriptState->isolate()));
 }

@@ -28,7 +28,6 @@
 #include "core/layout/svg/LayoutSVGResourceClipper.h"
 #include "core/layout/svg/LayoutSVGResourcePaintServer.h"
 #include "core/paint/CompositingRecorder.h"
-#include "core/paint/FloatClipRecorder.h"
 #include "core/paint/PaintInfo.h"
 #include "core/paint/SVGClipPainter.h"
 #include "core/paint/SVGFilterPainter.h"
@@ -45,7 +44,7 @@ class SVGResources;
 class SVGPaintContext {
     STACK_ALLOCATED();
 public:
-    SVGPaintContext(LayoutObject& object, const PaintInfo& paintInfo)
+    SVGPaintContext(const LayoutObject& object, const PaintInfo& paintInfo)
         : m_object(&object)
         , m_paintInfo(paintInfo)
         , m_originalPaintInfo(&paintInfo)
@@ -65,11 +64,11 @@ public:
     // Return true if these operations aren't necessary or if they are successfully applied.
     bool applyClipMaskAndFilterIfNecessary();
 
-    static void paintSubtree(GraphicsContext*, LayoutObject*);
+    static void paintSubtree(GraphicsContext*, const LayoutObject*);
 
     // TODO(fs): This functions feels a bit misplaced (we don't want this to
     // turn into the new kitchen sink). Move it if a better location surfaces.
-    static bool paintForLayoutObject(const PaintInfo&, const ComputedStyle&, LayoutObject&, LayoutSVGResourceMode, SkPaint&, const AffineTransform* additionalPaintServerTransform = nullptr);
+    static bool paintForLayoutObject(const PaintInfo&, const ComputedStyle&, const LayoutObject&, LayoutSVGResourceMode, SkPaint&, const AffineTransform* additionalPaintServerTransform = nullptr);
 
 private:
     void applyCompositingIfNecessary();
@@ -85,14 +84,13 @@ private:
 
     bool isIsolationInstalled() const;
 
-    LayoutObject* m_object;
+    const LayoutObject* m_object;
     PaintInfo m_paintInfo;
     const PaintInfo* m_originalPaintInfo;
     LayoutSVGResourceFilter* m_filter;
     LayoutSVGResourceClipper* m_clipper;
     SVGClipPainter::ClipperState m_clipperState;
     LayoutSVGResourceMasker* m_masker;
-    OwnPtr<FloatClipRecorder> m_clipRecorder;
     OwnPtr<CompositingRecorder> m_compositingRecorder;
     OwnPtr<ClipPathRecorder> m_clipPathRecorder;
     OwnPtr<SVGFilterRecordingContext> m_filterRecordingContext;

@@ -48,8 +48,8 @@ class InspectorPageAgent;
 class LayoutObject;
 class LayoutRect;
 class PictureSnapshot;
-class DeprecatedPaintLayer;
-class DeprecatedPaintLayerCompositor;
+class PaintLayer;
+class PaintLayerCompositor;
 
 typedef String ErrorString;
 
@@ -60,7 +60,7 @@ public:
     {
         return adoptPtrWillBeNoop(new InspectorLayerTreeAgent(pageAgent));
     }
-    virtual ~InspectorLayerTreeAgent();
+    ~InspectorLayerTreeAgent() override;
     DECLARE_VIRTUAL_TRACE();
 
     void disable(ErrorString*) override;
@@ -75,14 +75,14 @@ public:
     void didPaint(LayoutObject*, const GraphicsLayer*, GraphicsContext*, const LayoutRect&);
 
     // Called from the front-end.
-    virtual void enable(ErrorString*) override;
-    virtual void compositingReasons(ErrorString*, const String& layerId, RefPtr<TypeBuilder::Array<String> >&) override;
-    virtual void makeSnapshot(ErrorString*, const String& layerId, String* snapshotId) override;
-    virtual void loadSnapshot(ErrorString*, const RefPtr<JSONArray>& tiles, String* snapshotId) override;
-    virtual void releaseSnapshot(ErrorString*, const String& snapshotId) override;
-    virtual void replaySnapshot(ErrorString*, const String& snapshotId, const int* fromStep, const int* toStep, const double* scale, String* dataURL) override;
-    virtual void profileSnapshot(ErrorString*, const String& snapshotId, const int* minRepeatCount, const double* minDuration, const RefPtr<JSONObject>* clipRect, RefPtr<TypeBuilder::Array<TypeBuilder::Array<double> > >&) override;
-    virtual void snapshotCommandLog(ErrorString*, const String& snapshotId, RefPtr<TypeBuilder::Array<JSONObject> >&) override;
+    void enable(ErrorString*) override;
+    void compositingReasons(ErrorString*, const String& layerId, RefPtr<TypeBuilder::Array<String>>&) override;
+    void makeSnapshot(ErrorString*, const String& layerId, String* snapshotId) override;
+    void loadSnapshot(ErrorString*, const RefPtr<JSONArray>& tiles, String* snapshotId) override;
+    void releaseSnapshot(ErrorString*, const String& snapshotId) override;
+    void replaySnapshot(ErrorString*, const String& snapshotId, const int* fromStep, const int* toStep, const double* scale, String* dataURL) override;
+    void profileSnapshot(ErrorString*, const String& snapshotId, const int* minRepeatCount, const double* minDuration, const RefPtr<JSONObject>* clipRect, RefPtr<TypeBuilder::Array<TypeBuilder::Array<double>>>&) override;
+    void snapshotCommandLog(ErrorString*, const String& snapshotId, RefPtr<TypeBuilder::Array<JSONObject>>&) override;
 
     // Called by other agents.
     PassRefPtr<TypeBuilder::Array<TypeBuilder::LayerTree::Layer> > buildLayerTree();
@@ -94,12 +94,12 @@ private:
 
     GraphicsLayer* rootGraphicsLayer();
 
-    DeprecatedPaintLayerCompositor* deprecatedPaintLayerCompositor();
+    PaintLayerCompositor* deprecatedPaintLayerCompositor();
     GraphicsLayer* layerById(ErrorString*, const String& layerId);
     const PictureSnapshot* snapshotById(ErrorString*, const String& snapshotId);
 
     typedef HashMap<int, int> LayerIdToNodeIdMap;
-    void buildLayerIdToNodeIdMap(DeprecatedPaintLayer*, LayerIdToNodeIdMap&);
+    void buildLayerIdToNodeIdMap(PaintLayer*, LayerIdToNodeIdMap&);
     void gatherGraphicsLayers(GraphicsLayer*, HashMap<int, int>& layerIdToNodeIdMap, RefPtr<TypeBuilder::Array<TypeBuilder::LayerTree::Layer> >&);
     int idForNode(Node*);
 

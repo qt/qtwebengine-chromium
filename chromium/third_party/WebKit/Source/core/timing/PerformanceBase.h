@@ -33,8 +33,10 @@
 #define PerformanceBase_h
 
 #include "core/CoreExport.h"
+#include "core/dom/DOMHighResTimeStamp.h"
 #include "core/events/EventTarget.h"
 #include "core/timing/PerformanceEntry.h"
+#include "platform/Timer.h"
 #include "platform/heap/Handle.h"
 #include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
@@ -44,21 +46,33 @@ namespace blink {
 
 class Document;
 class ExceptionState;
+class PerformanceObserver;
 class PerformanceTiming;
 class ResourceTimingInfo;
 class UserTiming;
 
 using PerformanceEntryVector = HeapVector<Member<PerformanceEntry>>;
+using PerformanceObservers = HeapListHashSet<Member<PerformanceObserver>>;
 
 class CORE_EXPORT PerformanceBase : public RefCountedGarbageCollectedEventTargetWithInlineData<PerformanceBase> {
     REFCOUNTED_GARBAGE_COLLECTED_EVENT_TARGET(PerformanceBase);
 public:
-    virtual ~PerformanceBase();
+    ~PerformanceBase() override;
 
-    virtual const AtomicString& interfaceName() const override;
+    const AtomicString& interfaceName() const override;
 
     virtual PerformanceTiming* timing() const;
-    double now() const;
+
+    // Reduce the resolution to 5µs to prevent timing attacks. See:
+    // http://www.w3.org/TR/hr-time-2/#privacy-security
+    static double clampTimeResolution(double timeSeconds);
+
+    // Translate given platform monotonic time in seconds into a high resolution
+    // DOMHighResTimeStamp in milliseconds. The result timestamp is relative to
+    // document's time origin and has a time resolution that is safe for
+    // exposing to web.
+    DOMHighResTimeStamp monotonicTimeToDOMHighResTimeStamp(double) const;
+    DOMHighResTimeStamp now() const;
 
     double timeOrigin() const { return m_timeOrigin; }
 
@@ -66,9 +80,10 @@ public:
     PerformanceEntryVector getEntriesByType(const String& entryType);
     PerformanceEntryVector getEntriesByName(const String& name, const String& entryType);
 
-    void webkitClearResourceTimings();
-    void webkitSetResourceTimingBufferSize(unsigned);
+    void clearResourceTimings();
+    void setResourceTimingBufferSize(unsigned);
 
+    DEFINE_ATTRIBUTE_EVENT_LISTENER(resourcetimingbufferfull);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(webkitresourcetimingbufferfull);
 
     void clearFrameTimings();
@@ -88,15 +103,27 @@ public:
     void measure(const String& measureName, const String& startMark, const String& endMark, ExceptionState&);
     void clearMeasures(const String& measureName);
 
+    void unregisterPerformanceObserver(PerformanceObserver&);
+    void registerPerformanceObserver(PerformanceObserver&);
+    void updatePerformanceObserverFilterOptions();
+    void activateObserver(PerformanceObserver&);
+    void resumeSuspendedObservers();
+
     DECLARE_VIRTUAL_TRACE();
 
 protected:
+
     explicit PerformanceBase(double timeOrigin);
     bool isResourceTimingBufferFull();
-    void addResourceTimingBuffer(PerformanceEntry*);
+    void addResourceTimingBuffer(PerformanceEntry&);
 
     bool isFrameTimingBufferFull();
-    void addFrameTimingBuffer(PerformanceEntry*);
+    void addFrameTimingBuffer(PerformanceEntry&);
+
+    void notifyObserversOfEntry(PerformanceEntry&);
+    bool hasObserverFor(PerformanceEntry::EntryType);
+
+    void deliverObservationsTimerFired(Timer<PerformanceBase>*);
 
     PerformanceEntryVector m_frameTimingBuffer;
     unsigned m_frameTimingBufferSize;
@@ -105,6 +132,12 @@ protected:
     double m_timeOrigin;
 
     Member<UserTiming> m_userTiming;
+
+    PerformanceEntryTypeMask m_observerFilterOptions;
+    PerformanceObservers m_observers;
+    PerformanceObservers m_activeObservers;
+    PerformanceObservers m_suspendedObservers;
+    Timer<PerformanceBase> m_deliverObservationsTimer;
 };
 
 } // namespace blink

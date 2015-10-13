@@ -11,6 +11,8 @@
 #include "base/bits.h"
 #include "base/lazy_instance.h"
 #include "base/strings/stringprintf.h"
+#include "base/thread_task_runner_handle.h"
+#include "base/trace_event/memory_dump_manager.h"
 #include "gpu/command_buffer/common/gles2_cmd_utils.h"
 #include "gpu/command_buffer/service/context_state.h"
 #include "gpu/command_buffer/service/error_state.h"
@@ -20,6 +22,7 @@
 #include "gpu/command_buffer/service/mailbox_manager.h"
 #include "gpu/command_buffer/service/memory_tracking.h"
 #include "ui/gl/gl_implementation.h"
+#include "ui/gl/trace_util.h"
 
 namespace gpu {
 namespace gles2 {
@@ -283,6 +286,9 @@ TextureManager::~TextureManager() {
   DCHECK_EQ(0, num_unsafe_textures_);
   DCHECK_EQ(0, num_uncleared_mips_);
   DCHECK_EQ(0, num_images_);
+
+  base::trace_event::MemoryDumpManager::GetInstance()->UnregisterDumpProvider(
+      this);
 }
 
 void TextureManager::Destroy(bool have_context) {
@@ -437,9 +443,10 @@ Texture::CanRenderCondition Texture::GetCanRenderCondition() const {
   if (needs_mips) {
     if (!texture_complete())
       return CAN_RENDER_NEVER;
-    if (target_ == GL_TEXTURE_CUBE_MAP && !cube_complete())
-      return CAN_RENDER_NEVER;
   }
+
+  if (target_ == GL_TEXTURE_CUBE_MAP && !cube_complete())
+    return CAN_RENDER_NEVER;
 
   bool is_npot_compatible = !needs_mips &&
       wrap_s_ == GL_CLAMP_TO_EDGE &&
@@ -579,21 +586,25 @@ bool Texture::CanGenerateMipmaps(
     return false;
   }
 
+  if (static_cast<size_t>(base_level_) >= face_infos_[0].level_infos.size()) {
+    return false;
+  }
+
   // Can't generate mips for depth or stencil textures.
-  const Texture::LevelInfo& first = face_infos_[0].level_infos[0];
-  uint32 channels = GLES2Util::GetChannelsForFormat(first.format);
+  const Texture::LevelInfo& base = face_infos_[0].level_infos[base_level_];
+  uint32 channels = GLES2Util::GetChannelsForFormat(base.format);
   if (channels & (GLES2Util::kDepth | GLES2Util::kStencil)) {
     return false;
   }
 
   // TODO(gman): Check internal_format, format and type.
   for (size_t ii = 0; ii < face_infos_.size(); ++ii) {
-    const LevelInfo& info = face_infos_[ii].level_infos[0];
-    if ((info.target == 0) || (info.width != first.width) ||
-        (info.height != first.height) || (info.depth != 1) ||
-        (info.format != first.format) ||
-        (info.internal_format != first.internal_format) ||
-        (info.type != first.type) ||
+    const LevelInfo& info = face_infos_[ii].level_infos[base_level_];
+    if ((info.target == 0) || (info.width != base.width) ||
+        (info.height != base.height) || (info.depth != base.depth) ||
+        (info.format != base.format) ||
+        (info.internal_format != base.internal_format) ||
+        (info.type != base.type) ||
         feature_info->validators()->compressed_texture_format.IsValid(
             info.internal_format) ||
         info.image.get()) {
@@ -851,8 +862,7 @@ bool Texture::ValidForTexture(
     GLint zoffset,
     GLsizei width,
     GLsizei height,
-    GLsizei depth,
-    GLenum type) const {
+    GLsizei depth) const {
   size_t face_index = GLES2Util::GLTargetToFaceIndex(target);
   if (level >= 0 && face_index < face_infos_.size() &&
       static_cast<size_t>(level) < face_infos_[face_index].level_infos.size()) {
@@ -868,8 +878,7 @@ bool Texture::ValidForTexture(
            zoffset >= 0 &&
            max_x <= info.width &&
            max_y <= info.height &&
-           max_z <= info.depth &&
-           type == info.type;
+           max_z <= info.depth;
   }
   return false;
 }
@@ -1257,6 +1266,10 @@ void Texture::SetLevelImage(
   info.image = image;
   UpdateCanRenderCondition();
   UpdateHasImages();
+
+  // TODO(ericrk): Images may have complex sizing not accounted for by
+  // |estimated_size_|, we should add logic here to update |estimated_size_|
+  // based on the new GLImage. crbug.com/526298
 }
 
 gfx::GLImage* Texture::GetLevelImage(GLint target, GLint level) const {
@@ -1286,6 +1299,38 @@ void Texture::OnDidModifyPixels() {
   gfx::GLImage* image = GetLevelImage(target(), 0);
   if (image)
     image->DidModifyTexImage();
+}
+
+void Texture::DumpLevelMemory(base::trace_event::ProcessMemoryDump* pmd,
+                              uint64_t client_tracing_id,
+                              const std::string& dump_name) const {
+  for (uint32_t face_index = 0; face_index < face_infos_.size(); ++face_index) {
+    const auto& level_infos = face_infos_[face_index].level_infos;
+    for (uint32_t level_index = 0; level_index < level_infos.size();
+         ++level_index) {
+      // Skip levels with no size. Textures will have empty levels for all
+      // potential mip levels which are not in use.
+      if (!level_infos[level_index].estimated_size)
+        continue;
+
+      if (level_infos[level_index].image) {
+        // If a level is backed by a GLImage, ask the GLImage to dump itself.
+        level_infos[level_index].image->OnMemoryDump(
+            pmd, client_tracing_id,
+            base::StringPrintf("%s/face_%d/level_%d", dump_name.c_str(),
+                               face_index, level_index));
+      } else {
+        // If a level is not backed by a GLImage, create a simple dump.
+        base::trace_event::MemoryAllocatorDump* dump = pmd->CreateAllocatorDump(
+            base::StringPrintf("%s/face_%d/level_%d", dump_name.c_str(),
+                               face_index, level_index));
+        dump->AddScalar(
+            base::trace_event::MemoryAllocatorDump::kNameSize,
+            base::trace_event::MemoryAllocatorDump::kUnitsBytes,
+            static_cast<uint64_t>(level_infos[level_index].estimated_size));
+      }
+    }
+  }
 }
 
 TextureRef::TextureRef(TextureManager* manager,
@@ -1324,6 +1369,7 @@ TextureManager::TextureManager(MemoryTracker* memory_tracker,
           new MemoryTypeTracker(memory_tracker, MemoryTracker::kManaged)),
       memory_tracker_unmanaged_(
           new MemoryTypeTracker(memory_tracker, MemoryTracker::kUnmanaged)),
+      memory_tracker_(memory_tracker),
       feature_info_(feature_info),
       framebuffer_manager_(NULL),
       max_texture_size_(max_texture_size),
@@ -1365,6 +1411,13 @@ bool TextureManager::Initialize() {
   default_textures_[kCubeMap] = CreateDefaultAndBlackTextures(
       GL_TEXTURE_CUBE_MAP, &black_texture_ids_[kCubeMap]);
 
+  if (feature_info_->IsES3Enabled()) {
+    default_textures_[kTexture3D] = CreateDefaultAndBlackTextures(
+        GL_TEXTURE_3D, &black_texture_ids_[kTexture3D]);
+    default_textures_[kTexture2DArray] = CreateDefaultAndBlackTextures(
+        GL_TEXTURE_2D_ARRAY, &black_texture_ids_[kTexture2DArray]);
+  }
+
   if (feature_info_->feature_flags().oes_egl_image_external) {
     default_textures_[kExternalOES] = CreateDefaultAndBlackTextures(
         GL_TEXTURE_EXTERNAL_OES, &black_texture_ids_[kExternalOES]);
@@ -1373,6 +1426,13 @@ bool TextureManager::Initialize() {
   if (feature_info_->feature_flags().arb_texture_rectangle) {
     default_textures_[kRectangleARB] = CreateDefaultAndBlackTextures(
         GL_TEXTURE_RECTANGLE_ARB, &black_texture_ids_[kRectangleARB]);
+  }
+
+  // When created from InProcessCommandBuffer, we won't have a |memory_tracker_|
+  // so don't register a dump provider.
+  if (memory_tracker_) {
+    base::trace_event::MemoryDumpManager::GetInstance()->RegisterDumpProvider(
+        this, base::ThreadTaskRunnerHandle::Get());
   }
 
   return true;
@@ -1388,6 +1448,8 @@ scoped_refptr<TextureRef>
   // black values according to the spec.
   bool needs_initialization = (target != GL_TEXTURE_EXTERNAL_OES);
   bool needs_faces = (target == GL_TEXTURE_CUBE_MAP);
+  bool is_3d_or_2d_array_target = (target == GL_TEXTURE_3D ||
+      target == GL_TEXTURE_2D_ARRAY);
 
   // Make default textures and texture for replacing non-renderable textures.
   GLuint ids[2];
@@ -1402,8 +1464,13 @@ scoped_refptr<TextureRef>
                        GL_RGBA, GL_UNSIGNED_BYTE, black);
         }
       } else {
-        glTexImage2D(target, 0, GL_RGBA, 1, 1, 0, GL_RGBA,
-                     GL_UNSIGNED_BYTE, black);
+        if (is_3d_or_2d_array_target) {
+          glTexImage3D(target, 0, GL_RGBA, 1, 1, 1, 0, GL_RGBA,
+                       GL_UNSIGNED_BYTE, black);
+        } else {
+          glTexImage2D(target, 0, GL_RGBA, 1, 1, 0, GL_RGBA,
+                       GL_UNSIGNED_BYTE, black);
+        }
       }
     }
   }
@@ -1867,6 +1934,14 @@ bool TextureManager::ValidateTexImage(
         error_state, function_name, args.target, "target");
     return false;
   }
+  // TODO(ccameron): Add a separate texture from |texture_target| for
+  // [Compressed]Tex[Sub]Image2D and related functions.
+  // http://crbug.com/536854
+  if (args.target == GL_TEXTURE_RECTANGLE_ARB) {
+    ERRORSTATE_SET_GL_ERROR_INVALID_ENUM(
+        error_state, function_name, args.target, "target");
+    return false;
+  }
   if (!ValidateTextureParameters(
       error_state, function_name, args.format, args.type,
       args.internal_format, args.level)) {
@@ -1881,7 +1956,8 @@ bool TextureManager::ValidateTexImage(
     return false;
   }
   if ((GLES2Util::GetChannelsForFormat(args.format) &
-       (GLES2Util::kDepth | GLES2Util::kStencil)) != 0 && args.pixels) {
+       (GLES2Util::kDepth | GLES2Util::kStencil)) != 0 && args.pixels
+      && !feature_info_->IsES3Enabled()) {
     ERRORSTATE_SET_GL_ERROR(
         error_state, GL_INVALID_OPERATION,
         function_name, "can not supply data for depth or stencil textures");
@@ -1921,6 +1997,59 @@ void TextureManager::ValidateAndDoTexImage(
     const DoTexImageArguments& args) {
   TextureRef* texture_ref;
   if (!ValidateTexImage(state, function_name, args, &texture_ref)) {
+    return;
+  }
+
+  // ValidateTexImage is passed already.
+  Texture* texture = texture_ref->texture();
+  bool need_cube_map_workaround =
+      texture->target() == GL_TEXTURE_CUBE_MAP &&
+      (texture_state->force_cube_complete ||
+       (texture_state->force_cube_map_positive_x_allocation &&
+        args.target != GL_TEXTURE_CUBE_MAP_POSITIVE_X));
+  if (need_cube_map_workaround) {
+    std::vector<GLenum> undefined_faces;
+    if (texture_state->force_cube_complete) {
+      int width = 0;
+      int height = 0;
+      for (unsigned i = 0; i < 6; i++) {
+        bool defined =
+            texture->GetLevelSize(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i,
+                                  args.level, &width, &height, nullptr);
+        if (!defined || GL_TEXTURE_CUBE_MAP_POSITIVE_X + i == args.target)
+          undefined_faces.push_back(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i);
+      }
+    } else if (texture_state->force_cube_map_positive_x_allocation &&
+               args.target != GL_TEXTURE_CUBE_MAP_POSITIVE_X) {
+      int width = 0;
+      int height = 0;
+      if (!texture->GetLevelSize(GL_TEXTURE_CUBE_MAP_POSITIVE_X, args.level,
+                                 &width, &height, nullptr)) {
+        undefined_faces.push_back(GL_TEXTURE_CUBE_MAP_POSITIVE_X);
+      }
+      undefined_faces.push_back(args.target);
+    }
+
+    DCHECK(undefined_faces.size());
+    if (!memory_tracker_managed_->EnsureGPUMemoryAvailable(
+            undefined_faces.size() * args.pixels_size)) {
+      ERRORSTATE_SET_GL_ERROR(state->GetErrorState(), GL_OUT_OF_MEMORY,
+                              function_name, "out of memory");
+      return;
+    }
+    DoTexImageArguments new_args = args;
+    scoped_ptr<char[]> zero(new char[args.pixels_size]);
+    memset(zero.get(), 0, args.pixels_size);
+    for (GLenum face : undefined_faces) {
+      new_args.target = face;
+      if (face == args.target) {
+        new_args.pixels = args.pixels;
+      } else {
+        new_args.pixels = zero.get();
+      }
+      DoTexImage(texture_state, state->GetErrorState(), framebuffer_state,
+                 function_name, texture_ref, new_args);
+    }
     return;
   }
 
@@ -2025,6 +2154,70 @@ ScopedTextureUploadTimer::~ScopedTextureUploadTimer() {
   texture_state_->texture_upload_count++;
   texture_state_->total_texture_upload_time +=
       base::TimeTicks::Now() - begin_time_;
+}
+
+bool TextureManager::OnMemoryDump(const base::trace_event::MemoryDumpArgs& args,
+                                  base::trace_event::ProcessMemoryDump* pmd) {
+  for (const auto& resource : textures_) {
+    // Only dump memory info for textures actually owned by this TextureManager.
+    DumpTextureRef(pmd, resource.second.get());
+  }
+
+  // Also dump TextureManager internal textures, if allocated.
+  for (int i = 0; i < kNumDefaultTextures; i++) {
+    if (default_textures_[i]) {
+      DumpTextureRef(pmd, default_textures_[i].get());
+    }
+  }
+
+  return true;
+}
+
+void TextureManager::DumpTextureRef(base::trace_event::ProcessMemoryDump* pmd,
+                                    TextureRef* ref) {
+  uint32_t size = ref->texture()->estimated_size();
+
+  // Ignore unallocated texture IDs.
+  if (size == 0)
+    return;
+
+  std::string dump_name =
+      base::StringPrintf("gpu/gl/textures/client_%d/texture_%d",
+                         memory_tracker_->ClientId(), ref->client_id());
+
+  base::trace_event::MemoryAllocatorDump* dump =
+      pmd->CreateAllocatorDump(dump_name);
+  dump->AddScalar(base::trace_event::MemoryAllocatorDump::kNameSize,
+                  base::trace_event::MemoryAllocatorDump::kUnitsBytes,
+                  static_cast<uint64_t>(size));
+
+  // Add the |client_guid| which expresses shared ownership with the client
+  // process.
+  auto client_guid = gfx::GetGLTextureClientGUIDForTracing(
+      memory_tracker_->ShareGroupTracingGUID(), ref->client_id());
+  pmd->CreateSharedGlobalAllocatorDump(client_guid);
+  pmd->AddOwnershipEdge(dump->guid(), client_guid);
+
+  // Add a |service_guid| which expresses shared ownership between the various
+  // |client_guid|s.
+  // TODO(ericrk): May need to ensure uniqueness using GLShareGroup and
+  // potentially cross-share-group sharing via EGLImages. crbug.com/512534
+  auto service_guid = gfx::GetGLTextureServiceGUIDForTracing(
+      memory_tracker_->ShareGroupTracingGUID(), ref->texture()->service_id());
+  pmd->CreateSharedGlobalAllocatorDump(service_guid);
+
+  int importance = 0;  // Default importance.
+  // The link to the memory tracking |client_id| is given a higher importance
+  // than other refs.
+  if (ref == ref->texture()->memory_tracking_ref_)
+    importance = 2;
+
+  pmd->AddOwnershipEdge(client_guid, service_guid, importance);
+
+  // Dump all sub-levels held by the texture. They will appear below the main
+  // gl/textures/client_X/texture_Y dump.
+  ref->texture()->DumpLevelMemory(pmd, memory_tracker_->ClientTracingId(),
+                                  dump_name);
 }
 
 }  // namespace gles2

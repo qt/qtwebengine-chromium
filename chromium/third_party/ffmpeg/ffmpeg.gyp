@@ -228,6 +228,10 @@
               # This fires on `pos_min` and `pos_max` in
               # autorename_libavformat_utils.c
               '-Wno-sometimes-uninitialized',
+              # ffmpeg contains static functions in header files, which lead
+              # to unused function warnings. There are a few legit unused
+              # functions too.
+              '-Wno-unused-function',
             ],
           },
           'cflags': [
@@ -433,6 +437,16 @@
                   },
                   'sources': [
                     '<(shared_generated_dir)/ffmpeg.def',
+                  ],
+                  'conditions': [
+                    ['OS=="win" and win_use_allocator_shim==1', {
+                      'dependencies': [
+                        '../../base/allocator/allocator.gyp:allocator',
+                      ],
+                      'sources': [
+                        'chromium/dllmain.cc',
+                      ],
+                    }],
                   ],
                   'actions': [
                     {

@@ -12,13 +12,13 @@
 #include "SkRefCnt.h"
 #include "SkSurfaceProps.h"
 
-class GrBatch;
 class GrClip;
 class GrContext;
+class GrDrawBatch;
 class GrDrawTarget;
 class GrPaint;
 class GrPathProcessor;
-class GrPathRange;
+class GrPathRangeDraw;
 class GrPipelineBuilder;
 class GrRenderTarget;
 class GrStrokeInfo;
@@ -33,6 +33,7 @@ class SkPath;
 struct SkPoint;
 struct SkRect;
 class SkRRect;
+struct SkRSXform;
 class SkTextBlob;
 
 /*
@@ -60,17 +61,14 @@ public:
                       SkScalar x, SkScalar y,
                       SkDrawFilter*, const SkIRect& clipBounds);
 
-    // drawPaths is thanks to GrStencilAndCoverTextContext
-    // TODO: remove
-    void drawPaths(GrPipelineBuilder* pipelineBuilder,
-                   const GrPathProcessor* pathProc,
-                   const GrPathRange* pathRange,
-                   const void* indices,
-                   int /*GrDrawTarget::PathIndexType*/ indexType,
-                   const float transformValues[],
-                   int /*GrDrawTarget::PathTransformType*/ transformType,
-                   int count,
-                   int /*GrPathRendering::FillType*/ fill);
+    // drawPathsFromRange is thanks to GrStencilAndCoverTextContext
+    // TODO: remove once path batches can be created external to GrDrawTarget.
+    void drawPathsFromRange(const GrPipelineBuilder*,
+                            const SkMatrix& viewMatrix,
+                            const SkMatrix& localMatrix,
+                            GrColor color,
+                            GrPathRangeDraw* draw,
+                            int /*GrPathRendering::FillType*/ fill);
 
     /**
      * Provides a perfomance hint that the render target's contents are allowed
@@ -119,16 +117,13 @@ public:
      * @param viewMatrix    transformation matrix which applies to rectToDraw
      * @param rectToDraw    the rectangle to draw
      * @param localRect     the rectangle of shader coordinates applied to rectToDraw
-     * @param localMatrix   an optional matrix to transform the shader coordinates before applying
-     *                      to rectToDraw
      */
     void drawNonAARectToRect(GrRenderTarget*,
                              const GrClip&,
                              const GrPaint& paint,
                              const SkMatrix& viewMatrix,
                              const SkRect& rectToDraw,
-                             const SkRect& localRect,
-                             const SkMatrix* localMatrix = NULL);
+                             const SkRect& localRect);
 
     /**
      * Draws a non-AA rect with paint and a localMatrix
@@ -138,9 +133,7 @@ public:
                                       const GrPaint& paint,
                                       const SkMatrix& viewMatrix,
                                       const SkRect& rect,
-                                      const SkMatrix& localMatrix) {
-        this->drawNonAARectToRect(rt, clip, paint, viewMatrix, rect, rect, &localMatrix);
-    }
+                                      const SkMatrix& localMatrix);
 
     /**
      *  Draw a roundrect using a paint.
@@ -222,6 +215,26 @@ public:
                       int indexCount);
 
     /**
+     * Draws textured sprites from an atlas with a paint.
+     *
+     * @param   paint           describes how to color pixels.
+     * @param   viewMatrix      transformation matrix
+     * @param   spriteCount     number of sprites.
+     * @param   xform           array of compressed transformation data, required.
+     * @param   texRect         array of texture rectangles used to access the paint.
+     * @param   colors          optional array of per-sprite colors, supercedes
+     *                          the paint's color field.
+     */
+    void drawAtlas(GrRenderTarget*,
+                   const GrClip&,
+                   const GrPaint& paint,
+                   const SkMatrix& viewMatrix,
+                   int spriteCount,
+                   const SkRSXform xform[],
+                   const SkRect texRect[],
+                   const SkColor colors[]);
+    
+    /**
      * Draws an oval.
      *
      * @param paint         describes how to color pixels.
@@ -237,6 +250,14 @@ public:
                   const SkRect& oval,
                   const GrStrokeInfo& strokeInfo);
 
+
+    /**
+     * Draws a batch
+     *
+     * @param paint    describes how to color pixels.
+     * @param batch    the batch to draw
+     */
+    void drawBatch(GrRenderTarget*, const GrClip&, const GrPaint&, GrDrawBatch*);
 
 private:
     friend class GrAtlasTextContext; // for access to drawBatch
@@ -259,7 +280,7 @@ private:
 
     // This entry point allows the GrTextContext-derived classes to add their batches to
     // the drawTarget.
-    void drawBatch(GrPipelineBuilder* pipelineBuilder, GrBatch* batch);
+    void drawBatch(GrPipelineBuilder* pipelineBuilder, GrDrawBatch* batch);
 
     GrContext*          fContext;     // owning context -> no ref
     GrDrawTarget*       fDrawTarget;

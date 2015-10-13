@@ -25,7 +25,6 @@
 #include "config.h"
 #include "platform/graphics/Canvas2DLayerBridge.h"
 
-#include "SkDeferredCanvas.h"
 #include "SkSurface.h"
 #include "platform/graphics/ImageBuffer.h"
 #include "platform/graphics/test/MockWebGraphicsContext3D.h"
@@ -34,6 +33,8 @@
 #include "public/platform/WebGraphicsContext3DProvider.h"
 #include "public/platform/WebThread.h"
 #include "third_party/skia/include/core/SkDevice.h"
+#include "third_party/skia/include/gpu/GrContext.h"
+#include "third_party/skia/include/gpu/gl/SkNullGLContext.h"
 #include "wtf/RefPtr.h"
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
@@ -56,7 +57,12 @@ public:
 class MockWebGraphicsContext3DProvider : public WebGraphicsContext3DProvider {
 public:
     MockWebGraphicsContext3DProvider(WebGraphicsContext3D* context3d)
-        : m_context3d(context3d) { }
+        : m_context3d(context3d)
+    {
+        RefPtr<SkGLContext> glContext = adoptRef(SkNullGLContext::Create(kNone_GrGLStandard));
+        glContext->makeCurrent();
+        m_grContext = adoptRef(GrContext::Create(kOpenGL_GrBackend, reinterpret_cast<GrBackendContext>(glContext->gl())));
+    }
 
     WebGraphicsContext3D* context3d() override
     {
@@ -65,11 +71,12 @@ public:
 
     GrContext* grContext() override
     {
-        return 0;
+        return m_grContext.get();
     }
 
 private:
     WebGraphicsContext3D* m_context3d;
+    RefPtr<GrContext> m_grContext;
 };
 
 class Canvas2DLayerBridgePtr {
@@ -114,17 +121,15 @@ protected:
     {
         MockCanvasContext mainMock;
         OwnPtr<MockWebGraphicsContext3DProvider> mainMockProvider = adoptPtr(new MockWebGraphicsContext3DProvider(&mainMock));
-        RefPtr<SkSurface> surface = adoptRef(SkSurface::NewRasterN32Premul(300, 150));
-        OwnPtr<SkDeferredCanvas> canvas = adoptPtr(SkDeferredCanvas::Create(surface.get()));
 
         ::testing::Mock::VerifyAndClearExpectations(&mainMock);
 
         {
-            Canvas2DLayerBridgePtr bridge(adoptRef(new Canvas2DLayerBridge(mainMockProvider.release(), canvas.release(), surface, 0, NonOpaque)));
+            Canvas2DLayerBridgePtr bridge(adoptRef(new Canvas2DLayerBridge(mainMockProvider.release(), IntSize(300, 150), 0, NonOpaque, Canvas2DLayerBridge::DisableAcceleration)));
 
             ::testing::Mock::VerifyAndClearExpectations(&mainMock);
 
-            unsigned textureId = bridge->newImageSnapshot()->getTextureHandle(true);
+            unsigned textureId = bridge->newImageSnapshot(PreferAcceleration)->getTextureHandle(true);
             EXPECT_EQ(textureId, 0u);
 
             ::testing::Mock::VerifyAndClearExpectations(&mainMock);
@@ -133,33 +138,86 @@ protected:
         ::testing::Mock::VerifyAndClearExpectations(&mainMock);
     }
 
-    void noDrawOnContextLostTest()
+    void fallbackToSoftwareIfContextLost()
     {
         MockCanvasContext mainMock;
         OwnPtr<MockWebGraphicsContext3DProvider> mainMockProvider = adoptPtr(new MockWebGraphicsContext3DProvider(&mainMock));
-        RefPtr<SkSurface> surface = adoptRef(SkSurface::NewRasterN32Premul(300, 150));
-        OwnPtr<SkDeferredCanvas> canvas = adoptPtr(SkDeferredCanvas::Create(surface.get()));
 
         ::testing::Mock::VerifyAndClearExpectations(&mainMock);
 
         {
-            Canvas2DLayerBridgePtr bridge(adoptRef(new Canvas2DLayerBridge(mainMockProvider.release(), canvas.release(), surface, 0, NonOpaque)));
+            mainMock.fakeContextLost();
+            Canvas2DLayerBridgePtr bridge(adoptRef(new Canvas2DLayerBridge(mainMockProvider.release(), IntSize(300, 150), 0, NonOpaque, Canvas2DLayerBridge::EnableAcceleration)));
+            ::testing::Mock::VerifyAndClearExpectations(&mainMock);
+            EXPECT_TRUE(bridge->checkSurfaceValid());
+            EXPECT_FALSE(bridge->isAccelerated());
+            ::testing::Mock::VerifyAndClearExpectations(&mainMock);
+        }
+
+        ::testing::Mock::VerifyAndClearExpectations(&mainMock);
+    }
+
+    void fallbackToSoftwareOnFailedTextureAlloc()
+    {
+        MockCanvasContext mainMock;
+
+        ::testing::Mock::VerifyAndClearExpectations(&mainMock);
+
+        {
+            // No fallback case
+            OwnPtr<MockWebGraphicsContext3DProvider> mainMockProvider = adoptPtr(new MockWebGraphicsContext3DProvider(&mainMock));
+            Canvas2DLayerBridgePtr bridge(adoptRef(new Canvas2DLayerBridge(mainMockProvider.release(), IntSize(300, 150), 0, NonOpaque, Canvas2DLayerBridge::EnableAcceleration)));
+            ::testing::Mock::VerifyAndClearExpectations(&mainMock);
+            EXPECT_TRUE(bridge->checkSurfaceValid());
+            EXPECT_TRUE(bridge->isAccelerated());
+            ::testing::Mock::VerifyAndClearExpectations(&mainMock);
+            RefPtr<SkImage> snapshot = bridge->newImageSnapshot(PreferAcceleration);
+            EXPECT_TRUE(bridge->isAccelerated());
+            EXPECT_TRUE(snapshot->isTextureBacked());
+        }
+
+        {
+            // Fallback case
+            OwnPtr<MockWebGraphicsContext3DProvider> mainMockProvider = adoptPtr(new MockWebGraphicsContext3DProvider(&mainMock));
+            GrContext* gr = mainMockProvider->grContext();
+            Canvas2DLayerBridgePtr bridge(adoptRef(new Canvas2DLayerBridge(mainMockProvider.release(), IntSize(300, 150), 0, NonOpaque, Canvas2DLayerBridge::EnableAcceleration)));
+            ::testing::Mock::VerifyAndClearExpectations(&mainMock);
+            EXPECT_TRUE(bridge->checkSurfaceValid());
+            EXPECT_TRUE(bridge->isAccelerated()); // We don't yet know that allocation will fail
+            ::testing::Mock::VerifyAndClearExpectations(&mainMock);
+            gr->abandonContext(); // This will cause SkSurface_Gpu creation to fail without Canvas2DLayerBridge otherwise detecting that anything was disabled.
+            RefPtr<SkImage> snapshot = bridge->newImageSnapshot(PreferAcceleration);
+            EXPECT_FALSE(bridge->isAccelerated());
+            EXPECT_FALSE(snapshot->isTextureBacked());
+        }
+
+        ::testing::Mock::VerifyAndClearExpectations(&mainMock);
+    }
+
+    void noDrawOnContextLostTest()
+    {
+        MockCanvasContext mainMock;
+        OwnPtr<MockWebGraphicsContext3DProvider> mainMockProvider = adoptPtr(new MockWebGraphicsContext3DProvider(&mainMock));
+
+        ::testing::Mock::VerifyAndClearExpectations(&mainMock);
+
+        {
+            Canvas2DLayerBridgePtr bridge(adoptRef(new Canvas2DLayerBridge(mainMockProvider.release(), IntSize(300, 150), 0, NonOpaque, Canvas2DLayerBridge::ForceAccelerationForTesting)));
             ::testing::Mock::VerifyAndClearExpectations(&mainMock);
             EXPECT_TRUE(bridge->checkSurfaceValid());
             SkPaint paint;
-            uint32_t genID = surface->generationID();
+            uint32_t genID = bridge->getOrCreateSurface()->generationID();
             bridge->canvas()->drawRect(SkRect::MakeXYWH(0, 0, 1, 1), paint);
-            EXPECT_EQ(genID, surface->generationID());
+            EXPECT_EQ(genID, bridge->getOrCreateSurface()->generationID());
             mainMock.fakeContextLost();
-            EXPECT_EQ(genID, surface->generationID());
+            EXPECT_EQ(genID, bridge->getOrCreateSurface()->generationID());
             bridge->canvas()->drawRect(SkRect::MakeXYWH(0, 0, 1, 1), paint);
-            EXPECT_EQ(genID, surface->generationID());
-            EXPECT_FALSE(bridge->checkSurfaceValid());
-            EXPECT_EQ(genID, surface->generationID());
+            EXPECT_EQ(genID, bridge->getOrCreateSurface()->generationID());
+            EXPECT_FALSE(bridge->checkSurfaceValid()); // This results in the internal surface being torn down in response to the context loss
+            EXPECT_EQ(nullptr, bridge->getOrCreateSurface());
+            // The following passes by not crashing
             bridge->canvas()->drawRect(SkRect::MakeXYWH(0, 0, 1, 1), paint);
-            EXPECT_EQ(genID, surface->generationID());
-            bridge->freeTransientResources();
-            EXPECT_EQ(genID, surface->generationID());
+            bridge->flush();
             ::testing::Mock::VerifyAndClearExpectations(&mainMock);
         }
 
@@ -169,10 +227,8 @@ protected:
     void prepareMailboxWithBitmapTest()
     {
         MockCanvasContext mainMock;
-        RefPtr<SkSurface> surface = adoptRef(SkSurface::NewRasterN32Premul(300, 150));
-        OwnPtr<SkDeferredCanvas> canvas = adoptPtr(SkDeferredCanvas::Create(surface.get()));
         OwnPtr<MockWebGraphicsContext3DProvider> mainMockProvider = adoptPtr(new MockWebGraphicsContext3DProvider(&mainMock));
-        Canvas2DLayerBridgePtr bridge(adoptRef(new Canvas2DLayerBridge(mainMockProvider.release(), canvas.release(), surface, 0, NonOpaque)));
+        Canvas2DLayerBridgePtr bridge(adoptRef(new Canvas2DLayerBridge(mainMockProvider.release(), IntSize(300, 150), 0, NonOpaque, Canvas2DLayerBridge::ForceAccelerationForTesting)));
         bridge->m_lastImageId = 1;
 
         NullWebExternalBitmap bitmap;
@@ -183,28 +239,25 @@ protected:
     void prepareMailboxAndLoseResourceTest()
     {
         MockCanvasContext mainMock;
-        RefPtr<SkSurface> surface = adoptRef(SkSurface::NewRasterN32Premul(300, 150));
         bool lostResource = true;
 
         // Prepare a mailbox, then report the resource as lost.
         // This test passes by not crashing and not triggering assertions.
         {
             WebExternalTextureMailbox mailbox;
-            OwnPtr<SkDeferredCanvas> canvas = adoptPtr(SkDeferredCanvas::Create(surface.get()));
             OwnPtr<MockWebGraphicsContext3DProvider> mainMockProvider = adoptPtr(new MockWebGraphicsContext3DProvider(&mainMock));
-            Canvas2DLayerBridgePtr bridge(adoptRef(new Canvas2DLayerBridge(mainMockProvider.release(), canvas.release(), surface, 0, NonOpaque)));
+            Canvas2DLayerBridgePtr bridge(adoptRef(new Canvas2DLayerBridge(mainMockProvider.release(), IntSize(300, 150), 0, NonOpaque, Canvas2DLayerBridge::ForceAccelerationForTesting)));
             bridge->prepareMailbox(&mailbox, 0);
             bridge->mailboxReleased(mailbox, lostResource);
         }
 
         // Retry with mailbox released while bridge destruction is in progress
         {
-            OwnPtr<SkDeferredCanvas> canvas = adoptPtr(SkDeferredCanvas::Create(surface.get()));
             OwnPtr<MockWebGraphicsContext3DProvider> mainMockProvider = adoptPtr(new MockWebGraphicsContext3DProvider(&mainMock));
             WebExternalTextureMailbox mailbox;
             Canvas2DLayerBridge* rawBridge;
             {
-                Canvas2DLayerBridgePtr bridge(adoptRef(new Canvas2DLayerBridge(mainMockProvider.release(), canvas.release(), surface, 0, NonOpaque)));
+                Canvas2DLayerBridgePtr bridge(adoptRef(new Canvas2DLayerBridge(mainMockProvider.release(), IntSize(300, 150), 0, NonOpaque, Canvas2DLayerBridge::ForceAccelerationForTesting)));
                 bridge->prepareMailbox(&mailbox, 0);
                 rawBridge = bridge.get();
             } // bridge goes out of scope, but object is kept alive by self references
@@ -213,26 +266,74 @@ protected:
             rawBridge->mailboxReleased(mailbox, lostResource); // This should self-destruct the bridge.
         }
     }
+
+    void accelerationHintTest()
+    {
+        MockCanvasContext mainMock;
+        {
+
+            OwnPtr<MockWebGraphicsContext3DProvider> mainMockProvider = adoptPtr(new MockWebGraphicsContext3DProvider(&mainMock));
+            ::testing::Mock::VerifyAndClearExpectations(&mainMock);
+            Canvas2DLayerBridgePtr bridge(adoptRef(new Canvas2DLayerBridge(mainMockProvider.release(), IntSize(300, 300), 0, NonOpaque, Canvas2DLayerBridge::EnableAcceleration)));
+            ::testing::Mock::VerifyAndClearExpectations(&mainMock);
+            SkPaint paint;
+            bridge->canvas()->drawRect(SkRect::MakeXYWH(0, 0, 1, 1), paint);
+            RefPtr<SkImage> image = bridge->newImageSnapshot(PreferAcceleration);
+            ::testing::Mock::VerifyAndClearExpectations(&mainMock);
+            EXPECT_TRUE(bridge->checkSurfaceValid());
+            EXPECT_TRUE(bridge->isAccelerated());
+        }
+        ::testing::Mock::VerifyAndClearExpectations(&mainMock);
+
+        {
+            OwnPtr<MockWebGraphicsContext3DProvider> mainMockProvider = adoptPtr(new MockWebGraphicsContext3DProvider(&mainMock));
+            ::testing::Mock::VerifyAndClearExpectations(&mainMock);
+            Canvas2DLayerBridgePtr bridge(adoptRef(new Canvas2DLayerBridge(mainMockProvider.release(), IntSize(300, 300), 0, NonOpaque, Canvas2DLayerBridge::EnableAcceleration)));
+            ::testing::Mock::VerifyAndClearExpectations(&mainMock);
+            SkPaint paint;
+            bridge->canvas()->drawRect(SkRect::MakeXYWH(0, 0, 1, 1), paint);
+            RefPtr<SkImage> image = bridge->newImageSnapshot(PreferNoAcceleration);
+            ::testing::Mock::VerifyAndClearExpectations(&mainMock);
+            EXPECT_TRUE(bridge->checkSurfaceValid());
+            EXPECT_FALSE(bridge->isAccelerated());
+        }
+        ::testing::Mock::VerifyAndClearExpectations(&mainMock);
+    }
 };
 
-TEST_F(Canvas2DLayerBridgeTest, testFullLifecycleSingleThreaded)
+TEST_F(Canvas2DLayerBridgeTest, FullLifecycleSingleThreaded)
 {
     fullLifecycleTest();
 }
 
-TEST_F(Canvas2DLayerBridgeTest, testNoDrawOnContextLost)
+TEST_F(Canvas2DLayerBridgeTest, NoDrawOnContextLost)
 {
     noDrawOnContextLostTest();
 }
 
-TEST_F(Canvas2DLayerBridgeTest, testPrepareMailboxWithBitmap)
+TEST_F(Canvas2DLayerBridgeTest, PrepareMailboxWithBitmap)
 {
     prepareMailboxWithBitmapTest();
 }
 
-TEST_F(Canvas2DLayerBridgeTest, testPrepareMailboxAndLoseResource)
+TEST_F(Canvas2DLayerBridgeTest, PrepareMailboxAndLoseResource)
 {
     prepareMailboxAndLoseResourceTest();
+}
+
+TEST_F(Canvas2DLayerBridgeTest, AccelerationHint)
+{
+    accelerationHintTest();
+}
+
+TEST_F(Canvas2DLayerBridgeTest, FallbackToSoftwareIfContextLost)
+{
+    fallbackToSoftwareIfContextLost();
+}
+
+TEST_F(Canvas2DLayerBridgeTest, FallbackToSoftwareOnFailedTextureAlloc)
+{
+    fallbackToSoftwareOnFailedTextureAlloc();
 }
 
 } // namespace blink

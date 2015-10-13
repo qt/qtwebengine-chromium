@@ -14,28 +14,23 @@ class SVGRect;
 
 class RectSVGInterpolation : public SVGInterpolation {
 public:
-    static PassRefPtrWillBeRawPtr<RectSVGInterpolation> create(SVGPropertyBase* start, SVGPropertyBase* end, PassRefPtrWillBeRawPtr<SVGAnimatedPropertyBase> attribute)
+    static PassRefPtr<RectSVGInterpolation> create(SVGPropertyBase* start, SVGPropertyBase* end, PassRefPtrWillBeRawPtr<SVGAnimatedPropertyBase> attribute)
     {
-        return adoptRefWillBeNoop(new RectSVGInterpolation(toInterpolableValue(start), toInterpolableValue(end), attribute));
+        return adoptRef(new RectSVGInterpolation(toInterpolableValue(start), toInterpolableValue(end), attribute));
     }
 
-    virtual PassRefPtrWillBeRawPtr<SVGPropertyBase> interpolatedValue(SVGElement&) const override final
+    PassRefPtrWillBeRawPtr<SVGPropertyBase> interpolatedValue(SVGElement&) const final
     {
         return fromInterpolableValue(*m_cachedValue);
     }
 
-    DEFINE_INLINE_VIRTUAL_TRACE()
-    {
-        SVGInterpolation::trace(visitor);
-    }
-
 private:
-    RectSVGInterpolation(PassOwnPtrWillBeRawPtr<InterpolableValue> start, PassOwnPtrWillBeRawPtr<InterpolableValue> end, PassRefPtrWillBeRawPtr<SVGAnimatedPropertyBase> attribute)
+    RectSVGInterpolation(PassOwnPtr<InterpolableValue> start, PassOwnPtr<InterpolableValue> end, PassRefPtrWillBeRawPtr<SVGAnimatedPropertyBase> attribute)
         : SVGInterpolation(start, end, attribute)
     {
     }
 
-    static PassOwnPtrWillBeRawPtr<InterpolableValue> toInterpolableValue(SVGPropertyBase*);
+    static PassOwnPtr<InterpolableValue> toInterpolableValue(SVGPropertyBase*);
 
     static PassRefPtrWillBeRawPtr<SVGRect> fromInterpolableValue(const InterpolableValue&);
 };

@@ -237,7 +237,7 @@ PassRefPtrWillBeRawPtr<Node> Text::cloneNode(bool /*deep*/)
     return cloneWithData(data());
 }
 
-static inline bool canHaveWhitespaceChildren(const LayoutObject& parent)
+static inline bool canHaveWhitespaceChildren(const LayoutObject& parent, Text* text)
 {
     // <button> should allow whitespace even though LayoutFlexibleBox doesn't.
     if (parent.isLayoutButton())
@@ -249,8 +249,9 @@ static inline bool canHaveWhitespaceChildren(const LayoutObject& parent)
         || parent.isSVGRoot()
         || parent.isSVGContainer()
         || parent.isSVGImage()
-        || parent.isSVGShape())
+        || parent.isSVGShape()) {
         return false;
+    }
     return true;
 }
 
@@ -271,7 +272,7 @@ bool Text::textLayoutObjectIsNeeded(const ComputedStyle& style, const LayoutObje
     if (!containsOnlyWhitespace())
         return true;
 
-    if (!canHaveWhitespaceChildren(parent))
+    if (!canHaveWhitespaceChildren(parent, this))
         return false;
 
     // pre-wrap in SVG never makes layoutObject.

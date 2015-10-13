@@ -24,8 +24,8 @@ namespace webrtc {
 
 class CopyConverter : public AudioConverter {
  public:
-  CopyConverter(int src_channels, int src_frames, int dst_channels,
-                int dst_frames)
+  CopyConverter(int src_channels, size_t src_frames, int dst_channels,
+                size_t dst_frames)
       : AudioConverter(src_channels, src_frames, dst_channels, dst_frames) {}
   ~CopyConverter() override {};
 
@@ -41,15 +41,15 @@ class CopyConverter : public AudioConverter {
 
 class UpmixConverter : public AudioConverter {
  public:
-  UpmixConverter(int src_channels, int src_frames, int dst_channels,
-                 int dst_frames)
+  UpmixConverter(int src_channels, size_t src_frames, int dst_channels,
+                 size_t dst_frames)
       : AudioConverter(src_channels, src_frames, dst_channels, dst_frames) {}
   ~UpmixConverter() override {};
 
   void Convert(const float* const* src, size_t src_size, float* const* dst,
                size_t dst_capacity) override {
     CheckSizes(src_size, dst_capacity);
-    for (int i = 0; i < dst_frames(); ++i) {
+    for (size_t i = 0; i < dst_frames(); ++i) {
       const float value = src[0][i];
       for (int j = 0; j < dst_channels(); ++j)
         dst[j][i] = value;
@@ -59,8 +59,8 @@ class UpmixConverter : public AudioConverter {
 
 class DownmixConverter : public AudioConverter {
  public:
-  DownmixConverter(int src_channels, int src_frames, int dst_channels,
-                   int dst_frames)
+  DownmixConverter(int src_channels, size_t src_frames, int dst_channels,
+                   size_t dst_frames)
       : AudioConverter(src_channels, src_frames, dst_channels, dst_frames) {
   }
   ~DownmixConverter() override {};
@@ -69,7 +69,7 @@ class DownmixConverter : public AudioConverter {
                size_t dst_capacity) override {
     CheckSizes(src_size, dst_capacity);
     float* dst_mono = dst[0];
-    for (int i = 0; i < src_frames(); ++i) {
+    for (size_t i = 0; i < src_frames(); ++i) {
       float sum = 0;
       for (int j = 0; j < src_channels(); ++j)
         sum += src[j][i];
@@ -80,8 +80,8 @@ class DownmixConverter : public AudioConverter {
 
 class ResampleConverter : public AudioConverter {
  public:
-  ResampleConverter(int src_channels, int src_frames, int dst_channels,
-                    int dst_frames)
+  ResampleConverter(int src_channels, size_t src_frames, int dst_channels,
+                    size_t dst_frames)
       : AudioConverter(src_channels, src_frames, dst_channels, dst_frames) {
     resamplers_.reserve(src_channels);
     for (int i = 0; i < src_channels; ++i)
@@ -106,7 +106,7 @@ class CompositionConverter : public AudioConverter {
  public:
   CompositionConverter(ScopedVector<AudioConverter> converters)
       : converters_(converters.Pass()) {
-    CHECK_GE(converters_.size(), 2u);
+    RTC_CHECK_GE(converters_.size(), 2u);
     // We need an intermediate buffer after every converter.
     for (auto it = converters_.begin(); it != converters_.end() - 1; ++it)
       buffers_.push_back(new ChannelBuffer<float>((*it)->dst_frames(),
@@ -136,9 +136,9 @@ class CompositionConverter : public AudioConverter {
 };
 
 rtc::scoped_ptr<AudioConverter> AudioConverter::Create(int src_channels,
-                                                       int src_frames,
+                                                       size_t src_frames,
                                                        int dst_channels,
-                                                       int dst_frames) {
+                                                       size_t dst_frames) {
   rtc::scoped_ptr<AudioConverter> sp;
   if (src_channels > dst_channels) {
     if (src_frames != dst_frames) {
@@ -182,18 +182,19 @@ AudioConverter::AudioConverter()
       dst_channels_(0),
       dst_frames_(0) {}
 
-AudioConverter::AudioConverter(int src_channels, int src_frames,
-                               int dst_channels, int dst_frames)
+AudioConverter::AudioConverter(int src_channels, size_t src_frames,
+                               int dst_channels, size_t dst_frames)
     : src_channels_(src_channels),
       src_frames_(src_frames),
       dst_channels_(dst_channels),
       dst_frames_(dst_frames) {
-  CHECK(dst_channels == src_channels || dst_channels == 1 || src_channels == 1);
+  RTC_CHECK(dst_channels == src_channels || dst_channels == 1 ||
+            src_channels == 1);
 }
 
 void AudioConverter::CheckSizes(size_t src_size, size_t dst_capacity) const {
-  CHECK_EQ(src_size, checked_cast<size_t>(src_channels() * src_frames()));
-  CHECK_GE(dst_capacity, checked_cast<size_t>(dst_channels() * dst_frames()));
+  RTC_CHECK_EQ(src_size, src_channels() * src_frames());
+  RTC_CHECK_GE(dst_capacity, dst_channels() * dst_frames());
 }
 
 }  // namespace webrtc

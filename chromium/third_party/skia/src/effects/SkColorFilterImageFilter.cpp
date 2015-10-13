@@ -17,8 +17,8 @@
 
 SkColorFilterImageFilter* SkColorFilterImageFilter::Create(SkColorFilter* cf,
         SkImageFilter* input, const CropRect* cropRect) {
-    if (NULL == cf) {
-        return NULL;
+    if (nullptr == cf) {
+        return nullptr;
     }
 
     SkColorFilter* inputCF;
@@ -28,11 +28,11 @@ SkColorFilterImageFilter* SkColorFilterImageFilter::Create(SkColorFilter* cf,
         SkAutoUnref autoUnref(inputCF);
         SkAutoTUnref<SkColorFilter> newCF(SkColorFilter::CreateComposeFilter(cf, inputCF));
         if (newCF) {
-            return SkNEW_ARGS(SkColorFilterImageFilter, (newCF, input->getInput(0), cropRect));
+            return new SkColorFilterImageFilter(newCF, input->getInput(0), cropRect);
         }
     }
 
-    return SkNEW_ARGS(SkColorFilterImageFilter, (cf, input, cropRect));
+    return new SkColorFilterImageFilter(cf, input, cropRect);
 }
 
 SkColorFilterImageFilter::SkColorFilterImageFilter(SkColorFilter* cf,
@@ -71,7 +71,7 @@ bool SkColorFilterImageFilter::onFilterImage(Proxy* proxy, const SkBitmap& sourc
     }
 
     SkAutoTUnref<SkBaseDevice> device(proxy->createDevice(bounds.width(), bounds.height()));
-    if (NULL == device.get()) {
+    if (nullptr == device.get()) {
         return false;
     }
     SkCanvas canvas(device.get());
@@ -96,6 +96,10 @@ bool SkColorFilterImageFilter::onIsColorFilterNode(SkColorFilter** filter) const
         return true;
     }
     return false;
+}
+
+bool SkColorFilterImageFilter::affectsTransparentBlack() const {
+    return fColorFilter->affectsTransparentBlack();
 }
 
 #ifndef SK_IGNORE_TO_STRING

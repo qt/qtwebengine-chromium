@@ -17,6 +17,7 @@
 
 #include "webrtc/base/scoped_ptr.h"
 #include "webrtc/common.h"
+#include "webrtc/modules/bitrate_controller/include/bitrate_controller.h"
 #include "webrtc/modules/pacing/include/paced_sender.h"
 #include "webrtc/modules/pacing/include/packet_router.h"
 #include "webrtc/modules/rtp_rtcp/interface/rtp_rtcp_defines.h"
@@ -31,7 +32,7 @@ namespace webrtc {
 class MockVieEncoder : public ViEEncoder {
  public:
   explicit MockVieEncoder(ProcessThread* process_thread, PacedSender* pacer)
-      : ViEEncoder(1, 1, config_, *process_thread, pacer, NULL, NULL, false) {}
+      : ViEEncoder(1, 1, process_thread, nullptr, nullptr, pacer, nullptr) {}
   ~MockVieEncoder() {}
 
   MOCK_METHOD1(OnReceivedIntraFrameRequest,
@@ -42,8 +43,6 @@ class MockVieEncoder : public ViEEncoder {
                void(uint32_t ssrc, uint64_t picture_id));
   MOCK_METHOD2(OnLocalSsrcChanged,
                void(uint32_t old_ssrc, uint32_t new_ssrc));
-
-  const Config config_;
 };
 
 class VieKeyRequestTest : public ::testing::Test {
@@ -68,7 +67,7 @@ class VieKeyRequestTest : public ::testing::Test {
 TEST_F(VieKeyRequestTest, CreateAndTriggerRequests) {
   const int ssrc = 1234;
   MockVieEncoder encoder(process_thread_.get(), &pacer_);
-  EXPECT_TRUE(encoder_state_feedback_->AddEncoder(ssrc, &encoder));
+  encoder_state_feedback_->AddEncoder(std::vector<uint32_t>(1, ssrc), &encoder);
 
   EXPECT_CALL(encoder, OnReceivedIntraFrameRequest(ssrc))
       .Times(1);
@@ -97,8 +96,10 @@ TEST_F(VieKeyRequestTest, MultipleEncoders) {
   const int ssrc_2 = 5678;
   MockVieEncoder encoder_1(process_thread_.get(), &pacer_);
   MockVieEncoder encoder_2(process_thread_.get(), &pacer_);
-  EXPECT_TRUE(encoder_state_feedback_->AddEncoder(ssrc_1, &encoder_1));
-  EXPECT_TRUE(encoder_state_feedback_->AddEncoder(ssrc_2, &encoder_2));
+  encoder_state_feedback_->AddEncoder(std::vector<uint32_t>(1, ssrc_1),
+                                      &encoder_1);
+  encoder_state_feedback_->AddEncoder(std::vector<uint32_t>(1, ssrc_2),
+                                      &encoder_2);
 
   EXPECT_CALL(encoder_1, OnReceivedIntraFrameRequest(ssrc_1))
       .Times(1);
@@ -137,14 +138,6 @@ TEST_F(VieKeyRequestTest, MultipleEncoders) {
   encoder_state_feedback_->GetRtcpIntraFrameObserver()->
       OnReceivedIntraFrameRequest(ssrc_2);
   encoder_state_feedback_->RemoveEncoder(&encoder_2);
-}
-
-TEST_F(VieKeyRequestTest, AddTwiceError) {
-  const int ssrc = 1234;
-  MockVieEncoder encoder(process_thread_.get(), &pacer_);
-  EXPECT_TRUE(encoder_state_feedback_->AddEncoder(ssrc, &encoder));
-  EXPECT_FALSE(encoder_state_feedback_->AddEncoder(ssrc, &encoder));
-  encoder_state_feedback_->RemoveEncoder(&encoder);
 }
 
 }  // namespace webrtc

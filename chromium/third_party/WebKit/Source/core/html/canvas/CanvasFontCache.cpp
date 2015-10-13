@@ -91,8 +91,8 @@ MutableStylePropertySet* CanvasFontCache::parseFont(const String& fontString)
         m_fontLRUList.remove(fontString);
         m_fontLRUList.add(fontString);
     } else {
-        parsedStyle = MutableStylePropertySet::create();
-        CSSParser::parseValue(parsedStyle.get(), CSSPropertyFont, fontString, true, HTMLStandardMode, 0);
+        parsedStyle = MutableStylePropertySet::create(HTMLStandardMode);
+        CSSParser::parseValue(parsedStyle.get(), CSSPropertyFont, fontString, true, 0);
         if (parsedStyle->isEmpty())
             return nullptr;
         // According to http://lists.w3.org/Archives/Public/public-html/2009Jul/0947.html,
@@ -150,6 +150,7 @@ void CanvasFontCache::pruneAll()
 {
     m_fetchedFonts.clear();
     m_fontLRUList.clear();
+    m_fontsResolvedUsingDefaultStyle.clear();
 }
 
 DEFINE_TRACE(CanvasFontCache)

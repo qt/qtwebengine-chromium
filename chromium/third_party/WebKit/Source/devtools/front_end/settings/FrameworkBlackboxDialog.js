@@ -16,10 +16,6 @@ WebInspector.FrameworkBlackboxDialog = function()
     var header = this.element.createChild("div", "header");
     header.createChild("span").textContent = WebInspector.UIString("Framework blackbox patterns");
 
-    var closeButton = header.createChild("div", "done-button", "dt-close-button");
-    closeButton.gray = true;
-    closeButton.addEventListener("click", this._onDoneClick.bind(this), false);
-
     var contents = this.element.createChild("div", "contents");
 
     var contentScriptsSection = contents.createChild("div", "blackbox-content-scripts");
@@ -52,10 +48,10 @@ WebInspector.FrameworkBlackboxDialog = function()
     this.element.tabIndex = 0;
 }
 
-WebInspector.FrameworkBlackboxDialog.show = function(element)
+WebInspector.FrameworkBlackboxDialog.show = function()
 {
     var dialog = new WebInspector.FrameworkBlackboxDialog();
-    WebInspector.Dialog.show(element, dialog);
+    WebInspector.Dialog.show(dialog, false, true);
     var glassPane = dialog.element.ownerDocument.getElementById("glass-pane");
     glassPane.classList.add("settings-glass-pane");
 }
@@ -74,29 +70,29 @@ WebInspector.FrameworkBlackboxDialog.prototype = {
 
     _resize: function()
     {
-        if (!this._dialogElement || !this._relativeToElement)
+        if (!this._dialogElement || !this._container)
             return;
 
         const minWidth = 200;
         const minHeight = 150;
-        var maxHeight = this._relativeToElement.offsetHeight - 10;
+        var maxHeight = this._container.offsetHeight - 10;
         maxHeight = Math.max(minHeight, maxHeight);
-        var maxWidth = Math.min(540, this._relativeToElement.offsetWidth - 10);
+        var maxWidth = Math.min(540, this._container.offsetWidth - 10);
         maxWidth = Math.max(minWidth, maxWidth);
         this._dialogElement.style.maxHeight = maxHeight + "px";
         this._dialogElement.style.width = maxWidth + "px";
 
-        WebInspector.DialogDelegate.prototype.position(this._dialogElement, this._relativeToElement);
+        WebInspector.DialogDelegate.prototype.position(this._dialogElement, this._container);
     },
 
     /**
      * @override
      * @param {!Element} element
-     * @param {!Element} relativeToElement
+     * @param {!Element} container
      */
-    position: function(element, relativeToElement)
+    position: function(element, container)
     {
-        this._relativeToElement = relativeToElement;
+        this._container = container;
         this._resize();
     },
 
@@ -218,11 +214,6 @@ WebInspector.FrameworkBlackboxDialog.prototype = {
     focus: function()
     {
         WebInspector.setCurrentFocusElement(this.element);
-    },
-
-    _onDoneClick: function()
-    {
-        WebInspector.Dialog.hide();
     },
 
     onEnter: function(event)

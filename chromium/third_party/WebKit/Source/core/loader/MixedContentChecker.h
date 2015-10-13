@@ -48,6 +48,13 @@ class CORE_EXPORT MixedContentChecker final {
     WTF_MAKE_NONCOPYABLE(MixedContentChecker);
     DISALLOW_ALLOCATION();
 public:
+    enum ContextType {
+        ContextTypeNotMixedContent,
+        ContextTypeBlockable,
+        ContextTypeOptionallyBlockable,
+        ContextTypeShouldBeBlockable,
+    };
+
     enum ReportingStatus { SendReport, SuppressReport };
     static bool shouldBlockFetch(LocalFrame*, WebURLRequest::RequestContext, WebURLRequest::FrameType, const KURL&, ReportingStatus = SendReport);
     static bool shouldBlockFetch(LocalFrame* frame, const ResourceRequest& request, const KURL& url, ReportingStatus status = SendReport)
@@ -62,6 +69,12 @@ public:
 
     static void checkMixedPrivatePublic(LocalFrame*, const AtomicString& resourceIPAddress);
 
+    static ContextType contextTypeForInspector(LocalFrame*, const ResourceRequest&);
+
+    // Returns the frame that should be considered the effective frame
+    // for a mixed content check for the given frame type.
+    static LocalFrame* effectiveFrameForFrameType(LocalFrame*, WebURLRequest::FrameType);
+
 private:
     enum MixedContentType {
         Display,
@@ -70,15 +83,9 @@ private:
         Submission
     };
 
-    enum ContextType {
-        ContextTypeBlockable,
-        ContextTypeOptionallyBlockable,
-        ContextTypeShouldBeBlockable,
-    };
-
     static LocalFrame* inWhichFrameIsContentMixed(LocalFrame*, WebURLRequest::FrameType, const KURL&);
 
-    static ContextType contextTypeFromContext(WebURLRequest::RequestContext);
+    static ContextType contextTypeFromContext(WebURLRequest::RequestContext, LocalFrame*);
     static const char* typeNameFromContext(WebURLRequest::RequestContext);
     static void logToConsoleAboutFetch(LocalFrame*, const KURL&, WebURLRequest::RequestContext, bool allowed);
     static void logToConsoleAboutWebSocket(LocalFrame*, const KURL&, bool allowed);

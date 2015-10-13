@@ -19,7 +19,7 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
 {
   "name": "gpu driver bug list",
   // Please update the version number whenever you change this file.
-  "version": "8.19",
+  "version": "8.26",
   "entries": [
     {
       "id": 1,
@@ -317,12 +317,12 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
     {
       "id": 24,
       "cr_bugs": [231082],
-      "description": "Mali-400 drivers throw an error when a buffer object's size is set to 0",
+      "description": "Mali-4xx drivers throw an error when a buffer object's size is set to 0",
       "os": {
         "type": "android"
       },
       "gl_vendor": "ARM.*",
-      "gl_renderer": ".*Mali-400.*",
+      "gl_renderer": ".*Mali-4.*",
       "features": [
         "use_non_zero_size_for_client_side_stream_buffers"
       ]
@@ -857,7 +857,7 @@ LONG_STRING_CONST(
     },
     {
       "id": 75,
-      "description": "Mali-400 support of EXT_multisampled_render_to_texture is buggy on Android < 4.3",
+      "description": "Mali-4xx support of EXT_multisampled_render_to_texture is buggy on Android < 4.3",
       "cr_bugs": [362435],
       "os": {
         "type": "android",
@@ -867,7 +867,7 @@ LONG_STRING_CONST(
         }
       },
       "gl_vendor": "ARM.*",
-      "gl_renderer": ".*Mali-400.*",
+      "gl_renderer": ".*Mali-4.*",
       "features": [
         "disable_multisampled_render_to_texture"
       ]
@@ -1261,9 +1261,9 @@ LONG_STRING_CONST(
     {
       "id": 108,
       "cr_bugs": [449150],
-      "description": "Mali-400 does not support GL_RGB format",
+      "description": "Mali-4xx does not support GL_RGB format",
       "gl_vendor": "ARM.*",
-      "gl_renderer": ".*Mali-400.*",
+      "gl_renderer": ".*Mali-4.*",
       "features": [
         "disable_gl_rgb_format"
       ]
@@ -1297,13 +1297,13 @@ LONG_STRING_CONST(
     },
     {
       "id": 111,
-      "description": "Discard Framebuffer breaks WebGL on Mali-400 Linux",
+      "description": "Discard Framebuffer breaks WebGL on Mali-4xx Linux",
       "cr_bugs": [485814],
       "os": {
         "type": "linux"
       },
       "gl_vendor": "ARM.*",
-      "gl_renderer": ".*Mali-400.*",
+      "gl_renderer": ".*Mali-4.*",
       "features": [
         "disable_discard_framebuffer"
       ]
@@ -1430,42 +1430,16 @@ LONG_STRING_CONST(
       ]
     },
     {
-      "id": 121,
-      "description": "NSCGLSurface API is buggy on multi-GPU systems",
-      "cr_bugs": [496484],
-      "os": {
-        "type": "macosx"
-      },
-      "gpu_count": {
-        "op": ">",
-        "value": "1"
-      },
-      "features": [
-        "disable_ns_cgl_surface_api"
-      ]
-    },
-    {
-      "id": 122,
-      "description": "NSCGLSurface API unsupported on VMWare drivers",
-      "cr_bugs": [496484],
-      "os": {
-        "type": "macosx"
-      },
-      "vendor_id": "0x15ad",
-      "features": [
-        "disable_ns_cgl_surface_api"
-      ]
-    },
-    {
       "id": 123,
-      "description": "glFinish doesn't clear caches on Android",
-      "cr_bugs": [509727],
-      "os": {
-        "type": "android"
+      "cr_bugs": [344330],
+      "description": "NVIDIA drivers before 337 lack features in NV_path_rendering and related extensions to implement driver level path rendering.",
+      "driver_version": {
+        "op": "<",
+        "value": "337"
       },
-      "gl_renderer": "Adreno.*",
+      "vendor_id": "0x10de",
       "features": [
-        "unbind_egl_context_to_flush_driver_caches"
+        "disable_gl_path_rendering"
       ]
     },
     {
@@ -1482,6 +1456,102 @@ LONG_STRING_CONST(
       "gl_renderer": "Adreno \\(TM\\) 4.*",
       "features": [
         "disable_program_cache"
+      ]
+    },
+    {
+      "id": 125,
+      "description": "glFinish doesn't clear caches on Android",
+      "cr_bugs": [509727],
+      "os": {
+        "type": "android"
+      },
+      "gl_renderer": "Adreno.*",
+      "features": [
+        "unbind_egl_context_to_flush_driver_caches"
+      ]
+    },
+    {
+      "id": 126,
+      "description": "Program binaries contain incorrect bound attribute locations on Adreno 3xx GPUs",
+      "cr_bugs": [510637],
+      "os": {
+        "type": "android"
+      },
+      "gl_renderer": "Adreno \\(TM\\) 3.*",
+      "features": [
+        "disable_program_cache"
+      ]
+    },
+    {
+      "id": 127,
+      "description": "Android Adreno crashes on binding incomplete cube map texture to FBO",
+      "cr_bugs": [518889],
+      "os": {
+        "type": "android"
+      },
+      "gl_renderer": "Adreno.*",
+      "features": [
+        "force_cube_map_positive_x_allocation"
+      ]
+    },
+    {
+      "id": 128,
+      "description": "Linux ATI drivers crash on binding incomplete cube map texture to FBO",
+      "cr_bugs": [518889],
+      "os": {
+        "type": "linux"
+      },
+      "vendor_id": "0x1002",
+      "features": [
+        "force_cube_map_positive_x_allocation"
+      ]
+    },
+    {
+      "id": 129,
+      // TODO(dshwang): Fix ANGLE crash. crbug.com/518889
+      "description": "ANGLE crash on glReadPixels from incomplete cube map texture",
+      "cr_bugs": [518889],
+      "os": {
+        "type": "win"
+      },
+      "gl_renderer": "ANGLE.*",
+      "features": [
+        "force_cube_complete"
+      ]
+    },
+    {
+      "id": 130,
+      "description": "NVIDIA fails glReadPixels from incomplete cube map texture",
+      "cr_bugs": [518889],
+      "gl_vendor": "NVIDIA.*",
+      "features": [
+        "force_cube_complete"
+      ]
+    },
+    {
+      "id": 131,
+      "description": "Linux Mesa drivers crash on glTexSubImage2D() to texture storage bound to FBO",
+      "cr_bugs": [521904],
+      "os": {
+        "type": "linux"
+      },
+      "driver_vendor": "Mesa",
+      "driver_version": {
+        "op": "<",
+        "value": "10.6"
+      },
+      "features": [
+        "disable_texture_storage"
+      ]
+    },
+    {
+      "id": 132,
+      "description": "On Intel GPUs MSAA performance is not acceptable for GPU rasterization",
+      "cr_bugs": [527565],
+      "vendor_id": "0x8086",
+      "multi_gpu_category": "active",
+      "features": [
+        "disable_msaa_on_non_webgl_contexts"
       ]
     }
   ]

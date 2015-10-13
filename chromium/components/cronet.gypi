@@ -41,6 +41,14 @@
           'includes': [ '../build/android/java_cpp_enum.gypi' ],
         },
         {
+          'target_name': 'network_quality_observations_java',
+          'type': 'none',
+          'variables': {
+            'source_file': '../net/base/network_quality_estimator.h',
+          },
+          'includes': [ '../build/android/java_cpp_enum.gypi' ],
+        },
+        {
           'target_name': 'cronet_url_request_context_config_list',
           'type': 'none',
           'sources': [
@@ -149,6 +157,7 @@
           # cronet_static_small target has reduced binary size through using
           # ICU alternatives which requires file and ftp support be disabled.
           'target_name': 'cronet_static_small',
+          'type': 'static_library',
           'defines': [
             'USE_ICU_ALTERNATIVES_ON_ANDROID=1',
             'DISABLE_FILE_SUPPORT=1',
@@ -157,7 +166,6 @@
           'dependencies': [
             '../net/net.gyp:net_small',
           ],
-          'includes': [ 'cronet/cronet_static.gypi' ],
           'conditions': [
             ['enable_data_reduction_proxy_support==1',
               {
@@ -167,15 +175,16 @@
               },
             ],
           ],
+          'includes': [ 'cronet/cronet_static.gypi' ],
         },
         {
           # cronet_static target depends on ICU and includes file and ftp support.
           'target_name': 'cronet_static',
+          'type': 'static_library',
           'dependencies': [
             '../base/base.gyp:base_i18n',
             '../net/net.gyp:net',
           ],
-          'includes': [ 'cronet/cronet_static.gypi' ],
           'conditions': [
             ['enable_data_reduction_proxy_support==1',
               {
@@ -185,6 +194,7 @@
               },
             ],
           ],
+          'includes': [ 'cronet/cronet_static.gypi' ],
         },
         {
           'target_name': 'libcronet',
@@ -207,6 +217,7 @@
             'cronet_url_request_context_config_list',
             'cronet_version',
             'load_states_list',
+            'network_quality_observations_java',
           ],
           'variables': {
             'java_in_dir': 'cronet/android/java',
@@ -217,10 +228,10 @@
               '**/HttpUrlConnection*.java',
               '**/HttpUrlRequest*.java',
               '**/LoadState.java',
-              '**/RequestStatus.java',
+              '**/NetworkQualityRttListener.java',
+              '**/NetworkQualityThroughputListener.java',
               '**/ResponseInfo.java',
               '**/ResponseTooLargeException.java',
-              '**/StatusListener.java',
               '**/UploadDataProvider.java',
               '**/UploadDataSink.java',
               '**/UrlRequest.java',
@@ -245,6 +256,7 @@
             'cronet_url_request_java',
             'libcronet',
             'net_request_priority_java',
+            'network_quality_observations_java',
           ],
           'variables': {
             'java_in_dir': 'cronet/android/java',
@@ -321,7 +333,6 @@
           'variables': {
             'apk_name': 'CronetSampleTest',
             'java_in_dir': 'cronet/android/sample/javatests',
-            'resource_dir': 'cronet/android/sample/res',
             'is_test_apk': 1,
           },
           'includes': [ '../build/java_apk.gypi' ],
@@ -362,7 +373,6 @@
             'cronet/android/test/network_change_notifier_util.h',
           ],
           'dependencies': [
-            'cronet_static',
             'cronet_tests_jni_headers',
             '../base/base.gyp:base',
             '../net/net.gyp:net',
@@ -374,15 +384,19 @@
             '../third_party/icu/icu.gyp:icui18n',
             '../third_party/icu/icu.gyp:icuuc',
           ],
-          'conditions' : [
+          'defines': [
+            'CRONET_TEST=1',
+          ],
+          'conditions': [
             ['enable_data_reduction_proxy_support==1',
               {
-                'defines' : [
-                  'DATA_REDUCTION_PROXY_SUPPORT'
+                'dependencies': [
+                  '../components/components.gyp:data_reduction_proxy_core_browser',
                 ],
               },
             ],
           ],
+          'includes': [ 'cronet/cronet_static.gypi' ],
         },
         {
           'target_name': 'cronet_test_apk',
@@ -526,6 +540,9 @@
               'action': [
                 'python',
                 '<@(_inputs)',
+                '--src-dir=../base/android/java/src',
+                '--src-dir=../net/android/java/src',
+                '--src-dir=../url/android/java/src',
                 '--src-dir=cronet/android/java/src',
                 '--jar-path=<(package_dir)/<(java_src_lib)',
               ],
@@ -559,9 +576,10 @@
               'action': [
                 'python',
                 '<@(_inputs)',
-                '--source-dir=src',
-                '--output-dir=<(package_dir)/javadoc',
-                '--working-dir=cronet/android/java',
+                '--output-dir=<(package_dir)',
+                '--input-dir=cronet/',
+                '--overview-file=<(package_dir)/README.md.html',
+                '--readme-file=cronet/README.md',
               ],
               'message': 'Generating Javadoc',
             },

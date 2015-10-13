@@ -50,7 +50,7 @@ char kTSanDefaultSuppressions[] =
 "race:base/threading/watchdog.cc\n"
 
 // http://crbug.com/157586
-"race:third_party/libvpx/source/libvpx/vp8/decoder/threading.c\n"
+"race:third_party/libvpx_new/source/libvpx/vp8/decoder/threading.c\n"
 
 // http://crbug.com/158718
 "race:third_party/ffmpeg/libavcodec/pthread.c\n"
@@ -62,8 +62,8 @@ char kTSanDefaultSuppressions[] =
 "race:media::ReleaseData\n"
 
 // http://crbug.com/158922
-"race:third_party/libvpx/source/libvpx/vp8/encoder/*\n"
-"race:third_party/libvpx/source/libvpx/vp9/encoder/*\n"
+"race:third_party/libvpx_new/source/libvpx/vp8/encoder/*\n"
+"race:third_party/libvpx_new/source/libvpx/vp9/encoder/*\n"
 
 // http://crbug.com/189177
 "race:thread_manager\n"
@@ -124,9 +124,6 @@ char kTSanDefaultSuppressions[] =
 
 // http://crbug.com/258935
 "race:base::Thread::StopSoon\n"
-
-// http://crbug.com/268941
-"race:tracked_objects::ThreadData::tls_index_\n"
 
 // http://crbug.com/272095
 "race:base::g_top_manager\n"
@@ -295,14 +292,12 @@ char kTSanDefaultSuppressions[] =
 // https://crbug.com/448203
 "race:blink::RemoteFrame::detach\n"
 
-// https://crbug.com/454652
-"race:net::NetworkChangeNotifier::SetTestNotificationsOnly\n"
-
 // https://crbug.com/455638
 "deadlock:dbus::Bus::ShutdownAndBlock\n"
 
 // https://crbug.com/455665
 "race:mojo::common::*::tick_clock\n"
+"race:mojo::common::internal::NowTicks\n"
 
 // https://crbug.com/459429
 "race:randomnessPid\n"

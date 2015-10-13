@@ -63,7 +63,7 @@ class AcmSendTest : public AudioPacketizationCallback, public PacketSource {
   rtc::scoped_ptr<AudioCoding> acm_;
   InputAudioFile* audio_source_;
   int source_rate_hz_;
-  const int input_block_size_samples_;
+  const size_t input_block_size_samples_;
   AudioFrame input_frame_;
   bool codec_registered_;
   int test_duration_ms_;
@@ -74,7 +74,7 @@ class AcmSendTest : public AudioPacketizationCallback, public PacketSource {
   uint16_t sequence_number_;
   std::vector<uint8_t> last_payload_vec_;
 
-  DISALLOW_COPY_AND_ASSIGN(AcmSendTest);
+  RTC_DISALLOW_COPY_AND_ASSIGN(AcmSendTest);
 };
 
 }  // namespace test

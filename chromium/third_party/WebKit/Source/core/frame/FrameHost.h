@@ -33,8 +33,8 @@
 
 #include "core/CoreExport.h"
 #include "core/frame/PageScaleConstraintsSet.h"
-#include "core/frame/PinchViewport.h"
 #include "core/frame/TopControls.h"
+#include "core/frame/VisualViewport.h"
 #include "platform/heap/Handle.h"
 #include "wtf/FastAllocBase.h"
 #include "wtf/Noncopyable.h"
@@ -48,10 +48,10 @@ class ConsoleMessageStorage;
 class EventHandlerRegistry;
 class Page;
 class PageScaleConstraintsSet;
-class PinchViewport;
 class Settings;
 class UseCounter;
 class Visitor;
+class WebFrameHostScheduler;
 
 // FrameHost is the set of global data shared between multiple frames
 // and is provided by the embedder to each frame when created.
@@ -80,7 +80,7 @@ public:
     float deviceScaleFactor() const;
 
     TopControls& topControls() const;
-    PinchViewport& pinchViewport() const;
+    VisualViewport& visualViewport() const;
     PageScaleConstraintsSet& pageScaleConstraintsSet() const;
     EventHandlerRegistry& eventHandlerRegistry() const;
 
@@ -103,15 +103,18 @@ public:
     void setDefaultPageScaleLimits(float minScale, float maxScale);
     void setUserAgentPageScaleConstraints(PageScaleConstraints newConstraints);
 
+    WebFrameHostScheduler* frameHostScheduler() const { return m_frameHostScheduler.get(); }
+
 private:
     explicit FrameHost(Page&);
 
     RawPtrWillBeMember<Page> m_page;
     const OwnPtrWillBeMember<TopControls> m_topControls;
     const OwnPtr<PageScaleConstraintsSet> m_pageScaleConstraintsSet;
-    const OwnPtrWillBeMember<PinchViewport> m_pinchViewport;
+    const OwnPtrWillBeMember<VisualViewport> m_visualViewport;
     const OwnPtrWillBeMember<EventHandlerRegistry> m_eventHandlerRegistry;
     const OwnPtrWillBeMember<ConsoleMessageStorage> m_consoleMessageStorage;
+    const OwnPtr<WebFrameHostScheduler> m_frameHostScheduler;
 
     AtomicString m_overrideEncoding;
     int m_subframeCount;

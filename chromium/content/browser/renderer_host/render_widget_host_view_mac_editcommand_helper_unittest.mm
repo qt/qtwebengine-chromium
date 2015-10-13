@@ -84,13 +84,11 @@ class MockRenderWidgetHostDelegate : public RenderWidgetHostDelegate {
 // Create a RenderWidget for which we can filter messages.
 class RenderWidgetHostEditCommandCounter : public RenderWidgetHostImpl {
  public:
-  RenderWidgetHostEditCommandCounter(
-      RenderWidgetHostDelegate* delegate,
-      RenderProcessHost* process,
-      int routing_id)
-    : RenderWidgetHostImpl(delegate, process, routing_id, false),
-      edit_command_message_count_(0) {
-  }
+  RenderWidgetHostEditCommandCounter(RenderWidgetHostDelegate* delegate,
+                                     RenderProcessHost* process,
+                                     int32 routing_id)
+      : RenderWidgetHostImpl(delegate, process, routing_id, false),
+        edit_command_message_count_(0) {}
 
   bool Send(IPC::Message* message) override {
     if (message->type() == InputMsg_ExecuteEditCommand::ID)
@@ -104,16 +102,11 @@ class RenderWidgetHostEditCommandCounter : public RenderWidgetHostImpl {
 class RenderWidgetHostViewMacEditCommandHelperTest : public PlatformTest {
  protected:
   void SetUp() override {
-    if (IsDelegatedRendererEnabled()) {
-      ImageTransportFactory::InitializeForUnitTests(
-          scoped_ptr<ImageTransportFactory>(
-              new NoTransportImageTransportFactory));
-    }
+    ImageTransportFactory::InitializeForUnitTests(
+        scoped_ptr<ImageTransportFactory>(
+            new NoTransportImageTransportFactory));
   }
-  void TearDown() override {
-    if (IsDelegatedRendererEnabled())
-      ImageTransportFactory::Terminate();
-  }
+  void TearDown() override { ImageTransportFactory::Terminate(); }
 };
 
 }  // namespace
@@ -131,9 +124,10 @@ TEST_F(RenderWidgetHostViewMacEditCommandHelperTest,
   supported_factors.push_back(ui::SCALE_FACTOR_100P);
   ui::test::ScopedSetSupportedScaleFactors scoped_supported(supported_factors);
 
+  int32 routing_id = process_host.GetNextRoutingID();
   RenderWidgetHostEditCommandCounter* render_widget =
-      new RenderWidgetHostEditCommandCounter(
-          &delegate, &process_host, MSG_ROUTING_NONE);
+      new RenderWidgetHostEditCommandCounter(&delegate, &process_host,
+                                             routing_id);
 
   base::mac::ScopedNSAutoreleasePool pool;
 

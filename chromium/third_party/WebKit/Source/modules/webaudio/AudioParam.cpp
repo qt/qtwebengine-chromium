@@ -38,10 +38,10 @@ namespace blink {
 const double AudioParamHandler::DefaultSmoothingConstant = 0.05;
 const double AudioParamHandler::SnapThreshold = 0.001;
 
-AudioContext* AudioParamHandler::context() const
+AbstractAudioContext* AudioParamHandler::context() const
 {
     // TODO(tkent): We can remove this dangerous function by removing
-    // AudioContext dependency from AudioParamTimeline.
+    // AbstractAudioContext dependency from AudioParamTimeline.
     ASSERT_WITH_SECURITY_IMPLICATION(deferredTaskHandler().isAudioThread());
     return &m_context;
 }
@@ -161,12 +161,12 @@ void AudioParamHandler::calculateTimelineValues(float* values, unsigned numberOf
     // Calculate values for this render quantum.  Normally numberOfValues will
     // equal to AudioHandler::ProcessingSizeInFrames (the render quantum size).
     double sampleRate = context()->sampleRate();
-    double startTime = context()->currentTime();
-    double endTime = startTime + numberOfValues / sampleRate;
+    size_t startFrame = context()->currentSampleFrame();
+    size_t endFrame = startFrame + numberOfValues;
 
     // Note we're running control rate at the sample-rate.
     // Pass in the current value as default value.
-    m_value = m_timeline.valuesForTimeRange(startTime, endTime, narrowPrecisionToFloat(m_value), values, numberOfValues, sampleRate, sampleRate);
+    m_value = m_timeline.valuesForFrameRange(startFrame, endFrame, narrowPrecisionToFloat(m_value), values, numberOfValues, sampleRate, sampleRate);
 }
 
 void AudioParamHandler::connect(AudioNodeOutput& output)
@@ -194,13 +194,13 @@ void AudioParamHandler::disconnect(AudioNodeOutput& output)
 
 // ----------------------------------------------------------------
 
-AudioParam::AudioParam(AudioContext& context, double defaultValue)
+AudioParam::AudioParam(AbstractAudioContext& context, double defaultValue)
     : m_handler(AudioParamHandler::create(context, defaultValue))
     , m_context(context)
 {
 }
 
-AudioParam* AudioParam::create(AudioContext& context, double defaultValue)
+AudioParam* AudioParam::create(AbstractAudioContext& context, double defaultValue)
 {
     return new AudioParam(context, defaultValue);
 }

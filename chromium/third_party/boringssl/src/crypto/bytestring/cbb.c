@@ -20,6 +20,10 @@
 #include <openssl/mem.h>
 
 
+void CBB_zero(CBB *cbb) {
+  memset(cbb, 0, sizeof(CBB));
+}
+
 static int cbb_init(CBB *cbb, uint8_t *buf, size_t cap) {
   struct cbb_buffer_st *base;
 
@@ -66,6 +70,10 @@ int CBB_init_fixed(CBB *cbb, uint8_t *buf, size_t len) {
 
 void CBB_cleanup(CBB *cbb) {
   if (cbb->base) {
+    /* Only top-level |CBB|s are cleaned up. Child |CBB|s are non-owning. They
+     * are implicitly discarded when the parent is flushed or cleaned up. */
+    assert(cbb->is_top_level);
+
     if (cbb->base->can_resize) {
       OPENSSL_free(cbb->base->buf);
     }
@@ -243,6 +251,11 @@ int CBB_flush(CBB *cbb) {
   return 1;
 }
 
+size_t CBB_len(const CBB *cbb) {
+  assert(cbb->child == NULL);
+
+  return cbb->base->len;
+}
 
 static int cbb_add_length_prefixed(CBB *cbb, CBB *out_contents,
                                    size_t len_len) {

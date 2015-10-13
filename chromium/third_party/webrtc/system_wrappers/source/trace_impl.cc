@@ -402,7 +402,12 @@ void TraceImpl::WriteToFile(const char* msg, uint16_t length) {
       row_count_text_++;
     }
   }
-  trace_file_->Write(msg, length);
+
+  char trace_message[WEBRTC_TRACE_MAX_MESSAGE_SIZE];
+  memcpy(trace_message, msg, length);
+  trace_message[length] = 0;
+  trace_message[length - 1] = '\n';
+  trace_file_->Write(trace_message, length);
   row_count_text_++;
 }
 
@@ -542,12 +547,12 @@ int32_t Trace::TraceFile(char file_name[FileWrapper::kMaxFileNameSize]) {
 
 // static
 void Trace::set_level_filter(int filter) {
-  rtc::AtomicOps::Store(&level_filter_, filter);
+  rtc::AtomicOps::ReleaseStore(&level_filter_, filter);
 }
 
 // static
 int Trace::level_filter() {
-  return rtc::AtomicOps::Load(&level_filter_);
+  return rtc::AtomicOps::AcquireLoad(&level_filter_);
 }
 
 // static

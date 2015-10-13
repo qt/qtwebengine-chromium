@@ -156,7 +156,6 @@
               },
               'msvs_settings': {
                 'VCLinkerTool': {
-                  'ImportLibrary': '$(OutDir)\\lib\\chrome_dll.lib',
                   # Set /SUBSYSTEM:WINDOWS for chrome.dll (for consistency).
                   'SubSystem': '2',
                   'conditions': [
@@ -235,6 +234,9 @@
                   'msvs_settings': {
                     'VCLinkerTool': {
                       'LinkTimeCodeGeneration': '2',
+                      'AdditionalOptions': [
+                        '/PogoSafeMode',
+                      ],
                     },
                   },
                 }],
@@ -270,7 +272,7 @@
                 '<(DEPTH)/third_party/cld/cld.gyp:cld',
               ],
             }],
-            ['cld_version==0 or cld_version==2', {
+            ['cld_version==2', {
               'dependencies': [
                 '<(DEPTH)/third_party/cld_2/cld_2.gyp:cld_2',
               ],
@@ -357,6 +359,9 @@
                   'msvs_settings': {
                     'VCLinkerTool': {
                       'LinkTimeCodeGeneration': '2',
+                      'AdditionalOptions': [
+                        '/PogoSafeMode',
+                      ],
                     },
                   },
                 }],

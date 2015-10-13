@@ -40,15 +40,16 @@ namespace {
 // Windows system color IDs cached and updated by the native theme.
 const int kSystemColors[] = {
   COLOR_3DFACE,
+  COLOR_BTNFACE,
   COLOR_BTNTEXT,
   COLOR_GRAYTEXT,
   COLOR_HIGHLIGHT,
   COLOR_HIGHLIGHTTEXT,
+  COLOR_HOTLIGHT,
+  COLOR_MENUHIGHLIGHT,
   COLOR_SCROLLBAR,
   COLOR_WINDOW,
   COLOR_WINDOWTEXT,
-  COLOR_BTNFACE,
-  COLOR_MENUHIGHLIGHT,
 };
 
 void SetCheckerboardShader(SkPaint* paint, const RECT& align_rect) {
@@ -471,6 +472,8 @@ SkColor NativeThemeWin::GetSystemColor(ColorId color_id) const {
   const SkColor kDisabledMenuItemForegroundColor = SkColorSetRGB(161, 161, 146);
   const SkColor kFocusedMenuItemBackgroundColor = SkColorSetRGB(246, 249, 253);
   const SkColor kMenuSeparatorColor = SkColorSetARGB(50, 0, 0, 0);
+  // Link:
+  const SkColor kLinkPressedColor = SkColorSetRGB(200, 0, 0);
   // Table:
   const SkColor kPositiveTextColor = SkColorSetRGB(0x0b, 0x80, 0x43);
   const SkColor kNegativeTextColor = SkColorSetRGB(0xc5, 0x39, 0x29);
@@ -482,6 +485,7 @@ SkColor NativeThemeWin::GetSystemColor(ColorId color_id) const {
 
     // Dialogs
     case kColorId_DialogBackground:
+    case kColorId_BubbleBackground:
       return color_utils::IsInvertedColorScheme() ?
           color_utils::InvertColor(kDialogBackgroundColor) :
           kDialogBackgroundColor;
@@ -544,6 +548,14 @@ SkColor NativeThemeWin::GetSystemColor(ColorId color_id) const {
       return system_colors_[COLOR_GRAYTEXT];
     case kColorId_LabelBackgroundColor:
       return system_colors_[COLOR_WINDOW];
+
+    // Link
+    case kColorId_LinkDisabled:
+      return system_colors_[COLOR_WINDOWTEXT];
+    case kColorId_LinkEnabled:
+      return system_colors_[COLOR_HOTLIGHT];
+    case kColorId_LinkPressed:
+      return kLinkPressedColor;
 
     // Textfield
     case kColorId_TextfieldDefaultColor:
@@ -666,9 +678,10 @@ SkColor NativeThemeWin::GetSystemColor(ColorId color_id) const {
     case kColorId_ResultsTableNegativeSelectedText:
       return color_utils::GetReadableColor(kNegativeTextColor,
                                            system_colors_[COLOR_HIGHLIGHT]);
+    default:
+      NOTREACHED();
+      return kInvalidColorIdColor;
   }
-  NOTREACHED();
-  return kInvalidColorIdColor;
 }
 
 void NativeThemeWin::PaintIndirect(SkCanvas* canvas,
@@ -1664,7 +1677,7 @@ HRESULT NativeThemeWin::PaintScaledTheme(HANDLE theme,
     float scale = save_transform.eM11;
     if (scale != 1 && save_transform.eM12 == 0) {
       ModifyWorldTransform(hdc, NULL, MWT_IDENTITY);
-      gfx::Rect scaled_rect(gfx::ToEnclosedRect(gfx::ScaleRect(rect, scale)));
+      gfx::Rect scaled_rect = gfx::ScaleToEnclosedRect(rect, scale);
       scaled_rect.Offset(save_transform.eDx, save_transform.eDy);
       RECT bounds = scaled_rect.ToRECT();
       HRESULT result = draw_theme_(theme, hdc, part_id, state_id, &bounds,

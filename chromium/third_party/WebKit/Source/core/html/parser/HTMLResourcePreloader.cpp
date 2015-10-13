@@ -30,7 +30,6 @@
 #include "core/fetch/FetchInitiatorInfo.h"
 #include "core/fetch/ResourceFetcher.h"
 #include "core/loader/DocumentLoader.h"
-#include "platform/network/NetworkHints.h"
 #include "public/platform/Platform.h"
 
 namespace blink {
@@ -50,7 +49,7 @@ DEFINE_TRACE(HTMLResourcePreloader)
     visitor->trace(m_document);
 }
 
-static void preconnectHost(PreloadRequest* request)
+static void preconnectHost(PreloadRequest* request, const NetworkHintsInterface& networkHintsInterface)
 {
     ASSERT(request);
     ASSERT(request->isPreconnect());
@@ -64,13 +63,13 @@ static void preconnectHost(PreloadRequest* request)
         else
             crossOrigin = CrossOriginAttributeAnonymous;
     }
-    preconnect(host, crossOrigin);
+    networkHintsInterface.preconnectHost(host, crossOrigin);
 }
 
-void HTMLResourcePreloader::preload(PassOwnPtr<PreloadRequest> preload)
+void HTMLResourcePreloader::preload(PassOwnPtr<PreloadRequest> preload, const NetworkHintsInterface& networkHintsInterface)
 {
     if (preload->isPreconnect()) {
-        preconnectHost(preload.get());
+        preconnectHost(preload.get(), networkHintsInterface);
         return;
     }
     // TODO(yoichio): Should preload if document is imported.
@@ -82,7 +81,7 @@ void HTMLResourcePreloader::preload(PassOwnPtr<PreloadRequest> preload)
     if (request.url().protocolIsData())
         return;
     if (preload->resourceType() == Resource::Script || preload->resourceType() == Resource::CSSStyleSheet || preload->resourceType() == Resource::ImportResource)
-        request.setCharset(preload->charset().isEmpty() ? m_document->charset().string() : preload->charset());
+        request.setCharset(preload->charset().isEmpty() ? m_document->characterSet().string() : preload->charset());
     request.setForPreload(true);
     Platform::current()->histogramCustomCounts("WebCore.PreloadDelayMs", static_cast<int>(1000 * (monotonicallyIncreasingTime() - preload->discoveryTime())), 0, 2000, 20);
     m_document->loader()->startPreload(preload->resourceType(), request);

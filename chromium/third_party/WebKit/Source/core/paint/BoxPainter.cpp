@@ -15,16 +15,16 @@
 #include "core/layout/LayoutTable.h"
 #include "core/layout/LayoutTheme.h"
 #include "core/layout/LayoutView.h"
-#include "core/layout/compositing/CompositedDeprecatedPaintLayerMapping.h"
+#include "core/layout/compositing/CompositedLayerMapping.h"
 #include "core/style/BorderEdge.h"
 #include "core/style/ShadowList.h"
 #include "core/paint/BackgroundImageGeometry.h"
 #include "core/paint/BoxBorderPainter.h"
 #include "core/paint/BoxDecorationData.h"
-#include "core/paint/DeprecatedPaintLayer.h"
 #include "core/paint/LayoutObjectDrawingRecorder.h"
 #include "core/paint/NinePieceImagePainter.h"
 #include "core/paint/PaintInfo.h"
+#include "core/paint/PaintLayer.h"
 #include "core/paint/RoundedInnerRectClipper.h"
 #include "core/paint/ThemePainter.h"
 #include "platform/LengthFunctions.h"
@@ -58,13 +58,10 @@ void BoxPainter::paintBoxDecorationBackground(const PaintInfo& paintInfo, const 
 
 LayoutRect BoxPainter::boundsForDrawingRecorder(const LayoutPoint& paintOffset)
 {
-    if (!RuntimeEnabledFeatures::slimmingPaintEnabled())
-        return LayoutRect();
-
     // Use the visual overflow rect here, because it will include overflow introduced by the theme.
     LayoutRect bounds = m_layoutBox.visualOverflowRect();
     bounds.moveBy(paintOffset);
-    return LayoutRect(pixelSnappedIntRect(bounds));
+    return bounds;
 }
 
 namespace {
@@ -86,10 +83,10 @@ void BoxPainter::paintBoxDecorationBackgroundWithRect(const PaintInfo& paintInfo
     if (style.appearance() == MediaSliderPart)
         cacheSkipper.emplace(*paintInfo.context);
 
-    if (LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(*paintInfo.context, m_layoutBox, DisplayItem::BoxDecorationBackground))
+    if (LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(*paintInfo.context, m_layoutBox, DisplayItem::BoxDecorationBackground, paintOffset))
         return;
 
-    LayoutObjectDrawingRecorder recorder(*paintInfo.context, m_layoutBox, DisplayItem::BoxDecorationBackground, boundsForDrawingRecorder(paintOffset));
+    LayoutObjectDrawingRecorder recorder(*paintInfo.context, m_layoutBox, DisplayItem::BoxDecorationBackground, boundsForDrawingRecorder(paintOffset), paintOffset);
 
     BoxDecorationData boxDecorationData(m_layoutBox);
 
@@ -113,18 +110,18 @@ void BoxPainter::paintBoxDecorationBackgroundWithRect(const PaintInfo& paintInfo
     // The theme will tell us whether or not we should also paint the CSS background.
     IntRect snappedPaintRect(pixelSnappedIntRect(paintRect));
     ThemePainter& themePainter = LayoutTheme::theme().painter();
-    bool themePainted = boxDecorationData.hasAppearance && !themePainter.paint(&m_layoutBox, paintInfo, snappedPaintRect);
+    bool themePainted = boxDecorationData.hasAppearance && !themePainter.paint(m_layoutBox, paintInfo, snappedPaintRect);
     if (!themePainted) {
         paintBackground(paintInfo, paintRect, boxDecorationData.backgroundColor, boxDecorationData.bleedAvoidance);
 
         if (boxDecorationData.hasAppearance)
-            themePainter.paintDecorations(&m_layoutBox, paintInfo, snappedPaintRect);
+            themePainter.paintDecorations(m_layoutBox, paintInfo, snappedPaintRect);
     }
     paintBoxShadow(paintInfo, paintRect, style, Inset);
 
     // The theme will tell us whether or not we should also paint the CSS border.
     if (boxDecorationData.hasBorderDecoration
-        && (!boxDecorationData.hasAppearance || (!themePainted && LayoutTheme::theme().painter().paintBorderOnly(&m_layoutBox, paintInfo, snappedPaintRect)))
+        && (!boxDecorationData.hasAppearance || (!themePainted && LayoutTheme::theme().painter().paintBorderOnly(m_layoutBox, paintInfo, snappedPaintRect)))
         && !(m_layoutBox.isTable() && toLayoutTable(&m_layoutBox)->collapseBorders()))
         paintBorder(m_layoutBox, paintInfo, paintRect, style, boxDecorationData.bleedAvoidance);
 
@@ -180,7 +177,7 @@ bool BoxPainter::calculateFillLayerOcclusionCulling(FillLayerOcclusionOutputList
     return isNonAssociative;
 }
 
-void BoxPainter::paintFillLayers(const PaintInfo& paintInfo, const Color& c, const FillLayer& fillLayer, const LayoutRect& rect, BackgroundBleedAvoidance bleedAvoidance, SkXfermode::Mode op, LayoutObject* backgroundObject)
+void BoxPainter::paintFillLayers(const PaintInfo& paintInfo, const Color& c, const FillLayer& fillLayer, const LayoutRect& rect, BackgroundBleedAvoidance bleedAvoidance, SkXfermode::Mode op, const LayoutObject* backgroundObject)
 {
     // TODO(trchen): Box shadow optimization and background color are concepts that only
     // apply to background layers. Ideally we should refactor those out of paintFillLayer.
@@ -217,12 +214,12 @@ void BoxPainter::paintFillLayers(const PaintInfo& paintInfo, const Color& c, con
 }
 
 void BoxPainter::paintFillLayer(const PaintInfo& paintInfo, const Color& c, const FillLayer& fillLayer, const LayoutRect& rect,
-    BackgroundBleedAvoidance bleedAvoidance, SkXfermode::Mode op, LayoutObject* backgroundObject)
+    BackgroundBleedAvoidance bleedAvoidance, SkXfermode::Mode op, const LayoutObject* backgroundObject)
 {
     BoxPainter::paintFillLayerExtended(m_layoutBox, paintInfo, c, fillLayer, rect, bleedAvoidance, 0, LayoutSize(), op, backgroundObject);
 }
 
-void BoxPainter::applyBoxShadowForBackground(GraphicsContext* context, LayoutObject& obj)
+void BoxPainter::applyBoxShadowForBackground(GraphicsContext* context, const LayoutObject& obj)
 {
     const ShadowList* shadowList = obj.style()->boxShadow();
     ASSERT(shadowList);
@@ -238,8 +235,8 @@ void BoxPainter::applyBoxShadowForBackground(GraphicsContext* context, LayoutObj
     }
 }
 
-FloatRoundedRect BoxPainter::getBackgroundRoundedRect(LayoutObject& obj, const LayoutRect& borderRect,
-    InlineFlowBox* box, LayoutUnit inlineBoxWidth, LayoutUnit inlineBoxHeight,
+FloatRoundedRect BoxPainter::getBackgroundRoundedRect(const LayoutObject& obj, const LayoutRect& borderRect,
+    const InlineFlowBox* box, LayoutUnit inlineBoxWidth, LayoutUnit inlineBoxHeight,
     bool includeLogicalLeftEdge, bool includeLogicalRightEdge)
 {
     FloatRoundedRect border = obj.style()->getRoundedBorderFor(borderRect, includeLogicalLeftEdge, includeLogicalRightEdge);
@@ -251,8 +248,8 @@ FloatRoundedRect BoxPainter::getBackgroundRoundedRect(LayoutObject& obj, const L
     return border;
 }
 
-FloatRoundedRect BoxPainter::backgroundRoundedRectAdjustedForBleedAvoidance(LayoutObject& obj,
-    const LayoutRect& borderRect, BackgroundBleedAvoidance bleedAvoidance, InlineFlowBox* box,
+FloatRoundedRect BoxPainter::backgroundRoundedRectAdjustedForBleedAvoidance(const LayoutObject& obj,
+    const LayoutRect& borderRect, BackgroundBleedAvoidance bleedAvoidance, const InlineFlowBox* box,
     const LayoutSize& boxSize, bool includeLogicalLeftEdge, bool includeLogicalRightEdge)
 {
     if (bleedAvoidance == BackgroundBleedShrinkBackground) {
@@ -291,7 +288,7 @@ FloatRoundedRect BoxPainter::backgroundRoundedRectAdjustedForBleedAvoidance(Layo
     return getBackgroundRoundedRect(obj, borderRect, box, boxSize.width(), boxSize.height(), includeLogicalLeftEdge, includeLogicalRightEdge);
 }
 
-void BoxPainter::paintFillLayerExtended(LayoutBoxModelObject& obj, const PaintInfo& paintInfo, const Color& color, const FillLayer& bgLayer, const LayoutRect& rect, BackgroundBleedAvoidance bleedAvoidance, InlineFlowBox* box, const LayoutSize& boxSize, SkXfermode::Mode op, LayoutObject* backgroundObject)
+void BoxPainter::paintFillLayerExtended(const LayoutBoxModelObject& obj, const PaintInfo& paintInfo, const Color& color, const FillLayer& bgLayer, const LayoutRect& rect, BackgroundBleedAvoidance bleedAvoidance, const InlineFlowBox* box, const LayoutSize& boxSize, SkXfermode::Mode op, const LayoutObject* backgroundObject)
 {
     GraphicsContext* context = paintInfo.context;
     if (rect.isEmpty())
@@ -386,14 +383,15 @@ void BoxPainter::paintFillLayerExtended(LayoutBoxModelObject& obj, const PaintIn
     LayoutRect scrolledPaintRect = rect;
     if (clippedWithLocalScrolling) {
         // Clip to the overflow area.
-        LayoutBox* thisBox = toLayoutBox(&obj);
-        context->clip(thisBox->overflowClipRect(rect.location()));
+        const LayoutBox& thisBox = toLayoutBox(obj);
+        // TODO(chrishtr): this should be pixel-snapped.
+        context->clip(FloatRect(thisBox.overflowClipRect(rect.location())));
 
         // Adjust the paint rect to reflect a scrolled content box with borders at the ends.
-        IntSize offset = thisBox->scrolledContentOffset();
+        IntSize offset = thisBox.scrolledContentOffset();
         scrolledPaintRect.move(-offset);
-        scrolledPaintRect.setWidth(bLeft + thisBox->scrollWidth() + bRight);
-        scrolledPaintRect.setHeight(thisBox->borderTop() + thisBox->scrollHeight() + thisBox->borderBottom());
+        scrolledPaintRect.setWidth(bLeft + thisBox.scrollWidth() + bRight);
+        scrolledPaintRect.setHeight(thisBox.borderTop() + thisBox.scrollHeight() + thisBox.borderBottom());
     }
 
     GraphicsContextStateSaver backgroundClipStateSaver(*context, false);
@@ -407,12 +405,13 @@ void BoxPainter::paintFillLayerExtended(LayoutBoxModelObject& obj, const PaintIn
 
         // Clip to the padding or content boxes as necessary.
         bool includePadding = bgLayer.clip() == ContentFillBox;
-        LayoutRect clipRect = LayoutRect(scrolledPaintRect.x() + bLeft + (includePadding ? pLeft : LayoutUnit()),
+        LayoutRect clipRect(scrolledPaintRect.x() + bLeft + (includePadding ? pLeft : LayoutUnit()),
             scrolledPaintRect.y() + obj.borderTop() + (includePadding ? obj.paddingTop() : LayoutUnit()),
             scrolledPaintRect.width() - bLeft - bRight - (includePadding ? pLeft + pRight : LayoutUnit()),
             scrolledPaintRect.height() - obj.borderTop() - obj.borderBottom() - (includePadding ? obj.paddingTop() + obj.paddingBottom() : LayoutUnit()));
         backgroundClipStateSaver.save();
-        context->clip(clipRect);
+        // TODO(chrishtr): this should be pixel-snapped.
+        context->clip(FloatRect(clipRect));
 
         break;
     }
@@ -420,8 +419,6 @@ void BoxPainter::paintFillLayerExtended(LayoutBoxModelObject& obj, const PaintIn
         // First figure out how big the mask has to be. It should be no bigger than what we need
         // to actually render, so we should intersect the dirty rect with the border box of the background.
         maskRect = pixelSnappedIntRect(rect);
-        if (!RuntimeEnabledFeatures::slimmingPaintEnabled())
-            maskRect.intersect(paintInfo.rect);
 
         // We draw the background into a separate layer, to be later masked with yet another layer
         // holding the text content.
@@ -440,7 +437,7 @@ void BoxPainter::paintFillLayerExtended(LayoutBoxModelObject& obj, const PaintIn
 
     BackgroundImageGeometry geometry;
     if (bgImage)
-        calculateBackgroundImageGeometry(obj, paintInfo.paintContainer(), bgLayer, scrolledPaintRect, geometry, backgroundObject);
+        geometry.calculate(obj, paintInfo.paintContainer(), paintInfo.globalPaintFlags(), bgLayer, scrolledPaintRect, backgroundObject);
     bool shouldPaintBackgroundImage = bgImage && bgImage->canRender(obj, obj.style()->effectiveZoom());
 
     // Paint the color first underneath all images, culled if background image occludes it.
@@ -451,9 +448,6 @@ void BoxPainter::paintFillLayerExtended(LayoutBoxModelObject& obj, const PaintIn
         bool boxShadowShouldBeAppliedToBackground = obj.boxShadowShouldBeAppliedToBackground(bleedAvoidance, box);
         bool backgroundImageOccludesBackgroundColor = shouldPaintBackgroundImage && isFillLayerOpaque(bgLayer, obj);
         if (boxShadowShouldBeAppliedToBackground || !backgroundImageOccludesBackgroundColor)  {
-            if (!RuntimeEnabledFeatures::slimmingPaintEnabled() && !boxShadowShouldBeAppliedToBackground)
-                backgroundRect.intersect(paintInfo.rect);
-
             GraphicsContextStateSaver shadowStateSaver(*context, boxShadowShouldBeAppliedToBackground);
             if (boxShadowShouldBeAppliedToBackground)
                 BoxPainter::applyBoxShadowForBackground(context, obj);
@@ -469,7 +463,7 @@ void BoxPainter::paintFillLayerExtended(LayoutBoxModelObject& obj, const PaintIn
             SkXfermode::Mode bgOp = WebCoreCompositeToSkiaComposite(bgLayer.composite(), bgLayer.blendMode());
             // if op != SkXfermode::kSrcOver_Mode, a mask is being painted.
             SkXfermode::Mode compositeOp = op == SkXfermode::kSrcOver_Mode ? bgOp : op;
-            LayoutObject* clientForBackgroundImage = backgroundObject ? backgroundObject : &obj;
+            const LayoutObject* clientForBackgroundImage = backgroundObject ? backgroundObject : &obj;
             RefPtr<Image> image = bgImage->image(clientForBackgroundImage, geometry.tileSize());
             InterpolationQuality interpolationQuality = chooseInterpolationQuality(*clientForBackgroundImage, context, image.get(), &bgLayer, LayoutSize(geometry.tileSize()));
             if (bgLayer.maskSourceType() == MaskLuminance)
@@ -489,9 +483,9 @@ void BoxPainter::paintFillLayerExtended(LayoutBoxModelObject& obj, const PaintIn
 
         // Now draw the text into the mask. We do this by painting using a special paint phase that signals to
         // InlineTextBoxes that they should just add their contents to the clip.
-        PaintInfo info(context, maskRect, PaintPhaseTextClip, PaintBehaviorNormal, 0);
+        PaintInfo info(context, maskRect, PaintPhaseTextClip, GlobalPaintNormalPhase, 0);
         if (box) {
-            RootInlineBox& root = box->root();
+            const RootInlineBox& root = box->root();
             box->paint(info, LayoutPoint(scrolledPaintRect.x() - box->x(), scrolledPaintRect.y() - box->y()), root.lineTop(), root.lineBottom());
         } else {
             // FIXME: this should only have an effect for the line box list within |obj|. Change this to create a LineBoxListPainter directly.
@@ -509,13 +503,13 @@ void BoxPainter::paintMask(const PaintInfo& paintInfo, const LayoutPoint& paintO
     if (!paintInfo.shouldPaintWithinRoot(&m_layoutBox) || m_layoutBox.style()->visibility() != VISIBLE || paintInfo.phase != PaintPhaseMask)
         return;
 
-    if (LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(*paintInfo.context, m_layoutBox, paintInfo.phase))
+    if (LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(*paintInfo.context, m_layoutBox, paintInfo.phase, paintOffset))
         return;
 
     LayoutRect visualOverflowRect(m_layoutBox.visualOverflowRect());
     visualOverflowRect.moveBy(paintOffset);
 
-    LayoutObjectDrawingRecorder recorder(*paintInfo.context, m_layoutBox, paintInfo.phase, visualOverflowRect);
+    LayoutObjectDrawingRecorder recorder(*paintInfo.context, m_layoutBox, paintInfo.phase, visualOverflowRect, paintOffset);
     LayoutRect paintRect = LayoutRect(paintOffset, m_layoutBox.size());
     paintMaskImages(paintInfo, paintRect);
 }
@@ -525,7 +519,7 @@ void BoxPainter::paintMaskImages(const PaintInfo& paintInfo, const LayoutRect& p
     // Figure out if we need to push a transparency layer to render our mask.
     bool pushTransparencyLayer = false;
     bool compositedMask = m_layoutBox.hasLayer() && m_layoutBox.layer()->hasCompositedMask();
-    bool flattenCompositingLayers = m_layoutBox.view()->frameView() && m_layoutBox.view()->frameView()->paintBehavior() & PaintBehaviorFlattenCompositingLayers;
+    bool flattenCompositingLayers = paintInfo.globalPaintFlags() & GlobalPaintFlattenCompositingLayers;
 
     bool allMaskImagesLoaded = true;
 
@@ -562,318 +556,23 @@ void BoxPainter::paintClippingMask(const PaintInfo& paintInfo, const LayoutPoint
     if (!m_layoutBox.layer() || m_layoutBox.layer()->compositingState() != PaintsIntoOwnBacking)
         return;
 
-    if (LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(*paintInfo.context, m_layoutBox, paintInfo.phase))
+    if (LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(*paintInfo.context, m_layoutBox, paintInfo.phase, paintOffset))
         return;
 
     IntRect paintRect = pixelSnappedIntRect(LayoutRect(paintOffset, m_layoutBox.size()));
-    LayoutObjectDrawingRecorder drawingRecorder(*paintInfo.context, m_layoutBox, paintInfo.phase, paintRect);
+    LayoutObjectDrawingRecorder drawingRecorder(*paintInfo.context, m_layoutBox, paintInfo.phase, paintRect, paintOffset);
     paintInfo.context->fillRect(paintRect, Color::black);
 }
 
-// Return the amount of space to leave between image tiles for the background-repeat: space property.
-static inline int getSpaceBetweenImageTiles(int areaSize, int tileSize)
-{
-    int numberOfTiles = areaSize / tileSize;
-    int space = -1;
-
-    if (numberOfTiles > 1) {
-        // Spec doesn't specify rounding, so use the same method as for background-repeat: round.
-        space = lroundf((areaSize - numberOfTiles * tileSize) / (float)(numberOfTiles - 1));
-    }
-
-    return space;
-}
-
-void BoxPainter::calculateBackgroundImageGeometry(LayoutBoxModelObject& obj, const LayoutBoxModelObject* paintContainer, const FillLayer& fillLayer, const LayoutRect& paintRect,
-    BackgroundImageGeometry& geometry, LayoutObject* backgroundObject)
-{
-    LayoutUnit left = 0;
-    LayoutUnit top = 0;
-    IntSize positioningAreaSize;
-    IntRect snappedPaintRect = pixelSnappedIntRect(paintRect);
-    bool isLayoutView = obj.isLayoutView();
-    const LayoutBox* rootBox = nullptr;
-    if (isLayoutView) {
-        // It is only possible reach here when root element has a box.
-        Element* documentElement = obj.document().documentElement();
-        ASSERT(documentElement);
-        ASSERT(documentElement->layoutObject());
-        ASSERT(documentElement->layoutObject()->isBox());
-        rootBox = toLayoutBox(documentElement->layoutObject());
-    }
-    const LayoutBoxModelObject& positioningBox = isLayoutView ? static_cast<const LayoutBoxModelObject&>(*rootBox) : obj;
-
-    // Determine the background positioning area and set destRect to the background painting area.
-    // destRect will be adjusted later if the background is non-repeating.
-    // FIXME: transforms spec says that fixed backgrounds behave like scroll inside transforms.
-    bool fixedAttachment = fillLayer.attachment() == FixedBackgroundAttachment;
-
-    if (RuntimeEnabledFeatures::fastMobileScrollingEnabled()) {
-        // As a side effect of an optimization to blit on scroll, we do not honor the CSS
-        // property "background-attachment: fixed" because it may result in rendering
-        // artifacts. Note, these artifacts only appear if we are blitting on scroll of
-        // a page that has fixed background images.
-        fixedAttachment = false;
-    }
-
-    if (!fixedAttachment) {
-        geometry.setDestRect(snappedPaintRect);
-
-        LayoutUnit right = 0;
-        LayoutUnit bottom = 0;
-        // Scroll and Local.
-        if (fillLayer.origin() != BorderFillBox) {
-            left = positioningBox.borderLeft();
-            right = positioningBox.borderRight();
-            top = positioningBox.borderTop();
-            bottom = positioningBox.borderBottom();
-            if (fillLayer.origin() == ContentFillBox) {
-                left += positioningBox.paddingLeft();
-                right += positioningBox.paddingRight();
-                top += positioningBox.paddingTop();
-                bottom += positioningBox.paddingBottom();
-            }
-        }
-
-        if (isLayoutView) {
-            // The background of the box generated by the root element covers the entire canvas and will
-            // be painted by the view object, but the we should still use the root element box for
-            // positioning.
-            positioningAreaSize = pixelSnappedIntSize(rootBox->size() - LayoutSize(left + right, top + bottom), rootBox->location());
-            // The input paint rect is specified in root element local coordinate (i.e. a transform
-            // is applied on the context for painting), and is expanded to cover the whole canvas.
-            // Since left/top is relative to the paint rect, we need to offset them back.
-            left -= paintRect.x();
-            top -= paintRect.y();
-        } else {
-            positioningAreaSize = pixelSnappedIntSize(paintRect.size() - LayoutSize(left + right, top + bottom), paintRect.location());
-        }
-    } else {
-        geometry.setHasNonLocalGeometry();
-
-        IntRect viewportRect = pixelSnappedIntRect(obj.viewRect());
-        if (fixedBackgroundPaintsInLocalCoordinates(obj))
-            viewportRect.setLocation(IntPoint());
-        else if (FrameView* frameView = obj.view()->frameView())
-            viewportRect.setLocation(frameView->scrollPosition());
-
-        if (paintContainer) {
-            IntPoint absoluteContainerOffset = roundedIntPoint(paintContainer->localToAbsolute(FloatPoint()));
-            viewportRect.moveBy(-absoluteContainerOffset);
-        }
-
-        geometry.setDestRect(viewportRect);
-        positioningAreaSize = geometry.destRect().size();
-    }
-
-    const LayoutObject* clientForBackgroundImage = backgroundObject ? backgroundObject : &obj;
-    IntSize fillTileSize = calculateFillTileSize(positioningBox, fillLayer, positioningAreaSize);
-    fillLayer.image()->setContainerSizeForLayoutObject(clientForBackgroundImage, fillTileSize, obj.style()->effectiveZoom());
-    geometry.setTileSize(fillTileSize);
-
-    EFillRepeat backgroundRepeatX = fillLayer.repeatX();
-    EFillRepeat backgroundRepeatY = fillLayer.repeatY();
-    int availableWidth = positioningAreaSize.width() - geometry.tileSize().width();
-    int availableHeight = positioningAreaSize.height() - geometry.tileSize().height();
-
-    LayoutUnit computedXPosition = roundedMinimumValueForLength(fillLayer.xPosition(), availableWidth);
-    if (backgroundRepeatX == RoundFill && positioningAreaSize.width() > 0 && fillTileSize.width() > 0) {
-        long nrTiles = std::max(1l, lroundf((float)positioningAreaSize.width() / fillTileSize.width()));
-
-        // Round tile size per css3-background spec.
-        fillTileSize.setWidth(lroundf(positioningAreaSize.width() / (float)nrTiles));
-
-        // Maintain aspect ratio if background-size: auto is set
-        if (fillLayer.size().size.height().isAuto() && backgroundRepeatY != RoundFill) {
-            fillTileSize.setHeight(fillTileSize.height() * positioningAreaSize.width() / (nrTiles * fillTileSize.width()));
-        }
-
-        geometry.setTileSize(fillTileSize);
-        geometry.setPhaseX(geometry.tileSize().width() ? geometry.tileSize().width() - roundToInt(computedXPosition + left) % geometry.tileSize().width() : 0);
-        geometry.setSpaceSize(IntSize());
-    }
-
-    LayoutUnit computedYPosition = roundedMinimumValueForLength(fillLayer.yPosition(), availableHeight);
-    if (backgroundRepeatY == RoundFill && positioningAreaSize.height() > 0 && fillTileSize.height() > 0) {
-        long nrTiles = std::max(1l, lroundf((float)positioningAreaSize.height() / fillTileSize.height()));
-
-        // Round tile size per css3-background spec.
-        fillTileSize.setHeight(lroundf(positioningAreaSize.height() / (float)nrTiles));
-
-        // Maintain aspect ratio if background-size: auto is set
-        if (fillLayer.size().size.width().isAuto() && backgroundRepeatX != RoundFill) {
-            fillTileSize.setWidth(fillTileSize.width() * positioningAreaSize.height() / (nrTiles * fillTileSize.height()));
-        }
-
-        geometry.setTileSize(fillTileSize);
-        geometry.setPhaseY(geometry.tileSize().height() ? geometry.tileSize().height() - roundToInt(computedYPosition + top) % geometry.tileSize().height() : 0);
-        geometry.setSpaceSize(IntSize());
-    }
-
-    if (backgroundRepeatX == RepeatFill) {
-        geometry.setPhaseX(geometry.tileSize().width() ? geometry.tileSize().width() - roundToInt(computedXPosition + left) % geometry.tileSize().width() : 0);
-        geometry.setSpaceSize(IntSize());
-    } else if (backgroundRepeatX == SpaceFill && fillTileSize.width() > 0) {
-        int space = getSpaceBetweenImageTiles(positioningAreaSize.width(), geometry.tileSize().width());
-        int actualWidth = geometry.tileSize().width() + space;
-
-        if (space >= 0) {
-            computedXPosition = roundedMinimumValueForLength(Length(), availableWidth);
-            geometry.setSpaceSize(IntSize(space, 0));
-            geometry.setPhaseX(actualWidth ? actualWidth - roundToInt(computedXPosition + left) % actualWidth : 0);
-        } else {
-            backgroundRepeatX = NoRepeatFill;
-        }
-    }
-    if (backgroundRepeatX == NoRepeatFill) {
-        int xOffset = fillLayer.backgroundXOrigin() == RightEdge ? availableWidth - computedXPosition : computedXPosition;
-        geometry.setNoRepeatX(left + xOffset);
-        geometry.setSpaceSize(IntSize(0, geometry.spaceSize().height()));
-    }
-
-    if (backgroundRepeatY == RepeatFill) {
-        geometry.setPhaseY(geometry.tileSize().height() ? geometry.tileSize().height() - roundToInt(computedYPosition + top) % geometry.tileSize().height() : 0);
-        geometry.setSpaceSize(IntSize(geometry.spaceSize().width(), 0));
-    } else if (backgroundRepeatY == SpaceFill && fillTileSize.height() > 0) {
-        int space = getSpaceBetweenImageTiles(positioningAreaSize.height(), geometry.tileSize().height());
-        int actualHeight = geometry.tileSize().height() + space;
-
-        if (space >= 0) {
-            computedYPosition = roundedMinimumValueForLength(Length(), availableHeight);
-            geometry.setSpaceSize(IntSize(geometry.spaceSize().width(), space));
-            geometry.setPhaseY(actualHeight ? actualHeight - roundToInt(computedYPosition + top) % actualHeight : 0);
-        } else {
-            backgroundRepeatY = NoRepeatFill;
-        }
-    }
-    if (backgroundRepeatY == NoRepeatFill) {
-        int yOffset = fillLayer.backgroundYOrigin() == BottomEdge ? availableHeight - computedYPosition : computedYPosition;
-        geometry.setNoRepeatY(top + yOffset);
-        geometry.setSpaceSize(IntSize(geometry.spaceSize().width(), 0));
-    }
-
-    if (fixedAttachment)
-        geometry.useFixedAttachment(snappedPaintRect.location());
-
-    geometry.clip(snappedPaintRect);
-}
-
-InterpolationQuality BoxPainter::chooseInterpolationQuality(LayoutObject& obj, GraphicsContext* context, Image* image, const void* layer, const LayoutSize& size)
+InterpolationQuality BoxPainter::chooseInterpolationQuality(const LayoutObject& obj, GraphicsContext* context, Image* image, const void* layer, const LayoutSize& size)
 {
     return ImageQualityController::imageQualityController()->chooseInterpolationQuality(context, &obj, image, layer, size);
 }
 
-bool BoxPainter::fixedBackgroundPaintsInLocalCoordinates(const LayoutObject& obj)
-{
-    if (!obj.isLayoutView())
-        return false;
-
-    const LayoutView& view = toLayoutView(obj);
-
-    if (view.frameView() && view.frameView()->paintBehavior() & PaintBehaviorFlattenCompositingLayers)
-        return false;
-
-    DeprecatedPaintLayer* rootLayer = view.layer();
-    if (!rootLayer || rootLayer->compositingState() == NotComposited)
-        return false;
-
-    return rootLayer->compositedDeprecatedPaintLayerMapping()->backgroundLayerPaintsFixedRootBackground();
-}
-
-static inline void applySubPixelHeuristicForTileSize(LayoutSize& tileSize, const IntSize& positioningAreaSize)
-{
-    tileSize.setWidth(positioningAreaSize.width() - tileSize.width() <= 1 ? tileSize.width().ceil() : tileSize.width().floor());
-    tileSize.setHeight(positioningAreaSize.height() - tileSize.height() <= 1 ? tileSize.height().ceil() : tileSize.height().floor());
-}
-
-IntSize BoxPainter::calculateFillTileSize(const LayoutBoxModelObject& obj, const FillLayer& fillLayer, const IntSize& positioningAreaSize)
-{
-    StyleImage* image = fillLayer.image();
-    EFillSizeType type = fillLayer.size().type;
-
-    IntSize imageIntrinsicSize = obj.calculateImageIntrinsicDimensions(image, positioningAreaSize, LayoutBoxModelObject::ScaleByEffectiveZoom);
-    imageIntrinsicSize.scale(1 / image->imageScaleFactor(), 1 / image->imageScaleFactor());
-    switch (type) {
-    case SizeLength: {
-        LayoutSize tileSize(positioningAreaSize);
-
-        Length layerWidth = fillLayer.size().size.width();
-        Length layerHeight = fillLayer.size().size.height();
-
-        if (layerWidth.isFixed())
-            tileSize.setWidth(layerWidth.value());
-        else if (layerWidth.hasPercent())
-            tileSize.setWidth(valueForLength(layerWidth, positioningAreaSize.width()));
-
-        if (layerHeight.isFixed())
-            tileSize.setHeight(layerHeight.value());
-        else if (layerHeight.hasPercent())
-            tileSize.setHeight(valueForLength(layerHeight, positioningAreaSize.height()));
-
-        applySubPixelHeuristicForTileSize(tileSize, positioningAreaSize);
-
-        // If one of the values is auto we have to use the appropriate
-        // scale to maintain our aspect ratio.
-        if (layerWidth.isAuto() && !layerHeight.isAuto()) {
-            if (imageIntrinsicSize.height()) {
-                LayoutUnit adjustedWidth = imageIntrinsicSize.width() * tileSize.height() / imageIntrinsicSize.height();
-                if (imageIntrinsicSize.width() >= 1 && adjustedWidth < 1)
-                    adjustedWidth = 1;
-                tileSize.setWidth(adjustedWidth);
-            }
-        } else if (!layerWidth.isAuto() && layerHeight.isAuto()) {
-            if (imageIntrinsicSize.width()) {
-                LayoutUnit adjustedHeight = imageIntrinsicSize.height() * tileSize.width() / imageIntrinsicSize.width();
-                if (imageIntrinsicSize.height() >= 1 && adjustedHeight < 1)
-                    adjustedHeight = 1;
-                tileSize.setHeight(adjustedHeight);
-            }
-        } else if (layerWidth.isAuto() && layerHeight.isAuto()) {
-            // If both width and height are auto, use the image's intrinsic size.
-            tileSize = LayoutSize(imageIntrinsicSize);
-        }
-
-        tileSize.clampNegativeToZero();
-        return flooredIntSize(tileSize);
-    }
-    case SizeNone: {
-        // If both values are 'auto' then the intrinsic width and/or height of the image should be used, if any.
-        if (!imageIntrinsicSize.isEmpty())
-            return imageIntrinsicSize;
-
-        // If the image has neither an intrinsic width nor an intrinsic height, its size is determined as for 'contain'.
-        type = Contain;
-    }
-    case Contain:
-    case Cover: {
-        float horizontalScaleFactor = imageIntrinsicSize.width()
-            ? static_cast<float>(positioningAreaSize.width()) / imageIntrinsicSize.width() : 1;
-        float verticalScaleFactor = imageIntrinsicSize.height()
-            ? static_cast<float>(positioningAreaSize.height()) / imageIntrinsicSize.height() : 1;
-        float scaleFactor = type == Contain ? std::min(horizontalScaleFactor, verticalScaleFactor) : std::max(horizontalScaleFactor, verticalScaleFactor);
-        return IntSize(std::max(1l, lround(imageIntrinsicSize.width() * scaleFactor)), std::max(1l, lround(imageIntrinsicSize.height() * scaleFactor)));
-    }
-    }
-
-    ASSERT_NOT_REACHED();
-    return IntSize();
-}
-
-bool BoxPainter::paintNinePieceImage(LayoutBoxModelObject& obj, GraphicsContext* graphicsContext, const LayoutRect& rect, const ComputedStyle& style, const NinePieceImage& ninePieceImage, SkXfermode::Mode op)
+bool BoxPainter::paintNinePieceImage(const LayoutBoxModelObject& obj, GraphicsContext* graphicsContext, const LayoutRect& rect, const ComputedStyle& style, const NinePieceImage& ninePieceImage, SkXfermode::Mode op)
 {
     NinePieceImagePainter ninePieceImagePainter(obj);
     return ninePieceImagePainter.paint(graphicsContext, rect, style, ninePieceImage, op);
-}
-
-bool BoxPainter::shouldAntialiasLines(GraphicsContext* context)
-{
-    if (RuntimeEnabledFeatures::slimmingPaintEnabled())
-        return true;
-    // FIXME: We may want to not antialias when scaled by an integral value,
-    // and we may want to antialias when translated by a non-integral value.
-    // FIXME: See crbug.com/382491. getCTM does not include scale factors applied at raster time, such
-    // as device zoom.
-    return !context->getCTM().isIdentityOrTranslationOrFlipped();
 }
 
 bool BoxPainter::allCornersClippedOut(const FloatRoundedRect& border, const IntRect& intClipRect)
@@ -908,7 +607,7 @@ bool BoxPainter::allCornersClippedOut(const FloatRoundedRect& border, const IntR
     return true;
 }
 
-void BoxPainter::paintBorder(LayoutBoxModelObject& obj, const PaintInfo& info,
+void BoxPainter::paintBorder(const LayoutBoxModelObject& obj, const PaintInfo& info,
     const LayoutRect& rect, const ComputedStyle& style, BackgroundBleedAvoidance bleedAvoidance,
     bool includeLogicalLeftEdge, bool includeLogicalRightEdge)
 {

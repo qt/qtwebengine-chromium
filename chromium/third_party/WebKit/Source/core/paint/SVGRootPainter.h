@@ -5,6 +5,8 @@
 #ifndef SVGRootPainter_h
 #define SVGRootPainter_h
 
+#include "wtf/Allocator.h"
+
 namespace blink {
 
 struct PaintInfo;
@@ -12,13 +14,14 @@ class LayoutPoint;
 class LayoutSVGRoot;
 
 class SVGRootPainter {
+    STACK_ALLOCATED();
 public:
-    SVGRootPainter(LayoutSVGRoot& layoutSVGRoot) : m_layoutSVGRoot(layoutSVGRoot) { }
+    SVGRootPainter(const LayoutSVGRoot& layoutSVGRoot) : m_layoutSVGRoot(layoutSVGRoot) { }
 
     void paint(const PaintInfo&, const LayoutPoint&);
 
 private:
-    LayoutSVGRoot& m_layoutSVGRoot;
+    const LayoutSVGRoot& m_layoutSVGRoot;
 };
 
 } // namespace blink

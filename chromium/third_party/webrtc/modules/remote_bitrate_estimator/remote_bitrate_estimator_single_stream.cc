@@ -44,11 +44,10 @@ struct RemoteBitrateEstimatorSingleStream::Detector {
 
   RemoteBitrateEstimatorSingleStream::RemoteBitrateEstimatorSingleStream(
       RemoteBitrateObserver* observer,
-      Clock* clock,
-      uint32_t min_bitrate_bps)
+      Clock* clock)
       : clock_(clock),
         incoming_bitrate_(kBitrateWindowMs, 8000),
-        remote_rate_(new AimdRateControl(min_bitrate_bps)),
+        remote_rate_(new AimdRateControl()),
         observer_(observer),
         crit_sect_(CriticalSectionWrapper::CreateCriticalSection()),
         last_process_time_(-1),
@@ -164,7 +163,7 @@ void RemoteBitrateEstimatorSingleStream::UpdateEstimate(int64_t now_ms) {
   }
   // We can't update the estimate if we don't have any active streams.
   if (overuse_detectors_.empty()) {
-    remote_rate_.reset(new AimdRateControl(remote_rate_->GetMinBitrate()));
+    remote_rate_.reset(new AimdRateControl());
     return;
   }
   double mean_noise_var = sum_var_noise /
@@ -182,9 +181,10 @@ void RemoteBitrateEstimatorSingleStream::UpdateEstimate(int64_t now_ms) {
   }
 }
 
-void RemoteBitrateEstimatorSingleStream::OnRttUpdate(int64_t rtt) {
+void RemoteBitrateEstimatorSingleStream::OnRttUpdate(int64_t avg_rtt_ms,
+                                                     int64_t max_rtt_ms) {
   CriticalSectionScoped cs(crit_sect_.get());
-  remote_rate_->SetRtt(rtt);
+  remote_rate_->SetRtt(avg_rtt_ms);
 }
 
 void RemoteBitrateEstimatorSingleStream::RemoveStream(unsigned int ssrc) {
@@ -227,6 +227,11 @@ void RemoteBitrateEstimatorSingleStream::GetSsrcs(
       it != overuse_detectors_.end(); ++it, ++i) {
     (*ssrcs)[i] = it->first;
   }
+}
+
+void RemoteBitrateEstimatorSingleStream::SetMinBitrate(int min_bitrate_bps) {
+  CriticalSectionScoped cs(crit_sect_.get());
+  remote_rate_->SetMinBitrate(min_bitrate_bps);
 }
 
 }  // namespace webrtc

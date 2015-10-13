@@ -7,11 +7,41 @@
     "namespace": "tabs",
     "description": "Use the <code>chrome.tabs</code> API to interact with the browser's tab system. You can use this API to create, modify, and rearrange tabs in the browser.",
     "types": [
+      { "id": "MutedInfoReason",
+        "type": "string",
+        "description": "An event that caused a muted state change.",
+        "enum": [
+          {"name": "user", "description": "A user input action has set/overridden the muted state."},
+          {"name": "capture", "description": "Tab capture started, forcing a muted state change."},
+          {"name": "extension", "description": "An extension, identified by the extensionId field, set the muted state."}
+        ]
+      },
+      {
+        "id": "MutedInfo",
+        "type": "object",
+        "description": "Tab muted state and the reason for the last state change.",
+        "properties": {
+          "muted": {
+            "type": "boolean",
+            "description": "Whether the tab is prevented from playing sound (but hasn't necessarily recently produced sound). Equivalent to whether the muted audio indicator is showing."
+          },
+          "reason": {
+            "$ref": "MutedInfoReason",
+            "optional": true,
+            "description": "The reason the tab was muted or unmuted. Not set if the tab's mute state has never been changed."
+          },
+          "extensionId": {
+            "type": "string",
+            "optional": true,
+            "description": "The ID of the extension that changed the muted state. Not set if an extension was not the reason the muted state last changed."
+          }
+        }
+      },
       {
         "id": "Tab",
         "type": "object",
         "properties": {
-          "id": {"type": "integer", "minimum": 0, "optional": true, "description": "The ID of the tab. Tab IDs are unique within a browser session. Under some circumstances a Tab may not be assigned an ID, for example when querying foreign tabs using the $(ref:sessions) API, in which case a session ID may be present."},
+          "id": {"type": "integer", "minimum": -1, "optional": true, "description": "The ID of the tab. Tab IDs are unique within a browser session. Under some circumstances a Tab may not be assigned an ID, for example when querying foreign tabs using the $(ref:sessions) API, in which case a session ID may be present. Tab ID can also be set to chrome.tabs.TAB_ID_NONE for apps and devtools windows."},
           // TODO(kalman): Investigate how this is ending up as -1 (based on window type? a bug?) and whether it should be optional instead.
           "index": {"type": "integer", "minimum": -1, "description": "The zero-based index of the tab within its window."},
           "windowId": {"type": "integer", "minimum": 0, "description": "The ID of the window the tab is contained within."},
@@ -21,11 +51,10 @@
           "active": {"type": "boolean", "description": "Whether the tab is active in its window. (Does not necessarily mean the window is focused.)"},
           "pinned": {"type": "boolean", "description": "Whether the tab is pinned."},
           "audible": {"type": "boolean", "optional": true, "description": "Whether the tab has produced sound over the past couple of seconds (but it might not be heard if also muted). Equivalent to whether the speaker audio indicator is showing."},
-          "muted": {"type": "boolean", "optional": true, "description": "Whether the tab is prevented from playing sound (but hasn't necessarily recently produced sound). Equivalent to whether the muted audio indicator is showing."},
-          "mutedCause": {"type": "string", "optional": true, "description": "Indicates what caused the muted setting ('', 'user', 'capture', or an extension id)."},
+          "mutedInfo": {"$ref": "MutedInfo", "optional": true, "description": "Current tab muted state and the reason for the last state change."},
           "url": {"type": "string", "optional": true, "description": "The URL the tab is displaying. This property is only present if the extension's manifest includes the <code>\"tabs\"</code> permission."},
-          "title": {"type": "string", "optional": true, "optional": true, "description": "The title of the tab. This property is only present if the extension's manifest includes the <code>\"tabs\"</code> permission."},
-          "favIconUrl": {"type": "string", "optional": true, "optional": true, "description": "The URL of the tab's favicon. This property is only present if the extension's manifest includes the <code>\"tabs\"</code> permission. It may also be an empty string if the tab is loading."},
+          "title": {"type": "string", "optional": true, "description": "The title of the tab. This property is only present if the extension's manifest includes the <code>\"tabs\"</code> permission."},
+          "favIconUrl": {"type": "string", "optional": true, "description": "The URL of the tab's favicon. This property is only present if the extension's manifest includes the <code>\"tabs\"</code> permission. It may also be an empty string if the tab is loading."},
           "status": {"type": "string", "optional": true, "description": "Either <em>loading</em> or <em>complete</em>."},
           "incognito": {"type": "boolean", "description": "Whether the tab is in an incognito window."},
           "width": {"type": "integer", "optional": true, "description": "The width of the tab in pixels."},
@@ -98,10 +127,16 @@
       {
         "id": "WindowType",
         "type": "string",
-        "enum": ["normal", "popup", "panel", "app"],
+        "enum": ["normal", "popup", "panel", "app", "devtools"],
         "description": "The type of window."
       }
     ],
+    "properties": {
+      "TAB_ID_NONE": {
+        "value": -1,
+        "description": "An ID which represents the absence of a browser tab."
+      }
+    },
     "functions": [
       {
         "name": "get",
@@ -911,15 +946,10 @@
                 "optional": true,
                 "description": "The tab's new audible state."
               },
-              "muted": {
-                "type": "boolean",
+              "mutedInfo": {
+                "$ref": "MutedInfo",
                 "optional": true,
-                "description": "The tab's new muted state."
-              },
-              "mutedCause": {
-                "type": "string",
-                "optional": true,
-                "description": "When the muted state changes, indicates what caused it ('', 'user', 'capture', or an extension id)."
+                "description": "The tab's new muted state and the reason for the change."
               },
               "favIconUrl": {
                 "type": "string",

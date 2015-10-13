@@ -34,8 +34,10 @@
 namespace blink {
 
 class DataConsumerHandleTestUtil {
+    STATIC_ONLY(DataConsumerHandleTestUtil);
 public:
     class NoopClient final : public WebDataConsumerHandle::Client {
+        DISALLOW_ALLOCATION();
     public:
         void didGetReadable() override { }
     };
@@ -44,6 +46,7 @@ public:
     // additional objects based on the given policy. The constructor and the
     // destructor blocks during the setup and the teardown.
     class Thread final {
+        WTF_MAKE_FAST_ALLOCATED(Thread);
     public:
         // Initialization policy of a thread.
         enum InitializationPolicy {
@@ -77,6 +80,10 @@ public:
 
     class ThreadingTestBase : public ThreadSafeRefCounted<ThreadingTestBase> {
     public:
+        virtual ~ThreadingTestBase() { }
+
+        class ThreadHolder;
+
         class Context : public ThreadSafeRefCounted<Context> {
         public:
             static PassRefPtr<Context> create() { return adoptRef(new Context); }
@@ -96,31 +103,85 @@ public:
                 MutexLocker locker(m_loggingMutex);
                 return m_result;
             }
+
+            void registerThreadHolder(ThreadHolder* holder)
+            {
+                MutexLocker locker(m_holderMutex);
+                ASSERT(!m_holder);
+                m_holder = holder;
+            }
+            void unregisterThreadHolder()
+            {
+                MutexLocker locker(m_holderMutex);
+                ASSERT(m_holder);
+                m_holder = nullptr;
+            }
+            void postTaskToReadingThread(const WebTraceLocation& location, Task* task)
+            {
+                MutexLocker locker(m_holderMutex);
+                ASSERT(m_holder);
+                m_holder->readingThread()->postTask(location, task);
+            }
+            void postTaskToUpdatingThread(const WebTraceLocation& location, Task* task)
+            {
+                MutexLocker locker(m_holderMutex);
+                ASSERT(m_holder);
+                m_holder->updatingThread()->postTask(location, task);
+            }
+
+        private:
+            Context()
+                : m_holder(nullptr) { }
+            String currentThreadName()
+            {
+                MutexLocker locker(m_holderMutex);
+                if (m_holder) {
+                    if (m_holder->readingThread()->isCurrentThread())
+                        return "the reading thread";
+                    if (m_holder->updatingThread()->isCurrentThread())
+                        return "the updating thread";
+                }
+                return "an unknown thread";
+            }
+
+            // Protects |m_result|.
+            Mutex m_loggingMutex;
+            String m_result;
+
+            // Protects |m_holder|.
+            Mutex m_holderMutex;
+            // Because Context outlives ThreadHolder, holding a raw pointer
+            // here is safe.
+            ThreadHolder* m_holder;
+        };
+
+        // The reading/updating threads are alive while ThreadHolder is alive.
+        class ThreadHolder {
+            DISALLOW_ALLOCATION();
+        public:
+            ThreadHolder(ThreadingTestBase* test)
+                : m_context(test->m_context)
+                , m_readingThread(adoptPtr(new Thread("reading thread")))
+                , m_updatingThread(adoptPtr(new Thread("updating thread")))
+            {
+                m_context->registerThreadHolder(this);
+            }
+            ~ThreadHolder()
+            {
+                m_context->unregisterThreadHolder();
+            }
+
             WebThreadSupportingGC* readingThread() { return m_readingThread->thread(); }
             WebThreadSupportingGC* updatingThread() { return m_updatingThread->thread(); }
 
         private:
-            Context()
-                : m_readingThread(adoptPtr(new Thread("reading thread")))
-                , m_updatingThread(adoptPtr(new Thread("updating thread")))
-            {
-            }
-            String currentThreadName()
-            {
-                if (m_readingThread->thread()->isCurrentThread())
-                    return "the reading thread";
-                if (m_updatingThread->thread()->isCurrentThread())
-                    return "the updating thread";
-                return "an unknown thread";
-            }
-
+            RefPtr<Context> m_context;
             OwnPtr<Thread> m_readingThread;
             OwnPtr<Thread> m_updatingThread;
-            Mutex m_loggingMutex;
-            String m_result;
         };
 
         class ReaderImpl final : public WebDataConsumerHandle::Reader {
+            WTF_MAKE_FAST_ALLOCATED(ReaderImpl);
         public:
             ReaderImpl(const String& name, PassRefPtr<Context> context) : m_name(name.isolatedCopy()), m_context(context)
             {
@@ -139,11 +200,19 @@ public:
             RefPtr<Context> m_context;
         };
         class DataConsumerHandle final : public WebDataConsumerHandle {
+            WTF_MAKE_FAST_ALLOCATED(DataConsumerHandle);
         public:
-            DataConsumerHandle(const String& name, PassRefPtr<Context> context) : m_name(name.isolatedCopy()), m_context(context) { }
+            static PassOwnPtr<WebDataConsumerHandle> create(const String& name, PassRefPtr<Context> context)
+            {
+                return adoptPtr(new DataConsumerHandle(name, context));
+            }
 
         private:
+            DataConsumerHandle(const String& name, PassRefPtr<Context> context) : m_name(name.isolatedCopy()), m_context(context) { }
+
             Reader* obtainReaderInternal(Client*) { return new ReaderImpl(m_name, m_context); }
+            const char* debugName() const override { return "ThreadingTestBase::DataConsumerHandle"; }
+
             const String m_name;
             RefPtr<Context> m_context;
         };
@@ -151,15 +220,28 @@ public:
         void resetReader() { m_reader = nullptr; }
         void signalDone() { m_waitableEvent->signal(); }
         const String& result() { return m_context->result(); }
-        WebThreadSupportingGC* readingThread() { return m_context->readingThread(); }
-        WebThreadSupportingGC* updatingThread() { return m_context->updatingThread(); }
-        void postTaskAndWait(WebThreadSupportingGC* thread, const WebTraceLocation& location, Task* task)
+        void postTaskToReadingThread(const WebTraceLocation& location, Task* task)
         {
-            thread->postTask(location, task);
+            m_context->postTaskToReadingThread(location,  task);
+        }
+        void postTaskToUpdatingThread(const WebTraceLocation& location, Task* task)
+        {
+            m_context->postTaskToUpdatingThread(location,  task);
+        }
+        void postTaskToReadingThreadAndWait(const WebTraceLocation& location, Task* task)
+        {
+            postTaskToReadingThread(location,  task);
             m_waitableEvent->wait();
         }
-
+        void postTaskToUpdatingThreadAndWait(const WebTraceLocation& location, Task* task)
+        {
+            postTaskToUpdatingThread(location,  task);
+            m_waitableEvent->wait();
+        }
     protected:
+        ThreadingTestBase()
+            : m_context(Context::create()) { }
+
         RefPtr<Context> m_context;
         OwnPtr<WebDataConsumerHandle::Reader> m_reader;
         OwnPtr<WebWaitableEvent> m_waitableEvent;
@@ -169,24 +251,27 @@ public:
     class ThreadingHandleNotificationTest : public ThreadingTestBase, public WebDataConsumerHandle::Client {
     public:
         using Self = ThreadingHandleNotificationTest;
+        static PassRefPtr<Self> create() { return adoptRef(new Self); }
+
         void run(PassOwnPtr<WebDataConsumerHandle> handle)
         {
-            m_context = Context::create();
+            ThreadHolder holder(this);
             m_waitableEvent = adoptPtr(Platform::current()->createWaitableEvent());
             m_handle = handle;
 
-            postTaskAndWait(readingThread(), FROM_HERE, new Task(threadSafeBind(&Self::obtainReader, this)));
+            postTaskToReadingThreadAndWait(FROM_HERE, new Task(threadSafeBind(&Self::obtainReader, this)));
         }
 
     private:
+        ThreadingHandleNotificationTest() = default;
         void obtainReader()
         {
             m_reader = m_handle->obtainReader(this);
         }
         void didGetReadable() override
         {
-            readingThread()->postTask(FROM_HERE, new Task(threadSafeBind(&Self::resetReader, this)));
-            readingThread()->postTask(FROM_HERE, new Task(threadSafeBind(&Self::signalDone, this)));
+            postTaskToReadingThread(FROM_HERE, new Task(threadSafeBind(&Self::resetReader, this)));
+            postTaskToReadingThread(FROM_HERE, new Task(threadSafeBind(&Self::signalDone, this)));
         }
 
         OwnPtr<WebDataConsumerHandle> m_handle;
@@ -195,21 +280,24 @@ public:
     class ThreadingHandleNoNotificationTest : public ThreadingTestBase, public WebDataConsumerHandle::Client {
     public:
         using Self = ThreadingHandleNoNotificationTest;
+        static PassRefPtr<Self> create() { return adoptRef(new Self); }
+
         void run(PassOwnPtr<WebDataConsumerHandle> handle)
         {
-            m_context = Context::create();
+            ThreadHolder holder(this);
             m_waitableEvent = adoptPtr(Platform::current()->createWaitableEvent());
             m_handle = handle;
 
-            postTaskAndWait(readingThread(), FROM_HERE, new Task(threadSafeBind(&Self::obtainReader, this)));
+            postTaskToReadingThreadAndWait(FROM_HERE, new Task(threadSafeBind(&Self::obtainReader, this)));
         }
 
     private:
+        ThreadingHandleNoNotificationTest() = default;
         void obtainReader()
         {
             m_reader = m_handle->obtainReader(this);
             m_reader = nullptr;
-            readingThread()->postTask(FROM_HERE, new Task(threadSafeBind(&Self::signalDone, this)));
+            postTaskToReadingThread(FROM_HERE, new Task(threadSafeBind(&Self::signalDone, this)));
         }
         void didGetReadable() override
         {
@@ -223,6 +311,9 @@ public:
     public:
         static PassOwnPtr<::testing::StrictMock<MockFetchDataConsumerHandle>> create() { return adoptPtr(new ::testing::StrictMock<MockFetchDataConsumerHandle>); }
         MOCK_METHOD1(obtainReaderInternal, Reader*(Client*));
+
+    private:
+        const char* debugName() const override { return "MockFetchDataConsumerHandle"; }
     };
 
     class MockFetchDataConsumerReader : public FetchDataConsumerHandle::Reader {
@@ -271,6 +362,7 @@ public:
     };
 
     class Command final {
+        ALLOW_ONLY_INLINE_ALLOCATION();
     public:
         enum Name {
             Data,
@@ -296,6 +388,7 @@ public:
 
     // ReplayingHandle stores commands via |add| and replays the stored commends when read.
     class ReplayingHandle final : public WebDataConsumerHandle {
+        WTF_MAKE_FAST_ALLOCATED(ReplayingHandle);
     public:
         static PassOwnPtr<ReplayingHandle> create() { return adoptPtr(new ReplayingHandle()); }
         ~ReplayingHandle();
@@ -344,11 +437,13 @@ public:
 
         ReplayingHandle();
         Reader* obtainReaderInternal(Client*) override;
+        const char* debugName() const override { return "ReplayingHandle"; }
 
         RefPtr<Context> m_context;
     };
 
     class HandleReadResult final {
+        WTF_MAKE_FAST_ALLOCATED(HandleReadResult);
     public:
         HandleReadResult(WebDataConsumerHandle::Result result, const Vector<char>& data) : m_result(result), m_data(data) { }
         WebDataConsumerHandle::Result result() const { return m_result; }
@@ -363,6 +458,7 @@ public:
     // Reader::read on the thread on which it is created. When reading is done
     // or failed, it calls the given callback with the result.
     class HandleReader final : public WebDataConsumerHandle::Client {
+        WTF_MAKE_FAST_ALLOCATED(HandleReader);
     public:
         using OnFinishedReading = WTF::Function<void(PassOwnPtr<HandleReadResult>)>;
 
@@ -380,6 +476,7 @@ public:
     // HandleTwoPhaseReader does the same as HandleReader, but it uses
     // |beginRead| / |endRead| instead of |read|.
     class HandleTwoPhaseReader final : public WebDataConsumerHandle::Client {
+        WTF_MAKE_FAST_ALLOCATED(HandleTwoPhaseReader);
     public:
         using OnFinishedReading = WTF::Function<void(PassOwnPtr<HandleReadResult>)>;
 
@@ -398,6 +495,7 @@ public:
     // where T is one of HandleReader and HandleTwophaseReader.
     template <typename T>
     class HandleReaderRunner final {
+        STACK_ALLOCATED();
     public:
         explicit HandleReaderRunner(PassOwnPtr<WebDataConsumerHandle> handle)
             : m_thread(adoptPtr(new Thread("reading thread")))

@@ -11,7 +11,7 @@
 #include "modules/cachestorage/Cache.h"
 #include "modules/cachestorage/CacheQueryOptions.h"
 #include "modules/fetch/GlobalFetch.h"
-#include "public/platform/WebServiceWorkerCacheStorage.h"
+#include "public/platform/modules/serviceworker/WebServiceWorkerCacheStorage.h"
 #include "wtf/Forward.h"
 #include "wtf/HashMap.h"
 #include "wtf/Noncopyable.h"
@@ -25,14 +25,14 @@ class CacheStorage final : public GarbageCollectedFinalized<CacheStorage>, publi
     DEFINE_WRAPPERTYPEINFO();
     WTF_MAKE_NONCOPYABLE(CacheStorage);
 public:
-    static CacheStorage* create(WeakPtr<GlobalFetch::ScopedFetcher>, WebServiceWorkerCacheStorage*);
+    static CacheStorage* create(WeakPtrWillBeRawPtr<GlobalFetch::ScopedFetcher>, WebServiceWorkerCacheStorage*);
     ~CacheStorage();
     void dispose();
 
-    ScriptPromise open(ScriptState*, const String& cacheName);
-    ScriptPromise has(ScriptState*, const String& cacheName);
-    ScriptPromise deleteFunction(ScriptState*, const String& cacheName);
-    ScriptPromise keys(ScriptState*);
+    ScriptPromise open(ScriptState*, const String& cacheName, ExceptionState&);
+    ScriptPromise has(ScriptState*, const String& cacheName, ExceptionState&);
+    ScriptPromise deleteFunction(ScriptState*, const String& cacheName, ExceptionState&);
+    ScriptPromise keys(ScriptState*, ExceptionState&);
     ScriptPromise match(ScriptState*, const RequestInfo&, const CacheQueryOptions&, ExceptionState&);
 
     DECLARE_TRACE();
@@ -47,10 +47,10 @@ private:
     friend class WithCacheCallbacks;
     friend class DeleteCallbacks;
 
-    CacheStorage(WeakPtr<GlobalFetch::ScopedFetcher>, PassOwnPtr<WebServiceWorkerCacheStorage>);
+    CacheStorage(WeakPtrWillBeRawPtr<GlobalFetch::ScopedFetcher>, PassOwnPtr<WebServiceWorkerCacheStorage>);
     ScriptPromise matchImpl(ScriptState*, const Request*, const CacheQueryOptions&);
 
-    WeakPtr<GlobalFetch::ScopedFetcher> m_scopedFetcher;
+    WeakPtrWillBeMember<GlobalFetch::ScopedFetcher> m_scopedFetcher;
     OwnPtr<WebServiceWorkerCacheStorage> m_webCacheStorage;
     HeapHashMap<String, Member<Cache>> m_nameToCacheMap;
 };

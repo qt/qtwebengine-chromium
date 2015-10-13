@@ -18,7 +18,6 @@
 #include "webrtc/base/scoped_ref_ptr.h"
 #include "webrtc/common_video/libyuv/include/webrtc_libyuv.h"
 #include "webrtc/modules/utility/interface/process_thread.h"
-#include "webrtc/modules/video_capture/ensure_initialized.h"
 #include "webrtc/modules/video_capture/include/video_capture.h"
 #include "webrtc/modules/video_capture/include/video_capture_factory.h"
 #include "webrtc/system_wrappers/interface/critical_section_wrapper.h"
@@ -235,7 +234,6 @@ class VideoCaptureTest : public testing::Test {
   VideoCaptureTest() : number_of_devices_(0) {}
 
   void SetUp() {
-    webrtc::videocapturemodule::EnsureInitialized();
     device_info_.reset(VideoCaptureFactory::CreateDeviceInfo(0));
     assert(device_info_.get());
     number_of_devices_ = device_info_->NumberOfDevices();
@@ -429,7 +427,7 @@ class VideoCaptureExternalTest : public testing::Test {
  public:
   void SetUp() {
     capture_module_ = VideoCaptureFactory::Create(0, capture_input_interface_);
-    process_module_ = webrtc::ProcessThread::Create();
+    process_module_ = webrtc::ProcessThread::Create("ProcessThread");
     process_module_->Start();
     process_module_->RegisterModule(capture_module_);
 

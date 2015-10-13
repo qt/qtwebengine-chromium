@@ -61,7 +61,7 @@ body.platform-linux {
     background-color: rgba(0, 0, 0, 0.31);
 }
 
-#canvas, #labels-canvas {
+#canvas, #labels-canvas, #layout-editor-matched-nodes-canvas {
     pointer-events: none;
 }
 
@@ -152,6 +152,98 @@ body.platform-linux {
     position: absolute;
 }
 
+
+/* Material */
+.hidden {
+    display: none !important;
+}
+
+.tooltip-content,
+.material-tooltip-arrow {
+    position: absolute;
+    z-index: 10;
+    -webkit-user-select: none;
+}
+
+.tooltip-content {
+    background-color: #333740;
+    font-size: 11px;
+    line-height: 14px;
+    padding: 5px 8px;
+    border-radius: 3px;
+    color: white;
+    box-sizing: border-box;
+    max-width: calc(100% - 4px);
+    border: 1px solid hsla(0, 0%, 100%, 0.3);
+    z-index: 1;
+    background-clip: padding-box;
+    will-change: transform;
+    text-rendering: optimizeLegibility;
+}
+
+.element-info {
+    display: flex;
+    align-content: stretch;
+}
+
+.material-tooltip-arrow {
+    border: solid;
+    border-color: #333740 transparent;
+    border-width: 0 8px 8px 8px;
+    z-index: 2;
+    margin-top: 1px;
+}
+
+.material-tooltip-arrow.tooltip-arrow-top {
+    border-width: 8px 8px 0 8px;
+    margin-top: -1px;
+}
+
+.element-description {
+    flex: 1 1;
+    word-wrap: break-word;
+}
+
+.dimensions {
+    border-left: 1px solid hsl(0, 0%, 50%);
+    padding-left: 7px;
+    margin-left: 7px;
+    float: right;
+    flex: 0 0 auto;
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    color: hsl(0, 0%, 85%);
+}
+
+.material-node-width {
+    margin-right: 2px;
+}
+
+.material-node-height {
+    margin-left: 2px;
+}
+
+.material-tag-name {
+    color: hsl(304, 77%, 70%);
+}
+
+.material-node-id {
+    color: hsl(27, 100%, 70%);
+}
+
+.material-class-name {
+    color: hsl(202,92%,77%);
+}
+
+.layout-editor-media-tooltip {
+    color: hsl(0, 0%, 85%);
+}
+
+.layout-editor-selector-tooltip {
+    color: hsl(202,92%,77%);
+}
+
 </style>
 <script>
 const lightGridColor = "rgba(0,0,0,0.2)";
@@ -167,7 +259,7 @@ function drawPausedInDebuggerMessage(message)
     document.body.classList.add("dimmed");
 }
 
-function _drawGrid(rulerAtRight, rulerAtBottom)
+function _drawGrid(context, rulerAtRight, rulerAtBottom)
 {
     if (window._gridPainted)
         return;
@@ -321,7 +413,7 @@ function drawViewSize(drawViewSizeWithGrid)
     context.fillText(text, frameWidth - textWidth - 6, drawGridBoolean ? 33 : 18);
     context.restore();
     if (drawGridBoolean)
-        _drawGrid();
+        _drawGrid(context);
 }
 
 function resetCanvas(canvasElement)
@@ -346,30 +438,28 @@ function reset(resetData)
     window.context = canvas.getContext("2d");
     resetCanvas(canvas);
 
-    window.labelsCanvas = document.getElementById("labels-canvas");
-    resetCanvas(labelsCanvas);
-
     window.canvasWidth = viewportSize.width;
     window.canvasHeight = viewportSize.height;
 
     window._controlsVisible = false;
     document.querySelector(".controls-line").style.visibility = "hidden";
     document.getElementById("element-title").style.visibility = "hidden";
-    var editor = document.getElementById("editor");
-    editor.style.visibility = "hidden";
-    editor.textContent = "";
+    document.getElementById("tooltip-container").removeChildren();
+
     document.body.classList.remove("dimmed");
+
     window._gridPainted = false;
+    delete window.hoverableAreas;
+
+    if (window.layoutEditor)
+        window.layoutEditor.reset();
 }
 
-function _drawElementTitle(elementInfo, bounds)
+function _drawElementTitle(context, elementInfo, bounds)
 {
     document.getElementById("tag-name").textContent = elementInfo.tagName;
     document.getElementById("node-id").textContent = elementInfo.idValue ? "#" + elementInfo.idValue : "";
-    var className = elementInfo.className;
-    if (className && className.length > 50)
-       className = className.substring(0, 50) + "\u2026";
-    document.getElementById("class-name").textContent = className || "";
+    document.getElementById("class-name").textContent = (elementInfo.className || "").trimEnd(50);
     document.getElementById("node-width").textContent = elementInfo.nodeWidth;
     document.getElementById("node-height").textContent = elementInfo.nodeHeight;
     var elementTitle = document.getElementById("element-title");
@@ -435,7 +525,80 @@ function _drawElementTitle(elementInfo, bounds)
     elementTitle.style.left = (boxX + 3) + "px";
 }
 
-function _drawRulers(bounds, rulerAtRight, rulerAtBottom)
+function _createElementDescription(elementInfo)
+{
+    var elementInfoElement = createElement("div", "element-info");
+    var descriptionElement = elementInfoElement.createChild("div", "element-description monospace");
+    var tagNameElement = descriptionElement.createChild("b").createChild("span", "material-tag-name");
+    tagNameElement.textContent = elementInfo.tagName;
+    var nodeIdElement = descriptionElement.createChild("span", "material-node-id");
+    nodeIdElement.textContent = elementInfo.idValue ? "#" + elementInfo.idValue : "";
+    nodeIdElement.classList.toggle("hidden", !elementInfo.idValue);
+
+    var classNameElement = descriptionElement.createChild("span", "material-class-name");
+    classNameElement.textContent = (elementInfo.className || "").trim(50);
+    classNameElement.classList.toggle("hidden", !elementInfo.className);
+    var dimensionsElement = elementInfoElement.createChild("div", "dimensions");
+    dimensionsElement.createChild("span", "material-node-width").textContent = Math.round(elementInfo.nodeWidth * 100) / 100;
+    dimensionsElement.createTextChild("\u00d7");
+    dimensionsElement.createChild("span", "material-node-height").textContent = Math.round(elementInfo.nodeHeight * 100) / 100;
+    return elementInfoElement;
+}
+
+function _drawMaterialElementTitle(elementInfo, bounds)
+{
+    var tooltipContainer = document.getElementById("tooltip-container");
+    tooltipContainer.removeChildren();
+    _createMaterialTooltip(tooltipContainer, bounds, _createElementDescription(elementInfo), true);
+}
+
+function _createMaterialTooltip(parentElement, bounds, contentElement, withArrow)
+{
+    var tooltipContainer = parentElement.createChild("div");
+    var tooltipContent = tooltipContainer.createChild("div", "tooltip-content");
+    tooltipContent.appendChild(contentElement);
+
+    var titleWidth = tooltipContent.offsetWidth;
+    var titleHeight = tooltipContent.offsetHeight;
+    var arrowRadius = 8;
+    var pageMargin = 2;
+
+    var boxX = Math.max(pageMargin, bounds.minX + (bounds.maxX - bounds.minX) / 2 - titleWidth / 2);
+    boxX = Math.min(boxX, canvasWidth - titleWidth - pageMargin);
+
+    var boxY = bounds.minY - arrowRadius - titleHeight;
+    var onTop = true;
+    if (boxY < 0) {
+        boxY = bounds.maxY + arrowRadius;
+        onTop = false;
+    } else if (bounds.minY > canvasHeight) {
+        boxY = canvasHeight - arrowRadius - titleHeight;
+    }
+
+    tooltipContent.style.top = boxY + "px";
+    tooltipContent.style.left = boxX + "px";
+    if (!withArrow)
+        return;
+
+    var tooltipArrow = tooltipContainer.createChild("div", "material-tooltip-arrow");
+    // Center arrow if possible. Otherwise, try the bounds of the element.
+    var arrowX = bounds.minX + (bounds.maxX - bounds.minX) / 2 - arrowRadius;
+    var tooltipBorderRadius = 2;
+    if (arrowX < pageMargin + tooltipBorderRadius)
+        arrowX = bounds.maxX - arrowRadius * 2;
+    else if (arrowX + arrowRadius * 2 > canvasWidth - pageMargin - tooltipBorderRadius)
+        arrowX = bounds.minX;
+    // Hide arrow if element is completely off the sides of the page.
+    var arrowHidden = arrowX < pageMargin + tooltipBorderRadius || arrowX + arrowRadius * 2 > canvasWidth - pageMargin - tooltipBorderRadius;
+    tooltipArrow.classList.toggle("hidden", arrowHidden);
+    if (!arrowHidden) {
+        tooltipArrow.classList.toggle("tooltip-arrow-top", onTop);
+        tooltipArrow.style.top = (onTop ? boxY + titleHeight : boxY - arrowRadius) + "px";
+        tooltipArrow.style.left = arrowX + "px";
+    }
+}
+
+function _drawRulers(context, bounds, rulerAtRight, rulerAtBottom)
 {
     context.save();
     var width = canvasWidth;
@@ -479,7 +642,7 @@ function _drawRulers(bounds, rulerAtRight, rulerAtBottom)
     context.restore();
 }
 
-function drawPath(commands, fillColor, outlineColor, bounds)
+function drawPath(context, commands, fillColor, outlineColor, bounds)
 {
     var commandsIndex = 0;
 
@@ -500,53 +663,50 @@ function drawPath(commands, fillColor, outlineColor, bounds)
             bounds.rightmostXForY[y] = Math.max(bounds.rightmostXForY[y] || Number.MIN_VALUE, x);
             bounds.topmostYForX[x] = Math.min(bounds.topmostYForX[x] || Number.MAX_VALUE, y);
             bounds.bottommostYForX[x] = Math.max(bounds.bottommostYForX[x] || Number.MIN_VALUE, y);
-
             points.push(x, y);
         }
         return points;
     }
 
     context.save();
-    context.beginPath();
-
     var commandsLength = commands.length;
+    var path = new Path2D();
     while (commandsIndex < commandsLength) {
         switch (commands[commandsIndex++]) {
         case "M":
-            context.moveTo.apply(context, extractPoints(1));
+            path.moveTo.apply(path, extractPoints(1));
             break;
         case "L":
-            context.lineTo.apply(context, extractPoints(1));
+            path.lineTo.apply(path, extractPoints(1));
             break;
         case "C":
-            context.bezierCurveTo.apply(context, extractPoints(3));
+            path.bezierCurveTo.apply(path, extractPoints(3));
             break;
         case "Q":
-            context.quadraticCurveTo.apply(context, extractPoints(2));
+            path.quadraticCurveTo.apply(path, extractPoints(2));
             break;
         case "Z":
-            context.closePath();
+            path.closePath();
             break;
         }
     }
-    context.closePath();
+    path.closePath();
     context.lineWidth = 0;
     context.fillStyle = fillColor;
-    context.fill();
+    context.fill(path);
 
     if (outlineColor) {
         context.lineWidth = 2;
         context.strokeStyle = outlineColor;
-        context.stroke();
+        context.stroke(path);
     }
 
     context.restore();
+    return path;
 }
 
-function drawHighlight(highlight)
+function emptyBounds()
 {
-    context.save();
-
     var bounds = {
         minX: Number.MAX_VALUE,
         minY: Number.MAX_VALUE,
@@ -557,14 +717,25 @@ function drawHighlight(highlight)
         topmostYForX: {},
         bottommostYForX: {}
     };
+    return bounds;
+}
 
+function drawHighlight(highlight, context)
+{
+    context = context || window.context;
+    context.save();
+
+    var bounds = emptyBounds();
+
+    var areasDescription = new Map();
     for (var paths = highlight.paths.slice(); paths.length;) {
         var path = paths.pop();
-        drawPath(path.path, path.fillColor, path.outlineColor, bounds);
+        var canvasPath = drawPath(context, path.path, path.fillColor, path.outlineColor, bounds);
+        areasDescription.set(path.name, canvasPath);
         if (paths.length) {
             context.save();
             context.globalCompositeOperation = "destination-out";
-            drawPath(paths[paths.length - 1].path, "red", null, bounds);
+            drawPath(context, paths[paths.length - 1].path, "red", null, bounds);
             context.restore();
         }
     }
@@ -573,16 +744,20 @@ function drawHighlight(highlight)
     var rulerAtBottom = highlight.paths.length && highlight.showRulers && bounds.minY < 20 && bounds.maxY + 20 < canvasHeight;
 
     if (highlight.showRulers)
-        _drawGrid(rulerAtRight, rulerAtBottom);
+        _drawGrid(context, rulerAtRight, rulerAtBottom);
 
     if (highlight.paths.length) {
         if (highlight.showExtensionLines)
-            _drawRulers(bounds, rulerAtRight, rulerAtBottom);
+            _drawRulers(context, bounds, rulerAtRight, rulerAtBottom);
 
-        if (highlight.elementInfo)
-           _drawElementTitle(highlight.elementInfo, bounds);
+        if (highlight.elementInfo && highlight.displayAsMaterial)
+           _drawMaterialElementTitle(highlight.elementInfo, bounds);
+        else if (highlight.elementInfo)
+           _drawElementTitle(context, highlight.elementInfo, bounds);
     }
     context.restore();
+
+    return { areasDescription: areasDescription, bounds: bounds };
 }
 
 function setPlatform(platform)
@@ -599,9 +774,7 @@ function dispatch(message)
 
 function log(text)
 {
-    var logEntry = document.createElement("div");
-    logEntry.textContent = text;
-    document.getElementById("log").appendChild(logEntry);
+    document.getElementById("log").createChild("div").textContent = text;
 }
 
 function onResumeClick()
@@ -637,108 +810,410 @@ function onDocumentKeyDown(event)
 
 function showLayoutEditor(info)
 {
-    var editorElement = document.getElementById("editor");
-    editorElement.style.visibility = "visible";
-    var anchors = info.anchors;
-    for (var i = 0; i < anchors.length; ++i) {
-        var anchorInfo = anchors[i];
-        editorElement.appendChild(createAnchor(anchorInfo));
-        if (anchorInfo.propertyName === window.draggedPropertyName)
-            showLabel(anchorInfo);
+    if (!window.layoutEditor)
+        window.layoutEditor = new LayoutEditor(canvas);
+
+    window.layoutEditor.setState(info);
+}
+
+function setSelectorInLayoutEditor(selectorInfo)
+{
+    if (!window.layoutEditor)
+        return;
+
+    window.layoutEditor.setSelector(selectorInfo);
+}
+
+function LayoutEditor(mainCanvas)
+{
+    this._boundConsumeEvent = this._consumeEvent.bind(this);
+    this._boundMouseMove = this._onMouseMove.bind(this);
+    this._boundStrayClick = this._onStrayClick.bind(this);
+    this._boundKeyDown = this._onKeyDown.bind(this);
+    this._boundMouseWheel = this._onMouseWheel.bind(this);
+
+    this._anchorsByType = new Map();
+    this._hoverableAreas = new Map();
+    this._elementsBounds = emptyBounds();
+    this._editorElement = document.getElementById("editor");
+    this._matchedNodesCanvas = createCanvas("layout-editor-matched-nodes-canvas");
+    mainCanvas.parentElement.insertBefore(this._matchedNodesCanvas, mainCanvas);
+
+    this._labelsCanvas = createCanvas("labels-canvas");
+    mainCanvas.parentElement.insertBefore(this._labelsCanvas, mainCanvas.nextSibling);
+    this._mainContext = mainCanvas.getContext("2d");
+}
+
+LayoutEditor.prototype = {
+    reset: function()
+    {
+        this._anchorsByType.clear();
+        this._hoverableAreas.clear();
+        this._elementsBounds = emptyBounds();
+
+        resetCanvas(this._matchedNodesCanvas);
+        this._resetLabelCanvas();
+
+        this._editorElement.style.visibility = "hidden";
+        this._editorElement.textContent = "";
+
+        if (this._selectorTooltipElement) {
+            this._selectorTooltipElement.remove();
+            delete this._selectorTooltipElement;
+        }
+
+        document.removeEventListener("mousedown", this._boundConsumeEvent);
+        document.removeEventListener("mousemove", this._boundMouseMove);
+        document.removeEventListener("mouseup", this._boundConsumeEvent);
+        document.removeEventListener("click", this._boundStrayClick);
+        document.removeEventListener("keydown", this._boundKeyDown);
+        document.removeEventListener("mousewheel", this._boundMouseWheel);
+    },
+
+    setState: function(info)
+    {
+        var highlightDescription = drawHighlight(info.nodeHighlight, this._mainContext);
+        this._hoverableAreas = highlightDescription.areasDescription;
+        this._elementsBounds = highlightDescription.bounds;
+
+        this._editorElement.style.visibility = "visible";
+        var anchors = info.anchors;
+        this._anchorsByType.clear();
+        var selectedAnchorInfo = null;
+        for (var i = 0; i < anchors.length; ++i) {
+            var anchorInfo = anchors[i];
+            if (!this._anchorsByType.get(anchorInfo.type))
+                this._anchorsByType.set(anchorInfo.type, []);
+            this._anchorsByType.get(anchorInfo.type).push(anchorInfo);
+            this._editorElement.appendChild(this._createAnchor(anchorInfo));
+            if (anchorInfo.propertyName === this._draggedPropertyName)
+                selectedAnchorInfo = anchorInfo;
+        }
+
+        if (selectedAnchorInfo)
+            this._showLabels(selectedAnchorInfo.type, selectedAnchorInfo.propertyName);
+
+        document.addEventListener("mousedown", this._boundConsumeEvent);
+        document.addEventListener("mousemove", this._boundMouseMove);
+        document.addEventListener("mouseup", this._boundConsumeEvent);
+        document.addEventListener("click", this._boundStrayClick);
+        document.addEventListener("keydown", this._boundKeyDown);
+        document.addEventListener("mousewheel", this._boundMouseWheel);
+    },
+
+    setSelector: function(selectorInfo)
+    {
+        if (this._selectorTooltipElement)
+            this._selectorTooltipElement.remove();
+
+        var containerElement = createElement("div");
+
+        for (var i = (selectorInfo.medias || []).length - 1; i >= 0; --i)
+            containerElement.createChild("div", "layout-editor-media-tooltip").textContent = ("@media " + selectorInfo.medias[i]).trim(50);
+
+        var selectorElement = containerElement.createChild("div", "layout-editor-selector-tooltip");
+        selectorElement.textContent = selectorInfo.selector.trimEnd(50);
+
+        this._selectorTooltipElement = document.body.insertBefore(createElement("div"), this._editorElement);
+        _createMaterialTooltip(this._selectorTooltipElement, this._elementsBounds, containerElement);
+        resetCanvas(this._matchedNodesCanvas);
+
+        if (!selectorInfo.nodes)
+            return;
+
+        for (var nodeHighlight of selectorInfo.nodes)
+            drawHighlight(nodeHighlight, this._matchedNodesCanvas.getContext("2d"));
+    },
+
+    _createAnchor: function(anchorInfo)
+    {
+        var handleWidth = 5;
+        this._mainContext.save();
+        this._mainContext.shadowColor = "rgba(0, 0, 0, 0.34)";
+        this._mainContext.shadowBlur = 2;
+        this._mainContext.fillStyle = this._anchorColorForProperty(anchorInfo);
+        this._mainContext.beginPath();
+        this._mainContext.arc(anchorInfo.x, anchorInfo.y, handleWidth, 0, 2 * Math.PI);
+        this._mainContext.fill();
+        this._mainContext.restore();
+
+        var anchorElement = createElement("div", "editor-anchor");
+        anchorElement.style.left = anchorInfo.x - handleWidth + "px";
+        anchorElement.style.top = anchorInfo.y - handleWidth + "px";
+        if (anchorInfo.propertyValue.mutable)
+            anchorElement.addEventListener("mousedown", this._onAnchorMouseDown.bind(this, anchorInfo));
+        anchorElement.addEventListener("mousemove", this._onAnchorMouseMove.bind(this, anchorInfo));
+        return anchorElement;
+    },
+
+    _calculateDelta: function(deltaVector, moveDelta)
+    {
+        return scalarProduct(deltaVector, moveDelta) / Math.sqrt(scalarProduct(deltaVector, deltaVector));
+    },
+
+    _onAnchorMouseDown: function(anchorInfo, event)
+    {
+        // Only drag upon left button. Right will likely cause a context menu. So will ctrl-click on mac.
+        if (event.button || (window.platform == "mac" && event.ctrlKey))
+            return;
+
+        event.preventDefault();
+        this._boundDragMove = this._onDragMove.bind(this, new Point(event.screenX, event.screenY), anchorInfo.deltaVector);
+        this._boundDragEnd = this._onDragEnd.bind(this);
+        document.addEventListener("mousemove", this._boundDragMove);
+        document.addEventListener("mouseup", this._boundDragEnd);
+        InspectorOverlayHost.startPropertyChange(anchorInfo.propertyName);
+        this._preciseDrag = !!event.shiftKey;
+        this._draggedPropertyName = anchorInfo.propertyName;
+        this._showLabels(anchorInfo.type, anchorInfo.propertyName);
+    },
+
+    _onDragMove: function(mouseDownPoint, deltaVector, event)
+    {
+        if (event.buttons !== 1) {
+            this._onDragEnd(event);
+            return;
+        }
+        event.preventDefault();
+        if (this._preciseDrag !== event.shiftKey) {
+            InspectorOverlayHost.endPropertyChange();
+            document.removeEventListener("mousemove", this._boundDragMove);
+            mouseDownPoint = new Point(event.screenX, event.screenY);
+            this._boundDragMove = this._onDragMove.bind(this, mouseDownPoint, deltaVector);
+            document.addEventListener("mousemove", this._boundDragMove);
+            this._preciseDrag = event.shiftKey;
+            InspectorOverlayHost.startPropertyChange(this._draggedPropertyName);
+        }
+
+        var preciseFactor = this._preciseDrag ? 5 : 1;
+        InspectorOverlayHost.changeProperty(this._calculateDelta(deltaVector, new Point(event.screenX - mouseDownPoint.x, event.screenY - mouseDownPoint.y)) / preciseFactor);
+    },
+
+    _onDragEnd: function(event)
+    {
+        document.removeEventListener("mousemove", this._boundDragMove);
+        document.removeEventListener("mouseup", this._boundDragEnd);
+        delete this._boundDragMove;
+        delete this._boundDragEnd;
+        delete this._draggedPropertyName;
+        delete this._preciseDrag;
+        event.preventDefault();
+        InspectorOverlayHost.endPropertyChange();
+        this._resetLabelCanvas();
+    },
+
+    _showLabel: function(anchorInfo, showLongDescription)
+    {
+        var context = this._labelsCanvas.getContext("2d");
+        var secondaryColor = "rgba(255, 255, 255, 0.7)";
+        var labelColor = this._labelColorForProperty(anchorInfo);
+        var textDescription = [
+            {string: String(parseFloat(anchorInfo.propertyValue.value.toFixed(2))), color: "white"},
+            {string: "\u2009" + anchorInfo.propertyValue.unit, color: secondaryColor}
+        ];
+
+        if (showLongDescription)
+            textDescription.splice(0, 0, {string: anchorInfo.propertyName + ": ", color: secondaryColor});
+        this._drawLabel(context, anchorInfo.x, anchorInfo.y, labelColor, textDescription, anchorInfo.deltaVector.x < 0);
+    },
+
+    _showLabels: function(type, fullLabelName)
+    {
+        if (this._labelCanvasState && this._labelCanvasState.type === type && this._labelCanvasState.fullLabelName === fullLabelName)
+            return;
+
+        this._resetLabelCanvas();
+        this._labelCanvasState = {type: type, fullLabelName: fullLabelName};
+        var anchors = this._anchorsByType.get(type) || [];
+        var selectedAnchorInfo = null;
+
+        for (var anchorInfo of anchors) {
+            if (fullLabelName !== anchorInfo.propertyName)
+                this._showLabel(anchorInfo, false);
+            else
+                selectedAnchorInfo = anchorInfo;
+        }
+
+        if (!selectedAnchorInfo)
+            return;
+
+        this._showLabel(selectedAnchorInfo, true);
+        document.body.style.cursor = this._chooseAnchorPointer(selectedAnchorInfo.deltaVector);
+    },
+
+    _onAnchorMouseMove: function(anchorInfo, event)
+    {
+        if (this._draggedPropertyName)
+            return;
+
+        event.preventDefault();
+        event.stopPropagation();
+        this._showLabels(anchorInfo.type, anchorInfo.propertyName);
+    },
+
+    _drawLabel: function(context, anchorX, anchorY, labelColor, textDescription, toLeft)
+    {
+        var paddingX = 6;
+        var paddingY = 4;
+        var borderRadius = 2;
+        var arrowWidth = 6;
+        var offsetX = 6;
+        var fontSize = 10;
+
+        var wholeString = "";
+        for (var part of textDescription)
+            wholeString += part.string;
+
+        context.save();
+        context.font = fontSize + "px Arial, Roboto";
+
+        var textWidth = context.measureText(wholeString).width;
+        var fullWidth = textWidth + offsetX + arrowWidth + paddingX;
+        var height = fontSize + paddingY;
+        var fitRight = anchorX + fullWidth < viewportSize.width;
+        var fitLeft = anchorX - fullWidth > 0;
+        var mirror = !fitLeft || (!toLeft && fitRight);
+
+        var arrowX = -offsetX;
+        var arrowY = 0;
+        var right = arrowX - arrowWidth;
+        var top = arrowY - height / 2;
+        var bottom = arrowY + height / 2;
+        var left = -fullWidth;
+
+        context.save();
+        context.translate(anchorX, anchorY);
+        if (mirror)
+            context.scale(-1, 1);
+
+        context.fillStyle = labelColor;
+        context.shadowColor = "rgba(0, 0, 0, 0.34)";
+        context.shadowOffsetY = 1;
+        context.shadowBlur = 1;
+        context.beginPath();
+        context.moveTo(arrowX, arrowY);
+        context.lineTo(right, bottom);
+        context.lineTo(left + borderRadius, bottom);
+        context.quadraticCurveTo(left, bottom, left, bottom - borderRadius);
+        context.lineTo(left, top + borderRadius);
+        context.quadraticCurveTo(left, top, left + borderRadius, top);
+        context.lineTo(right, top);
+        context.lineTo(arrowX, arrowY);
+        context.closePath();
+        context.fill();
+        context.restore();
+
+        var textX = 0;
+        if (mirror)
+            textX = anchorX - right + paddingX / 2;
+        else
+            textX = anchorX + left + paddingX / 2;
+
+        var textY = anchorY + top + fontSize;
+        for (var part of textDescription) {
+            context.fillStyle = part.color;
+            context.fillText(part.string, textX, textY);
+            textX += context.measureText(part.string).width;
+        }
+        context.restore();
+    },
+
+    _labelColorForProperty: function(anchorInfo)
+    {
+        // TODO: find a better color
+        if (!anchorInfo.propertyValue.mutable)
+            return "rgb(159, 188, 191)";
+
+        var propertyName = anchorInfo.propertyName;
+        if (propertyName.startsWith("margin"))
+            return "rgb(246, 167, 35)";
+        return "rgb(91, 181, 0)";
+    },
+
+    _anchorColorForProperty: function(anchorInfo)
+    {
+        // TODO: find a better color
+        if (!anchorInfo.propertyValue.mutable)
+            return "rgb(159, 188, 191)";
+
+        var propertyName = anchorInfo.propertyName;
+        if (propertyName.startsWith("margin"))
+            return "rgb(246, 167, 35)";
+        return "rgb(107, 213, 0)";
+    },
+
+    _onMouseMove: function(event)
+    {
+        event.preventDefault();
+        if (!this._hoverableAreas.size)
+            return;
+        var types = ["padding", "margin"];
+        for (var type of types) {
+            var path = this._hoverableAreas.get(type);
+            if (path && this._mainContext.isPointInPath(path, deviceScaleFactor * event.x, deviceScaleFactor * event.y)) {
+                this._showLabels(type);
+                return;
+            }
+        }
+        this._resetLabelCanvas();
+    },
+
+    _onStrayClick: function(event)
+    {
+        event.preventDefault();
+        InspectorOverlayHost.clearSelection(true);
+    },
+
+    _onKeyDown: function(event)
+    {
+        if (this._draggedPropertyName)
+            return;
+
+        // Clear selection on Esc.
+        if (event.keyIdentifier === "U+001B") {
+            event.preventDefault();
+            InspectorOverlayHost.clearSelection(false);
+        }
+    },
+
+    _onMouseWheel: function(event)
+    {
+        event.preventDefault();
+        if (event.wheelDelta > 0)
+            InspectorOverlayHost.previousSelector();
+        else
+            InspectorOverlayHost.nextSelector();
+    },
+
+    _consumeEvent: function(event)
+    {
+        event.preventDefault();
+    },
+
+    _resetLabelCanvas: function()
+    {
+        delete this._labelCanvasState;
+        resetCanvas(this._labelsCanvas);
+        if (!this._draggedPropertyName && document.body.style.cursor)
+            document.body.style.cursor = "";
+    },
+
+    _chooseAnchorPointer: function(direction)
+    {
+        var pointers = [{name: "ns-resize", vector: new Point(0, -1)}, {name: "ew-resize", vector: new Point(-1, 0)},
+            {name: "ns-resize", vector: new Point(0, 1)}, {name: "ew-resize", vector: new Point(1, 0)}];
+
+        var maxValue = scalarProduct(direction, pointers[0].vector);
+        var maxIndex = 0;
+        for (var i = 1; i < pointers.length; ++i) {
+            var currentValue = scalarProduct(direction, pointers[i].vector);
+            if (currentValue > maxValue) {
+                maxValue = currentValue;
+                maxIndex = i;
+            }
+        }
+        return pointers[maxIndex].name;
     }
-}
-
-function createAnchor(anchorInfo)
-{
-    var handleWidth = 5;
-    context.save();
-    context.shadowColor = "rgba(0, 0, 0, 0.34)";
-    context.shadowBlur = 2;
-    context.fillStyle = anchorColorForProperty(anchorInfo.propertyName);
-    context.beginPath();
-    context.arc(anchorInfo.x, anchorInfo.y, handleWidth, 0, 2 * Math.PI);
-    context.fill();
-    context.restore();
-
-    var anchorElement = document.createElement("div");
-    anchorElement.className = "editor-anchor";
-    anchorElement.style.left = anchorInfo.x - handleWidth + "px";
-    anchorElement.style.top = anchorInfo.y - handleWidth + "px";
-    anchorElement.addEventListener("mousedown", onAnchorMouseDown.bind(null, anchorInfo));
-    anchorElement.addEventListener("mouseenter", onAnchorMouseEnter.bind(null, anchorInfo));
-    anchorElement.addEventListener("mouseleave", onAnchorMouseLeave.bind(null, anchorInfo));
-    return anchorElement;
-}
-
-function calculateDelta(deltaVector, moveDelta)
-{
-    return (deltaVector.x * moveDelta.x + deltaVector.y * moveDelta.y) / Math.sqrt(deltaVector.x * deltaVector.x + deltaVector.y * deltaVector.y);
-}
-
-function onAnchorMouseDown(anchorInfo, event)
-{
-    // Only drag upon left button. Right will likely cause a context menu. So will ctrl-click on mac.
-    if (event.button || (window.platform == "mac" && event.ctrlKey))
-        return;
-
-    event.preventDefault();
-    window.boundDragMove = onDragMove.bind(null, new Point(event.screenX, event.screenY), anchorInfo.deltaVector);
-    document.addEventListener("mousemove", boundDragMove);
-    document.addEventListener("mouseup", onDragEnd);
-    InspectorOverlayHost.startPropertyChange(anchorInfo.propertyName);
-    window.draggedPropertyName = anchorInfo.propertyName;
-    resetCanvas(labelsCanvas);
-    showLabel(anchorInfo);
-}
-
-function onDragMove(mouseDownPoint, deltaVector, event)
-{
-    if (event.buttons !== 1) {
-        onDragEnd(event);
-        return;
-    }
-    event.preventDefault();
-    InspectorOverlayHost.changeProperty(calculateDelta(deltaVector, new Point(event.screenX - mouseDownPoint.x, event.screenY - mouseDownPoint.y)));
-}
-
-function showLabel(anchorInfo)
-{
-    var context =  labelsCanvas.getContext("2d");
-    var secondaryColor = "rgba(255, 255, 255, 0.7)";
-    var labelColor = labelColorForProperty(anchorInfo.propertyName);
-    _drawLabel(context, anchorInfo.x, anchorInfo.y, labelColor, [
-        {string: anchorInfo.propertyName + ": ", color: secondaryColor},
-        {string: anchorInfo.propertyValue.value, color: "white"},
-        {string: "\u2009" + anchorInfo.propertyValue.unit, color: secondaryColor}
-    ], anchorInfo.deltaVector.x < 0);
-}
-
-function onDragEnd(event)
-{
-    document.removeEventListener("mousemove", boundDragMove);
-    delete window.boundDragMove;
-    delete window.draggedPropertyName;
-    document.removeEventListener("mouseup", onDragEnd);
-    event.preventDefault();
-    InspectorOverlayHost.endPropertyChange();
-    resetCanvas(labelsCanvas);
-}
-
-function onAnchorMouseEnter(anchorInfo)
-{
-    if (window.draggedPropertyName)
-        return;
-
-    resetCanvas(labelsCanvas);
-    showLabel(anchorInfo);
-}
-
-function onAnchorMouseLeave()
-{
-    if (window.draggedPropertyName)
-        return;
-
-    resetCanvas(labelsCanvas);
 }
 
 function Point(x, y)
@@ -747,101 +1222,71 @@ function Point(x, y)
     this.y = y;
 }
 
-function _drawLabel(context, anchorX, anchorY, labelColor, textDescription, toLeft)
+function createCanvas(id)
 {
-    var paddingX = 6;
-    var paddingY = 4;
-    var borderRadius = 2;
-    var arrowWidth = 6;
-    var offsetX = 6;
-    var fontSize = 10;
-
-    var wholeString = "";
-    for (var part of textDescription)
-        wholeString += part.string;
-
-    context.save();
-    context.font = fontSize + "px Arial, Roboto";
-    
-    var textWidth = context.measureText(wholeString).width;
-    var fullWidth = textWidth + offsetX + arrowWidth + paddingX;
-    var height = fontSize + paddingY;
-    var fitRight = anchorX + fullWidth < viewportSize.width;
-    var fitLeft = anchorX - fullWidth > 0;
-    var mirror = !fitLeft || (!toLeft && fitRight);
-
-    var arrowX = -offsetX;
-    var arrowY = 0;
-    var right = arrowX - arrowWidth;
-    var top = arrowY - height / 2;
-    var bottom = arrowY + height / 2;
-    var left = -fullWidth;
-
-    context.save();
-    context.translate(anchorX, anchorY);
-    if (mirror)
-      context.scale(-1, 1);
-
-    context.fillStyle = labelColor;
-    context.shadowColor = "rgba(0, 0, 0, 0.34)";
-    context.shadowOffsetY = 1;
-    context.shadowBlur = 1;  
-    context.beginPath();
-    context.moveTo(arrowX, arrowY);
-    context.lineTo(right, bottom);
-    context.lineTo(left + borderRadius, bottom);
-    context.quadraticCurveTo(left, bottom, left, bottom - borderRadius);
-    context.lineTo(left, top + borderRadius);
-    context.quadraticCurveTo(left, top, left + borderRadius, top);
-    context.lineTo(right, top);
-    context.lineTo(arrowX, arrowY);
-    context.closePath();
-    context.fill();
-    context.restore();
-
-    var textX = 0;
-    if (mirror) 
-        textX = anchorX - right + paddingX / 2;
-    else
-        textX = anchorX + left + paddingX / 2;
-    
-    var textY = anchorY + top + fontSize;
-    for (var part of textDescription) {
-        context.fillStyle = part.color;
-        context.fillText(part.string, textX, textY);
-        textX += context.measureText(part.string).width;
-    }
-    context.restore();      
+    var canvas = createElement("canvas", "fill");
+    canvas.id = id;
+    resetCanvas(canvas);
+    return canvas;
 }
 
-function labelColorForProperty(propertyName)
+function scalarProduct(v1, v2)
 {
-    return "rgb(91, 181, 0)";
+    return v1.x * v2.x + v1.y * v2.y;
 }
 
-function anchorColorForProperty(propertyName)
+Element.prototype.createChild = function(tagName, className)
 {
-    return "rgb(107, 213, 0)";
+    var element = createElement(tagName, className);
+    this.appendChild(element);
+    return element;
+}
+
+Element.prototype.createTextChild = function(text)
+{
+    var element = document.createTextNode(text);
+    this.appendChild(element);
+    return element;
+}
+
+Element.prototype.removeChildren = function()
+{
+    if (this.firstChild)
+        this.textContent = "";
+}
+
+function createElement(tagName, className)
+{
+    var element = document.createElement(tagName);
+    if (className)
+        element.className = className;
+    return element;
+}
+
+String.prototype.trimEnd = function(maxLength)
+{
+    if (this.length <= maxLength)
+        return String(this);
+    return this.substr(0, maxLength - 1) + "\u2026";
 }
 
 window.addEventListener("DOMContentLoaded", onLoaded);
 document.addEventListener("keydown", onDocumentKeyDown);
-
 </script>
 </head>
 <body class="fill">
+</body>
+<canvas id="canvas" class="fill"></canvas>
+<div id="element-title">
+  <span id="tag-name"></span><span id="node-id"></span><span id="class-name"></span>
+  <span id="node-width"></span><span class="px">px</span><span class="px"> &#xD7; </span><span id="node-height"></span><span class="px">px</span>
+</div>
+<div id="tooltip-container"></div>
+<div id="editor" class="fill"></div>
 <div class="controls-line">
     <div class="message-box"><div id="paused-in-debugger"></div></div>
     <div class="button" id="resume-button" title="Resume script execution (F8)."><div class="glyph"></div></div>
     <div class="button" id="step-over-button" title="Step over next function call (F10)."><div class="glyph"></div></div>
 </div>
-</body>
-<canvas id="canvas" class="fill"></canvas>
-<canvas id="labels-canvas" class="fill"></canvas>
-<div id="element-title">
-  <span id="tag-name"></span><span id="node-id"></span><span id="class-name"></span>
-  <span id="node-width"></span><span class="px">px</span><span class="px"> &#xD7; </span><span id="node-height"></span><span class="px">px</span>
-</div>
-<div id="editor" class="fill"></div>
 <div id="log"></div>
 </html>

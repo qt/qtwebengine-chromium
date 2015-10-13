@@ -48,8 +48,6 @@ from v8_utilities import (has_extended_attribute_value, is_unforgeable,
 CUSTOM_REGISTRATION_EXTENDED_ATTRIBUTES = frozenset([
     'DoNotCheckSecurity',
     'DoNotCheckSignature',
-    'NotEnumerable',
-    'Unforgeable',
 ])
 
 
@@ -74,13 +72,6 @@ def method_context(interface, method, is_visible=True):
         idl_type.add_includes_for_type(extended_attributes)
 
     this_cpp_value = cpp_value(interface, method, len(arguments))
-
-    def function_template():
-        if is_static:
-            return 'functionTemplate'
-        if is_unforgeable(interface, method):
-            return 'instanceTemplate'
-        return 'prototypeTemplate'
 
     is_implemented_in_private_script = 'ImplementedInPrivateScript' in extended_attributes
     if is_implemented_in_private_script:
@@ -144,10 +135,9 @@ def method_context(interface, method, is_visible=True):
                 extended_attributes.iterkeys()),
         'deprecate_as': v8_utilities.deprecate_as(method),  # [DeprecateAs]
         'exposed_test': v8_utilities.exposed(method, interface),  # [Exposed]
-        'function_template': function_template(),
+        # TODO(yukishiino): Retire has_custom_registration flag.  Should be
+        # replaced with V8DOMConfiguration::PropertyLocationConfiguration.
         'has_custom_registration':
-            is_static or
-            is_unforgeable(interface, method) or
             v8_utilities.has_extended_attribute(
                 method, CUSTOM_REGISTRATION_EXTENDED_ATTRIBUTES),
         'has_exception_state':
@@ -201,7 +191,6 @@ def method_context(interface, method, is_visible=True):
         'returns_promise': method.returns_promise,
         'runtime_enabled_function': v8_utilities.runtime_enabled_function_name(method),  # [RuntimeEnabled]
         'should_be_exposed_to_script': not (is_implemented_in_private_script and is_only_exposed_to_private_script),
-        'signature': 'v8::Local<v8::Signature>()' if is_static or 'DoNotCheckSignature' in extended_attributes else 'defaultSignature',
         'use_output_parameter_for_result': idl_type.use_output_parameter_for_result,
         'use_local_result': use_local_result(method),
         'v8_set_return_value': v8_set_return_value(interface.name, method, this_cpp_value),
@@ -225,8 +214,8 @@ def argument_context(interface, method, argument, index, is_visible=True):
         idl_type.is_wrapper_type)
 
     if ('ImplementedInPrivateScript' in extended_attributes and
-        not idl_type.is_wrapper_type and
-        not idl_type.is_basic_type):
+            not idl_type.is_wrapper_type and
+            not idl_type.is_basic_type):
         raise Exception('Private scripts supports only primitive types and DOM wrappers.')
 
     set_default_value = argument.set_default_value
@@ -314,8 +303,8 @@ def cpp_value(interface, method, number_of_arguments):
     # static member functions, which for instance members (non-static members)
     # take *impl as their first argument
     if ('PartialInterfaceImplementedAs' in method.extended_attributes and
-        not 'ImplementedInPrivateScript' in method.extended_attributes and
-        not method.is_static):
+            'ImplementedInPrivateScript' not in method.extended_attributes and
+            not method.is_static):
         cpp_arguments.append('*impl')
     cpp_arguments.extend(cpp_argument(argument) for argument in arguments)
 
@@ -323,8 +312,8 @@ def cpp_value(interface, method, number_of_arguments):
         if method.idl_type.name != 'void':
             cpp_arguments.append('&result')
     elif ('RaisesException' in method.extended_attributes or
-        (method.is_constructor and
-         has_extended_attribute_value(interface, 'RaisesException', 'Constructor'))):
+          (method.is_constructor and
+           has_extended_attribute_value(interface, 'RaisesException', 'Constructor'))):
         cpp_arguments.append('exceptionState')
 
     # If a method returns an IDL dictionary or union type, the return value is
@@ -354,8 +343,8 @@ def v8_set_return_value(interface_name, method, cpp_value, for_main_world=False)
         return None
 
     if ('ImplementedInPrivateScript' in extended_attributes and
-        not idl_type.is_wrapper_type and
-        not idl_type.is_basic_type):
+            not idl_type.is_wrapper_type and
+            not idl_type.is_basic_type):
         raise Exception('Private scripts supports only primitive types and DOM wrappers.')
 
     release = False
@@ -412,7 +401,7 @@ def v8_value_to_local_cpp_value(method, argument, index, return_promise=False, r
 # Auxiliary functions
 ################################################################################
 
-# [NotEnumerable]
+# [NotEnumerable], [Unforgeable]
 def property_attributes(interface, method):
     extended_attributes = method.extended_attributes
     property_attributes_list = []
@@ -420,8 +409,7 @@ def property_attributes(interface, method):
         property_attributes_list.append('v8::DontEnum')
     if is_unforgeable(interface, method):
         property_attributes_list.append('v8::ReadOnly')
-    if property_attributes_list:
-        property_attributes_list.insert(0, 'v8::DontDelete')
+        property_attributes_list.append('v8::DontDelete')
     return property_attributes_list
 
 

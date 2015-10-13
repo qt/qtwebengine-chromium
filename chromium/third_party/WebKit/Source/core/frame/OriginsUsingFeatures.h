@@ -23,21 +23,30 @@ class CORE_EXPORT OriginsUsingFeatures {
 public:
     ~OriginsUsingFeatures();
 
+    // Features for RAPPOR. Do not reorder or remove!
     enum class Feature {
         ElementCreateShadowRoot,
         DocumentRegisterElement,
         EventPath,
+        DeviceMotionInsecureOrigin,
+        DeviceOrientationInsecureOrigin,
+        FullscreenInsecureOrigin,
+        GeolocationInsecureOrigin,
+        GetUserMediaInsecureOrigin,
+        GetUserMediaSecureOrigin,
 
         NumberOfFeatures // This must be the last item.
     };
 
-    static void count(const ScriptState*, Document&, Feature);
+    static void countAnyWorld(Document&, Feature);
+    static void countMainWorldOnly(const ScriptState*, Document&, Feature);
     static void countOriginOrIsolatedWorldHumanReadableName(const ScriptState*, EventTarget&, Feature);
 
     void documentDetached(Document&);
     void updateMeasurementsAndClear();
 
     class CORE_EXPORT Value {
+        ALLOW_ONLY_INLINE_ALLOCATION();
     public:
         Value();
 

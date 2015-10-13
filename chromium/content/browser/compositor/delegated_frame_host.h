@@ -5,6 +5,7 @@
 #ifndef CONTENT_BROWSER_COMPOSITOR_DELEGATED_FRAME_HOST_H_
 #define CONTENT_BROWSER_COMPOSITOR_DELEGATED_FRAME_HOST_H_
 
+#include "base/gtest_prod_util.h"
 #include "cc/layers/delegated_frame_provider.h"
 #include "cc/layers/delegated_frame_resource_collection.h"
 #include "cc/output/copy_output_result.h"
@@ -85,7 +86,7 @@ class CONTENT_EXPORT DelegatedFrameHost
       public cc::SurfaceFactoryClient,
       public base::SupportsWeakPtr<DelegatedFrameHost> {
  public:
-  DelegatedFrameHost(DelegatedFrameHostClient* client);
+  explicit DelegatedFrameHost(DelegatedFrameHostClient* client);
   ~DelegatedFrameHost() override;
 
   // ui::CompositorObserver implementation.
@@ -126,7 +127,8 @@ class CONTENT_EXPORT DelegatedFrameHost
       scoped_ptr<cc::DelegatedFrameData> frame_data,
       float frame_device_scale_factor,
       const std::vector<ui::LatencyInfo>& latency_info,
-      std::vector<uint32_t>* satifies_sequences);
+      std::vector<uint32_t>* satisfies_sequences);
+  void ClearDelegatedFrame();
   void WasHidden();
   void WasShown(const ui::LatencyInfo& latency_info);
   void WasResized();
@@ -140,19 +142,22 @@ class CONTENT_EXPORT DelegatedFrameHost
   // expects pixels.
   void CopyFromCompositingSurface(const gfx::Rect& src_subrect,
                                   const gfx::Size& output_size,
-                                  ReadbackRequestCallback& callback,
+                                  const ReadbackRequestCallback& callback,
                                   const SkColorType preferred_color_type);
   void CopyFromCompositingSurfaceToVideoFrame(
       const gfx::Rect& src_subrect,
       const scoped_refptr<media::VideoFrame>& target,
       const base::Callback<void(bool)>& callback);
   bool CanCopyToVideoFrame() const;
-  bool CanSubscribeFrame() const;
   void BeginFrameSubscription(
       scoped_ptr<RenderWidgetHostViewFrameSubscriber> subscriber);
   void EndFrameSubscription();
   bool HasFrameSubscriber() const { return frame_subscriber_; }
   uint32_t GetSurfaceIdNamespace();
+  // Returns a null SurfaceId if this DelegatedFrameHost has not yet created
+  // a compositor Surface.
+  cc::SurfaceId SurfaceIdAtPoint(const gfx::Point& point,
+                                 gfx::Point* transformed_point);
 
   // Exposed for tests.
   cc::DelegatedFrameProvider* FrameProviderForTesting() const {
@@ -206,17 +211,17 @@ class CONTENT_EXPORT DelegatedFrameHost
   static void CopyFromCompositingSurfaceHasResult(
       const gfx::Size& dst_size_in_pixel,
       const SkColorType color_type,
-      ReadbackRequestCallback& callback,
+      const ReadbackRequestCallback& callback,
       scoped_ptr<cc::CopyOutputResult> result);
   static void PrepareTextureCopyOutputResult(
       const gfx::Size& dst_size_in_pixel,
       const SkColorType color_type,
-      ReadbackRequestCallback& callback,
+      const ReadbackRequestCallback& callback,
       scoped_ptr<cc::CopyOutputResult> result);
   static void PrepareBitmapCopyOutputResult(
       const gfx::Size& dst_size_in_pixel,
       const SkColorType color_type,
-      ReadbackRequestCallback& callback,
+      const ReadbackRequestCallback& callback,
       scoped_ptr<cc::CopyOutputResult> result);
   static void CopyFromCompositingSurfaceHasResultForVideo(
       base::WeakPtr<DelegatedFrameHost> rwhva,

@@ -31,6 +31,7 @@
 #ifndef OrderIterator_h
 #define OrderIterator_h
 
+#include "wtf/Allocator.h"
 #include "wtf/Noncopyable.h"
 
 #include <set>
@@ -40,15 +41,20 @@ namespace blink {
 class LayoutBox;
 
 class OrderIterator {
+    DISALLOW_ALLOCATION();
     WTF_MAKE_NONCOPYABLE(OrderIterator);
 public:
     friend class OrderIteratorPopulator;
 
     OrderIterator(const LayoutBox*);
 
-    LayoutBox* currentChild() const { return m_currentChild; }
+    LayoutBox* currentChild() { return m_currentChild; }
+    const LayoutBox* currentChild() const { return m_currentChild; }
     LayoutBox* first();
+    const LayoutBox* first() const { return const_cast<OrderIterator*>(this)->first(); }
     LayoutBox* next();
+    const LayoutBox* next() const { return const_cast<OrderIterator*>(this)->next(); }
+
     void reset();
 
 private:
@@ -63,6 +69,7 @@ private:
 };
 
 class OrderIteratorPopulator {
+    STACK_ALLOCATED();
 public:
     explicit OrderIteratorPopulator(OrderIterator& iterator)
         : m_iterator(iterator)

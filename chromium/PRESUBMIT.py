@@ -174,6 +174,7 @@ _BANNED_CPP_FUNCTIONS = (
             r"simple_platform_shared_buffer_posix\.cc$",
         r"^net[\\\/]disk_cache[\\\/]cache_util\.cc$",
         r"^net[\\\/]url_request[\\\/]test_url_fetcher_factory\.cc$",
+        r"^remoting[\\\/]host[\\\/]gnubby_auth_handler_posix\.cc$",
         r"^ui[\\\/]ozone[\\\/]platform[\\\/]drm[\\\/]host[\\\/]"
             "drm_display_host_manager\.cc$",
       ),
@@ -302,7 +303,7 @@ def _CheckNoProductionCodeUsingTestOnlyFunctions(input_api, output_api):
   # calls to such functions without a proper C++ parser.
   file_inclusion_pattern = r'.+%s' % _IMPLEMENTATION_EXTENSIONS
 
-  base_function_pattern = r'[ :]test::[^\s]+|ForTest(ing)?|for_test(ing)?'
+  base_function_pattern = r'[ :]test::[^\s]+|ForTest(s|ing)?|for_test(s|ing)?'
   inclusion_pattern = input_api.re.compile(r'(%s)\s*\(' % base_function_pattern)
   comment_pattern = input_api.re.compile(r'//.*(%s)' % base_function_pattern)
   exclusion_pattern = input_api.re.compile(
@@ -1198,15 +1199,16 @@ def _GetJSONParseError(input_api, filename, eat_comments=True):
   try:
     contents = input_api.ReadFile(filename)
     if eat_comments:
-      json_comment_eater = input_api.os_path.join(
-          input_api.PresubmitLocalPath(),
-          'tools', 'json_comment_eater', 'json_comment_eater.py')
-      process = input_api.subprocess.Popen(
-          [input_api.python_executable, json_comment_eater],
-          stdin=input_api.subprocess.PIPE,
-          stdout=input_api.subprocess.PIPE,
-          universal_newlines=True)
-      (contents, _) = process.communicate(input=contents)
+      import sys
+      original_sys_path = sys.path
+      try:
+        sys.path = sys.path + [input_api.os_path.join(
+            input_api.PresubmitLocalPath(),
+            'tools', 'json_comment_eater')]
+        import json_comment_eater
+      finally:
+        sys.path = original_sys_path
+      contents = json_comment_eater.Nom(contents)
 
     input_api.json.loads(contents)
   except ValueError as e:
@@ -1311,11 +1313,47 @@ def _CheckJavaStyle(input_api, output_api):
       black_list=_EXCLUDED_PATHS + input_api.DEFAULT_BLACK_LIST)
 
 
+def _CheckAndroidToastUsage(input_api, output_api):
+  """Checks that code uses org.chromium.ui.widget.Toast instead of
+     android.widget.Toast (Chromium Toast doesn't force hardware
+     acceleration on low-end devices, saving memory).
+  """
+  toast_import_pattern = input_api.re.compile(
+      r'^import android\.widget\.Toast;$')
+
+  errors = []
+
+  sources = lambda affected_file: input_api.FilterSourceFile(
+      affected_file,
+      black_list=(_EXCLUDED_PATHS +
+                  _TEST_CODE_EXCLUDED_PATHS +
+                  input_api.DEFAULT_BLACK_LIST +
+                  (r'^chromecast[\\\/].*',
+                   r'^remoting[\\\/].*')),
+      white_list=(r'.*\.java$',))
+
+  for f in input_api.AffectedSourceFiles(sources):
+    for line_num, line in f.ChangedContents():
+      if toast_import_pattern.search(line):
+        errors.append("%s:%d" % (f.LocalPath(), line_num))
+
+  results = []
+
+  if errors:
+    results.append(output_api.PresubmitError(
+        'android.widget.Toast usage is detected. Android toasts use hardware'
+        ' acceleration, and can be\ncostly on low-end devices. Please use'
+        ' org.chromium.ui.widget.Toast instead.\n'
+        'Contact dskiba@chromium.org if you have any questions.',
+        errors))
+
+  return results
+
+
 def _CheckAndroidCrLogUsage(input_api, output_api):
   """Checks that new logs using org.chromium.base.Log:
     - Are using 'TAG' as variable name for the tags (warn)
-    - Are using the suggested name format for the tags: "cr.<PackageTag>" (warn)
-    - Are using a tag that is shorter than 23 characters (error)
+    - Are using a tag that is shorter than 20 characters (error)
   """
   cr_log_import_pattern = input_api.re.compile(
       r'^import org\.chromium\.base\.Log;$', input_api.re.MULTILINE)
@@ -1326,17 +1364,17 @@ def _CheckAndroidCrLogUsage(input_api, output_api):
   # Extract the tag from lines like `Log.d(TAG, "*");` or `Log.d("TAG", "*");`
   log_call_pattern = input_api.re.compile(r'^\s*Log\.\w\((?P<tag>\"?\w+\"?)\,')
   log_decl_pattern = input_api.re.compile(
-      r'^\s*private static final String TAG = "(?P<name>(.*)")',
+      r'^\s*private static final String TAG = "(?P<name>(.*))";',
       input_api.re.MULTILINE)
-  log_name_pattern = input_api.re.compile(r'^cr[.\w]*')
 
-  REF_MSG = ('See base/android/java/src/org/chromium/base/README_logging.md '
+  REF_MSG = ('See docs/android_logging.md '
             'or contact dgn@chromium.org for more info.')
   sources = lambda x: input_api.FilterSourceFile(x, white_list=(r'.*\.java$',))
 
   tag_decl_errors = []
   tag_length_errors = []
   tag_errors = []
+  tag_with_dot_errors = []
   util_log_errors = []
 
   for f in input_api.AffectedSourceFiles(sources):
@@ -1368,23 +1406,26 @@ def _CheckAndroidCrLogUsage(input_api, output_api):
     if has_modified_logs:
       # Make sure the tag is using the "cr" prefix and is not too long
       match = log_decl_pattern.search(file_content)
-      tag_name = match.group('name') if match else ''
-      if not log_name_pattern.search(tag_name ):
+      tag_name = match.group('name') if match else None
+      if not tag_name:
         tag_decl_errors.append(f.LocalPath())
-      if len(tag_name) > 23:
+      elif len(tag_name) > 20:
         tag_length_errors.append(f.LocalPath())
+      elif '.' in tag_name:
+        tag_with_dot_errors.append(f.LocalPath())
 
   results = []
   if tag_decl_errors:
     results.append(output_api.PresubmitPromptWarning(
         'Please define your tags using the suggested format: .\n'
-        '"private static final String TAG = "cr.<package tag>".\n' + REF_MSG,
+        '"private static final String TAG = "<package tag>".\n'
+        'They will be prepended with "cr_" automatically.\n' + REF_MSG,
         tag_decl_errors))
 
   if tag_length_errors:
     results.append(output_api.PresubmitError(
         'The tag length is restricted by the system to be at most '
-        '23 characters.\n' + REF_MSG,
+        '20 characters.\n' + REF_MSG,
         tag_length_errors))
 
   if tag_errors:
@@ -1396,6 +1437,11 @@ def _CheckAndroidCrLogUsage(input_api, output_api):
     results.append(output_api.PresubmitPromptWarning(
         'Please use org.chromium.base.Log for new logs.\n' + REF_MSG,
         util_log_errors))
+
+  if tag_with_dot_errors:
+    results.append(output_api.PresubmitPromptWarning(
+        'Dot in log tags cause them to be elided in crash reports.\n' + REF_MSG,
+        tag_with_dot_errors))
 
   return results
 
@@ -1429,7 +1475,7 @@ def _CheckSingletonInHeaders(input_api, output_api):
                   (r"^base[\\\/]memory[\\\/]singleton\.h$",))
     return input_api.FilterSourceFile(affected_file, black_list=black_list)
 
-  pattern = input_api.re.compile(r'(?<!class\s)Singleton\s*<')
+  pattern = input_api.re.compile(r'(?<!class\sbase::)Singleton\s*<')
   files = []
   for f in input_api.AffectedSourceFiles(FileFilter):
     if (f.LocalPath().endswith('.h') or f.LocalPath().endswith('.hxx') or
@@ -1443,7 +1489,7 @@ def _CheckSingletonInHeaders(input_api, output_api):
 
   if files:
     return [ output_api.PresubmitError(
-        'Found Singleton<T> in the following header files.\n' +
+        'Found base::Singleton<T> in the following header files.\n' +
         'Please move them to an appropriate source file so that the ' +
         'template gets instantiated in a single compilation unit.',
         files) ]
@@ -1529,6 +1575,7 @@ def _AndroidSpecificOnUploadChecks(input_api, output_api):
   """Groups checks that target android code."""
   results = []
   results.extend(_CheckAndroidCrLogUsage(input_api, output_api))
+  results.extend(_CheckAndroidToastUsage(input_api, output_api))
   return results
 
 

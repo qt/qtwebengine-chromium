@@ -11,6 +11,8 @@ The Skia Directory
     -   [Git repository](https://skia.googlesource.com/skia/)
     -   [Other Skia project repositories](https://skia.googlesource.com/)
     -   [Github Mirror](https://github.com/google/skia)
+    -   [Code Search](https://cs.skia.org) based on the version of Skia in the
+        Chromium tree.
 
 *   BuildBot Consoles
     -   [Commit Status](https://status.skia.org/)
@@ -29,6 +31,7 @@ The Skia Directory
     -   [Perf](https://perf.skia.org/) Performance testing.
     -   [Mon](https://mon.skia.org/) Grafana dashboard (requires login).
     -   [Alerts](https://alerts.skia.org/) Monitor testing and bot status.
+    -   [BugChomper] (https://bugchomper.skia.org/) Prioritize bugs quickly.
     -   [Code Review](https://codereview.chromium.org/)
 
 *   Mailing Lists

@@ -625,6 +625,7 @@ static void slerp(double qa[4], const double qb[4], double t)
 
 TransformationMatrix::TransformationMatrix(const AffineTransform& t)
 {
+    checkAlignment();
     setMatrix(t.a(), t.b(), t.c(), t.d(), t.e(), t.f());
 }
 
@@ -1071,6 +1072,13 @@ TransformationMatrix& TransformationMatrix::applyPerspective(double p)
         mat.m_matrix[2][3] = -1/p;
 
     multiply(mat);
+    return *this;
+}
+
+TransformationMatrix& TransformationMatrix::applyTransformOrigin(double x, double y, double z)
+{
+    translateRight3d(x, y, z);
+    translate3d(-x, -y, -z);
     return *this;
 }
 

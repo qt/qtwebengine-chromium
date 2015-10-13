@@ -198,10 +198,9 @@ class WebRtcGetUserMediaBrowserTest: public WebRtcContentBrowserTest {
 
     int error_code;
     std::string error_message;
-    scoped_ptr<base::Value> value(
-        base::JSONReader::DeprecatedReadAndReturnError(
-            devices_as_json, base::JSON_ALLOW_TRAILING_COMMAS, &error_code,
-            &error_message));
+    scoped_ptr<base::Value> value = base::JSONReader::ReadAndReturnError(
+        devices_as_json, base::JSON_ALLOW_TRAILING_COMMAS, &error_code,
+        &error_message);
 
     ASSERT_TRUE(value.get() != NULL) << error_message;
     EXPECT_EQ(value->GetType(), base::Value::TYPE_LIST);
@@ -334,8 +333,11 @@ IN_PROC_BROWSER_TEST_F(WebRtcGetUserMediaBrowserTest,
   ExecuteJavascriptAndWaitForOk("getUserMediaAndClone();");
 }
 
+// Test fails under Android, http://crbug.com/524388
+// Test fails under MSan
+// Flaky everywhere else: http://crbug.com/523152
 IN_PROC_BROWSER_TEST_F(WebRtcGetUserMediaBrowserTest,
-                       RenderVideoTrackInMultipleTagsAndPause) {
+                       DISABLED_RenderVideoTrackInMultipleTagsAndPause) {
   ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
 
   GURL url(embedded_test_server()->GetURL("/media/getusermedia.html"));
@@ -343,8 +345,6 @@ IN_PROC_BROWSER_TEST_F(WebRtcGetUserMediaBrowserTest,
 
   ExecuteJavascriptAndWaitForOk("getUserMediaAndRenderInSeveralVideoTags();");
 }
-
-
 
 IN_PROC_BROWSER_TEST_F(WebRtcGetUserMediaBrowserTest,
                        GetUserMediaWithMandatorySourceID) {
@@ -437,7 +437,8 @@ IN_PROC_BROWSER_TEST_F(WebRtcGetUserMediaBrowserTest,
           video_ids[0])));
 }
 
-IN_PROC_BROWSER_TEST_F(WebRtcGetUserMediaBrowserTest, TwoGetUserMediaAndStop) {
+IN_PROC_BROWSER_TEST_F(WebRtcGetUserMediaBrowserTest,
+                       TwoGetUserMediaAndStop) {
   ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
 
   GURL url(embedded_test_server()->GetURL("/media/getusermedia.html"));

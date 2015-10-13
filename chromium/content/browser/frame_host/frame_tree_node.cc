@@ -15,6 +15,7 @@
 #include "content/browser/frame_host/render_frame_host_impl.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/common/frame_messages.h"
+#include "content/common/site_isolation_policy.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/common/content_switches.h"
 
@@ -86,6 +87,7 @@ FrameTreeNode::FrameTreeNode(FrameTree* frame_tree,
       parent_(NULL),
       opener_(nullptr),
       opener_observer_(nullptr),
+      has_committed_real_load_(false),
       replication_state_(scope, name, sandbox_flags),
       // Effective sandbox flags also need to be set, since initial sandbox
       // flags should apply to the initial empty document in the frame.
@@ -131,16 +133,16 @@ void FrameTreeNode::AddChild(scoped_ptr<FrameTreeNode> child,
   child->render_manager()->Init(
       render_manager_.current_host()->GetSiteInstance()->GetBrowserContext(),
       render_manager_.current_host()->GetSiteInstance(),
-      render_manager_.current_host()->GetRoutingID(),
-      frame_routing_id);
+      render_manager_.current_host()->GetRoutingID(), frame_routing_id,
+      MSG_ROUTING_NONE);
   child->set_parent(this);
 
   // Other renderer processes in this BrowsingInstance may need to find out
   // about the new frame.  Create a proxy for the child frame in all
   // SiteInstances that have a proxy for the frame's parent, since all frames
   // in a frame tree should have the same set of proxies.
-  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kSitePerProcess))
+  // TODO(alexmos, nick): We ought to do this for non-oopif too, for openers.
+  if (SiteIsolationPolicy::AreCrossProcessFramesPossible())
     render_manager_.CreateProxiesForChildFrame(child.get());
 
   children_.push_back(child.release());
@@ -187,8 +189,14 @@ void FrameTreeNode::SetOpener(FrameTreeNode* opener) {
   }
 }
 
+void FrameTreeNode::SetCurrentURL(const GURL& url) {
+  if (!has_committed_real_load_ && url != GURL(url::kAboutBlankURL))
+    has_committed_real_load_ = true;
+  current_url_ = url;
+}
+
 void FrameTreeNode::SetCurrentOrigin(const url::Origin& origin) {
-  if (!origin.IsSameAs(replication_state_.origin))
+  if (!origin.IsSameOriginWith(replication_state_.origin))
     render_manager_.OnDidUpdateOrigin(origin);
   replication_state_.origin = origin;
 }

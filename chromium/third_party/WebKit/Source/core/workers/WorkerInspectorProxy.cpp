@@ -26,9 +26,9 @@ WorkerInspectorProxy::WorkerInspectorProxy()
 {
 }
 
-PassOwnPtr<WorkerInspectorProxy> WorkerInspectorProxy::create()
+PassOwnPtrWillBeRawPtr<WorkerInspectorProxy> WorkerInspectorProxy::create()
 {
-    return adoptPtr(new WorkerInspectorProxy());
+    return adoptPtrWillBeNoop(new WorkerInspectorProxy());
 }
 
 WorkerInspectorProxy::~WorkerInspectorProxy()
@@ -99,13 +99,19 @@ void WorkerInspectorProxy::writeTimelineStartedEvent(const String& sessionId, co
 
 static void runDebuggerTaskForWorker(WorkerThread* workerThread)
 {
-    workerThread->runDebuggerTask(WorkerThread::DontWaitForMessage);
+    workerThread->runDebuggerTask(WorkerThread::DontWaitForTask);
 }
 
-void WorkerInspectorProxy::addDebuggerTaskForWorker(const WebTraceLocation& location, PassOwnPtr<WebThread::Task> task)
+void WorkerInspectorProxy::addDebuggerTaskForWorker(const WebTraceLocation& location, PassOwnPtr<WebTaskRunner::Task> task)
 {
     m_workerThread->appendDebuggerTask(task);
     m_workerThread->backingThread().postTask(location, new Task(threadSafeBind(&runDebuggerTaskForWorker, AllowCrossThreadAccess(m_workerThread))));
+}
+
+DEFINE_TRACE(WorkerInspectorProxy)
+{
+    visitor->trace(m_executionContext);
+    visitor->trace(m_pageInspector);
 }
 
 } // namespace blink

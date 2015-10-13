@@ -5,6 +5,8 @@
 #ifndef DevToolsEmulator_h
 #define DevToolsEmulator_h
 
+#include "core/css/PointerProperties.h"
+#include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
 #include "wtf/OwnPtr.h"
 
@@ -17,10 +19,11 @@ class WebViewImpl;
 
 struct WebDeviceEmulationParams;
 
-class DevToolsEmulator final {
+class DevToolsEmulator final : public NoBaseWillBeGarbageCollectedFinalized<DevToolsEmulator> {
 public:
-    explicit DevToolsEmulator(WebViewImpl*);
     ~DevToolsEmulator();
+    static PassOwnPtrWillBeRawPtr<DevToolsEmulator> create(WebViewImpl*);
+    DECLARE_TRACE();
 
     void setEmulationAgent(InspectorEmulationAgent*);
     void viewportChanged();
@@ -34,6 +37,11 @@ public:
     void setScriptEnabled(bool);
     void setDoubleTapToZoomEnabled(bool);
     bool doubleTapToZoomEnabled() const;
+    void setHidePinchScrollbarsNearMinScale(bool);
+    void setAvailablePointerTypes(int);
+    void setPrimaryPointerType(PointerType);
+    void setAvailableHoverTypes(int);
+    void setPrimaryHoverType(HoverType);
 
     // Emulation.
     void enableDeviceEmulation(const WebDeviceEmulationParams&);
@@ -44,11 +52,13 @@ public:
     void setScriptExecutionDisabled(bool);
 
 private:
+    explicit DevToolsEmulator(WebViewImpl*);
+
     void enableMobileEmulation();
     void disableMobileEmulation();
 
     WebViewImpl* m_webViewImpl;
-    InspectorEmulationAgent* m_emulationAgent;
+    RawPtrWillBeMember<InspectorEmulationAgent> m_emulationAgent;
 
     bool m_deviceMetricsEnabled;
     bool m_emulateMobileEnabled;
@@ -60,6 +70,10 @@ private:
     bool m_embedderPreferCompositingToLCDTextEnabled;
     bool m_embedderUseMobileViewport;
     bool m_embedderPluginsEnabled;
+    int m_embedderAvailablePointerTypes;
+    PointerType m_embedderPrimaryPointerType;
+    int m_embedderAvailableHoverTypes;
+    HoverType m_embedderPrimaryHoverType;
 
     bool m_touchEventEmulationEnabled;
     bool m_doubleTapToZoomEnabled;
@@ -72,6 +86,7 @@ private:
 
     bool m_embedderScriptEnabled;
     bool m_scriptExecutionDisabled;
+    bool m_hidePinchScrollbarsNearMinScale;
 };
 
 } // namespace blink

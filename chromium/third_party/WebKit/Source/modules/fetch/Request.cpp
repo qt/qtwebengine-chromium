@@ -18,8 +18,8 @@
 #include "platform/network/HTTPParsers.h"
 #include "platform/network/ResourceRequest.h"
 #include "platform/weborigin/Referrer.h"
-#include "public/platform/WebServiceWorkerRequest.h"
 #include "public/platform/WebURLRequest.h"
+#include "public/platform/modules/serviceworker/WebServiceWorkerRequest.h"
 
 namespace blink {
 
@@ -38,19 +38,20 @@ FetchRequestData* createCopyOfFetchRequestDataForFetch(ScriptState* scriptState,
         request->setOrigin(scriptState->executionContext()->securityOrigin());
     // FIXME: Set ForceOriginHeaderFlag.
     request->setSameOriginDataURLFlag(true);
-    request->mutableReferrer()->setClient();
+    request->setReferrer(original->referrer());
     request->setMode(original->mode());
     request->setCredentials(original->credentials());
+    request->setRedirect(original->redirect());
+    request->setIntegrity(original->integrity());
     // FIXME: Set cache mode.
     // TODO(yhirano): Set redirect mode.
     return request;
 }
 
-Request* Request::createRequestWithRequestOrString(ScriptState* scriptState, Request* inputRequest, const String& inputString, const RequestInit& init, ExceptionState& exceptionState)
+Request* Request::createRequestWithRequestOrString(ScriptState* scriptState, Request* inputRequest, const String& inputString, RequestInit& init, ExceptionState& exceptionState)
 {
     // "1. Let |temporaryBody| be null."
-    Request* temporaryBodyRequest = nullptr;
-    BodyStreamBuffer* temporaryBodyBuffer = nullptr;
+    BodyStreamBuffer* temporaryBody = nullptr;
 
     if (inputRequest) {
         // We check bodyUsed even when the body is null in spite of the
@@ -70,33 +71,40 @@ Request* Request::createRequestWithRequestOrString(ScriptState* scriptState, Req
             exceptionState.throwTypeError("Cannot construct a Request with a Request object that has already been used.");
             return nullptr;
         }
-        // We call createDrainingStream() later and not here, because
-        // createDrainingStream() has side effects on |inputRequest|'s body.
-        temporaryBodyRequest = inputRequest;
+        temporaryBody = inputRequest->bodyBuffer();
     }
 
     // "3. Let |request| be |input|'s request, if |input| is a Request object,
     // and a new request otherwise."
-    // "4. Set |request| to a new request whose url is |request|'s url, method
-    // is |request|'s method, header list is a copy of |request|'s header list,
-    // unsafe request flag is set, client is entry settings object, origin is
-    // entry settings object's origin, force Origin header flag is set,
-    // same-origin data URL flag is set, context is the empty string, mode is
-    // |request|'s mode, credentials mode is |request|'s credentials mode,
-    // cache mode is |request|'s cache mode, and redirect mode is request's
-    // redirect mode."
+    // "4. Let origin be entry settings object's origin."
+    RefPtr<SecurityOrigin> origin = scriptState->executionContext()->securityOrigin();
+
+    // TODO(yhirano):
+    //   "5. Let window be client."
+    //   "6. If request's window is an environment settings object and its
+    //   origin is same origin with origin, set window to request's window."
+    //   "7. If init's window member is present and it is not null, throw a
+    //   TypeError."
+    //   "8. If init's window member is present, set window to no-window."
+    // "9. Set |request| to a new request whose url is |request|'s current url,
+    // method is |request|'s method, header list is a copy of |request|'s header
+    // list, unsafe-request flag is set, client is entry settings object, window
+    // is window, origin is origin, force-Origin-header flag is set, same-origin
+    // data-URL flag is set, referrer is request's referrer, referrer policy is
+    // |request|'s referrer policy, context is the empty string, mode is
+    // |request|'s mode, credentials mode is |request|'s credentials mode, cache
+    // mode is |request|'s cache mode, redirect mode is |request|'s redirect
+    // mode, and integrity metadata is |request|'s integrity metadata."
     FetchRequestData* request = createCopyOfFetchRequestDataForFetch(scriptState, inputRequest ? inputRequest->request() : FetchRequestData::create());
 
-    // "5. Let |fallbackMode| be null."
-    // "6. Let |fallbackCredentials| be null."
-    // "7. Let |fallbackCache| be null."
-    // "8. Let |fallbackRedirect| be null."
+    // "10. Let |fallbackMode| be null."
+    // "11. Let |fallbackCredentials| be null."
+    // "12. Let |baseURL| be entry settings object's API base URL."
     // We don't use fallback values. We set these flags directly in below.
 
-    // "9. If |input| is a string, run these substeps:"
+    // "13. If |input| is a string, run these substeps:"
     if (!inputRequest) {
-        // "1. Let |parsedURL| be the result of parsing |input| with entry
-        // settings object's API base URL."
+        // "1. Let |parsedURL| be the result of parsing |input| with |baseURL|."
         KURL parsedURL = scriptState->executionContext()->completeURL(inputString);
         // "2. If |parsedURL| is failure, throw a TypeError."
         if (!parsedURL.isValid()) {
@@ -109,14 +117,54 @@ Request* Request::createRequestWithRequestOrString(ScriptState* scriptState, Req
         request->setURL(parsedURL);
         // "5. Set |fallbackMode| to CORS."
         // "6. Set |fallbackCredentials| to omit."
-        // "7. Set |fallbackCache| to default."
-        // "8. Set |fallbackRedirect| to follow."
         // We don't use fallback values. We set these flags directly in below.
     }
 
-    // "10. Let |mode| be |init|'s mode member if it is present, and
+    //   14. If any of |init|'s members are present, set |request|'s referrer
+    // to client, and |request|'s referrer policy to the empty string.
+    //   => RequestInit::RequestInit.
+    //   15. If |init|'s referrer member is present, run these substeps:
+    // Note that JS null and undefined are encoded as an empty string and thus
+    // a null string means referrer member is not set.
+    //   16. If |init|'s referrerPolicy member is present, set |request|'s
+    // referrer policy to it.
+    if (init.isReferrerSet) {
+        // 1. Let |referrer| be |init|'s referrer member.
+        if (init.referrer.referrer.isEmpty()) {
+            // 2. if |referrer| is the empty string, set |request|'s referrer to
+            // "no-referrer" and terminate these substeps.
+            request->setReferrerString(FetchRequestData::noReferrerString());
+        } else {
+            // 3. Let |parsedReferrer| be the result of parsing |referrer| with
+            // |baseURL|.
+            KURL parsedReferrer = scriptState->executionContext()->completeURL(init.referrer.referrer);
+            if (!parsedReferrer.isValid()) {
+                // 4. If |parsedReferrer| is failure, throw a TypeError.
+                exceptionState.throwTypeError("Referrer '" + init.referrer.referrer + "' is not a valid URL.");
+                return nullptr;
+            }
+            if (parsedReferrer.protocolIsAbout() && parsedReferrer.host().isEmpty() and parsedReferrer.path() == "client") {
+                // 5. If |parsedReferrer|'s non-relative flag is set, scheme is
+                // "about", and path contains a single string "client", set
+                // request's referrer to "client" and terminate these substeps.
+                request->setReferrerString(FetchRequestData::clientReferrerString());
+            } else if (!origin->isSameSchemeHostPortAndSuborigin(SecurityOrigin::create(parsedReferrer).get())) {
+                // 6. If |parsedReferrer|'s origin is not same origin with
+                // |origin|, throw a TypeError.
+                exceptionState.throwTypeError("The origin of '" + init.referrer.referrer + "' should be same as '" + origin->toString() + "'");
+                return nullptr;
+            } else {
+                // 7. Set |request|'s referrer to |parsedReferrer|.
+                request->setReferrerString(AtomicString(parsedReferrer.string()));
+            }
+        }
+        request->setReferrerPolicy(init.referrer.referrerPolicy);
+    }
+
+
+    // "17. Let |mode| be |init|'s mode member if it is present, and
     // |fallbackMode| otherwise."
-    // "11. If |mode| is non-null, set |request|'s mode to |mode|."
+    // "18. If |mode| is non-null, set |request|'s mode to |mode|."
     if (init.mode == "same-origin") {
         request->setMode(WebURLRequest::FetchRequestModeSameOrigin);
     } else if (init.mode == "no-cors") {
@@ -128,9 +176,9 @@ Request* Request::createRequestWithRequestOrString(ScriptState* scriptState, Req
             request->setMode(WebURLRequest::FetchRequestModeCORS);
     }
 
-    // "12. Let |credentials| be |init|'s credentials member if it is present,
+    // "19. Let |credentials| be |init|'s credentials member if it is present,
     // and |fallbackCredentials| otherwise."
-    // "13. If |credentials| is non-null, set |request|'s credentials mode to
+    // "20. If |credentials| is non-null, set |request|'s credentials mode to
     // |credentials|.
     if (init.credentials == "omit") {
         request->setCredentials(WebURLRequest::FetchCredentialsModeOmit);
@@ -143,20 +191,25 @@ Request* Request::createRequestWithRequestOrString(ScriptState* scriptState, Req
             request->setCredentials(WebURLRequest::FetchCredentialsModeOmit);
     }
 
-    // FIXME: "14. Let |cache| be |init|'s cache member if it is present, and
-    // |fallbackCache| otherwise."
-    // FIXME: "15. If |cache| is non-null, set |request|'s cache mode to
-    // |cache|."
-    // TODO(yhirano): "16. If |init|'s redirect member is present and its is
-    // manual, throw a TypeError."
-    // TODO(yhirano): "17. Let |redirect| be |init|'s redirect member if it is
-    // present, and |fallbackRedirect| otherwise."
-    // TODO(yhirano): "18 If |redirect| is non-null, set |request|'s redirect
-    // mode to |redirect|."
-    // TODO(yhirano): "19 If |request|'s redirect mode is manual, set it to
-    // follow."
+    // TODO(yhirano): "21. If |init|'s cache member is present, set |request|'s
+    // cache mode to it."
 
-    // "20. If |init|'s method member is present, let |method| be it and run
+    // "22. If |init|'s redirect member is present, set |request|'s redirect
+    // mode to it."
+    if (init.redirect == "follow") {
+        request->setRedirect(WebURLRequest::FetchRedirectModeFollow);
+    } else if (init.redirect == "error") {
+        request->setRedirect(WebURLRequest::FetchRedirectModeError);
+    } else if (init.redirect == "manual") {
+        request->setRedirect(WebURLRequest::FetchRedirectModeManual);
+    }
+
+    // "If |init|'s integrity member is present, set |request|'s
+    // integrity metadata to it."
+    if (!init.integrity.isNull())
+        request->setIntegrity(init.integrity);
+
+    // "24. If |init|'s method member is present, let |method| be it and run
     // these substeps:"
     if (!init.method.isNull()) {
         // "1. If |method| is not a method or method is a forbidden method,
@@ -173,11 +226,11 @@ Request* Request::createRequestWithRequestOrString(ScriptState* scriptState, Req
         // "3. Set |request|'s method to |method|."
         request->setMethod(FetchUtils::normalizeMethod(AtomicString(init.method)));
     }
-    // "21. Let |r| be a new Request object associated with |request| and a new
+    // "25. Let |r| be a new Request object associated with |request| and a new
     // Headers object whose guard is request."
     Request* r = Request::create(scriptState->executionContext(), request);
-    // "22. Let |headers| be a copy of |r|'s Headers object."
-    // "23. If |init|'s headers member is present, set |headers| to |init|'s
+    // "26. Let |headers| be a copy of |r|'s Headers object."
+    // "27. If |init|'s headers member is present, set |headers| to |init|'s
     // headers member."
     // We don't create a copy of r's Headers object when init's headers member
     // is present.
@@ -185,9 +238,9 @@ Request* Request::createRequestWithRequestOrString(ScriptState* scriptState, Req
     if (!init.headers && init.headersDictionary.isUndefinedOrNull()) {
         headers = r->headers()->clone();
     }
-    // "24. Empty |r|'s request's header list."
-    r->clearHeaderList();
-    // "25. If |r|'s request's mode is no CORS, run these substeps:
+    // "28. Empty |r|'s request's header list."
+    r->m_request->headerList()->clearList();
+    // "29. If |r|'s request's mode is no CORS, run these substeps:
     if (r->request()->mode() == WebURLRequest::FetchRequestModeNoCORS) {
         // "1. If |r|'s request's method is not a simple method, throw a
         // TypeError."
@@ -195,10 +248,16 @@ Request* Request::createRequestWithRequestOrString(ScriptState* scriptState, Req
             exceptionState.throwTypeError("'" + r->request()->method() + "' is unsupported in no-cors mode.");
             return nullptr;
         }
-        // "Set |r|'s Headers object's guard to |request-no-CORS|.
+        // "2. If |request|'s integrity metadata is not the empty string, throw
+        // a TypeError."
+        if (!request->integrity().isEmpty()) {
+            exceptionState.throwTypeError("The integrity attribute is unsupported in no-cors mode.");
+            return nullptr;
+        }
+        // "3. Set |r|'s Headers object's guard to |request-no-CORS|.
         r->headers()->setGuard(Headers::RequestNoCORSGuard);
     }
-    // "26. Fill |r|'s Headers object with |headers|. Rethrow any exceptions."
+    // "30. Fill |r|'s Headers object with |headers|. Rethrow any exceptions."
     if (init.headers) {
         ASSERT(init.headersDictionary.isUndefinedOrNull());
         r->headers()->fillWith(init.headers.get(), exceptionState);
@@ -211,17 +270,17 @@ Request* Request::createRequestWithRequestOrString(ScriptState* scriptState, Req
     if (exceptionState.hadException())
         return nullptr;
 
-    // "27. If either |init|'s body member is present or |temporaryBody| is
+    // "31. If either |init|'s body member is present or |temporaryBody| is
     // non-null, and |request|'s method is `GET` or `HEAD`, throw a TypeError.
-    if (init.bodyBlobHandle || temporaryBodyRequest) {
+    if (init.body || temporaryBody) {
         if (request->method() == "GET" || request->method() == "HEAD") {
             exceptionState.throwTypeError("Request with GET/HEAD method cannot have body.");
             return nullptr;
         }
     }
 
-    // "28. If |init|'s body member is present, run these substeps:"
-    if (init.bodyBlobHandle) {
+    // "32. If |init|'s body member is present, run these substeps:"
+    if (init.body) {
         // "1. Let |stream| and |Content-Type| be the result of extracting
         //  |init|'s body member."
         // "2. Set |temporaryBody| to |stream|.
@@ -229,37 +288,38 @@ Request* Request::createRequestWithRequestOrString(ScriptState* scriptState, Req
         //  contains no header named `Content-Type`, append
         //  `Content-Type`/|Content-Type| to |r|'s Headers object. Rethrow any
         //  exception."
-        temporaryBodyBuffer = BodyStreamBuffer::create(FetchBlobDataConsumerHandle::create(scriptState->executionContext(), init.bodyBlobHandle));
-        temporaryBodyRequest = nullptr;
-        if (!init.bodyBlobHandle->type().isEmpty() && !r->headers()->has("Content-Type", exceptionState)) {
-            r->headers()->append("Content-Type", init.bodyBlobHandle->type(), exceptionState);
+        temporaryBody = new BodyStreamBuffer(init.body.release());
+        if (!init.contentType.isEmpty() && !r->headers()->has("Content-Type", exceptionState)) {
+            r->headers()->append("Content-Type", init.contentType, exceptionState);
         }
         if (exceptionState.hadException())
             return nullptr;
     }
 
-    // "29. Set |r|'s body to |temporaryBody|.
-    if (temporaryBodyBuffer)
-        r->setBuffer(temporaryBodyBuffer);
-    else if (temporaryBodyRequest)
-        r->setBuffer(temporaryBodyRequest->createDrainingStream()->leakBuffer());
+    // "33. Set |r|'s body to |temporaryBody|.
+    if (temporaryBody)
+        r->m_request->setBuffer(temporaryBody);
 
-    // "30. Set |r|'s MIME type to the result of extracting a MIME type from
+    // https://w3c.github.io/webappsec/specs/credentialmanagement/#monkey-patching-fetch-2
+    if (init.opaque || (inputRequest && inputRequest->opaque()))
+        r->makeOpaque();
+
+    // "34. Set |r|'s MIME type to the result of extracting a MIME type from
     // |r|'s request's header list."
     r->m_request->setMIMEType(r->m_request->headerList()->extractMIMEType());
 
-    // "31. If |input| is a Request object and |input|'s body is non-null, run
+    // "35. If |input| is a Request object and |input|'s body is non-null, run
     // these substeps:"
     // We set bodyUsed even when the body is null in spite of the
     // spec. See https://github.com/whatwg/fetch/issues/61 for details.
     if (inputRequest) {
         // "1. Set |input|'s body to null."
-        inputRequest->setBuffer(nullptr);
+        inputRequest->m_request->setBuffer(nullptr);
         // "2. Set |input|'s used flag."
-        inputRequest->lockBody(PassBody);
+        inputRequest->setBodyPassed();
     }
 
-    // "32. Return |r|."
+    // "36. Return |r|."
     return r;
 }
 
@@ -278,7 +338,8 @@ Request* Request::create(ScriptState* scriptState, const String& input, Exceptio
 
 Request* Request::create(ScriptState* scriptState, const String& input, const Dictionary& init, ExceptionState& exceptionState)
 {
-    return createRequestWithRequestOrString(scriptState, nullptr, input, RequestInit(scriptState->executionContext(), init, exceptionState), exceptionState);
+    RequestInit requestInit(scriptState->executionContext(), init, exceptionState);
+    return createRequestWithRequestOrString(scriptState, nullptr, input, requestInit, exceptionState);
 }
 
 Request* Request::create(ScriptState* scriptState, Request* input, ExceptionState& exceptionState)
@@ -288,14 +349,13 @@ Request* Request::create(ScriptState* scriptState, Request* input, ExceptionStat
 
 Request* Request::create(ScriptState* scriptState, Request* input, const Dictionary& init, ExceptionState& exceptionState)
 {
-    return createRequestWithRequestOrString(scriptState, input, String(), RequestInit(scriptState->executionContext(), init, exceptionState), exceptionState);
+    RequestInit requestInit(scriptState->executionContext(), init, exceptionState);
+    return createRequestWithRequestOrString(scriptState, input, String(), requestInit, exceptionState);
 }
 
 Request* Request::create(ExecutionContext* context, FetchRequestData* request)
 {
-    Request* r = new Request(context, request);
-    r->suspendIfNeeded();
-    return r;
+    return new Request(context, request);
 }
 
 Request::Request(ExecutionContext* context, FetchRequestData* request)
@@ -304,21 +364,14 @@ Request::Request(ExecutionContext* context, FetchRequestData* request)
     , m_headers(Headers::create(m_request->headerList()))
 {
     m_headers->setGuard(Headers::RequestGuard);
-
-    refreshBody();
 }
 
 Request::Request(ExecutionContext* context, FetchRequestData* request, Headers* headers)
-    : Body(context) , m_request(request) , m_headers(headers)
-{
-    refreshBody();
-}
+    : Body(context) , m_request(request) , m_headers(headers) {}
 
 Request* Request::create(ExecutionContext* context, const WebServiceWorkerRequest& webRequest)
 {
-    Request* r = new Request(context, webRequest);
-    r->suspendIfNeeded();
-    return r;
+    return new Request(context, webRequest);
 }
 
 Request::Request(ExecutionContext* context, const WebServiceWorkerRequest& webRequest)
@@ -327,8 +380,6 @@ Request::Request(ExecutionContext* context, const WebServiceWorkerRequest& webRe
     , m_headers(Headers::create(m_request->headerList()))
 {
     m_headers->setGuard(Headers::RequestGuard);
-
-    refreshBody();
 }
 
 String Request::method() const
@@ -429,11 +480,9 @@ String Request::referrer() const
     // "The referrer attribute's getter must return the empty string if
     // request's referrer is no referrer, "about:client" if request's referrer
     // is client and request's referrer, serialized, otherwise."
-    if (m_request->referrer().isNoReferrer())
-        return String();
-    if (m_request->referrer().isClient())
-        return String("about:client");
-    return m_request->referrer().referrer().referrer;
+    ASSERT(FetchRequestData::noReferrerString() == AtomicString());
+    ASSERT(FetchRequestData::clientReferrerString() == AtomicString("about:client"));
+    return m_request->referrerString();
 }
 
 String Request::mode() const
@@ -470,6 +519,26 @@ String Request::credentials() const
     return "";
 }
 
+String Request::redirect() const
+{
+    // "The redirect attribute's getter must return request's redirect mode."
+    switch (m_request->redirect()) {
+    case WebURLRequest::FetchRedirectModeFollow:
+        return "follow";
+    case WebURLRequest::FetchRedirectModeError:
+        return "error";
+    case WebURLRequest::FetchRedirectModeManual:
+        return "manual";
+    }
+    ASSERT_NOT_REACHED();
+    return "";
+}
+
+String Request::integrity() const
+{
+    return m_request->integrity();
+}
+
 Request* Request::clone(ExceptionState& exceptionState)
 {
     if (bodyUsed()) {
@@ -477,32 +546,23 @@ Request* Request::clone(ExceptionState& exceptionState)
         return nullptr;
     }
 
-    if (OwnPtr<DrainingBodyStreamBuffer> buffer = createDrainingStream())
-        m_request->setBuffer(buffer->leakBuffer());
-
     FetchRequestData* request = m_request->clone(executionContext());
     Headers* headers = Headers::create(request->headerList());
     headers->setGuard(m_headers->guard());
-    Request* r = new Request(executionContext(), request, headers);
-    r->suspendIfNeeded();
-
-    // Lock the old body and set |body| property to the new one.
-    lockBody();
-    refreshBody();
-    return r;
+    return new Request(executionContext(), request, headers);
 }
 
 FetchRequestData* Request::passRequestData()
 {
     ASSERT(!bodyUsed());
-
-    if (OwnPtr<DrainingBodyStreamBuffer> buffer = createDrainingStream())
-        m_request->setBuffer(buffer->leakBuffer());
-
-    lockBody(PassBody);
+    setBodyPassed();
     FetchRequestData* newRequestData = m_request->pass(executionContext());
-    refreshBody();
     return newRequestData;
+}
+
+bool Request::hasBody() const
+{
+    return bodyBuffer();
 }
 
 void Request::populateWebServiceWorkerRequest(WebServiceWorkerRequest& webRequest) const
@@ -518,25 +578,9 @@ void Request::populateWebServiceWorkerRequest(WebServiceWorkerRequest& webReques
         webRequest.appendHeader(header.first, header.second);
     }
 
-    webRequest.setReferrer(m_request->referrer().referrer().referrer, static_cast<WebReferrerPolicy>(m_request->referrer().referrer().referrerPolicy));
+    webRequest.setReferrer(m_request->referrerString(), static_cast<WebReferrerPolicy>(m_request->referrerPolicy()));
     // FIXME: How can we set isReload properly? What is the correct place to load it in to the Request object? We should investigate the right way
     // to plumb this information in to here.
-}
-
-void Request::setBuffer(BodyStreamBuffer* buffer)
-{
-    m_request->setBuffer(buffer);
-    refreshBody();
-}
-
-void Request::refreshBody()
-{
-    setBody(m_request->buffer());
-}
-
-void Request::clearHeaderList()
-{
-    m_request->headerList()->clearList();
 }
 
 String Request::mimeType() const

@@ -21,13 +21,14 @@ namespace {
 
 class FakeMemoryAllocatorDumpProvider : public MemoryDumpProvider {
  public:
-  bool OnMemoryDump(ProcessMemoryDump* pmd) override {
+  bool OnMemoryDump(const MemoryDumpArgs& args,
+                    ProcessMemoryDump* pmd) override {
     MemoryAllocatorDump* root_heap =
         pmd->CreateAllocatorDump("foobar_allocator");
 
     root_heap->AddScalar(MemoryAllocatorDump::kNameSize,
                          MemoryAllocatorDump::kUnitsBytes, 4096);
-    root_heap->AddScalar(MemoryAllocatorDump::kNameObjectsCount,
+    root_heap->AddScalar(MemoryAllocatorDump::kNameObjectCount,
                          MemoryAllocatorDump::kUnitsObjects, 42);
     root_heap->AddScalar("attr1", "units1", 1234);
     root_heap->AddString("attr2", "units2", "string_value");
@@ -37,7 +38,7 @@ class FakeMemoryAllocatorDumpProvider : public MemoryDumpProvider {
         pmd->CreateAllocatorDump("foobar_allocator/sub_heap");
     sub_heap->AddScalar(MemoryAllocatorDump::kNameSize,
                         MemoryAllocatorDump::kUnitsBytes, 1);
-    sub_heap->AddScalar(MemoryAllocatorDump::kNameObjectsCount,
+    sub_heap->AddScalar(MemoryAllocatorDump::kNameObjectCount,
                         MemoryAllocatorDump::kUnitsObjects, 3);
 
     pmd->CreateAllocatorDump("foobar_allocator/sub_heap/empty");
@@ -125,8 +126,9 @@ TEST(MemoryAllocatorDumpTest, GuidGeneration) {
 TEST(MemoryAllocatorDumpTest, DumpIntoProcessMemoryDump) {
   FakeMemoryAllocatorDumpProvider fmadp;
   ProcessMemoryDump pmd(make_scoped_refptr(new MemoryDumpSessionState()));
+  MemoryDumpArgs dump_args = {MemoryDumpLevelOfDetail::DETAILED};
 
-  fmadp.OnMemoryDump(&pmd);
+  fmadp.OnMemoryDump(dump_args, &pmd);
 
   ASSERT_EQ(3u, pmd.allocator_dumps().size());
 
@@ -136,7 +138,7 @@ TEST(MemoryAllocatorDumpTest, DumpIntoProcessMemoryDump) {
   EXPECT_EQ("foobar_allocator", root_heap->absolute_name());
   CheckScalar(root_heap, MemoryAllocatorDump::kNameSize,
               MemoryAllocatorDump::kUnitsBytes, 4096);
-  CheckScalar(root_heap, MemoryAllocatorDump::kNameObjectsCount,
+  CheckScalar(root_heap, MemoryAllocatorDump::kNameObjectCount,
               MemoryAllocatorDump::kUnitsObjects, 42);
   CheckScalar(root_heap, "attr1", "units1", 1234);
   CheckString(root_heap, "attr2", MemoryAllocatorDump::kTypeString, "units2",
@@ -149,7 +151,7 @@ TEST(MemoryAllocatorDumpTest, DumpIntoProcessMemoryDump) {
   EXPECT_EQ("foobar_allocator/sub_heap", sub_heap->absolute_name());
   CheckScalar(sub_heap, MemoryAllocatorDump::kNameSize,
               MemoryAllocatorDump::kUnitsBytes, 1);
-  CheckScalar(sub_heap, MemoryAllocatorDump::kNameObjectsCount,
+  CheckScalar(sub_heap, MemoryAllocatorDump::kNameObjectCount,
               MemoryAllocatorDump::kUnitsObjects, 3);
   const MemoryAllocatorDump* empty_sub_heap =
       pmd.GetAllocatorDump("foobar_allocator/sub_heap/empty");
@@ -159,7 +161,7 @@ TEST(MemoryAllocatorDumpTest, DumpIntoProcessMemoryDump) {
   DictionaryValue* attrs = nullptr;
   ASSERT_TRUE(raw_attrs->GetAsDictionary(&attrs));
   ASSERT_FALSE(attrs->HasKey(MemoryAllocatorDump::kNameSize));
-  ASSERT_FALSE(attrs->HasKey(MemoryAllocatorDump::kNameObjectsCount));
+  ASSERT_FALSE(attrs->HasKey(MemoryAllocatorDump::kNameObjectCount));
 
   // Check that the AsValueInfo doesn't hit any DCHECK.
   scoped_refptr<TracedValue> traced_value(new TracedValue());

@@ -79,6 +79,9 @@ static const struct CoreException {
 
     // Web Crypto
     { "OperationError", "The operation failed for an operation-specific reason", 0 },
+
+    // Push API
+    { "PermissionDeniedError", "User or security policy denied the request.", 0 },
 };
 
 static const CoreException* getErrorEntry(ExceptionCode ec)
@@ -87,6 +90,15 @@ static const CoreException* getErrorEntry(ExceptionCode ec)
     size_t tableIndex = ec - IndexSizeError;
 
     return tableIndex < tableSize ? &coreExceptions[tableIndex] : 0;
+}
+
+static int getErrorCode(const String& name)
+{
+    for (const CoreException& entry : coreExceptions) {
+        if (entry.name == name)
+            return entry.code;
+    }
+    return 0;
 }
 
 DOMException::DOMException(unsigned short code, const String& name, const String& sanitizedMessage, const String& unsanitizedMessage)
@@ -106,6 +118,11 @@ DOMException* DOMException::create(ExceptionCode ec, const String& sanitizedMess
         entry->name ? entry->name : "Error",
         sanitizedMessage.isNull() ? String(entry->message) : sanitizedMessage,
         unsanitizedMessage);
+}
+
+DOMException* DOMException::create(const String& message, const String& name)
+{
+    return new DOMException(getErrorCode(name), name, message, message);
 }
 
 String DOMException::toString() const

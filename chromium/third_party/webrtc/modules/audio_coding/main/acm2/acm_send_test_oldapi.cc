@@ -31,7 +31,8 @@ AcmSendTestOldApi::AcmSendTestOldApi(InputAudioFile* audio_source,
       acm_(webrtc::AudioCodingModule::Create(0, &clock_)),
       audio_source_(audio_source),
       source_rate_hz_(source_rate_hz),
-      input_block_size_samples_(source_rate_hz_ * kBlockSizeMs / 1000),
+      input_block_size_samples_(
+          static_cast<size_t>(source_rate_hz_ * kBlockSizeMs / 1000)),
       codec_registered_(false),
       test_duration_ms_(test_duration_ms),
       frame_type_(kAudioFrameSpeech),
@@ -52,8 +53,8 @@ bool AcmSendTestOldApi::RegisterCodec(const char* payload_name,
                                       int payload_type,
                                       int frame_size_samples) {
   CodecInst codec;
-  CHECK_EQ(0, AudioCodingModule::Codec(payload_name, &codec, sampling_freq_hz,
-                                       channels));
+  RTC_CHECK_EQ(0, AudioCodingModule::Codec(payload_name, &codec,
+                                           sampling_freq_hz, channels));
   codec.pltype = payload_type;
   codec.pacsize = frame_size_samples;
   codec_registered_ = (acm_->RegisterSendCodec(codec) == 0);
@@ -64,7 +65,7 @@ bool AcmSendTestOldApi::RegisterCodec(const char* payload_name,
 }
 
 bool AcmSendTestOldApi::RegisterExternalCodec(
-    AudioEncoderMutable* external_speech_encoder) {
+    AudioEncoder* external_speech_encoder) {
   acm_->RegisterExternalSendCodec(external_speech_encoder);
   input_frame_.num_channels_ = external_speech_encoder->NumChannels();
   assert(input_block_size_samples_ * input_frame_.num_channels_ <=
@@ -83,7 +84,8 @@ Packet* AcmSendTestOldApi::NextPacket() {
   // Insert audio and process until one packet is produced.
   while (clock_.TimeInMilliseconds() < test_duration_ms_) {
     clock_.AdvanceTimeMilliseconds(kBlockSizeMs);
-    CHECK(audio_source_->Read(input_block_size_samples_, input_frame_.data_));
+    RTC_CHECK(
+        audio_source_->Read(input_block_size_samples_, input_frame_.data_));
     if (input_frame_.num_channels_ > 1) {
       InputAudioFile::DuplicateInterleaved(input_frame_.data_,
                                            input_block_size_samples_,
@@ -91,7 +93,7 @@ Packet* AcmSendTestOldApi::NextPacket() {
                                            input_frame_.data_);
     }
     data_to_send_ = false;
-    CHECK_GE(acm_->Add10MsData(input_frame_), 0);
+    RTC_CHECK_GE(acm_->Add10MsData(input_frame_), 0);
     input_frame_.timestamp_ += static_cast<uint32_t>(input_block_size_samples_);
     if (data_to_send_) {
       // Encoded packet received.

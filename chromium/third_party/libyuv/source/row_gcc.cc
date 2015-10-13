@@ -17,7 +17,8 @@ extern "C" {
 #endif
 
 // This module is for GCC x86 and x64.
-#if !defined(LIBYUV_DISABLE_X86) && (defined(__x86_64__) || defined(__i386__))
+#if !defined(LIBYUV_DISABLE_X86) && \
+    (defined(__x86_64__) || (defined(__i386__) && !defined(_MSC_VER)))
 
 #if defined(HAS_ARGBTOYROW_SSSE3) || defined(HAS_ARGBGRAYROW_SSSE3)
 
@@ -139,102 +140,31 @@ static uvec8 kShuffleMaskARGBToRGB24_0 = {
 static uvec8 kShuffleMaskARGBToRAW_0 = {
   2u, 1u, 0u, 6u, 5u, 4u, 10u, 9u, 128u, 128u, 128u, 128u, 8u, 14u, 13u, 12u
 };
+
+// YUY2 shuf 16 Y to 32 Y.
+static const lvec8 kShuffleYUY2Y = {
+  0, 0, 2, 2, 4, 4, 6, 6, 8, 8, 10, 10, 12, 12, 14, 14,
+  0, 0, 2, 2, 4, 4, 6, 6, 8, 8, 10, 10, 12, 12, 14, 14
+};
+
+// YUY2 shuf 8 UV to 16 UV.
+static const lvec8 kShuffleYUY2UV = {
+  1, 3, 1, 3, 5, 7, 5, 7, 9, 11, 9, 11, 13, 15, 13, 15,
+  1, 3, 1, 3, 5, 7, 5, 7, 9, 11, 9, 11, 13, 15, 13, 15
+};
+
+// UYVY shuf 16 Y to 32 Y.
+static const lvec8 kShuffleUYVYY = {
+  1, 1, 3, 3, 5, 5, 7, 7, 9, 9, 11, 11, 13, 13, 15, 15,
+  1, 1, 3, 3, 5, 5, 7, 7, 9, 9, 11, 11, 13, 13, 15, 15
+};
+
+// UYVY shuf 8 UV to 16 UV.
+static const lvec8 kShuffleUYVYUV = {
+  0, 2, 0, 2, 4, 6, 4, 6, 8, 10, 8, 10, 12, 14, 12, 14,
+  0, 2, 0, 2, 4, 6, 4, 6, 8, 10, 8, 10, 12, 14, 12, 14
+};
 #endif  // HAS_RGB24TOARGBROW_SSSE3
-
-#if defined(TESTING) && defined(__x86_64__)
-void TestRow_SSE2(const uint8* src_y, uint8* dst_argb, int pix) {
-  asm volatile (
-    ".p2align  5                               \n"
-    "mov       %%eax,%%eax                     \n"
-    "mov       %%ebx,%%ebx                     \n"
-    "mov       %%ecx,%%ecx                     \n"
-    "mov       %%edx,%%edx                     \n"
-    "mov       %%esi,%%esi                     \n"
-    "mov       %%edi,%%edi                     \n"
-    "mov       %%ebp,%%ebp                     \n"
-    "mov       %%esp,%%esp                     \n"
-    ".p2align  5                               \n"
-    "mov       %%r8d,%%r8d                     \n"
-    "mov       %%r9d,%%r9d                     \n"
-    "mov       %%r10d,%%r10d                   \n"
-    "mov       %%r11d,%%r11d                   \n"
-    "mov       %%r12d,%%r12d                   \n"
-    "mov       %%r13d,%%r13d                   \n"
-    "mov       %%r14d,%%r14d                   \n"
-    "mov       %%r15d,%%r15d                   \n"
-    ".p2align  5                               \n"
-    "lea       (%%rax),%%eax                   \n"
-    "lea       (%%rbx),%%ebx                   \n"
-    "lea       (%%rcx),%%ecx                   \n"
-    "lea       (%%rdx),%%edx                   \n"
-    "lea       (%%rsi),%%esi                   \n"
-    "lea       (%%rdi),%%edi                   \n"
-    "lea       (%%rbp),%%ebp                   \n"
-    "lea       (%%rsp),%%esp                   \n"
-    ".p2align  5                               \n"
-    "lea       (%%r8),%%r8d                    \n"
-    "lea       (%%r9),%%r9d                    \n"
-    "lea       (%%r10),%%r10d                  \n"
-    "lea       (%%r11),%%r11d                  \n"
-    "lea       (%%r12),%%r12d                  \n"
-    "lea       (%%r13),%%r13d                  \n"
-    "lea       (%%r14),%%r14d                  \n"
-    "lea       (%%r15),%%r15d                  \n"
-
-    ".p2align  5                               \n"
-    "lea       0x10(%%rax),%%eax               \n"
-    "lea       0x10(%%rbx),%%ebx               \n"
-    "lea       0x10(%%rcx),%%ecx               \n"
-    "lea       0x10(%%rdx),%%edx               \n"
-    "lea       0x10(%%rsi),%%esi               \n"
-    "lea       0x10(%%rdi),%%edi               \n"
-    "lea       0x10(%%rbp),%%ebp               \n"
-    "lea       0x10(%%rsp),%%esp               \n"
-    ".p2align  5                               \n"
-    "lea       0x10(%%r8),%%r8d                \n"
-    "lea       0x10(%%r9),%%r9d                \n"
-    "lea       0x10(%%r10),%%r10d              \n"
-    "lea       0x10(%%r11),%%r11d              \n"
-    "lea       0x10(%%r12),%%r12d              \n"
-    "lea       0x10(%%r13),%%r13d              \n"
-    "lea       0x10(%%r14),%%r14d              \n"
-    "lea       0x10(%%r15),%%r15d              \n"
-
-    ".p2align  5                               \n"
-    "add       0x10,%%eax                      \n"
-    "add       0x10,%%ebx                      \n"
-    "add       0x10,%%ecx                      \n"
-    "add       0x10,%%edx                      \n"
-    "add       0x10,%%esi                      \n"
-    "add       0x10,%%edi                      \n"
-    "add       0x10,%%ebp                      \n"
-    "add       0x10,%%esp                      \n"
-    ".p2align  5                               \n"
-    "add       0x10,%%r8d                      \n"
-    "add       0x10,%%r9d                      \n"
-    "add       0x10,%%r10d                     \n"
-    "add       0x10,%%r11d                     \n"
-    "add       0x10,%%r12d                     \n"
-    "add       0x10,%%r13d                     \n"
-    "add       0x10,%%r14d                     \n"
-    "add       0x10,%%r15d                     \n"
-
-    ".p2align  2                               \n"
-  "1:                                          \n"
-    "movq      " MEMACCESS(0) ",%%xmm0         \n"
-    "lea       " MEMLEA(0x8,0) ",%0            \n"
-    "movdqu    %%xmm0," MEMACCESS(1) "         \n"
-    "lea       " MEMLEA(0x20,1) ",%1           \n"
-    "sub       $0x8,%2                         \n"
-    "jg        1b                              \n"
-  : "+r"(src_y),     // %0
-    "+r"(dst_argb),  // %1
-    "+r"(pix)        // %2
-  :
-  : "memory", "cc", "xmm0", "xmm1", "xmm5"
-  );
-}
-#endif  // TESTING
 
 #ifdef HAS_J400TOARGBROW_SSE2
 void J400ToARGBRow_SSE2(const uint8* src_y, uint8* dst_argb, int pix) {
@@ -1413,132 +1343,15 @@ void RGBAToUVRow_SSSE3(const uint8* src_rgba0, int src_stride_rgba,
 
 #if defined(HAS_I422TOARGBROW_SSSE3) || defined(HAS_I422TOARGBROW_AVX2)
 
-struct YuvConstants {
-  lvec8 kUVToB;     // 0
-  lvec8 kUVToG;     // 32
-  lvec8 kUVToR;     // 64
-  lvec16 kUVBiasB;  // 96
-  lvec16 kUVBiasG;  // 128
-  lvec16 kUVBiasR;  // 160
-  lvec16 kYToRgb;   // 192
-};
-
-// BT.601 YUV to RGB reference
-//  R = (Y - 16) * 1.164              - V * -1.596
-//  G = (Y - 16) * 1.164 - U *  0.391 - V *  0.813
-//  B = (Y - 16) * 1.164 - U * -2.018
-
-// Y contribution to R,G,B.  Scale and bias.
-// TODO(fbarchard): Consider moving constants into a common header.
-#define YG 18997 /* round(1.164 * 64 * 256 * 256 / 257) */
-#define YGB -1160 /* 1.164 * 64 * -16 + 64 / 2 */
-
-// U and V contributions to R,G,B.
-#define UB -128 /* max(-128, round(-2.018 * 64)) */
-#define UG 25 /* round(0.391 * 64) */
-#define VG 52 /* round(0.813 * 64) */
-#define VR -102 /* round(-1.596 * 64) */
-
-// Bias values to subtract 16 from Y and 128 from U and V.
-#define BB (UB * 128            + YGB)
-#define BG (UG * 128 + VG * 128 + YGB)
-#define BR            (VR * 128 + YGB)
-
-// BT601 constants for YUV to RGB.
-static YuvConstants SIMD_ALIGNED(kYuvConstants) = {
-  { UB, 0, UB, 0, UB, 0, UB, 0, UB, 0, UB, 0, UB, 0, UB, 0,
-    UB, 0, UB, 0, UB, 0, UB, 0, UB, 0, UB, 0, UB, 0, UB, 0 },
-  { UG, VG, UG, VG, UG, VG, UG, VG, UG, VG, UG, VG, UG, VG, UG, VG,
-    UG, VG, UG, VG, UG, VG, UG, VG, UG, VG, UG, VG, UG, VG, UG, VG },
-  { 0, VR, 0, VR, 0, VR, 0, VR, 0, VR, 0, VR, 0, VR, 0, VR,
-    0, VR, 0, VR, 0, VR, 0, VR, 0, VR, 0, VR, 0, VR, 0, VR },
-  { BB, BB, BB, BB, BB, BB, BB, BB, BB, BB, BB, BB, BB, BB, BB, BB },
-  { BG, BG, BG, BG, BG, BG, BG, BG, BG, BG, BG, BG, BG, BG, BG, BG },
-  { BR, BR, BR, BR, BR, BR, BR, BR, BR, BR, BR, BR, BR, BR, BR, BR },
-  { YG, YG, YG, YG, YG, YG, YG, YG, YG, YG, YG, YG, YG, YG, YG, YG }
-};
-
-// BT601 constants for NV21 where chroma plane is VU instead of UV.
-static YuvConstants SIMD_ALIGNED(kYvuConstants) = {
-  { 0, UB, 0, UB, 0, UB, 0, UB, 0, UB, 0, UB, 0, UB, 0, UB,
-    0, UB, 0, UB, 0, UB, 0, UB, 0, UB, 0, UB, 0, UB, 0, UB },
-  { VG, UG, VG, UG, VG, UG, VG, UG, VG, UG, VG, UG, VG, UG, VG, UG,
-    VG, UG, VG, UG, VG, UG, VG, UG, VG, UG, VG, UG, VG, UG, VG, UG },
-  { VR, 0, VR, 0, VR, 0, VR, 0, VR, 0, VR, 0, VR, 0, VR, 0,
-    VR, 0, VR, 0, VR, 0, VR, 0, VR, 0, VR, 0, VR, 0, VR, 0 },
-  { BB, BB, BB, BB, BB, BB, BB, BB, BB, BB, BB, BB, BB, BB, BB, BB },
-  { BG, BG, BG, BG, BG, BG, BG, BG, BG, BG, BG, BG, BG, BG, BG, BG },
-  { BR, BR, BR, BR, BR, BR, BR, BR, BR, BR, BR, BR, BR, BR, BR, BR },
-  { YG, YG, YG, YG, YG, YG, YG, YG, YG, YG, YG, YG, YG, YG, YG, YG }
-};
-
-#undef YG
-#undef YGB
-#undef UB
-#undef UG
-#undef VG
-#undef VR
-#undef BB
-#undef BG
-#undef BR
-
-// JPEG YUV to RGB reference
-// *  R = Y                - V * -1.40200
-// *  G = Y - U *  0.34414 - V *  0.71414
-// *  B = Y - U * -1.77200
-
-// Y contribution to R,G,B.  Scale and bias.
-// TODO(fbarchard): Consider moving constants into a common header.
-#define YGJ 16320 /* round(1.000 * 64 * 256 * 256 / 257) */
-#define YGBJ 32  /* 64 / 2 */
-
-// U and V contributions to R,G,B.
-#define UBJ -113 /* round(-1.77200 * 64) */
-#define UGJ 22 /* round(0.34414 * 64) */
-#define VGJ 46 /* round(0.71414  * 64) */
-#define VRJ -90 /* round(-1.40200 * 64) */
-
-// Bias values to subtract 16 from Y and 128 from U and V.
-#define BBJ (UBJ * 128             + YGBJ)
-#define BGJ (UGJ * 128 + VGJ * 128 + YGBJ)
-#define BRJ             (VRJ * 128 + YGBJ)
-
-// JPEG constants for YUV to RGB.
-YuvConstants SIMD_ALIGNED(kYuvJConstants) = {
-  { UBJ, 0, UBJ, 0, UBJ, 0, UBJ, 0, UBJ, 0, UBJ, 0, UBJ, 0, UBJ, 0,
-    UBJ, 0, UBJ, 0, UBJ, 0, UBJ, 0, UBJ, 0, UBJ, 0, UBJ, 0, UBJ, 0 },
-  { UGJ, VGJ, UGJ, VGJ, UGJ, VGJ, UGJ, VGJ,
-    UGJ, VGJ, UGJ, VGJ, UGJ, VGJ, UGJ, VGJ,
-    UGJ, VGJ, UGJ, VGJ, UGJ, VGJ, UGJ, VGJ,
-    UGJ, VGJ, UGJ, VGJ, UGJ, VGJ, UGJ, VGJ },
-  { 0, VRJ, 0, VRJ, 0, VRJ, 0, VRJ, 0, VRJ, 0, VRJ, 0, VRJ, 0, VRJ,
-    0, VRJ, 0, VRJ, 0, VRJ, 0, VRJ, 0, VRJ, 0, VRJ, 0, VRJ, 0, VRJ },
-  { BBJ, BBJ, BBJ, BBJ, BBJ, BBJ, BBJ, BBJ,
-    BBJ, BBJ, BBJ, BBJ, BBJ, BBJ, BBJ, BBJ },
-  { BGJ, BGJ, BGJ, BGJ, BGJ, BGJ, BGJ, BGJ,
-    BGJ, BGJ, BGJ, BGJ, BGJ, BGJ, BGJ, BGJ },
-  { BRJ, BRJ, BRJ, BRJ, BRJ, BRJ, BRJ, BRJ,
-    BRJ, BRJ, BRJ, BRJ, BRJ, BRJ, BRJ, BRJ },
-  { YGJ, YGJ, YGJ, YGJ, YGJ, YGJ, YGJ, YGJ,
-    YGJ, YGJ, YGJ, YGJ, YGJ, YGJ, YGJ, YGJ }
-};
-
-#undef YGJ
-#undef YGBJ
-#undef UBJ
-#undef UGJ
-#undef VGJ
-#undef VRJ
-#undef BBJ
-#undef BGJ
-#undef BRJ
-
 // Read 8 UV from 411
 #define READYUV444                                                             \
     "movq       " MEMACCESS([u_buf]) ",%%xmm0                   \n"            \
     MEMOPREG(movq, 0x00, [u_buf], [v_buf], 1, xmm1)                            \
     "lea        " MEMLEA(0x8, [u_buf]) ",%[u_buf]               \n"            \
-    "punpcklbw  %%xmm1,%%xmm0                                   \n"
+    "punpcklbw  %%xmm1,%%xmm0                                   \n"            \
+    "movq       " MEMACCESS([y_buf]) ",%%xmm4                   \n"            \
+    "punpcklbw  %%xmm4,%%xmm4                                   \n"            \
+    "lea        " MEMLEA(0x8, [y_buf]) ",%[y_buf]               \n"
 
 // Read 4 UV from 422, upsample to 8 UV
 #define READYUV422                                                             \
@@ -1546,7 +1359,23 @@ YuvConstants SIMD_ALIGNED(kYuvJConstants) = {
     MEMOPREG(movd, 0x00, [u_buf], [v_buf], 1, xmm1)                            \
     "lea        " MEMLEA(0x4, [u_buf]) ",%[u_buf]               \n"            \
     "punpcklbw  %%xmm1,%%xmm0                                   \n"            \
-    "punpcklwd  %%xmm0,%%xmm0                                   \n"
+    "punpcklwd  %%xmm0,%%xmm0                                   \n"            \
+    "movq       " MEMACCESS([y_buf]) ",%%xmm4                   \n"            \
+    "punpcklbw  %%xmm4,%%xmm4                                   \n"            \
+    "lea        " MEMLEA(0x8, [y_buf]) ",%[y_buf]               \n"
+
+// Read 4 UV from 422, upsample to 8 UV.  With 8 Alpha.
+#define READYUVA422                                                            \
+    "movd       " MEMACCESS([u_buf]) ",%%xmm0                   \n"            \
+    MEMOPREG(movd, 0x00, [u_buf], [v_buf], 1, xmm1)                            \
+    "lea        " MEMLEA(0x4, [u_buf]) ",%[u_buf]               \n"            \
+    "punpcklbw  %%xmm1,%%xmm0                                   \n"            \
+    "punpcklwd  %%xmm0,%%xmm0                                   \n"            \
+    "movq       " MEMACCESS([y_buf]) ",%%xmm4                   \n"            \
+    "punpcklbw  %%xmm4,%%xmm4                                   \n"            \
+    "lea        " MEMLEA(0x8, [y_buf]) ",%[y_buf]               \n"            \
+    "movq       " MEMACCESS([a_buf]) ",%%xmm5                   \n"            \
+    "lea        " MEMLEA(0x8, [a_buf]) ",%[a_buf]               \n"
 
 // Read 2 UV from 411, upsample to 8 UV
 #define READYUV411                                                             \
@@ -1555,35 +1384,54 @@ YuvConstants SIMD_ALIGNED(kYuvJConstants) = {
     "lea        " MEMLEA(0x2, [u_buf]) ",%[u_buf]               \n"            \
     "punpcklbw  %%xmm1,%%xmm0                                   \n"            \
     "punpcklwd  %%xmm0,%%xmm0                                   \n"            \
-    "punpckldq  %%xmm0,%%xmm0                                   \n"
+    "punpckldq  %%xmm0,%%xmm0                                   \n"            \
+    "movq       " MEMACCESS([y_buf]) ",%%xmm4                   \n"            \
+    "punpcklbw  %%xmm4,%%xmm4                                   \n"            \
+    "lea        " MEMLEA(0x8, [y_buf]) ",%[y_buf]               \n"
 
 // Read 4 UV from NV12, upsample to 8 UV
 #define READNV12                                                               \
     "movq       " MEMACCESS([uv_buf]) ",%%xmm0                  \n"            \
     "lea        " MEMLEA(0x8, [uv_buf]) ",%[uv_buf]             \n"            \
-    "punpcklwd  %%xmm0,%%xmm0                                   \n"
+    "punpcklwd  %%xmm0,%%xmm0                                   \n"            \
+    "movq       " MEMACCESS([y_buf]) ",%%xmm4                   \n"            \
+    "punpcklbw  %%xmm4,%%xmm4                                   \n"            \
+    "lea        " MEMLEA(0x8, [y_buf]) ",%[y_buf]               \n"
+
+// Read 4 YUY2 with 8 Y and update 4 UV to 8 UV.
+#define READYUY2                                                               \
+    "movdqu     " MEMACCESS([yuy2_buf]) ",%%xmm4                \n"            \
+    "pshufb     %[kShuffleYUY2Y], %%xmm4                        \n"            \
+    "movdqu     " MEMACCESS([yuy2_buf]) ",%%xmm0                \n"            \
+    "pshufb     %[kShuffleYUY2UV], %%xmm0                       \n"            \
+    "lea        " MEMLEA(0x10, [yuy2_buf]) ",%[yuy2_buf]        \n"
+
+// Read 4 UYVY with 8 Y and update 4 UV to 8 UV.
+#define READUYVY                                                               \
+    "movdqu     " MEMACCESS([uyvy_buf]) ",%%xmm4                \n"            \
+    "pshufb     %[kShuffleUYVYY], %%xmm4                        \n"            \
+    "movdqu     " MEMACCESS([uyvy_buf]) ",%%xmm0                \n"            \
+    "pshufb     %[kShuffleUYVYUV], %%xmm0                       \n"            \
+    "lea        " MEMLEA(0x10, [uyvy_buf]) ",%[uyvy_buf]        \n"
 
 // Convert 8 pixels: 8 UV and 8 Y
-#define YUVTORGB(YuvConstants)                                                 \
+#define YUVTORGB(yuvconstants)                                                 \
     "movdqa     %%xmm0,%%xmm1                                   \n"            \
     "movdqa     %%xmm0,%%xmm2                                   \n"            \
     "movdqa     %%xmm0,%%xmm3                                   \n"            \
-    "movdqa     " MEMACCESS2(96, [YuvConstants]) ",%%xmm0       \n"            \
-    "pmaddubsw  " MEMACCESS([YuvConstants]) ",%%xmm1            \n"            \
+    "movdqa     " MEMACCESS2(96, [yuvconstants]) ",%%xmm0       \n"            \
+    "pmaddubsw  " MEMACCESS([yuvconstants]) ",%%xmm1            \n"            \
     "psubw      %%xmm1,%%xmm0                                   \n"            \
-    "movdqa     " MEMACCESS2(128, [YuvConstants]) ",%%xmm1      \n"            \
-    "pmaddubsw  " MEMACCESS2(32, [YuvConstants]) ",%%xmm2       \n"            \
+    "movdqa     " MEMACCESS2(128, [yuvconstants]) ",%%xmm1      \n"            \
+    "pmaddubsw  " MEMACCESS2(32, [yuvconstants]) ",%%xmm2       \n"            \
     "psubw      %%xmm2,%%xmm1                                   \n"            \
-    "movdqa     " MEMACCESS2(160, [YuvConstants]) ",%%xmm2      \n"            \
-    "pmaddubsw  " MEMACCESS2(64, [YuvConstants]) ",%%xmm3       \n"            \
+    "movdqa     " MEMACCESS2(160, [yuvconstants]) ",%%xmm2      \n"            \
+    "pmaddubsw  " MEMACCESS2(64, [yuvconstants]) ",%%xmm3       \n"            \
     "psubw      %%xmm3,%%xmm2                                   \n"            \
-    "movq       " MEMACCESS([y_buf]) ",%%xmm3                   \n"            \
-    "lea        " MEMLEA(0x8, [y_buf]) ",%[y_buf]               \n"            \
-    "punpcklbw  %%xmm3,%%xmm3                                   \n"            \
-    "pmulhuw    " MEMACCESS2(192, [YuvConstants]) ",%%xmm3      \n"            \
-    "paddsw     %%xmm3,%%xmm0                                   \n"            \
-    "paddsw     %%xmm3,%%xmm1                                   \n"            \
-    "paddsw     %%xmm3,%%xmm2                                   \n"            \
+    "pmulhuw    " MEMACCESS2(192, [yuvconstants]) ",%%xmm4      \n"            \
+    "paddsw     %%xmm4,%%xmm0                                   \n"            \
+    "paddsw     %%xmm4,%%xmm1                                   \n"            \
+    "paddsw     %%xmm4,%%xmm2                                   \n"            \
     "psraw      $0x6,%%xmm0                                     \n"            \
     "psraw      $0x6,%%xmm1                                     \n"            \
     "psraw      $0x6,%%xmm2                                     \n"            \
@@ -1591,7 +1439,7 @@ YuvConstants SIMD_ALIGNED(kYuvJConstants) = {
     "packuswb   %%xmm1,%%xmm1                                   \n"            \
     "packuswb   %%xmm2,%%xmm2                                   \n"
 
-// Store 8 ARGB values. Assumes XMM5 is zero.
+// Store 8 ARGB values.
 #define STOREARGB                                                              \
     "punpcklbw  %%xmm1,%%xmm0                                    \n"           \
     "punpcklbw  %%xmm5,%%xmm2                                    \n"           \
@@ -1602,7 +1450,7 @@ YuvConstants SIMD_ALIGNED(kYuvJConstants) = {
     "movdqu     %%xmm1," MEMACCESS2(0x10, [dst_argb]) "          \n"           \
     "lea        " MEMLEA(0x20, [dst_argb]) ", %[dst_argb]        \n"
 
-// Store 8 BGRA values. Assumes XMM5 is zero.
+// Store 8 BGRA values.
 #define STOREBGRA                                                              \
     "pcmpeqb   %%xmm5,%%xmm5                                     \n"           \
     "punpcklbw %%xmm0,%%xmm1                                     \n"           \
@@ -1614,7 +1462,7 @@ YuvConstants SIMD_ALIGNED(kYuvJConstants) = {
     "movdqu    %%xmm0," MEMACCESS2(0x10, [dst_bgra]) "           \n"           \
     "lea       " MEMLEA(0x20, [dst_bgra]) ", %[dst_bgra]         \n"
 
-// Store 8 ABGR values. Assumes XMM5 is zero.
+// Store 8 ABGR values.
 #define STOREABGR                                                              \
     "punpcklbw %%xmm1,%%xmm2                                     \n"           \
     "punpcklbw %%xmm5,%%xmm0                                     \n"           \
@@ -1625,7 +1473,7 @@ YuvConstants SIMD_ALIGNED(kYuvJConstants) = {
     "movdqu    %%xmm1," MEMACCESS2(0x10, [dst_abgr]) "           \n"           \
     "lea       " MEMLEA(0x20, [dst_abgr]) ", %[dst_abgr]         \n"
 
-// Store 8 RGBA values. Assumes XMM5 is zero.
+// Store 8 RGBA values.
 #define STORERGBA                                                              \
     "pcmpeqb   %%xmm5,%%xmm5                                     \n"           \
     "punpcklbw %%xmm2,%%xmm1                                     \n"           \
@@ -1641,6 +1489,7 @@ void OMITFP I444ToARGBRow_SSSE3(const uint8* y_buf,
                                 const uint8* u_buf,
                                 const uint8* v_buf,
                                 uint8* dst_argb,
+                                struct YuvConstants* yuvconstants,
                                 int width) {
   asm volatile (
     "sub       %[u_buf],%[v_buf]               \n"
@@ -1648,7 +1497,7 @@ void OMITFP I444ToARGBRow_SSSE3(const uint8* y_buf,
     LABELALIGN
   "1:                                          \n"
     READYUV444
-    YUVTORGB(kYuvConstants)
+    YUVTORGB(yuvconstants)
     STOREARGB
     "sub       $0x8,%[width]                   \n"
     "jg        1b                              \n"
@@ -1657,17 +1506,44 @@ void OMITFP I444ToARGBRow_SSSE3(const uint8* y_buf,
     [v_buf]"+r"(v_buf),    // %[v_buf]
     [dst_argb]"+r"(dst_argb),  // %[dst_argb]
     [width]"+rm"(width)    // %[width]
-  : [kYuvConstants]"r"(&kYuvConstants.kUVToB) // %[kYuvConstants]
+  : [yuvconstants]"r"(yuvconstants)  // %[yuvconstants]
   : "memory", "cc", NACL_R14
-    "xmm0", "xmm1", "xmm2", "xmm3", "xmm5"
+    "xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5"
   );
 }
 
-// TODO(fbarchard): Consider putting masks into constants.
+void OMITFP I444ToABGRRow_SSSE3(const uint8* y_buf,
+                                const uint8* u_buf,
+                                const uint8* v_buf,
+                                uint8* dst_abgr,
+                                struct YuvConstants* yuvconstants,
+                                int width) {
+  asm volatile (
+    "sub       %[u_buf],%[v_buf]               \n"
+    "pcmpeqb   %%xmm5,%%xmm5                   \n"
+    LABELALIGN
+  "1:                                          \n"
+    READYUV444
+    YUVTORGB(yuvconstants)
+    STOREABGR
+    "sub       $0x8,%[width]                   \n"
+    "jg        1b                              \n"
+  : [y_buf]"+r"(y_buf),    // %[y_buf]
+    [u_buf]"+r"(u_buf),    // %[u_buf]
+    [v_buf]"+r"(v_buf),    // %[v_buf]
+    [dst_abgr]"+r"(dst_abgr),  // %[dst_abgr]
+    [width]"+rm"(width)    // %[width]
+  : [yuvconstants]"r"(yuvconstants)  // %[yuvconstants]
+  : "memory", "cc", NACL_R14
+    "xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5"
+  );
+}
+
 void OMITFP I422ToRGB24Row_SSSE3(const uint8* y_buf,
                                  const uint8* u_buf,
                                  const uint8* v_buf,
                                  uint8* dst_rgb24,
+                                 struct YuvConstants* yuvconstants,
                                  int width) {
   asm volatile (
     "movdqa    %[kShuffleMaskARGBToRGB24_0],%%xmm5 \n"
@@ -1676,7 +1552,7 @@ void OMITFP I422ToRGB24Row_SSSE3(const uint8* y_buf,
     LABELALIGN
   "1:                                          \n"
     READYUV422
-    YUVTORGB(kYuvConstants)
+    YUVTORGB(yuvconstants)
     "punpcklbw %%xmm1,%%xmm0                   \n"
     "punpcklbw %%xmm2,%%xmm2                   \n"
     "movdqa    %%xmm0,%%xmm1                   \n"
@@ -1694,17 +1570,16 @@ void OMITFP I422ToRGB24Row_SSSE3(const uint8* y_buf,
     [u_buf]"+r"(u_buf),    // %[u_buf]
     [v_buf]"+r"(v_buf),    // %[v_buf]
     [dst_rgb24]"+r"(dst_rgb24),  // %[dst_rgb24]
-// TODO(fbarchard): Make width a register for 32 bit.
 #if defined(__i386__) && defined(__pic__)
     [width]"+m"(width)     // %[width]
 #else
     [width]"+rm"(width)    // %[width]
 #endif
-  : [kYuvConstants]"r"(&kYuvConstants.kUVToB),
+  : [yuvconstants]"r"(yuvconstants),  // %[yuvconstants]
     [kShuffleMaskARGBToRGB24_0]"m"(kShuffleMaskARGBToRGB24_0),
     [kShuffleMaskARGBToRGB24]"m"(kShuffleMaskARGBToRGB24)
   : "memory", "cc", NACL_R14
-    "xmm0", "xmm1", "xmm2", "xmm3", "xmm5", "xmm6"
+    "xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5", "xmm6"
   );
 }
 
@@ -1712,6 +1587,7 @@ void OMITFP I422ToRAWRow_SSSE3(const uint8* y_buf,
                                const uint8* u_buf,
                                const uint8* v_buf,
                                uint8* dst_raw,
+                               struct YuvConstants* yuvconstants,
                                int width) {
   asm volatile (
     "movdqa    %[kShuffleMaskARGBToRAW_0],%%xmm5 \n"
@@ -1720,7 +1596,7 @@ void OMITFP I422ToRAWRow_SSSE3(const uint8* y_buf,
     LABELALIGN
   "1:                                          \n"
     READYUV422
-    YUVTORGB(kYuvConstants)
+    YUVTORGB(yuvconstants)
     "punpcklbw %%xmm1,%%xmm0                   \n"
     "punpcklbw %%xmm2,%%xmm2                   \n"
     "movdqa    %%xmm0,%%xmm1                   \n"
@@ -1738,17 +1614,16 @@ void OMITFP I422ToRAWRow_SSSE3(const uint8* y_buf,
     [u_buf]"+r"(u_buf),    // %[u_buf]
     [v_buf]"+r"(v_buf),    // %[v_buf]
     [dst_raw]"+r"(dst_raw),  // %[dst_raw]
-// TODO(fbarchard): Make width a register for 32 bit.
 #if defined(__i386__) && defined(__pic__)
     [width]"+m"(width)    // %[width]
 #else
     [width]"+rm"(width)    // %[width]
 #endif
-  : [kYuvConstants]"r"(&kYuvConstants.kUVToB),
+  : [yuvconstants]"r"(yuvconstants),  // %[yuvconstants]
     [kShuffleMaskARGBToRAW_0]"m"(kShuffleMaskARGBToRAW_0),
     [kShuffleMaskARGBToRAW]"m"(kShuffleMaskARGBToRAW)
   : "memory", "cc", NACL_R14
-    "xmm0", "xmm1", "xmm2", "xmm3", "xmm5", "xmm6"
+    "xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5", "xmm6"
   );
 }
 
@@ -1756,6 +1631,7 @@ void OMITFP I422ToARGBRow_SSSE3(const uint8* y_buf,
                                 const uint8* u_buf,
                                 const uint8* v_buf,
                                 uint8* dst_argb,
+                                struct YuvConstants* yuvconstants,
                                 int width) {
   asm volatile (
     "sub       %[u_buf],%[v_buf]               \n"
@@ -1763,7 +1639,7 @@ void OMITFP I422ToARGBRow_SSSE3(const uint8* y_buf,
     LABELALIGN
   "1:                                          \n"
     READYUV422
-    YUVTORGB(kYuvConstants)
+    YUVTORGB(yuvconstants)
     STOREARGB
     "sub       $0x8,%[width]                   \n"
     "jg        1b                              \n"
@@ -1772,35 +1648,73 @@ void OMITFP I422ToARGBRow_SSSE3(const uint8* y_buf,
     [v_buf]"+r"(v_buf),    // %[v_buf]
     [dst_argb]"+r"(dst_argb),  // %[dst_argb]
     [width]"+rm"(width)    // %[width]
-  : [kYuvConstants]"r"(&kYuvConstants.kUVToB) // %[kYuvConstants]
+  : [yuvconstants]"r"(yuvconstants)  // %[yuvconstants]
   : "memory", "cc", NACL_R14
-    "xmm0", "xmm1", "xmm2", "xmm3", "xmm5"
+    "xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5"
   );
 }
 
-void OMITFP J422ToARGBRow_SSSE3(const uint8* y_buf,
-                                const uint8* u_buf,
-                                const uint8* v_buf,
-                                uint8* dst_argb,
-                                int width) {
+void OMITFP I422AlphaToARGBRow_SSSE3(const uint8* y_buf,
+                                     const uint8* u_buf,
+                                     const uint8* v_buf,
+                                     const uint8* a_buf,
+                                     uint8* dst_argb,
+                                     struct YuvConstants* yuvconstants,
+                                     int width) {
   asm volatile (
     "sub       %[u_buf],%[v_buf]               \n"
-    "pcmpeqb   %%xmm5,%%xmm5                   \n"
     LABELALIGN
   "1:                                          \n"
-    READYUV422
-    YUVTORGB(kYuvConstants)
+    READYUVA422
+    YUVTORGB(yuvconstants)
     STOREARGB
-    "sub       $0x8,%[width]                   \n"
+    "subl      $0x8,%[width]                   \n"
     "jg        1b                              \n"
   : [y_buf]"+r"(y_buf),    // %[y_buf]
     [u_buf]"+r"(u_buf),    // %[u_buf]
     [v_buf]"+r"(v_buf),    // %[v_buf]
+    [a_buf]"+r"(a_buf),    // %[a_buf]
     [dst_argb]"+r"(dst_argb),  // %[dst_argb]
+#if defined(__i386__) && defined(__pic__)
+    [width]"+m"(width)     // %[width]
+#else
     [width]"+rm"(width)    // %[width]
-  : [kYuvConstants]"r"(&kYuvJConstants.kUVToB) // %[kYuvConstants]
+#endif        
+  : [yuvconstants]"r"(yuvconstants)  // %[yuvconstants]
   : "memory", "cc", NACL_R14
-    "xmm0", "xmm1", "xmm2", "xmm3", "xmm5"
+    "xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5"
+  );
+}
+
+void OMITFP I422AlphaToABGRRow_SSSE3(const uint8* y_buf,
+                                     const uint8* u_buf,
+                                     const uint8* v_buf,
+                                     const uint8* a_buf,
+                                     uint8* dst_abgr,
+                                     struct YuvConstants* yuvconstants,
+                                     int width) {
+  asm volatile (
+    "sub       %[u_buf],%[v_buf]               \n"
+    LABELALIGN
+  "1:                                          \n"
+    READYUVA422
+    YUVTORGB(yuvconstants)
+    STOREABGR
+    "subl      $0x8,%[width]                   \n"
+    "jg        1b                              \n"
+  : [y_buf]"+r"(y_buf),    // %[y_buf]
+    [u_buf]"+r"(u_buf),    // %[u_buf]
+    [v_buf]"+r"(v_buf),    // %[v_buf]
+    [a_buf]"+r"(a_buf),    // %[a_buf]
+    [dst_abgr]"+r"(dst_abgr),  // %[dst_abgr]
+#if defined(__i386__) && defined(__pic__)
+    [width]"+m"(width)     // %[width]
+#else
+    [width]"+rm"(width)    // %[width]
+#endif    
+  : [yuvconstants]"r"(yuvconstants)  // %[yuvconstants]
+  : "memory", "cc", NACL_R14
+    "xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5"
   );
 }
 
@@ -1808,6 +1722,7 @@ void OMITFP I411ToARGBRow_SSSE3(const uint8* y_buf,
                                 const uint8* u_buf,
                                 const uint8* v_buf,
                                 uint8* dst_argb,
+                                struct YuvConstants* yuvconstants,
                                 int width) {
   asm volatile (
     "sub       %[u_buf],%[v_buf]               \n"
@@ -1815,7 +1730,7 @@ void OMITFP I411ToARGBRow_SSSE3(const uint8* y_buf,
     LABELALIGN
   "1:                                          \n"
     READYUV411
-    YUVTORGB(kYuvConstants)
+    YUVTORGB(yuvconstants)
     STOREARGB
     "sub       $0x8,%[width]                   \n"
     "jg        1b                              \n"
@@ -1824,22 +1739,23 @@ void OMITFP I411ToARGBRow_SSSE3(const uint8* y_buf,
     [v_buf]"+r"(v_buf),    // %[v_buf]
     [dst_argb]"+r"(dst_argb),  // %[dst_argb]
     [width]"+rm"(width)    // %[width]
-  : [kYuvConstants]"r"(&kYuvConstants.kUVToB) // %[kYuvConstants]
+  : [yuvconstants]"r"(yuvconstants)  // %[yuvconstants]
   : "memory", "cc", NACL_R14
-    "xmm0", "xmm1", "xmm2", "xmm3", "xmm5"
+    "xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5"
   );
 }
 
 void OMITFP NV12ToARGBRow_SSSE3(const uint8* y_buf,
                                 const uint8* uv_buf,
                                 uint8* dst_argb,
+                                struct YuvConstants* yuvconstants,
                                 int width) {
   asm volatile (
     "pcmpeqb   %%xmm5,%%xmm5                   \n"
     LABELALIGN
   "1:                                          \n"
     READNV12
-    YUVTORGB(kYuvConstants)
+    YUVTORGB(yuvconstants)
     STOREARGB
     "sub       $0x8,%[width]                   \n"
     "jg        1b                              \n"
@@ -1847,32 +1763,57 @@ void OMITFP NV12ToARGBRow_SSSE3(const uint8* y_buf,
     [uv_buf]"+r"(uv_buf),    // %[uv_buf]
     [dst_argb]"+r"(dst_argb),  // %[dst_argb]
     [width]"+rm"(width)    // %[width]
-  : [kYuvConstants]"r"(&kYuvConstants.kUVToB) // %[kYuvConstants]
+  : [yuvconstants]"r"(yuvconstants)  // %[yuvconstants]
   // Does not use r14.
-  : "memory", "cc", "xmm0", "xmm1", "xmm2", "xmm3", "xmm5"
+  : "memory", "cc", "xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5"
   );
 }
 
-void OMITFP NV21ToARGBRow_SSSE3(const uint8* y_buf,
-                                const uint8* uv_buf,
+void OMITFP YUY2ToARGBRow_SSSE3(const uint8* yuy2_buf,
                                 uint8* dst_argb,
+                                struct YuvConstants* yuvconstants,
                                 int width) {
   asm volatile (
     "pcmpeqb   %%xmm5,%%xmm5                   \n"
     LABELALIGN
   "1:                                          \n"
-    READNV12
-    YUVTORGB(kYuvConstants)
+    READYUY2
+    YUVTORGB(yuvconstants)
     STOREARGB
     "sub       $0x8,%[width]                   \n"
     "jg        1b                              \n"
-  : [y_buf]"+r"(y_buf),    // %[y_buf]
-    [uv_buf]"+r"(uv_buf),    // %[uv_buf]
+  : [yuy2_buf]"+r"(yuy2_buf),    // %[yuy2_buf]
     [dst_argb]"+r"(dst_argb),  // %[dst_argb]
     [width]"+rm"(width)    // %[width]
-  : [kYuvConstants]"r"(&kYvuConstants.kUVToB) // %[kYuvConstants]
+  : [yuvconstants]"r"(yuvconstants), // %[yuvconstants]
+    [kShuffleYUY2Y]"m"(kShuffleYUY2Y),
+    [kShuffleYUY2UV]"m"(kShuffleYUY2UV)
   // Does not use r14.
-  : "memory", "cc", "xmm0", "xmm1", "xmm2", "xmm3", "xmm5"
+  : "memory", "cc", "xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5"
+  );
+}
+
+void OMITFP UYVYToARGBRow_SSSE3(const uint8* uyvy_buf,
+                                uint8* dst_argb,
+                                struct YuvConstants* yuvconstants,
+                                int width) {
+  asm volatile (
+    "pcmpeqb   %%xmm5,%%xmm5                   \n"
+    LABELALIGN
+  "1:                                          \n"
+    READUYVY
+    YUVTORGB(yuvconstants)
+    STOREARGB
+    "sub       $0x8,%[width]                   \n"
+    "jg        1b                              \n"
+  : [uyvy_buf]"+r"(uyvy_buf),    // %[uyvy_buf]
+    [dst_argb]"+r"(dst_argb),  // %[dst_argb]
+    [width]"+rm"(width)    // %[width]
+  : [yuvconstants]"r"(yuvconstants), // %[yuvconstants]
+    [kShuffleUYVYY]"m"(kShuffleUYVYY),
+    [kShuffleUYVYUV]"m"(kShuffleUYVYUV)
+  // Does not use r14.
+  : "memory", "cc", "xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5"
   );
 }
 
@@ -1880,6 +1821,7 @@ void OMITFP I422ToBGRARow_SSSE3(const uint8* y_buf,
                                 const uint8* u_buf,
                                 const uint8* v_buf,
                                 uint8* dst_bgra,
+                                struct YuvConstants* yuvconstants,
                                 int width) {
   asm volatile (
     "sub       %[u_buf],%[v_buf]               \n"
@@ -1887,7 +1829,7 @@ void OMITFP I422ToBGRARow_SSSE3(const uint8* y_buf,
     LABELALIGN
   "1:                                          \n"
     READYUV422
-    YUVTORGB(kYuvConstants)
+    YUVTORGB(yuvconstants)
     STOREBGRA
     "sub       $0x8,%[width]                   \n"
     "jg        1b                              \n"
@@ -1896,9 +1838,9 @@ void OMITFP I422ToBGRARow_SSSE3(const uint8* y_buf,
     [v_buf]"+r"(v_buf),    // %[v_buf]
     [dst_bgra]"+r"(dst_bgra),  // %[dst_bgra]
     [width]"+rm"(width)    // %[width]
-  : [kYuvConstants]"r"(&kYuvConstants.kUVToB) // %[kYuvConstants]
+  : [yuvconstants]"r"(yuvconstants)  // %[yuvconstants]
   : "memory", "cc", NACL_R14
-    "xmm0", "xmm1", "xmm2", "xmm3", "xmm5"
+    "xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5"
   );
 }
 
@@ -1906,6 +1848,7 @@ void OMITFP I422ToABGRRow_SSSE3(const uint8* y_buf,
                                 const uint8* u_buf,
                                 const uint8* v_buf,
                                 uint8* dst_abgr,
+                                struct YuvConstants* yuvconstants,
                                 int width) {
   asm volatile (
     "sub       %[u_buf],%[v_buf]               \n"
@@ -1913,7 +1856,7 @@ void OMITFP I422ToABGRRow_SSSE3(const uint8* y_buf,
     LABELALIGN
   "1:                                          \n"
     READYUV422
-    YUVTORGB(kYuvConstants)
+    YUVTORGB(yuvconstants)
     STOREABGR
     "sub       $0x8,%[width]                   \n"
     "jg        1b                              \n"
@@ -1922,9 +1865,9 @@ void OMITFP I422ToABGRRow_SSSE3(const uint8* y_buf,
     [v_buf]"+r"(v_buf),    // %[v_buf]
     [dst_abgr]"+r"(dst_abgr),  // %[dst_abgr]
     [width]"+rm"(width)    // %[width]
-  : [kYuvConstants]"r"(&kYuvConstants.kUVToB) // %[kYuvConstants]
+  : [yuvconstants]"r"(yuvconstants)  // %[yuvconstants]
   : "memory", "cc", NACL_R14
-    "xmm0", "xmm1", "xmm2", "xmm3", "xmm5"
+    "xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5"
   );
 }
 
@@ -1932,6 +1875,7 @@ void OMITFP I422ToRGBARow_SSSE3(const uint8* y_buf,
                                 const uint8* u_buf,
                                 const uint8* v_buf,
                                 uint8* dst_rgba,
+                                struct YuvConstants* yuvconstants,
                                 int width) {
   asm volatile (
     "sub       %[u_buf],%[v_buf]               \n"
@@ -1939,7 +1883,7 @@ void OMITFP I422ToRGBARow_SSSE3(const uint8* y_buf,
     LABELALIGN
   "1:                                          \n"
     READYUV422
-    YUVTORGB(kYuvConstants)
+    YUVTORGB(yuvconstants)
     STORERGBA
     "sub       $0x8,%[width]                   \n"
     "jg        1b                              \n"
@@ -1948,9 +1892,9 @@ void OMITFP I422ToRGBARow_SSSE3(const uint8* y_buf,
     [v_buf]"+r"(v_buf),    // %[v_buf]
     [dst_rgba]"+r"(dst_rgba),  // %[dst_rgba]
     [width]"+rm"(width)    // %[width]
-  : [kYuvConstants]"r"(&kYuvConstants.kUVToB) // %[kYuvConstants]
+  : [yuvconstants]"r"(yuvconstants)  // %[yuvconstants]
   : "memory", "cc", NACL_R14
-    "xmm0", "xmm1", "xmm2", "xmm3", "xmm5"
+    "xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5"
   );
 }
 
@@ -1958,38 +1902,105 @@ void OMITFP I422ToRGBARow_SSSE3(const uint8* y_buf,
 
 // Read 8 UV from 422, upsample to 16 UV.
 #define READYUV422_AVX2                                                        \
-    "vmovq       " MEMACCESS([u_buf]) ",%%xmm0                      \n"        \
+    "vmovq      " MEMACCESS([u_buf]) ",%%xmm0                       \n"        \
     MEMOPREG(vmovq, 0x00, [u_buf], [v_buf], 1, xmm1)                           \
     "lea        " MEMLEA(0x8, [u_buf]) ",%[u_buf]                   \n"        \
     "vpunpcklbw %%ymm1,%%ymm0,%%ymm0                                \n"        \
     "vpermq     $0xd8,%%ymm0,%%ymm0                                 \n"        \
-    "vpunpcklwd %%ymm0,%%ymm0,%%ymm0                                \n"
+    "vpunpcklwd %%ymm0,%%ymm0,%%ymm0                                \n"        \
+    "vmovdqu    " MEMACCESS([y_buf]) ",%%xmm4                       \n"        \
+    "vpermq     $0xd8,%%ymm4,%%ymm4                                 \n"        \
+    "vpunpcklbw %%ymm4,%%ymm4,%%ymm4                                \n"        \
+    "lea        " MEMLEA(0x10, [y_buf]) ",%[y_buf]                  \n"
+
+// Read 8 UV from 422, upsample to 16 UV.  With 16 Alpha.
+#define READYUVA422_AVX2                                                       \
+    "vmovq      " MEMACCESS([u_buf]) ",%%xmm0                       \n"        \
+    MEMOPREG(vmovq, 0x00, [u_buf], [v_buf], 1, xmm1)                           \
+    "lea        " MEMLEA(0x8, [u_buf]) ",%[u_buf]                   \n"        \
+    "vpunpcklbw %%ymm1,%%ymm0,%%ymm0                                \n"        \
+    "vpermq     $0xd8,%%ymm0,%%ymm0                                 \n"        \
+    "vpunpcklwd %%ymm0,%%ymm0,%%ymm0                                \n"        \
+    "vmovdqu    " MEMACCESS([y_buf]) ",%%xmm4                       \n"        \
+    "vpermq     $0xd8,%%ymm4,%%ymm4                                 \n"        \
+    "vpunpcklbw %%ymm4,%%ymm4,%%ymm4                                \n"        \
+    "lea        " MEMLEA(0x10, [y_buf]) ",%[y_buf]                  \n"        \
+    "vmovdqu    " MEMACCESS([a_buf]) ",%%xmm5                       \n"        \
+    "vpermq     $0xd8,%%ymm5,%%ymm5                                 \n"        \
+    "lea        " MEMLEA(0x10, [a_buf]) ",%[a_buf]                  \n"
+
+// Read 8 UV from NV12, upsample to 16 UV.
+#define READNV12_AVX2                                                          \
+    "vmovdqu    " MEMACCESS([uv_buf]) ",%%xmm0                      \n"        \
+    "lea        " MEMLEA(0x10, [uv_buf]) ",%[uv_buf]                \n"        \
+    "vpermq     $0xd8,%%ymm0,%%ymm0                                 \n"        \
+    "vpunpcklwd %%ymm0,%%ymm0,%%ymm0                                \n"        \
+    "vmovdqu    " MEMACCESS([y_buf]) ",%%xmm4                       \n"        \
+    "vpermq     $0xd8,%%ymm4,%%ymm4                                 \n"        \
+    "vpunpcklbw %%ymm4,%%ymm4,%%ymm4                                \n"        \
+    "lea        " MEMLEA(0x10, [y_buf]) ",%[y_buf]                  \n"
+
+// Read 8 YUY2 with 16 Y and upsample 8 UV to 16 UV.
+#define READYUY2_AVX2                                                          \
+    "vmovdqu    " MEMACCESS([yuy2_buf]) ",%%ymm4                    \n"        \
+    "vpshufb    %[kShuffleYUY2Y], %%ymm4, %%ymm4                    \n"        \
+    "vmovdqu    " MEMACCESS([yuy2_buf]) ",%%ymm0                    \n"        \
+    "vpshufb    %[kShuffleYUY2UV], %%ymm0, %%ymm0                   \n"        \
+    "lea        " MEMLEA(0x20, [yuy2_buf]) ",%[yuy2_buf]            \n"
+
+// Read 8 UYVY with 16 Y and upsample 8 UV to 16 UV.
+#define READUYVY_AVX2                                                          \
+    "vmovdqu     " MEMACCESS([uyvy_buf]) ",%%ymm4                   \n"        \
+    "vpshufb     %[kShuffleUYVYY], %%ymm4, %%ymm4                   \n"        \
+    "vmovdqu     " MEMACCESS([uyvy_buf]) ",%%ymm0                   \n"        \
+    "vpshufb     %[kShuffleUYVYUV], %%ymm0, %%ymm0                  \n"        \
+    "lea        " MEMLEA(0x20, [uyvy_buf]) ",%[uyvy_buf]            \n"
 
 // Convert 16 pixels: 16 UV and 16 Y.
-#define YUVTORGB_AVX2(YuvConstants)                                            \
-    "vpmaddubsw  " MEMACCESS2(64, [YuvConstants]) ",%%ymm0,%%ymm2   \n"        \
-    "vpmaddubsw  " MEMACCESS2(32, [YuvConstants]) ",%%ymm0,%%ymm1   \n"        \
-    "vpmaddubsw  " MEMACCESS([YuvConstants]) ",%%ymm0,%%ymm0        \n"        \
-    "vmovdqu     " MEMACCESS2(160, [YuvConstants]) ",%%ymm3         \n"        \
+#define YUVTORGB_AVX2(yuvconstants)                                            \
+    "vpmaddubsw  " MEMACCESS2(64, [yuvconstants]) ",%%ymm0,%%ymm2   \n"        \
+    "vpmaddubsw  " MEMACCESS2(32, [yuvconstants]) ",%%ymm0,%%ymm1   \n"        \
+    "vpmaddubsw  " MEMACCESS([yuvconstants]) ",%%ymm0,%%ymm0        \n"        \
+    "vmovdqu     " MEMACCESS2(160, [yuvconstants]) ",%%ymm3         \n"        \
     "vpsubw      %%ymm2,%%ymm3,%%ymm2                               \n"        \
-    "vmovdqu     " MEMACCESS2(128, [YuvConstants]) ",%%ymm3         \n"        \
+    "vmovdqu     " MEMACCESS2(128, [yuvconstants]) ",%%ymm3         \n"        \
     "vpsubw      %%ymm1,%%ymm3,%%ymm1                               \n"        \
-    "vmovdqu     " MEMACCESS2(96, [YuvConstants]) ",%%ymm3          \n"        \
+    "vmovdqu     " MEMACCESS2(96, [yuvconstants]) ",%%ymm3          \n"        \
     "vpsubw      %%ymm0,%%ymm3,%%ymm0                               \n"        \
-    "vmovdqu     " MEMACCESS([y_buf]) ",%%xmm3                      \n"        \
-    "lea         " MEMLEA(0x10, [y_buf]) ",%[y_buf]                 \n"        \
-    "vpermq      $0xd8,%%ymm3,%%ymm3                                \n"        \
-    "vpunpcklbw  %%ymm3,%%ymm3,%%ymm3                               \n"        \
-    "vpmulhuw    " MEMACCESS2(192, [YuvConstants]) ",%%ymm3,%%ymm3  \n"        \
-    "vpaddsw     %%ymm3,%%ymm0,%%ymm0           \n"                            \
-    "vpaddsw     %%ymm3,%%ymm1,%%ymm1           \n"                            \
-    "vpaddsw     %%ymm3,%%ymm2,%%ymm2           \n"                            \
-    "vpsraw      $0x6,%%ymm0,%%ymm0             \n"                            \
-    "vpsraw      $0x6,%%ymm1,%%ymm1             \n"                            \
-    "vpsraw      $0x6,%%ymm2,%%ymm2             \n"                            \
-    "vpackuswb   %%ymm0,%%ymm0,%%ymm0           \n"                            \
-    "vpackuswb   %%ymm1,%%ymm1,%%ymm1           \n"                            \
-    "vpackuswb   %%ymm2,%%ymm2,%%ymm2           \n"
+    "vpmulhuw    " MEMACCESS2(192, [yuvconstants]) ",%%ymm4,%%ymm4  \n"        \
+    "vpaddsw     %%ymm4,%%ymm0,%%ymm0                               \n"        \
+    "vpaddsw     %%ymm4,%%ymm1,%%ymm1                               \n"        \
+    "vpaddsw     %%ymm4,%%ymm2,%%ymm2                               \n"        \
+    "vpsraw      $0x6,%%ymm0,%%ymm0                                 \n"        \
+    "vpsraw      $0x6,%%ymm1,%%ymm1                                 \n"        \
+    "vpsraw      $0x6,%%ymm2,%%ymm2                                 \n"        \
+    "vpackuswb   %%ymm0,%%ymm0,%%ymm0                               \n"        \
+    "vpackuswb   %%ymm1,%%ymm1,%%ymm1                               \n"        \
+    "vpackuswb   %%ymm2,%%ymm2,%%ymm2                               \n"
+
+// Store 16 ARGB values.
+#define STOREARGB_AVX2                                                         \
+    "vpunpcklbw %%ymm1,%%ymm0,%%ymm0                                \n"        \
+    "vpermq     $0xd8,%%ymm0,%%ymm0                                 \n"        \
+    "vpunpcklbw %%ymm5,%%ymm2,%%ymm2                                \n"        \
+    "vpermq     $0xd8,%%ymm2,%%ymm2                                 \n"        \
+    "vpunpcklwd %%ymm2,%%ymm0,%%ymm1                                \n"        \
+    "vpunpckhwd %%ymm2,%%ymm0,%%ymm0                                \n"        \
+    "vmovdqu    %%ymm1," MEMACCESS([dst_argb]) "                    \n"        \
+    "vmovdqu    %%ymm0," MEMACCESS2(0x20,[dst_argb]) "              \n"        \
+    "lea       " MEMLEA(0x40,[dst_argb]) ",%[dst_argb]              \n"
+
+// Store 16 ABGR values.
+#define STOREABGR_AVX2                                                         \
+    "vpunpcklbw %%ymm1,%%ymm2,%%ymm1                                \n"        \
+    "vpermq     $0xd8,%%ymm1,%%ymm1                                 \n"        \
+    "vpunpcklbw %%ymm5,%%ymm0,%%ymm2                                \n"        \
+    "vpermq     $0xd8,%%ymm2,%%ymm2                                 \n"        \
+    "vpunpcklwd %%ymm2,%%ymm1,%%ymm0                                \n"        \
+    "vpunpckhwd %%ymm2,%%ymm1,%%ymm1                                \n"        \
+    "vmovdqu    %%ymm0," MEMACCESS([dst_abgr]) "                    \n"        \
+    "vmovdqu    %%ymm1," MEMACCESS2(0x20,[dst_abgr]) "              \n"        \
+    "lea       " MEMLEA(0x40,[dst_abgr]) ",%[dst_abgr]              \n"
 
 #if defined(HAS_I422TOBGRAROW_AVX2)
 // 16 pixels
@@ -1998,6 +2009,7 @@ void OMITFP I422ToBGRARow_AVX2(const uint8* y_buf,
                                const uint8* u_buf,
                                const uint8* v_buf,
                                uint8* dst_bgra,
+                               struct YuvConstants* yuvconstants,
                                int width) {
   asm volatile (
     "sub       %[u_buf],%[v_buf]               \n"
@@ -2005,7 +2017,7 @@ void OMITFP I422ToBGRARow_AVX2(const uint8* y_buf,
     LABELALIGN
   "1:                                          \n"
     READYUV422_AVX2
-    YUVTORGB_AVX2(kYuvConstants)
+    YUVTORGB_AVX2(yuvconstants)
 
     // Step 3: Weave into BGRA
     "vpunpcklbw %%ymm0,%%ymm1,%%ymm1           \n"  // GB
@@ -2026,9 +2038,9 @@ void OMITFP I422ToBGRARow_AVX2(const uint8* y_buf,
     [v_buf]"+r"(v_buf),    // %[v_buf]
     [dst_bgra]"+r"(dst_bgra),  // %[dst_bgra]
     [width]"+rm"(width)    // %[width]
-  : [kYuvConstants]"r"(&kYuvConstants.kUVToB)  // %[kYuvConstants]
+  : [yuvconstants]"r"(yuvconstants)  // %[yuvconstants]
   : "memory", "cc", NACL_R14
-    "xmm0", "xmm1", "xmm2", "xmm3", "xmm5"
+    "xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5"
   );
 }
 #endif  // HAS_I422TOBGRAROW_AVX2
@@ -2040,6 +2052,7 @@ void OMITFP I422ToARGBRow_AVX2(const uint8* y_buf,
                                const uint8* u_buf,
                                const uint8* v_buf,
                                uint8* dst_argb,
+                               struct YuvConstants* yuvconstants,
                                int width) {
   asm volatile (
     "sub       %[u_buf],%[v_buf]               \n"
@@ -2047,19 +2060,8 @@ void OMITFP I422ToARGBRow_AVX2(const uint8* y_buf,
     LABELALIGN
   "1:                                          \n"
     READYUV422_AVX2
-    YUVTORGB_AVX2(kYuvConstants)
-
-    // Step 3: Weave into ARGB
-    "vpunpcklbw %%ymm1,%%ymm0,%%ymm0           \n"  // BG
-    "vpermq     $0xd8,%%ymm0,%%ymm0            \n"
-    "vpunpcklbw %%ymm5,%%ymm2,%%ymm2           \n"  // RA
-    "vpermq     $0xd8,%%ymm2,%%ymm2            \n"
-    "vpunpcklwd %%ymm2,%%ymm0,%%ymm1           \n"  // BGRA first 8 pixels
-    "vpunpckhwd %%ymm2,%%ymm0,%%ymm0           \n"  // BGRA next 8 pixels
-
-    "vmovdqu    %%ymm1," MEMACCESS([dst_argb]) "\n"
-    "vmovdqu    %%ymm0," MEMACCESS2(0x20,[dst_argb]) "\n"
-    "lea       " MEMLEA(0x40,[dst_argb]) ",%[dst_argb] \n"
+    YUVTORGB_AVX2(yuvconstants)
+    STOREARGB_AVX2
     "sub       $0x10,%[width]                  \n"
     "jg        1b                              \n"
     "vzeroupper                                \n"
@@ -2068,54 +2070,86 @@ void OMITFP I422ToARGBRow_AVX2(const uint8* y_buf,
     [v_buf]"+r"(v_buf),    // %[v_buf]
     [dst_argb]"+r"(dst_argb),  // %[dst_argb]
     [width]"+rm"(width)    // %[width]
-  : [kYuvConstants]"r"(&kYuvConstants.kUVToB)  // %[kYuvConstants]
+  : [yuvconstants]"r"(yuvconstants)  // %[yuvconstants]
   : "memory", "cc", NACL_R14
-    "xmm0", "xmm1", "xmm2", "xmm3", "xmm5"
+    "xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5"
   );
 }
 #endif  // HAS_I422TOARGBROW_AVX2
 
-#if defined(HAS_J422TOARGBROW_AVX2)
+#if defined(HAS_I422ALPHATOARGBROW_AVX2)
 // 16 pixels
-// 8 UV values upsampled to 16 UV, mixed with 16 Y producing 16 ARGB (64 bytes).
-void OMITFP J422ToARGBRow_AVX2(const uint8* y_buf,
+// 8 UV values upsampled to 16 UV, mixed with 16 Y and 16 A producing 16 ARGB.
+void OMITFP I422AlphaToARGBRow_AVX2(const uint8* y_buf,
                                const uint8* u_buf,
                                const uint8* v_buf,
+                               const uint8* a_buf,
                                uint8* dst_argb,
+                               struct YuvConstants* yuvconstants,
                                int width) {
   asm volatile (
     "sub       %[u_buf],%[v_buf]               \n"
-    "vpcmpeqb   %%ymm5,%%ymm5,%%ymm5           \n"
     LABELALIGN
   "1:                                          \n"
-    READYUV422_AVX2
-    YUVTORGB_AVX2(kYuvConstants)
-
-    // Step 3: Weave into ARGB
-    "vpunpcklbw %%ymm1,%%ymm0,%%ymm0           \n"  // BG
-    "vpermq     $0xd8,%%ymm0,%%ymm0            \n"
-    "vpunpcklbw %%ymm5,%%ymm2,%%ymm2           \n"  // RA
-    "vpermq     $0xd8,%%ymm2,%%ymm2            \n"
-    "vpunpcklwd %%ymm2,%%ymm0,%%ymm1           \n"  // BGRA first 8 pixels
-    "vpunpckhwd %%ymm2,%%ymm0,%%ymm0           \n"  // BGRA next 8 pixels
-
-    "vmovdqu    %%ymm1," MEMACCESS([dst_argb]) "\n"
-    "vmovdqu    %%ymm0," MEMACCESS2(0x20,[dst_argb]) "\n"
-    "lea       " MEMLEA(0x40,[dst_argb]) ",%[dst_argb] \n"
-    "sub       $0x10,%[width]                  \n"
+    READYUVA422_AVX2
+    YUVTORGB_AVX2(yuvconstants)
+    STOREARGB_AVX2
+    "subl      $0x10,%[width]                  \n"
     "jg        1b                              \n"
     "vzeroupper                                \n"
   : [y_buf]"+r"(y_buf),    // %[y_buf]
     [u_buf]"+r"(u_buf),    // %[u_buf]
     [v_buf]"+r"(v_buf),    // %[v_buf]
+    [a_buf]"+r"(a_buf),    // %[a_buf]
     [dst_argb]"+r"(dst_argb),  // %[dst_argb]
+#if defined(__i386__) && defined(__pic__)
+    [width]"+m"(width)     // %[width]
+#else
     [width]"+rm"(width)    // %[width]
-  : [kYuvConstants]"r"(&kYuvJConstants.kUVToB)  // %[kYuvConstants]
+#endif    
+  : [yuvconstants]"r"(yuvconstants)  // %[yuvconstants]
   : "memory", "cc", NACL_R14
-    "xmm0", "xmm1", "xmm2", "xmm3", "xmm5"
+    "xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5"
   );
 }
-#endif  // HAS_J422TOARGBROW_AVX2
+#endif  // HAS_I422ALPHATOARGBROW_AVX2
+
+#if defined(HAS_I422ALPHATOABGRROW_AVX2)
+// 16 pixels
+// 8 UV values upsampled to 16 UV, mixed with 16 Y and 16 A producing 16 ABGR.
+void OMITFP I422AlphaToABGRRow_AVX2(const uint8* y_buf,
+                               const uint8* u_buf,
+                               const uint8* v_buf,
+                               const uint8* a_buf,
+                               uint8* dst_abgr,
+                               struct YuvConstants* yuvconstants,
+                               int width) {
+  asm volatile (
+    "sub       %[u_buf],%[v_buf]               \n"
+    LABELALIGN
+  "1:                                          \n"
+    READYUVA422_AVX2
+    YUVTORGB_AVX2(yuvconstants)
+    STOREABGR_AVX2
+    "subl      $0x10,%[width]                  \n"
+    "jg        1b                              \n"
+    "vzeroupper                                \n"
+  : [y_buf]"+r"(y_buf),    // %[y_buf]
+    [u_buf]"+r"(u_buf),    // %[u_buf]
+    [v_buf]"+r"(v_buf),    // %[v_buf]
+    [a_buf]"+r"(a_buf),    // %[a_buf]
+    [dst_abgr]"+r"(dst_abgr),  // %[dst_abgr]
+#if defined(__i386__) && defined(__pic__)
+    [width]"+m"(width)     // %[width]
+#else
+    [width]"+rm"(width)    // %[width]
+#endif    
+  : [yuvconstants]"r"(yuvconstants)  // %[yuvconstants]
+  : "memory", "cc", NACL_R14
+    "xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5"
+  );
+}
+#endif  // HAS_I422ALPHATOABGRROW_AVX2
 
 #if defined(HAS_I422TOABGRROW_AVX2)
 // 16 pixels
@@ -2123,7 +2157,8 @@ void OMITFP J422ToARGBRow_AVX2(const uint8* y_buf,
 void OMITFP I422ToABGRRow_AVX2(const uint8* y_buf,
                                const uint8* u_buf,
                                const uint8* v_buf,
-                               uint8* dst_argb,
+                               uint8* dst_abgr,
+                               struct YuvConstants* yuvconstants,
                                int width) {
   asm volatile (
     "sub       %[u_buf],%[v_buf]               \n"
@@ -2131,29 +2166,19 @@ void OMITFP I422ToABGRRow_AVX2(const uint8* y_buf,
     LABELALIGN
   "1:                                          \n"
     READYUV422_AVX2
-    YUVTORGB_AVX2(kYuvConstants)
-
-    // Step 3: Weave into ABGR
-    "vpunpcklbw %%ymm1,%%ymm2,%%ymm1           \n"  // RG
-    "vpermq     $0xd8,%%ymm1,%%ymm1            \n"
-    "vpunpcklbw %%ymm5,%%ymm0,%%ymm2           \n"  // BA
-    "vpermq     $0xd8,%%ymm2,%%ymm2            \n"
-    "vpunpcklwd %%ymm2,%%ymm1,%%ymm0           \n"  // RGBA first 8 pixels
-    "vpunpckhwd %%ymm2,%%ymm1,%%ymm1           \n"  // RGBA next 8 pixels
-    "vmovdqu    %%ymm0," MEMACCESS([dst_argb]) "\n"
-    "vmovdqu    %%ymm1," MEMACCESS2(0x20,[dst_argb]) "\n"
-    "lea       " MEMLEA(0x40,[dst_argb]) ",%[dst_argb] \n"
+    YUVTORGB_AVX2(yuvconstants)
+    STOREABGR_AVX2
     "sub       $0x10,%[width]                  \n"
     "jg        1b                              \n"
     "vzeroupper                                \n"
   : [y_buf]"+r"(y_buf),    // %[y_buf]
     [u_buf]"+r"(u_buf),    // %[u_buf]
     [v_buf]"+r"(v_buf),    // %[v_buf]
-    [dst_argb]"+r"(dst_argb),  // %[dst_argb]
+    [dst_abgr]"+r"(dst_abgr),  // %[dst_abgr]
     [width]"+rm"(width)    // %[width]
-  : [kYuvConstants]"r"(&kYuvConstants.kUVToB)  // %[kYuvConstants]
+  : [yuvconstants]"r"(yuvconstants)  // %[yuvconstants]
   : "memory", "cc", NACL_R14
-    "xmm0", "xmm1", "xmm2", "xmm3", "xmm5"
+    "xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5"
   );
 }
 #endif  // HAS_I422TOABGRROW_AVX2
@@ -2165,6 +2190,7 @@ void OMITFP I422ToRGBARow_AVX2(const uint8* y_buf,
                                const uint8* u_buf,
                                const uint8* v_buf,
                                uint8* dst_argb,
+                               struct YuvConstants* yuvconstants,
                                int width) {
   asm volatile (
     "sub       %[u_buf],%[v_buf]               \n"
@@ -2172,7 +2198,7 @@ void OMITFP I422ToRGBARow_AVX2(const uint8* y_buf,
     LABELALIGN
   "1:                                          \n"
     READYUV422_AVX2
-    YUVTORGB_AVX2(kYuvConstants)
+    YUVTORGB_AVX2(yuvconstants)
 
     // Step 3: Weave into RGBA
     "vpunpcklbw %%ymm2,%%ymm1,%%ymm1           \n"
@@ -2192,12 +2218,103 @@ void OMITFP I422ToRGBARow_AVX2(const uint8* y_buf,
     [v_buf]"+r"(v_buf),    // %[v_buf]
     [dst_argb]"+r"(dst_argb),  // %[dst_argb]
     [width]"+rm"(width)    // %[width]
-  : [kYuvConstants]"r"(&kYuvConstants.kUVToB)  // %[kYuvConstants]
+  : [yuvconstants]"r"(yuvconstants)  // %[yuvconstants]
   : "memory", "cc", NACL_R14
-    "xmm0", "xmm1", "xmm2", "xmm3", "xmm5"
+    "xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5"
   );
 }
 #endif  // HAS_I422TORGBAROW_AVX2
+
+#if defined(HAS_NV12TOARGBROW_AVX2)
+// 16 pixels.
+// 8 UV values upsampled to 16 UV, mixed with 16 Y producing 16 ARGB (64 bytes).
+void OMITFP NV12ToARGBRow_AVX2(const uint8* y_buf,
+                               const uint8* uv_buf,
+                               uint8* dst_argb,
+                               struct YuvConstants* yuvconstants,
+                               int width) {
+
+  asm volatile (
+    "vpcmpeqb   %%ymm5,%%ymm5,%%ymm5           \n"
+    LABELALIGN
+  "1:                                          \n"
+    READNV12_AVX2
+    YUVTORGB_AVX2(yuvconstants)
+    STOREARGB_AVX2
+    "sub       $0x10,%[width]                  \n"
+    "jg        1b                              \n"
+    "vzeroupper                                \n"
+  : [y_buf]"+r"(y_buf),    // %[y_buf]
+    [uv_buf]"+r"(uv_buf),    // %[uv_buf]
+    [dst_argb]"+r"(dst_argb),  // %[dst_argb]
+    [width]"+rm"(width)    // %[width]
+  : [yuvconstants]"r"(yuvconstants)  // %[yuvconstants]
+  // Does not use r14.
+  : "memory", "cc", "xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5"
+  );
+}
+#endif  // HAS_YUY2TOARGBROW_AVX2
+
+
+#if defined(HAS_YUY2TOARGBROW_AVX2)
+// 16 pixels.
+// 8 YUY2 values with 16 Y and 8 UV producing 16 ARGB (64 bytes).
+void OMITFP YUY2ToARGBRow_AVX2(const uint8* yuy2_buf,
+                               uint8* dst_argb,
+                               struct YuvConstants* yuvconstants,
+                               int width) {
+
+  asm volatile (
+    "vpcmpeqb   %%ymm5,%%ymm5,%%ymm5           \n"
+    LABELALIGN
+  "1:                                          \n"
+    READYUY2_AVX2
+    YUVTORGB_AVX2(yuvconstants)
+    STOREARGB_AVX2
+    "sub       $0x10,%[width]                  \n"
+    "jg        1b                              \n"
+    "vzeroupper                                \n"
+  : [yuy2_buf]"+r"(yuy2_buf),    // %[yuy2_buf]
+    [dst_argb]"+r"(dst_argb),  // %[dst_argb]
+    [width]"+rm"(width)    // %[width]
+  : [yuvconstants]"r"(yuvconstants), // %[yuvconstants]
+    [kShuffleYUY2Y]"m"(kShuffleYUY2Y),
+    [kShuffleYUY2UV]"m"(kShuffleYUY2UV)
+  // Does not use r14.
+  : "memory", "cc", "xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5"
+  );
+}
+#endif  // HAS_YUY2TOARGBROW_AVX2
+
+#if defined(HAS_UYVYTOARGBROW_AVX2)
+// 16 pixels.
+// 8 UYVY values with 16 Y and 8 UV producing 16 ARGB (64 bytes).
+void OMITFP UYVYToARGBRow_AVX2(const uint8* uyvy_buf,
+                               uint8* dst_argb,
+                               struct YuvConstants* yuvconstants,
+                               int width) {
+
+  asm volatile (
+    "vpcmpeqb   %%ymm5,%%ymm5,%%ymm5           \n"
+    LABELALIGN
+  "1:                                          \n"
+    READUYVY_AVX2
+    YUVTORGB_AVX2(yuvconstants)
+    STOREARGB_AVX2
+    "sub       $0x10,%[width]                  \n"
+    "jg        1b                              \n"
+    "vzeroupper                                \n"
+  : [uyvy_buf]"+r"(uyvy_buf),    // %[uyvy_buf]
+    [dst_argb]"+r"(dst_argb),  // %[dst_argb]
+    [width]"+rm"(width)    // %[width]
+  : [yuvconstants]"r"(yuvconstants), // %[yuvconstants]
+    [kShuffleUYVYY]"m"(kShuffleUYVYY),
+    [kShuffleUYVYUV]"m"(kShuffleUYVYUV)
+  // Does not use r14.
+  : "memory", "cc", "xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5"
+  );
+}
+#endif  // HAS_UYVYTOARGBROW_AVX2
 
 #ifdef HAS_I400TOARGBROW_SSE2
 void I400ToARGBRow_SSE2(const uint8* y_buf, uint8* dst_argb, int width) {

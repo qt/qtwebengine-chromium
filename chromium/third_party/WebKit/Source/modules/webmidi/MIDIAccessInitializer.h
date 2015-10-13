@@ -22,6 +22,7 @@ class ScriptState;
 class MODULES_EXPORT MIDIAccessInitializer : public ScriptPromiseResolver, public MIDIAccessorClient {
 public:
     struct PortDescriptor {
+        ALLOW_ONLY_INLINE_ALLOCATION();
         String id;
         String manufacturer;
         String name;
@@ -40,7 +41,7 @@ public:
 
     static ScriptPromise start(ScriptState* scriptState, const MIDIOptions& options)
     {
-        RefPtrWillBeRawPtr<MIDIAccessInitializer> resolver = adoptRefWillBeNoop(new MIDIAccessInitializer(scriptState, options));
+        MIDIAccessInitializer* resolver = new MIDIAccessInitializer(scriptState, options);
         resolver->keepAliveWhilePending();
         resolver->suspendIfNeeded();
         return resolver->start();

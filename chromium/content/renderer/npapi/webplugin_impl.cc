@@ -101,15 +101,17 @@ class MultiPartResponseClient : public WebURLLoaderClient {
   explicit MultiPartResponseClient(WebPluginResourceClient* resource_client)
       : byte_range_lower_bound_(0), resource_client_(resource_client) {}
 
-  virtual void willSendRequest(
-      WebURLLoader*, WebURLRequest&, const WebURLResponse&) {}
-  virtual void didSendData(
-      WebURLLoader*, unsigned long long, unsigned long long) {}
+  void willSendRequest(WebURLLoader*,
+                       WebURLRequest&,
+                       const WebURLResponse&) override {}
+  void didSendData(WebURLLoader*,
+                   unsigned long long,
+                   unsigned long long) override {}
 
   // Called when the multipart parser encounters an embedded multipart
   // response.
-  virtual void didReceiveResponse(
-      WebURLLoader*, const WebURLResponse& response) {
+  void didReceiveResponse(WebURLLoader*,
+                          const WebURLResponse& response) override {
     int64 byte_range_upper_bound, instance_size;
     if (!MultipartResponseDelegate::ReadContentRanges(
             response,
@@ -121,10 +123,10 @@ class MultiPartResponseClient : public WebURLLoaderClient {
   }
 
   // Receives individual part data from a multipart response.
-  virtual void didReceiveData(WebURLLoader*,
-                              const char* data,
-                              int data_length,
-                              int encoded_data_length) {
+  void didReceiveData(WebURLLoader*,
+                      const char* data,
+                      int data_length,
+                      int encoded_data_length) override {
     // TODO(ananta)
     // We should defer further loads on multipart resources on the same lines
     // as regular resources requested by plugins to prevent reentrancy.
@@ -133,10 +135,10 @@ class MultiPartResponseClient : public WebURLLoaderClient {
     byte_range_lower_bound_ += data_length;
   }
 
-  virtual void didFinishLoading(WebURLLoader*,
-                                double finishTime,
-                                int64_t total_encoded_data_length) {}
-  virtual void didFail(WebURLLoader*, const WebURLError&) {}
+  void didFinishLoading(WebURLLoader*,
+                        double finishTime,
+                        int64_t total_encoded_data_length) override {}
+  void didFail(WebURLLoader*, const WebURLError&) override {}
 
  private:
   // The lower bound of the byte range.
@@ -150,7 +152,7 @@ class HeaderFlattener : public WebHTTPHeaderVisitor {
   explicit HeaderFlattener(std::string* buf) : buf_(buf) {
   }
 
-  virtual void visitHeader(const WebString& name, const WebString& value) {
+  void visitHeader(const WebString& name, const WebString& value) override {
     // TODO(darin): Should we really exclude headers with an empty value?
     if (!name.isEmpty() && !value.isEmpty()) {
       buf_->append(name.utf8());
@@ -208,7 +210,7 @@ void GetResponseInfo(const WebURLResponse& response,
   WebString content_encoding =
       response.httpHeaderField(WebString::fromUTF8("Content-Encoding"));
   if (!content_encoding.isNull() &&
-      !base::EqualsASCII(content_encoding, "identity")) {
+      !base::EqualsASCII(base::StringPiece16(content_encoding), "identity")) {
     // Don't send the compressed content length to the plugin, which only
     // cares about the decoded length.
     response_info->expected_length = 0;
@@ -553,11 +555,11 @@ WebPluginImpl::WebPluginImpl(
       first_geometry_update_(true),
       ignore_response_error_(false),
       file_path_(file_path),
-      mime_type_(base::UTF16ToASCII(params.mimeType)),
+      mime_type_(base::ToLowerASCII(base::UTF16ToASCII(
+          base::StringPiece16(params.mimeType)))),
       loader_client_(this),
       weak_factory_(this) {
   DCHECK_EQ(params.attributeNames.size(), params.attributeValues.size());
-  base::StringToLowerASCII(&mime_type_);
 
   for (size_t i = 0; i < params.attributeNames.size(); ++i) {
     arg_names_.push_back(params.attributeNames[i].utf8());
@@ -804,7 +806,8 @@ std::string WebPluginImpl::GetCookies(const GURL& url,
     return std::string();
   }
 
-  return base::UTF16ToUTF8(cookie_jar->cookies(url, first_party_for_cookies));
+  return base::UTF16ToUTF8(base::StringPiece16(
+      cookie_jar->cookies(url, first_party_for_cookies)));
 }
 
 void WebPluginImpl::URLRedirectResponse(bool allow, int resource_id) {

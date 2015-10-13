@@ -40,10 +40,6 @@ class GL_EXPORT GLSurface : public base::RefCounted<GLSurface> {
   // Destroys the surface.
   virtual void Destroy() = 0;
 
-  // Destroys the surface and terminates its underlying display. This must be
-  // the last surface which uses the display.
-  virtual void DestroyAndTerminateDisplay();
-
   virtual bool Resize(const gfx::Size& size);
 
   // Recreate the surface without changing the size.
@@ -98,12 +94,6 @@ class GL_EXPORT GLSurface : public base::RefCounted<GLSurface> {
 
   // Initialize GL bindings.
   static bool InitializeOneOff();
-
-  // Unit tests should call these instead of InitializeOneOff() to set up
-  // GL bindings appropriate for tests.
-  static void InitializeOneOffForTests();
-  static void InitializeOneOffWithMockBindingsForTests();
-  static void InitializeDynamicMockBindingsForTests(GLContext* context);
 
   // Called after a context is made current with this surface. Returns false
   // on error.
@@ -189,6 +179,7 @@ class GL_EXPORT GLSurface : public base::RefCounted<GLSurface> {
  private:
   friend class base::RefCounted<GLSurface>;
   friend class GLContext;
+  friend class GLSurfaceTestSupport;
 
   DISALLOW_COPY_AND_ASSIGN(GLSurface);
 };

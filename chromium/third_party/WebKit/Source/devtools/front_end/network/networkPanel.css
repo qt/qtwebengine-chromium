@@ -41,7 +41,7 @@
 }
 
 .network-details-view-tall-header {
-    margin-top: 8px;
+    margin-top: 4px;
 }
 
 .network-item-view {
@@ -228,4 +228,9 @@
 .network-film-strip {
     border-bottom: solid 1px #cdcdcd;
     flex: none !important;
+}
+
+.network-blocked-urls {
+    border-top: 1px solid #dadada;
+    flex: 104px 0 0;
 }

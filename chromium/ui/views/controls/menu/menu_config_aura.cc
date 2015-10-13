@@ -47,6 +47,9 @@ void MenuConfig::InitAura(const ui::NativeTheme* theme) {
   align_arrow_and_shortcut = true;
   offset_context_menus = true;
   corner_radius = kMenuCornerRadiusForAura;
+
+  // In Ash, the border is provided by the shadow.
+  use_outer_border = false;
 }
 
 #if !defined(OS_WIN)

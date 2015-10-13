@@ -66,8 +66,8 @@ ProcessingInstruction::~ProcessingInstruction()
     // crashes. We need to investigate ProcessingInstruction lifetime.
     if (inDocument() && m_isCSS)
         document().styleEngine().removeStyleSheetCandidateNode(this);
-#endif
     clearEventListenerForXSLT();
+#endif
 }
 
 EventListener* ProcessingInstruction::eventListenerForXSLT()
@@ -172,7 +172,7 @@ void ProcessingInstruction::process(const String& href, const String& charset)
         if (RuntimeEnabledFeatures::xsltEnabled())
             resource = XSLStyleSheetResource::fetch(request, document().fetcher());
     } else {
-        request.setCharset(charset.isEmpty() ? document().charset() : charset);
+        request.setCharset(charset.isEmpty() ? document().characterSet() : charset);
         resource = CSSStyleSheetResource::fetch(request, document().fetcher());
     }
 
@@ -309,6 +309,7 @@ void ProcessingInstruction::clearSheet()
 DEFINE_TRACE(ProcessingInstruction)
 {
     visitor->trace(m_sheet);
+    visitor->trace(m_listenerForXSLT);
     CharacterData::trace(visitor);
 }
 

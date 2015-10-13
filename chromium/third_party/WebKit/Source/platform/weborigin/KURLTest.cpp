@@ -34,7 +34,6 @@
 #include "config.h"
 #include "platform/weborigin/KURL.h"
 
-#include "wtf/testing/WTFTestHelpers.h"
 #include "wtf/text/CString.h"
 #include "wtf/text/WTFString.h"
 #include <gtest/gtest.h>
@@ -406,6 +405,60 @@ TEST(KURLTest, ReplaceInvalid)
     // Now let's test that giving an invalid replacement fails. Invalid
     // protocols fail without modifying the URL, which should remain valid.
     EXPECT_FALSE(kurl.setProtocol("f/sj#@"));
+    EXPECT_TRUE(kurl.isValid());
+}
+
+TEST(KURLTest, Valid_HTTP_FTP_URLsHaveHosts)
+{
+    KURL kurl;
+    EXPECT_TRUE(kurl.setProtocol("http"));
+    EXPECT_TRUE(kurl.protocolIs("http"));
+    EXPECT_FALSE(kurl.isValid());
+
+    EXPECT_TRUE(kurl.setProtocol("https"));
+    EXPECT_TRUE(kurl.protocolIs("https"));
+    EXPECT_FALSE(kurl.isValid());
+
+    EXPECT_TRUE(kurl.setProtocol("ftp"));
+    EXPECT_TRUE(kurl.protocolIs("ftp"));
+    EXPECT_FALSE(kurl.isValid());
+
+    kurl = KURL(KURL(), "http://");
+    EXPECT_TRUE(kurl.protocolIs("http"));
+    EXPECT_FALSE(kurl.isValid());
+
+    kurl = KURL(KURL(), "https://");
+    EXPECT_TRUE(kurl.protocolIs("https"));
+    EXPECT_FALSE(kurl.isValid());
+
+    kurl = KURL(KURL(), "ftp://");
+    EXPECT_TRUE(kurl.protocolIs("ftp"));
+    EXPECT_FALSE(kurl.isValid());
+
+    kurl = KURL(KURL(), "http://host/");
+    EXPECT_TRUE(kurl.isValid());
+    kurl.setHost("");
+    EXPECT_FALSE(kurl.isValid());
+
+    kurl = KURL(KURL(), "https://host/");
+    EXPECT_TRUE(kurl.isValid());
+    kurl.setHost("");
+    EXPECT_FALSE(kurl.isValid());
+
+    kurl = KURL(KURL(), "ftp://host/");
+    EXPECT_TRUE(kurl.isValid());
+    kurl.setHost("");
+    EXPECT_FALSE(kurl.isValid());
+
+    kurl = KURL(KURL(), "http:///noodles/pho.php");
+    EXPECT_STREQ("http://noodles/pho.php", kurl.string().utf8().data());
+    EXPECT_STREQ("noodles", kurl.host().utf8().data());
+    EXPECT_TRUE(kurl.isValid());
+
+    kurl = KURL(KURL(), "https://username:password@/");
+    EXPECT_FALSE(kurl.isValid());
+
+    kurl = KURL(KURL(), "https://username:password@host/");
     EXPECT_TRUE(kurl.isValid());
 }
 

@@ -170,11 +170,6 @@ WebString WebFormControlElement::directionForFormData() const
     return WebString::fromUTF8("ltr");
 }
 
-bool WebFormControlElement::isActivatedSubmit() const
-{
-    return constUnwrap<HTMLFormControlElement>()->isActivatedSubmit();
-}
-
 WebFormElement WebFormControlElement::form() const
 {
     return WebFormElement(constUnwrap<HTMLFormControlElement>()->form());
@@ -184,6 +179,8 @@ WebFormControlElement::WebFormControlElement(const PassRefPtrWillBeRawPtr<HTMLFo
     : WebElement(elem)
 {
 }
+
+DEFINE_WEB_NODE_TYPE_CASTS(WebFormControlElement, isElementNode() && constUnwrap<Element>()->isFormControlElement());
 
 WebFormControlElement& WebFormControlElement::operator=(const PassRefPtrWillBeRawPtr<HTMLFormControlElement>& elem)
 {

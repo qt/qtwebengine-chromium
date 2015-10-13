@@ -12,7 +12,6 @@
 #include "testing/gtest/include/gtest/gtest.h"
 
 #include "webrtc/common_types.h"
-#include "webrtc/modules/pacing/include/mock/mock_paced_sender.h"
 #include "webrtc/modules/rtp_rtcp/interface/rtp_header_parser.h"
 #include "webrtc/modules/rtp_rtcp/interface/rtp_rtcp_defines.h"
 #include "webrtc/modules/rtp_rtcp/source/rtcp_packet.h"
@@ -62,15 +61,17 @@ class SendTransport : public Transport,
     clock_ = clock;
     delay_ms_ = delay_ms;
   }
-  int SendPacket(int /*ch*/, const void* data, size_t len) override {
+  bool SendRtp(const uint8_t* data,
+               size_t len,
+               const PacketOptions& options) override {
     RTPHeader header;
     rtc::scoped_ptr<RtpHeaderParser> parser(RtpHeaderParser::Create());
     EXPECT_TRUE(parser->Parse(static_cast<const uint8_t*>(data), len, &header));
     ++rtp_packets_sent_;
     last_rtp_header_ = header;
-    return static_cast<int>(len);
+    return true;
   }
-  int SendRTCPPacket(int /*ch*/, const void* data, size_t len) override {
+  bool SendRtcp(const uint8_t* data, size_t len) override {
     test::RtcpPacketParser parser;
     parser.Parse(static_cast<const uint8_t*>(data), len);
     last_nack_list_ = parser.nack_item()->last_nack_list();
@@ -81,7 +82,7 @@ class SendTransport : public Transport,
     EXPECT_TRUE(receiver_ != NULL);
     EXPECT_EQ(0, receiver_->IncomingRtcpPacket(
         static_cast<const uint8_t*>(data), len));
-    return static_cast<int>(len);
+    return true;
   }
   ModuleRtpRtcpImpl* receiver_;
   SimulatedClock* clock_;
@@ -104,7 +105,7 @@ class RtpRtcpModule : public RtcpPacketTypeCounterObserver {
     config.rtt_stats = &rtt_stats_;
 
     impl_.reset(new ModuleRtpRtcpImpl(config));
-    impl_->SetRTCPStatus(kRtcpCompound);
+    impl_->SetRTCPStatus(RtcpMode::kCompound);
 
     transport_.SimulateNetworkDelay(kOneWayNetworkDelayMs, clock);
   }

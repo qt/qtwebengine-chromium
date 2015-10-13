@@ -6,7 +6,6 @@
 
 #include "base/bind.h"
 #include "base/callback_helpers.h"
-#include "base/memory/scoped_vector.h"
 #include "base/message_loop/message_loop.h"
 #include "media/base/audio_decoder.h"
 #include "media/base/audio_renderer.h"
@@ -29,10 +28,10 @@ namespace media {
 const int kTimeUpdateIntervalMs = 50;
 
 MojoRendererService::MojoRendererService(
-    CdmContextProvider* cdm_context_provider,
+    base::WeakPtr<CdmContextProvider> cdm_context_provider,
     RendererFactory* renderer_factory,
     const scoped_refptr<MediaLog>& media_log,
-    mojo::InterfaceRequest<mojo::MediaRenderer> request)
+    mojo::InterfaceRequest<interfaces::Renderer> request)
     : binding_(this, request.Pass()),
       cdm_context_provider_(cdm_context_provider),
       state_(STATE_UNINITIALIZED),
@@ -50,15 +49,16 @@ MojoRendererService::MojoRendererService(
 
   // Create renderer.
   if (renderer_factory) {
-    renderer_ = renderer_factory->CreateRenderer(
-        task_runner, audio_renderer_sink_.get(), video_renderer_sink_.get());
+    renderer_ = renderer_factory->CreateRenderer(task_runner, task_runner,
+                                                 audio_renderer_sink_.get(),
+                                                 video_renderer_sink_.get());
   } else {
     scoped_ptr<AudioRenderer> audio_renderer(new AudioRendererImpl(
         task_runner, audio_renderer_sink_.get(),
         mojo_media_client->CreateAudioDecoders(task_runner, media_log).Pass(),
         mojo_media_client->GetAudioHardwareConfig(), media_log));
     scoped_ptr<VideoRenderer> video_renderer(new VideoRendererImpl(
-        task_runner, video_renderer_sink_.get(),
+        task_runner, task_runner, video_renderer_sink_.get(),
         mojo_media_client->CreateVideoDecoders(task_runner, media_log).Pass(),
         true, nullptr, media_log));
     renderer_.reset(new RendererImpl(task_runner, audio_renderer.Pass(),
@@ -69,10 +69,11 @@ MojoRendererService::MojoRendererService(
 MojoRendererService::~MojoRendererService() {
 }
 
-void MojoRendererService::Initialize(mojo::MediaRendererClientPtr client,
-                                     mojo::DemuxerStreamPtr audio,
-                                     mojo::DemuxerStreamPtr video,
-                                     const mojo::Closure& callback) {
+void MojoRendererService::Initialize(
+    interfaces::RendererClientPtr client,
+    interfaces::DemuxerStreamPtr audio,
+    interfaces::DemuxerStreamPtr video,
+    const mojo::Callback<void(bool)>& callback) {
   DVLOG(1) << __FUNCTION__;
   DCHECK_EQ(state_, STATE_UNINITIALIZED);
   client_ = client.Pass();
@@ -129,7 +130,8 @@ void MojoRendererService::SetCdm(int32_t cdm_id,
                                             weak_this_, callback));
 }
 
-void MojoRendererService::OnStreamReady(const mojo::Closure& callback) {
+void MojoRendererService::OnStreamReady(
+    const mojo::Callback<void(bool)>& callback) {
   DCHECK_EQ(state_, STATE_INITIALIZING);
 
   renderer_->Initialize(
@@ -144,20 +146,19 @@ void MojoRendererService::OnStreamReady(const mojo::Closure& callback) {
 }
 
 void MojoRendererService::OnRendererInitializeDone(
-    const mojo::Closure& callback, PipelineStatus status) {
+    const mojo::Callback<void(bool)>& callback,
+    PipelineStatus status) {
   DVLOG(1) << __FUNCTION__;
+  DCHECK_EQ(state_, STATE_INITIALIZING);
 
-  if (status != PIPELINE_OK && state_ != STATE_ERROR)
-    OnError(status);
-
-  if (state_ == STATE_ERROR) {
-    renderer_.reset();
-  } else {
-    DCHECK_EQ(state_, STATE_INITIALIZING);
-    state_ = STATE_PLAYING;
+  if (status != PIPELINE_OK) {
+    state_ = STATE_ERROR;
+    callback.Run(false);
+    return;
   }
 
-  callback.Run();
+  state_ = STATE_PLAYING;
+  callback.Run(true);
 }
 
 void MojoRendererService::OnUpdateStatistics(const PipelineStatistics& stats) {
@@ -191,7 +192,7 @@ void MojoRendererService::OnBufferingStateChanged(
     BufferingState new_buffering_state) {
   DVLOG(2) << __FUNCTION__ << "(" << new_buffering_state << ")";
   client_->OnBufferingStateChange(
-      static_cast<mojo::BufferingState>(new_buffering_state));
+      static_cast<interfaces::BufferingState>(new_buffering_state));
 }
 
 void MojoRendererService::OnRendererEnded() {

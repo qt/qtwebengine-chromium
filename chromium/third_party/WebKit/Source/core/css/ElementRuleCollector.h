@@ -39,7 +39,7 @@ class RuleSet;
 class SelectorFilter;
 class StaticCSSRuleList;
 
-typedef unsigned CascadeOrder;
+using CascadeOrder = unsigned;
 
 const CascadeOrder ignoreCascadeOrder = 0;
 
@@ -127,6 +127,8 @@ public:
     void sortAndTransferMatchedRules();
     void clearMatchedRules();
     void addElementStyleProperties(const StylePropertySet*, bool isCacheable = true);
+    void finishAddingUARules() { m_result.finishAddingUARules(); }
+    void finishAddingAuthorRulesForTreeScope() { m_result.finishAddingAuthorRulesForTreeScope(); }
 
 private:
     template<typename RuleDataListType>

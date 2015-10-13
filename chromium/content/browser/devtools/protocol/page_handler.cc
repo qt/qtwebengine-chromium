@@ -146,6 +146,16 @@ void PageHandler::Detached() {
 
 void PageHandler::OnSwapCompositorFrame(
     const cc::CompositorFrameMetadata& frame_metadata) {
+  last_compositor_frame_metadata_ = frame_metadata;
+  has_compositor_frame_metadata_ = true;
+
+  if (screencast_enabled_)
+    InnerSwapCompositorFrame();
+  color_picker_->OnSwapCompositorFrame();
+}
+
+void PageHandler::OnSynchronousSwapCompositorFrame(
+    const cc::CompositorFrameMetadata& frame_metadata) {
   last_compositor_frame_metadata_ = has_compositor_frame_metadata_ ?
       next_compositor_frame_metadata_ : frame_metadata;
   next_compositor_frame_metadata_ = frame_metadata;
@@ -203,12 +213,14 @@ Response PageHandler::Reload(const bool* ignoreCache,
   if (!web_contents)
     return Response::InternalError("Could not connect to view");
 
-  // Handle in browser only if it is crashed.
-  if (!web_contents->IsCrashed())
+  if (web_contents->IsCrashed() ||
+      web_contents->GetController().GetVisibleEntry()->IsViewSourceMode()) {
+    web_contents->GetController().Reload(false);
+    return Response::OK();
+  } else {
+    // Handle reload in renderer except for crashed and view source mode.
     return Response::FallThrough();
-
-  web_contents->GetController().Reload(false);
-  return Response::OK();
+  }
 }
 
 Response PageHandler::Navigate(const std::string& url,
@@ -385,8 +397,9 @@ void PageHandler::InnerSwapCompositorFrame() {
 
   gfx::SizeF viewport_size_dip = gfx::ScaleSize(
       metadata.scrollable_viewport_size, metadata.page_scale_factor);
-  gfx::SizeF screen_size_dip = gfx::ScaleSize(view->GetPhysicalBackingSize(),
-                                              1 / metadata.device_scale_factor);
+  gfx::SizeF screen_size_dip =
+      gfx::ScaleSize(gfx::SizeF(view->GetPhysicalBackingSize()),
+                     1 / metadata.device_scale_factor);
 
   blink::WebScreenInfo screen_info;
   view->GetScreenInfo(&screen_info);
@@ -460,8 +473,9 @@ void PageHandler::ScreencastFrameEncoded(
   if (!view)
     return;
 
-  gfx::SizeF screen_size_dip = gfx::ScaleSize(
-      view->GetPhysicalBackingSize(), 1 / metadata.device_scale_factor);
+  gfx::SizeF screen_size_dip =
+      gfx::ScaleSize(gfx::SizeF(view->GetPhysicalBackingSize()),
+                     1 / metadata.device_scale_factor);
   scoped_refptr<ScreencastFrameMetadata> param_metadata =
       ScreencastFrameMetadata::Create()
           ->set_page_scale_factor(metadata.page_scale_factor)

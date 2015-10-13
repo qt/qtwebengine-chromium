@@ -26,26 +26,36 @@
 #include "core/css/CSSGradientValue.h"
 #include "core/css/CSSGridTemplateAreasValue.h"
 #include "core/css/CSSPropertySourceData.h"
+#include "core/css/parser/CSSParserTokenRange.h"
 #include "platform/Length.h"
 
 namespace blink {
 
 class BorderImageParseContext;
 class CSSBorderImageSliceValue;
-class CSSBasicShape;
-class CSSBasicShapeInset;
+class CSSBasicShapeValue;
+class CSSBasicShapeEllipseValue;
+class CSSBasicShapeCircleValue;
+class CSSBasicShapeInsetValue;
+class CSSBasicShapePolygonValue;
 class CSSFunctionValue;
 class CSSGradientValue;
 class CSSGridLineNamesValue;
-class CSSLineBoxContainValue;
 struct CSSParserString;
 struct CSSParserValue;
 class CSSParserValueList;
 class CSSPrimitiveValue;
 class CSSProperty;
+class CSSQuadValue;
+class CSSShadowValue;
 class CSSValue;
 class CSSValueList;
 class StylePropertyShorthand;
+
+enum class UnitlessQuirk {
+    Allow,
+    Forbid
+};
 
 // Inputs: PropertyID, isImportant bool, CSSParserValueList.
 // Outputs: Vector of CSSProperties
@@ -71,17 +81,19 @@ public:
     };
 
     static bool parseValue(CSSPropertyID, bool important,
-        CSSParserValueList*, const CSSParserContext&,
+        const CSSParserTokenRange&, const CSSParserContext&,
         WillBeHeapVector<CSSProperty, 256>&, StyleRule::Type);
 
     static bool isSystemColor(CSSValueID);
     static bool isColorKeyword(CSSValueID);
+    static bool isValidNumericValue(double);
 
 private:
-    CSSPropertyParser(CSSParserValueList*, const CSSParserContext&,
+    CSSPropertyParser(CSSParserValueList*, const CSSParserTokenRange&, const CSSParserContext&,
         WillBeHeapVector<CSSProperty, 256>&, StyleRule::Type);
 
     bool parseValue(CSSPropertyID, bool important);
+    PassRefPtrWillBeRawPtr<CSSValue> parseSingleValue(CSSPropertyID);
 
     bool inShorthand() const { return m_inParseShorthand; }
     bool inQuirksMode() const { return isQuirksModeBehavior(m_context.mode()); }
@@ -99,9 +111,9 @@ private:
     PassRefPtrWillBeRawPtr<CSSPrimitiveValue> parseValidPrimitive(CSSValueID ident, CSSParserValue*);
 
     bool parseShorthand(CSSPropertyID, const StylePropertyShorthand&, bool important);
+    bool parseShorthand(CSSPropertyID, bool important);
     bool parse4Values(CSSPropertyID, const CSSPropertyID* properties, bool important);
     PassRefPtrWillBeRawPtr<CSSValueList> parseContent();
-    PassRefPtrWillBeRawPtr<CSSValue> parseQuotes();
 
     PassRefPtrWillBeRawPtr<CSSValue> parseAttr(CSSParserValueList* args);
 
@@ -165,7 +177,7 @@ private:
     bool parseGridLineNames(CSSParserValueList&, CSSValueList&, CSSGridLineNamesValue* = nullptr);
     PassRefPtrWillBeRawPtr<CSSValue> parseGridAutoFlow(CSSParserValueList&);
 
-    PassRefPtrWillBeRawPtr<CSSPrimitiveValue> parseClipShape();
+    PassRefPtrWillBeRawPtr<CSSQuadValue> parseClipShape();
 
     bool parseLegacyPosition(CSSPropertyID, bool important);
     bool parseItemPositionOverflowPosition(CSSPropertyID, bool important);
@@ -173,16 +185,16 @@ private:
 
     PassRefPtrWillBeRawPtr<CSSValue> parseShapeProperty(CSSPropertyID propId);
     PassRefPtrWillBeRawPtr<CSSValue> parseBasicShapeAndOrBox();
-    PassRefPtrWillBeRawPtr<CSSPrimitiveValue> parseBasicShape();
+    PassRefPtrWillBeRawPtr<CSSValue> parseBasicShape();
     PassRefPtrWillBeRawPtr<CSSPrimitiveValue> parseShapeRadius(CSSParserValue*);
 
-    PassRefPtrWillBeRawPtr<CSSBasicShape> parseBasicShapeCircle(CSSParserValueList* args);
-    PassRefPtrWillBeRawPtr<CSSBasicShape> parseBasicShapeEllipse(CSSParserValueList* args);
-    PassRefPtrWillBeRawPtr<CSSBasicShape> parseBasicShapePolygon(CSSParserValueList* args);
-    PassRefPtrWillBeRawPtr<CSSBasicShape> parseBasicShapeInset(CSSParserValueList* args);
+    PassRefPtrWillBeRawPtr<CSSBasicShapeCircleValue> parseBasicShapeCircle(CSSParserValueList* args);
+    PassRefPtrWillBeRawPtr<CSSBasicShapeEllipseValue> parseBasicShapeEllipse(CSSParserValueList* args);
+    PassRefPtrWillBeRawPtr<CSSBasicShapePolygonValue> parseBasicShapePolygon(CSSParserValueList* args);
+    PassRefPtrWillBeRawPtr<CSSBasicShapeInsetValue> parseBasicShapeInset(CSSParserValueList* args);
 
     bool parseFont(bool important);
-    void parseSystemFont(bool important);
+    bool parseSystemFont(bool important);
     PassRefPtrWillBeRawPtr<CSSValueList> parseFontFamily();
 
     PassRefPtrWillBeRawPtr<CSSValue> parseCounter(int defaultValue);
@@ -194,17 +206,11 @@ private:
     bool parseColorFromValue(const CSSParserValue*, RGBA32&, bool acceptQuirkyColors = false);
 
     bool acceptQuirkyColors(CSSPropertyID) const;
-    PassRefPtrWillBeRawPtr<CSSPrimitiveValue> parseBackgroundColor(const CSSParserValue*);
-    PassRefPtrWillBeRawPtr<CSSPrimitiveValue> parseTapHighlightColor(const CSSParserValue*);
-    PassRefPtrWillBeRawPtr<CSSPrimitiveValue> parseGradientStopColor(const CSSParserValue*);
-    PassRefPtrWillBeRawPtr<CSSPrimitiveValue> parseDeprecatedGradientStopColor(const CSSParserValue*);
 
     PassRefPtrWillBeRawPtr<CSSPrimitiveValue> parseLineHeight();
     bool parseFontSize(bool important);
-    bool parseFontVariant(bool important);
     bool parseFontWeight(bool important);
-    PassRefPtrWillBeRawPtr<CSSValueList> parseFontFaceSrc();
-    PassRefPtrWillBeRawPtr<CSSValueList> parseFontFaceUnicodeRange();
+    PassRefPtrWillBeRawPtr<CSSValueList> consumeFontFaceSrc();
 
     bool parseSVGValue(CSSPropertyID propId, bool important);
     PassRefPtrWillBeRawPtr<CSSValue> parseSVGStrokeDasharray();
@@ -213,12 +219,13 @@ private:
 
     // CSS3 Parsing Routines (for properties specific to CSS3)
     PassRefPtrWillBeRawPtr<CSSValueList> parseShadow(CSSParserValueList*, CSSPropertyID);
+    PassRefPtrWillBeRawPtr<CSSShadowValue> parseSingleShadow(CSSParserValueList*, bool allowInset, bool allowSpread);
     bool parseBorderImageShorthand(CSSPropertyID, bool important);
     PassRefPtrWillBeRawPtr<CSSValue> parseBorderImage(CSSPropertyID);
     bool parseBorderImageRepeat(RefPtrWillBeRawPtr<CSSValue>&);
     bool parseBorderImageSlice(CSSPropertyID, RefPtrWillBeRawPtr<CSSBorderImageSliceValue>&);
-    bool parseBorderImageWidth(RefPtrWillBeRawPtr<CSSPrimitiveValue>&);
-    bool parseBorderImageOutset(RefPtrWillBeRawPtr<CSSPrimitiveValue>&);
+    bool parseBorderImageWidth(RefPtrWillBeRawPtr<CSSQuadValue>&);
+    bool parseBorderImageOutset(RefPtrWillBeRawPtr<CSSQuadValue>&);
     bool parseBorderRadius(CSSPropertyID, bool important);
 
     PassRefPtrWillBeRawPtr<CSSValue> parseReflect();
@@ -242,8 +249,6 @@ private:
 
     PassRefPtrWillBeRawPtr<CSSValue> parseImageSet(CSSParserValueList*);
 
-    PassRefPtrWillBeRawPtr<CSSValue> parseWillChange();
-
     PassRefPtrWillBeRawPtr<CSSValueList> parseFilter();
     PassRefPtrWillBeRawPtr<CSSFunctionValue> parseBuiltinFilterArguments(CSSParserValueList*, CSSValueID);
 
@@ -257,20 +262,12 @@ private:
     PassRefPtrWillBeRawPtr<CSSValue> parseTextEmphasisStyle();
 
     PassRefPtrWillBeRawPtr<CSSValue> parseTouchAction();
-    PassRefPtrWillBeRawPtr<CSSValue> parseScrollBlocksOn();
 
-    void addTextDecorationProperty(CSSPropertyID, PassRefPtrWillBeRawPtr<CSSValue>, bool important);
-    bool parseTextDecoration(CSSPropertyID propId, bool important);
+    PassRefPtrWillBeRawPtr<CSSValue> parseTextDecoration();
 
     PassRefPtrWillBeRawPtr<CSSValue> parseTextIndent();
 
-    PassRefPtrWillBeRawPtr<CSSLineBoxContainValue> parseLineBoxContain();
     bool parseCalculation(CSSParserValue*, ValueRange);
-
-    bool parseFontFeatureTag(CSSValueList*);
-    PassRefPtrWillBeRawPtr<CSSValue> parseFontFeatureSettings();
-
-    bool parseFontVariantLigatures(bool important);
 
     bool parseGeneratedImage(CSSParserValueList*, RefPtrWillBeRawPtr<CSSValue>&);
 
@@ -278,9 +275,9 @@ private:
     PassRefPtrWillBeRawPtr<CSSPrimitiveValue> createPrimitiveStringValue(CSSParserValue*);
     PassRefPtrWillBeRawPtr<CSSPrimitiveValue> createPrimitiveCustomIdentValue(CSSParserValue*);
 
-    PassRefPtrWillBeRawPtr<CSSValue> createCSSImageValueWithReferrer(const String& rawValue, const KURL&);
+    PassRefPtrWillBeRawPtr<CSSValue> createCSSImageValueWithReferrer(const AtomicString& rawValue, const KURL&);
 
-    PassRefPtrWillBeRawPtr<CSSBasicShape> parseInsetRoundedCorners(PassRefPtrWillBeRawPtr<CSSBasicShapeInset>, CSSParserValueList*);
+    PassRefPtrWillBeRawPtr<CSSBasicShapeInsetValue> parseInsetRoundedCorners(PassRefPtrWillBeRawPtr<CSSBasicShapeInsetValue>, CSSParserValueList*);
 
     enum SizeParameterType {
         None,
@@ -290,12 +287,11 @@ private:
         Orientation,
     };
 
-    PassRefPtrWillBeRawPtr<CSSPrimitiveValue> parsePage();
     PassRefPtrWillBeRawPtr<CSSValueList> parseSize();
     SizeParameterType parseSizeParameter(CSSValueList* parsedValues, CSSParserValue*, SizeParameterType prevParamType);
 
-    bool parseFontFaceSrcURI(CSSValueList*);
-    bool parseFontFaceSrcLocal(CSSValueList*);
+    PassRefPtrWillBeRawPtr<CSSValue> consumeFontFaceSrcURI();
+    PassRefPtrWillBeRawPtr<CSSValue> consumeFontFaceSrcLocal();
 
     class ImplicitScope {
         STACK_ALLOCATED();
@@ -353,13 +349,13 @@ private:
     inline bool validUnit(CSSParserValue* value, Units unitflags, ReleaseParsedCalcValueCondition releaseCalc = DoNotReleaseParsedCalcValue) { return validUnit(value, unitflags, m_context.mode(), releaseCalc); }
     bool validUnit(CSSParserValue*, Units, CSSParserMode, ReleaseParsedCalcValueCondition releaseCalc = DoNotReleaseParsedCalcValue);
 
-    bool parseBorderImageQuad(Units, RefPtrWillBeRawPtr<CSSPrimitiveValue>&);
+    bool parseBorderImageQuad(Units, RefPtrWillBeRawPtr<CSSQuadValue>&);
     int colorIntFromValue(CSSParserValue*);
-    bool isCalculation(CSSParserValue*);
 
     bool buildBorderImageParseContext(CSSPropertyID, BorderImageParseContext&);
 
     bool parseDeprecatedGradientColorStop(CSSParserValue*, CSSGradientColorStop&);
+    PassRefPtrWillBeRawPtr<CSSPrimitiveValue> parseDeprecatedGradientStopColor(const CSSParserValue*);
 
     void commitBorderImageProperty(CSSPropertyID, PassRefPtrWillBeRawPtr<CSSValue>, bool important);
 
@@ -371,6 +367,7 @@ private:
 private:
     // Inputs:
     CSSParserValueList* m_valueList;
+    CSSParserTokenRange m_range;
     const CSSParserContext& m_context;
 
     // Outputs:

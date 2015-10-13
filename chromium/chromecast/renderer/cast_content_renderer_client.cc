@@ -23,8 +23,6 @@
 #include "content/public/renderer/render_frame.h"
 #include "content/public/renderer/render_view.h"
 #include "content/public/renderer/render_view_observer.h"
-#include "crypto/nss_util.h"
-#include "ipc/message_filter.h"
 #include "third_party/WebKit/public/platform/WebColor.h"
 #include "third_party/WebKit/public/web/WebSettings.h"
 #include "third_party/WebKit/public/web/WebView.h"
@@ -97,7 +95,10 @@ void CastRenderViewObserver::DidClearWindowObject(blink::WebLocalFrame* frame) {
 
 }  // namespace
 
-CastContentRendererClient::CastContentRendererClient() {
+CastContentRendererClient::CastContentRendererClient()
+    : allow_hidden_media_playback_(
+          base::CommandLine::ForCurrentProcess()->HasSwitch(
+              switches::kAllowHiddenMediaPlayback)) {
 }
 
 CastContentRendererClient::~CastContentRendererClient() {
@@ -107,22 +108,8 @@ void CastContentRendererClient::AddRendererNativeBindings(
     blink::WebLocalFrame* frame) {
 }
 
-std::vector<scoped_refptr<IPC::MessageFilter>>
-CastContentRendererClient::GetRendererMessageFilters() {
-  return std::vector<scoped_refptr<IPC::MessageFilter>>();
-}
-
 void CastContentRendererClient::RenderThreadStarted() {
   base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
-#if !defined(USE_OPENSSL)
-  // Note: Copied from chrome_render_process_observer.cc to fix b/8676652.
-  //
-  // On platforms where the system NSS shared libraries are used,
-  // initialize NSS now because it won't be able to load the .so's
-  // after entering the sandbox.
-  if (!command_line->HasSwitch(switches::kSingleProcess))
-    crypto::InitNSSSafely();
-#endif
 
 #if defined(ARCH_CPU_ARM_FAMILY) && !defined(OS_ANDROID)
   PlatformPollFreemem();
@@ -138,8 +125,7 @@ void CastContentRendererClient::RenderThreadStarted() {
     }
   }
 
-  cast_observer_.reset(
-      new CastRenderProcessObserver(GetRendererMessageFilters()));
+  cast_observer_.reset(new CastRenderProcessObserver());
 
   prescient_networking_dispatcher_.reset(
       new network_hints::PrescientNetworkingDispatcher());
@@ -210,8 +196,9 @@ CastContentRendererClient::GetPrescientNetworking() {
 
 void CastContentRendererClient::DeferMediaLoad(
     content::RenderFrame* render_frame,
+    bool render_frame_has_played_media_before,
     const base::Closure& closure) {
-  if (!render_frame->IsHidden()) {
+  if (!render_frame->IsHidden() || allow_hidden_media_playback_) {
     closure.Run();
     return;
   }

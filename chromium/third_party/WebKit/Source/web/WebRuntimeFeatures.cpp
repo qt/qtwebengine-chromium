@@ -32,7 +32,7 @@
 #include "public/web/WebRuntimeFeatures.h"
 
 #include "platform/RuntimeEnabledFeatures.h"
-#include "web/WebMediaPlayerClientImpl.h"
+#include "wtf/Assertions.h"
 
 namespace blink {
 
@@ -46,9 +46,15 @@ void WebRuntimeFeatures::enableWebBluetooth(bool enable)
     RuntimeEnabledFeatures::setWebBluetoothEnabled(enable);
 }
 
-void WebRuntimeFeatures::enableFeatureFromString(const WebString& name, bool enable)
+void WebRuntimeFeatures::enableFeatureFromString(const std::string& name, bool enable)
 {
     RuntimeEnabledFeatures::setFeatureEnabledFromString(name, enable);
+}
+
+// TODO(bashi): Remove.
+void WebRuntimeFeatures::enableFeatureFromString(const WebString& name, bool enable)
+{
+    RuntimeEnabledFeatures::setFeatureEnabledFromString(name.latin1(), enable);
 }
 
 void WebRuntimeFeatures::enableBleedingEdgeFastPaths(bool enable)
@@ -56,11 +62,6 @@ void WebRuntimeFeatures::enableBleedingEdgeFastPaths(bool enable)
     ASSERT(enable);
     RuntimeEnabledFeatures::setBleedingEdgeFastPathsEnabled(enable);
     RuntimeEnabledFeatures::setWebAnimationsAPIEnabled(enable);
-}
-
-void WebRuntimeFeatures::enableBlinkScheduler(bool enable)
-{
-    RuntimeEnabledFeatures::setBlinkSchedulerEnabled(enable);
 }
 
 void WebRuntimeFeatures::enableCompositorAnimationTimelines(bool enable)
@@ -158,6 +159,11 @@ void WebRuntimeFeatures::enableMediaCapture(bool enable)
     RuntimeEnabledFeatures::setMediaCaptureEnabled(enable);
 }
 
+void WebRuntimeFeatures::enableMediaRecorder(bool enable)
+{
+    RuntimeEnabledFeatures::setMediaRecorderEnabled(enable);
+}
+
 void WebRuntimeFeatures::enableMediaSource(bool enable)
 {
     RuntimeEnabledFeatures::setMediaSourceEnabled(enable);
@@ -213,9 +219,9 @@ void WebRuntimeFeatures::enableScriptedSpeech(bool enable)
     RuntimeEnabledFeatures::setScriptedSpeechEnabled(enable);
 }
 
-void WebRuntimeFeatures::enableSlimmingPaint(bool enable)
+void WebRuntimeFeatures::enableSlimmingPaintV2(bool enable)
 {
-    RuntimeEnabledFeatures::setSlimmingPaintEnabled(enable);
+    RuntimeEnabledFeatures::setSlimmingPaintV2Enabled(enable);
 }
 
 void WebRuntimeFeatures::enableTouch(bool enable)
@@ -253,9 +259,9 @@ void WebRuntimeFeatures::enableOverlayScrollbars(bool enable)
     RuntimeEnabledFeatures::setOverlayScrollbarsEnabled(enable);
 }
 
-void WebRuntimeFeatures::enableOverlayFullscreenVideo(bool enable)
+void WebRuntimeFeatures::forceOverlayFullscreenVideo(bool enable)
 {
-    RuntimeEnabledFeatures::setOverlayFullscreenVideoEnabled(enable);
+    RuntimeEnabledFeatures::setForceOverlayFullscreenVideoEnabled(enable);
 }
 
 void WebRuntimeFeatures::enableSharedWorker(bool enable)
@@ -271,11 +277,6 @@ void WebRuntimeFeatures::enablePreciseMemoryInfo(bool enable)
 void WebRuntimeFeatures::enableCredentialManagerAPI(bool enable)
 {
     RuntimeEnabledFeatures::setCredentialManagerEnabled(enable);
-}
-
-void WebRuntimeFeatures::enableTextBlobs(bool enable)
-{
-    RuntimeEnabledFeatures::setTextBlobEnabled(enable);
 }
 
 void WebRuntimeFeatures::enableCSSViewport(bool enable)
@@ -308,11 +309,6 @@ void WebRuntimeFeatures::enablePushMessagingData(bool enable)
     RuntimeEnabledFeatures::setPushMessagingDataEnabled(enable);
 }
 
-void WebRuntimeFeatures::enableStaleWhileRevalidateCacheControl(bool enable)
-{
-    RuntimeEnabledFeatures::setStaleWhileRevalidateCacheControlEnabled(enable);
-}
-
 void WebRuntimeFeatures::enableUnsafeES3APIs(bool enable)
 {
     RuntimeEnabledFeatures::setUnsafeES3APIsEnabled(enable);
@@ -321,6 +317,16 @@ void WebRuntimeFeatures::enableUnsafeES3APIs(bool enable)
 void WebRuntimeFeatures::enableWebVR(bool enable)
 {
     RuntimeEnabledFeatures::setWebVREnabled(enable);
+}
+
+void WebRuntimeFeatures::enableNewMediaPlaybackUi(bool enable)
+{
+    RuntimeEnabledFeatures::setNewMediaPlaybackUiEnabled(enable);
+}
+
+void WebRuntimeFeatures::enablePresentationAPI(bool enable)
+{
+    RuntimeEnabledFeatures::setPresentationEnabled(enable);
 }
 
 } // namespace blink

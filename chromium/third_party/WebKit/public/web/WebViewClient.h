@@ -115,6 +115,8 @@ public:
     // A data url from <canvas> or <img> is passed to the method's argument.
     virtual void saveImageFromDataURL(const WebString&) { }
 
+    // Called when PageImportanceSignals for the WebView is updated.
+    virtual void pageImportanceSignalsChanged() { }
 
     // Editing -------------------------------------------------------------
 
@@ -236,10 +238,6 @@ public:
     // Informs the browser that the zoom levels for this frame have changed from
     // the default values.
     virtual void zoomLimitsChanged(double minimumLevel, double maximumLevel) { }
-
-    // Informs the browser that the zoom level has changed as a result of an
-    // action that wasn't initiated by the client.
-    virtual void zoomLevelChanged() { }
 
     // Informs the browser that the page scale has changed.
     virtual void pageScaleFactorChanged() { }

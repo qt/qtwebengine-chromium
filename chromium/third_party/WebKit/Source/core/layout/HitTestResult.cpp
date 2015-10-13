@@ -23,11 +23,12 @@
 #include "core/layout/HitTestResult.h"
 
 #include "core/HTMLNames.h"
-#include "core/dom/DocumentMarkerController.h"
 #include "core/dom/PseudoElement.h"
 #include "core/dom/shadow/ComposedTreeTraversal.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/editing/FrameSelection.h"
+#include "core/editing/VisibleUnits.h"
+#include "core/editing/markers/DocumentMarkerController.h"
 #include "core/fetch/ImageResource.h"
 #include "core/frame/LocalFrame.h"
 #include "core/html/HTMLAnchorElement.h"
@@ -111,18 +112,6 @@ HitTestResult& HitTestResult::operator=(const HitTestResult& other)
     return *this;
 }
 
-unsigned HitTestResult::equalityScore(const HitTestResult& other) const
-{
-    return (m_hitTestRequest.equalForCacheability(other.m_hitTestRequest) << 7)
-        | ((m_innerNode == other.innerNode()) << 6)
-        | ((m_innerPossiblyPseudoNode == other.innerPossiblyPseudoNode()) << 5)
-        | ((m_pointInInnerNodeFrame == other.m_pointInInnerNodeFrame) << 4)
-        | ((m_localPoint == other.localPoint()) << 3)
-        | ((m_innerURLElement == other.URLElement()) << 2)
-        | ((m_scrollbar == other.scrollbar()) << 1)
-        | (m_isOverWidget == other.isOverWidget());
-}
-
 bool HitTestResult::equalForCacheability(const HitTestResult& other) const
 {
     return m_hitTestRequest.equalForCacheability(other.m_hitTestRequest)
@@ -175,7 +164,7 @@ PositionWithAffinity HitTestResult::position() const
     if (!layoutObject)
         return PositionWithAffinity();
     if (m_innerPossiblyPseudoNode->isPseudoElement() && m_innerPossiblyPseudoNode->pseudoId() == BEFORE)
-        return Position(m_innerNode, PositionAnchorType::BeforeChildren).downstream();
+        return mostForwardCaretPosition(Position(m_innerNode, PositionAnchorType::BeforeChildren));
     return layoutObject->positionForPoint(localPoint());
 }
 
@@ -229,8 +218,10 @@ void HitTestResult::setInnerNode(Node* n)
     if (n && n->isPseudoElement())
         n = toPseudoElement(n)->findAssociatedNode();
     m_innerNode = n;
-    if (HTMLAreaElement* area = imageAreaForImage())
+    if (HTMLAreaElement* area = imageAreaForImage()) {
         m_innerNode = area;
+        m_innerPossiblyPseudoNode = area;
+    }
 }
 
 void HitTestResult::setURLElement(Element* n)
@@ -395,15 +386,17 @@ bool HitTestResult::isLiveLink() const
     return m_innerURLElement && m_innerURLElement->isLiveLink();
 }
 
+// TODO(yosin) We should move |HitTestResult::isMisspelled()| to
+// "SelectionController.cpp" as static function.
 bool HitTestResult::isMisspelled() const
 {
     if (!innerNode() || !innerNode()->layoutObject())
         return false;
-    VisiblePosition pos(innerNode()->layoutObject()->positionForPoint(localPoint()));
+    VisiblePosition pos = createVisiblePosition(innerNode()->layoutObject()->positionForPoint(localPoint()));
     if (pos.isNull())
         return false;
     return m_innerNode->document().markers().markersInRange(
-        makeRange(pos, pos).get(), DocumentMarker::MisspellingMarkers()).size() > 0;
+        EphemeralRange(pos.deepEquivalent().parentAnchoredEquivalent()), DocumentMarker::MisspellingMarkers()).size() > 0;
 }
 
 bool HitTestResult::isOverLink() const
@@ -454,25 +447,6 @@ bool HitTestResult::addNodeToListBasedTestResult(Node* node, const HitTestLocati
         return true;
 
     bool regionFilled = rect.contains(LayoutRect(locationInContainer.boundingBox()));
-    return !regionFilled;
-}
-
-bool HitTestResult::addNodeToListBasedTestResult(Node* node, const HitTestLocation& locationInContainer, const FloatRect& rect)
-{
-    // If not a list-based test, this function should be a no-op.
-    if (!hitTestRequest().listBased())
-        return false;
-
-    // If node is null, return true so the hit test can continue.
-    if (!node)
-        return true;
-
-    mutableListBasedTestResult().add(node);
-
-    if (hitTestRequest().penetratingList())
-        return true;
-
-    bool regionFilled = rect.contains(locationInContainer.boundingBox());
     return !regionFilled;
 }
 

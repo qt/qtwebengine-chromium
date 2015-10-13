@@ -40,15 +40,13 @@ namespace blink {
 class PeriodicWave : public GarbageCollectedFinalized<PeriodicWave>, public ScriptWrappable {
     DEFINE_WRAPPERTYPEINFO();
 public:
-    // Maximum array size allowed for creating PeriodicWave's.
-    static const unsigned kMaxPeriodicWaveArraySize;
     static PeriodicWave* createSine(float sampleRate);
     static PeriodicWave* createSquare(float sampleRate);
     static PeriodicWave* createSawtooth(float sampleRate);
     static PeriodicWave* createTriangle(float sampleRate);
 
     // Creates an arbitrary periodic wave given the frequency components (Fourier coefficients).
-    static PeriodicWave* create(float sampleRate, DOMFloat32Array* real, DOMFloat32Array* imag);
+    static PeriodicWave* create(float sampleRate, DOMFloat32Array* real, DOMFloat32Array* imag, bool normalize);
 
     // Returns pointers to the lower and higher wave data for the pitch range containing
     // the given fundamental frequency. These two tables are in adjacent "pitch" ranges
@@ -61,7 +59,11 @@ public:
     // Returns the scalar multiplier to the oscillator frequency to calculate wave buffer phase increment.
     float rateScale() const { return m_rateScale; }
 
-    unsigned periodicWaveSize() const { return m_periodicWaveSize; }
+    // The size of the FFT to use based on the sampling rate.
+    unsigned periodicWaveSize() const;
+
+    // The number of ranges needed for the given sampling rate and FFT size.
+    unsigned numberOfRanges() const { return m_numberOfRanges; }
 
     DEFINE_INLINE_TRACE() { }
 
@@ -71,7 +73,6 @@ private:
     void generateBasicWaveform(int);
 
     float m_sampleRate;
-    unsigned m_periodicWaveSize;
     unsigned m_numberOfRanges;
     float m_centsPerRange;
 
@@ -88,7 +89,7 @@ private:
     unsigned numberOfPartialsForRange(unsigned rangeIndex) const;
 
     // Creates tables based on numberOfComponents Fourier coefficients.
-    void createBandLimitedTables(const float* real, const float* imag, unsigned numberOfComponents);
+    void createBandLimitedTables(const float* real, const float* imag, unsigned numberOfComponents, bool disableNormalization);
     Vector<OwnPtr<AudioFloatArray>> m_bandLimitedTables;
 };
 

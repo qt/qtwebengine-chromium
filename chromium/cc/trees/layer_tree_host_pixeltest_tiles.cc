@@ -6,6 +6,7 @@
 #include "cc/layers/picture_layer.h"
 #include "cc/output/copy_output_request.h"
 #include "cc/playback/display_item_list.h"
+#include "cc/playback/display_item_list_settings.h"
 #include "cc/playback/drawing_display_item.h"
 #include "cc/test/layer_tree_pixel_test.h"
 #include "cc/test/test_gpu_memory_buffer_manager.h"
@@ -28,15 +29,12 @@ class LayerTreeHostTilesPixelTest : public LayerTreePixelTest {
  protected:
   void InitializeSettings(LayerTreeSettings* settings) override {
     LayerTreePixelTest::InitializeSettings(settings);
-    settings->use_display_lists = true;
     switch (raster_mode_) {
       case PARTIAL_ONE_COPY:
-        settings->use_one_copy = true;
         settings->use_zero_copy = false;
         settings->use_persistent_map_for_gpu_memory_buffers = true;
         break;
       case FULL_ONE_COPY:
-        settings->use_one_copy = true;
         settings->use_zero_copy = false;
         settings->use_persistent_map_for_gpu_memory_buffers = false;
         break;
@@ -101,9 +99,10 @@ class BlueYellowClient : public ContentLayerClient {
   scoped_refptr<DisplayItemList> PaintContentsToDisplayList(
       const gfx::Rect& clip,
       PaintingControlSetting painting_status) override {
-    bool use_cached_picture = false;
+    DisplayItemListSettings settings;
+    settings.use_cached_picture = false;
     scoped_refptr<DisplayItemList> display_list =
-        DisplayItemList::Create(clip, use_cached_picture);
+        DisplayItemList::Create(clip, settings);
 
     SkPictureRecorder recorder;
     skia::RefPtr<SkCanvas> canvas = skia::SharePtr(
@@ -133,6 +132,7 @@ class BlueYellowClient : public ContentLayerClient {
   }
 
   bool FillsBoundsCompletely() const override { return true; }
+  size_t GetApproximateUnsharedMemoryUsage() const override { return 0; }
 
   void set_blue_top(bool b) { blue_top_ = b; }
 
@@ -160,6 +160,7 @@ class LayerTreeHostTilesTestPartialInvalidation
         // only re-raster the stuff in the rect. If it doesn't do partial raster
         // it would re-raster the whole thing instead.
         client_.set_blue_top(false);
+        Finish();
         picture_layer_->SetNeedsDisplayRect(gfx::Rect(50, 50, 100, 100));
 
         // Add a copy request to see what happened!
@@ -185,6 +186,13 @@ TEST_F(LayerTreeHostTilesTestPartialInvalidation,
   RunRasterPixelTest(
       false, FULL_ONE_COPY, picture_layer_,
       base::FilePath(FILE_PATH_LITERAL("blue_yellow_flipped.png")));
+}
+
+TEST_F(LayerTreeHostTilesTestPartialInvalidation,
+       PartialRaster_MultiThread_OneCopy) {
+  RunRasterPixelTest(
+      true, PARTIAL_ONE_COPY, picture_layer_,
+      base::FilePath(FILE_PATH_LITERAL("blue_yellow_partial_flipped.png")));
 }
 
 TEST_F(LayerTreeHostTilesTestPartialInvalidation,

@@ -35,16 +35,15 @@
 #include "bindings/core/v8/ScriptState.h"
 #include "bindings/core/v8/SharedPersistent.h"
 #include "core/CoreExport.h"
-#include "wtf/PassRefPtr.h"
+#include "wtf/Allocator.h"
 #include "wtf/RefPtr.h"
 #include "wtf/text/WTFString.h"
 #include <v8.h>
 
 namespace blink {
 
-class JSONValue;
-
 class CORE_EXPORT ScriptValue final {
+    ALLOW_ONLY_INLINE_ALLOCATION();
 public:
     template<typename T>
     static ScriptValue from(ScriptState* scriptState, T value)
@@ -170,12 +169,10 @@ public:
     }
 
     v8::Local<v8::Value> v8Value() const;
-    // TODO(bashi): Remove v8ValueUnsafe().
-    v8::Local<v8::Value> v8ValueUnsafe() const;
     // Returns v8Value() if a given ScriptState is the same as the
     // ScriptState which is associated with this ScriptValue. Otherwise
     // this "clones" the v8 value and returns it.
-    v8::Local<v8::Value> v8ValueFor(ScriptState*);
+    v8::Local<v8::Value> v8ValueFor(ScriptState*) const;
 
     bool toString(String&) const;
 

@@ -107,6 +107,17 @@
         'sandbox_linux_test_sources.gypi',
       ],
       'type': 'executable',
+      'conditions': [
+        [ 'OS == "android"', {
+          'variables': {
+            'test_type': 'gtest',
+            'test_suite_name': '<(_target_name)',
+          },
+          'includes': [
+            '../../build/android/test_runner.gypi',
+          ],
+        }]
+      ]
     },
     {
       # This target is the shared library used by Android APK (i.e.
@@ -135,8 +146,7 @@
         'bpf_dsl/codegen.cc',
         'bpf_dsl/codegen.h',
         'bpf_dsl/cons.h',
-        'bpf_dsl/dump_bpf.cc',
-        'bpf_dsl/dump_bpf.h',
+        'bpf_dsl/errorcode.h',
         'bpf_dsl/linux_syscall_ranges.h',
         'bpf_dsl/policy.cc',
         'bpf_dsl/policy.h',
@@ -147,12 +157,8 @@
         'bpf_dsl/syscall_set.cc',
         'bpf_dsl/syscall_set.h',
         'bpf_dsl/trap_registry.h',
-        'bpf_dsl/verifier.cc',
-        'bpf_dsl/verifier.h',
         'seccomp-bpf/die.cc',
         'seccomp-bpf/die.h',
-        'seccomp-bpf/errorcode.cc',
-        'seccomp-bpf/errorcode.h',
         'seccomp-bpf/sandbox_bpf.cc',
         'seccomp-bpf/sandbox_bpf.h',
         'seccomp-bpf/syscall.cc',
@@ -171,7 +177,7 @@
       'includes': [
         # Disable LTO due to compiler bug
         # https://gcc.gnu.org/bugzilla/show_bug.cgi?id=57703
-        '../../build/android/disable_lto.gypi',
+        '../../build/android/disable_gcc_lto.gypi',
       ],
       'include_dirs': [
         '../..',
@@ -309,22 +315,6 @@
       ],
     },
     {
-      # We make this its own target so that it does not interfere
-      # with our tests.
-      'target_name': 'libc_urandom_override',
-      'type': 'static_library',
-      'sources': [
-        'services/libc_urandom_override.cc',
-        'services/libc_urandom_override.h',
-      ],
-      'dependencies': [
-        '../base/base.gyp:base',
-      ],
-      'include_dirs': [
-        '..',
-      ],
-    },
-    {
       'target_name': 'suid_sandbox_client',
       'type': '<(component)',
       'sources': [
@@ -344,6 +334,57 @@
       ],
       'include_dirs': [
         '..',
+      ],
+    },
+    {
+      'target_name': 'bpf_dsl_golden',
+      'type': 'none',
+      'actions': [
+        {
+          'action_name': 'generate',
+          'inputs': [
+            'bpf_dsl/golden/generate.py',
+            'bpf_dsl/golden/i386/ArgSizePolicy.txt',
+            'bpf_dsl/golden/i386/BasicPolicy.txt',
+            'bpf_dsl/golden/i386/ElseIfPolicy.txt',
+            'bpf_dsl/golden/i386/MaskingPolicy.txt',
+            'bpf_dsl/golden/i386/MoreBooleanLogicPolicy.txt',
+            'bpf_dsl/golden/i386/NegativeConstantsPolicy.txt',
+            'bpf_dsl/golden/i386/SwitchPolicy.txt',
+            'bpf_dsl/golden/x86-64/ArgSizePolicy.txt',
+            'bpf_dsl/golden/x86-64/BasicPolicy.txt',
+            'bpf_dsl/golden/x86-64/BooleanLogicPolicy.txt',
+            'bpf_dsl/golden/x86-64/ElseIfPolicy.txt',
+            'bpf_dsl/golden/x86-64/MaskingPolicy.txt',
+            'bpf_dsl/golden/x86-64/MoreBooleanLogicPolicy.txt',
+            'bpf_dsl/golden/x86-64/NegativeConstantsPolicy.txt',
+            'bpf_dsl/golden/x86-64/SwitchPolicy.txt',
+          ],
+          'outputs': [
+            '<(SHARED_INTERMEDIATE_DIR)/sandbox/linux/bpf_dsl/golden/golden_files.h',
+          ],
+          'action': [
+            'python',
+            'linux/bpf_dsl/golden/generate.py',
+            '<(SHARED_INTERMEDIATE_DIR)/sandbox/linux/bpf_dsl/golden/golden_files.h',
+            'linux/bpf_dsl/golden/i386/ArgSizePolicy.txt',
+            'linux/bpf_dsl/golden/i386/BasicPolicy.txt',
+            'linux/bpf_dsl/golden/i386/ElseIfPolicy.txt',
+            'linux/bpf_dsl/golden/i386/MaskingPolicy.txt',
+            'linux/bpf_dsl/golden/i386/MoreBooleanLogicPolicy.txt',
+            'linux/bpf_dsl/golden/i386/NegativeConstantsPolicy.txt',
+            'linux/bpf_dsl/golden/i386/SwitchPolicy.txt',
+            'linux/bpf_dsl/golden/x86-64/ArgSizePolicy.txt',
+            'linux/bpf_dsl/golden/x86-64/BasicPolicy.txt',
+            'linux/bpf_dsl/golden/x86-64/BooleanLogicPolicy.txt',
+            'linux/bpf_dsl/golden/x86-64/ElseIfPolicy.txt',
+            'linux/bpf_dsl/golden/x86-64/MaskingPolicy.txt',
+            'linux/bpf_dsl/golden/x86-64/MoreBooleanLogicPolicy.txt',
+            'linux/bpf_dsl/golden/x86-64/NegativeConstantsPolicy.txt',
+            'linux/bpf_dsl/golden/x86-64/SwitchPolicy.txt',
+          ],
+          'message': 'Generating header from golden files ...',
+        },
       ],
     },
   ],

@@ -6,7 +6,7 @@
 
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
-#include "mojo/common/handle_watcher.h"
+#include "mojo/message_pump/handle_watcher.h"
 #include "mojo/services/network/network_context.h"
 #include "mojo/services/network/public/cpp/web_socket_read_queue.h"
 #include "mojo/services/network/public/cpp/web_socket_write_queue.h"
@@ -201,8 +201,8 @@ void WebSocketImpl::Connect(const String& url,
   channel_.reset(new net::WebSocketChannel(event_interface.Pass(),
                                            context_->url_request_context()));
   channel_->SendAddChannelRequest(GURL(url.get()),
-                                  protocols.To<std::vector<std::string> >(),
-                                  url::Origin(origin.get()));
+                                  protocols.To<std::vector<std::string>>(),
+                                  url::Origin(GURL(origin.get())));
 }
 
 void WebSocketImpl::Send(bool fin,

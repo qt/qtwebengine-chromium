@@ -41,6 +41,7 @@
 
 #if defined(OS_MACOSX)
 #include "base/mac/mac_util.h"
+#include "ui/base/test/scoped_fake_nswindow_fullscreen.h"
 #endif
 
 namespace views {
@@ -67,68 +68,6 @@ bool IsTestingSnowLeopard() {
 }
 
 }  // namespace
-
-// A view that keeps track of the events it receives, optionally consuming them.
-class EventCountView : public View {
- public:
-  // Whether to call SetHandled() on events as they are received. For some event
-  // types, this will allow EventCountView to receives future events in the
-  // event sequence, such as a drag.
-  enum HandleMode {
-    PROPAGATE_EVENTS,
-    CONSUME_EVENTS
-  };
-
-  EventCountView()
-      : last_flags_(0),
-        handle_mode_(PROPAGATE_EVENTS) {}
-
-  ~EventCountView() override {}
-
-  int GetEventCount(ui::EventType type) {
-    return event_count_[type];
-  }
-
-  void ResetCounts() {
-    event_count_.clear();
-  }
-
-  int last_flags() const {
-    return last_flags_;
-  }
-
-  void set_handle_mode(HandleMode handle_mode) {
-    handle_mode_ = handle_mode;
-  }
-
- protected:
-  // Overridden from View:
-  void OnMouseMoved(const ui::MouseEvent& event) override {
-    // MouseMove events are not re-dispatched from the RootView.
-    ++event_count_[ui::ET_MOUSE_MOVED];
-    last_flags_ = 0;
-  }
-
-  // Overridden from ui::EventHandler:
-  void OnKeyEvent(ui::KeyEvent* event) override { RecordEvent(event); }
-  void OnMouseEvent(ui::MouseEvent* event) override { RecordEvent(event); }
-  void OnScrollEvent(ui::ScrollEvent* event) override { RecordEvent(event); }
-  void OnGestureEvent(ui::GestureEvent* event) override { RecordEvent(event); }
-
- private:
-  void RecordEvent(ui::Event* event) {
-    ++event_count_[event->type()];
-    last_flags_ = event->flags();
-    if (handle_mode_ == CONSUME_EVENTS)
-      event->SetHandled();
-  }
-
-  std::map<ui::EventType, int> event_count_;
-  int last_flags_;
-  HandleMode handle_mode_;
-
-  DISALLOW_COPY_AND_ASSIGN(EventCountView);
-};
 
 // A view that keeps track of the events it receives, and consumes all scroll
 // gesture events and ui::ET_SCROLL events.
@@ -205,67 +144,6 @@ class EventCountHandler : public ui::EventHandler {
   std::map<ui::EventType, int> event_count_;
 
   DISALLOW_COPY_AND_ASSIGN(EventCountHandler);
-};
-
-// A helper WidgetDelegate for tests that require hooks into WidgetDelegate
-// calls, and removes some of the boilerplate for initializing a Widget. Calls
-// Widget::CloseNow() when destroyed if it hasn't already been done.
-class TestDesktopWidgetDelegate : public WidgetDelegate {
- public:
-  TestDesktopWidgetDelegate() : widget_(new Widget) {}
-
-  ~TestDesktopWidgetDelegate() override {
-    if (widget_)
-      widget_->CloseNow();
-    EXPECT_FALSE(widget_);
-  }
-
-  // Initialize the Widget, adding some meaningful default InitParams.
-  void InitWidget(Widget::InitParams init_params) {
-    init_params.delegate = this;
-#if !defined(OS_CHROMEOS)
-    init_params.native_widget = new PlatformDesktopNativeWidget(widget_);
-#endif
-    init_params.bounds = initial_bounds_;
-    widget_->Init(init_params);
-  }
-
-  // Set the contents view to be used during Widget initialization. For Widgets
-  // that use non-client views, this will be the contents_view used to
-  // initialize the ClientView in WidgetDelegate::CreateClientView(). Otherwise,
-  // it is the ContentsView of the Widget's RootView. Ownership passes to the
-  // view hierarchy during InitWidget().
-  void set_contents_view(View* contents_view) {
-    contents_view_ = contents_view;
-  }
-
-  int window_closing_count() const { return window_closing_count_; }
-  const gfx::Rect& initial_bounds() { return initial_bounds_; }
-
-  // WidgetDelegate overrides:
-  void WindowClosing() override {
-    window_closing_count_++;
-    widget_ = nullptr;
-  }
-
-  Widget* GetWidget() override { return widget_; }
-  const Widget* GetWidget() const override { return widget_; }
-
-  View* GetContentsView() override {
-    return contents_view_ ? contents_view_ : WidgetDelegate::GetContentsView();
-  }
-
-  bool ShouldAdvanceFocusToTopLevelWidget() const override {
-    return true;  // Same default as DefaultWidgetDelegate in widget.cc.
-  }
-
- private:
-  Widget* widget_;
-  View* contents_view_ = nullptr;
-  int window_closing_count_ = 0;
-  gfx::Rect initial_bounds_ = gfx::Rect(100, 100, 200, 200);
-
-  DISALLOW_COPY_AND_ASSIGN(TestDesktopWidgetDelegate);
 };
 
 TEST_F(WidgetTest, WidgetInitParams) {
@@ -1281,49 +1159,67 @@ TEST_F(WidgetTest, GetWindowBoundsInScreen) {
   widget->CloseNow();
 }
 
-// Before being enabled on Mac, this was #ifdef(false).
-// TODO(tapted): Fix this for DesktopNativeWidgets on other platforms.
+// Non-Desktop widgets need the shell to maximize/fullscreen window.
+// Disable on Linux because windows restore to the wrong bounds.
+// See http://crbug.com/515369.
+#if defined(OS_CHROMEOS) || defined(OS_LINUX)
+#define MAYBE_GetRestoredBounds DISABLED_GetRestoredBounds
+#else
+#define MAYBE_GetRestoredBounds GetRestoredBounds
+#endif
+
+// Test that GetRestoredBounds() returns the original bounds of the window.
+TEST_F(WidgetTest, MAYBE_GetRestoredBounds) {
 #if defined(OS_MACOSX)
-// Aura needs shell to maximize/fullscreen window.
-// NativeWidgetGtk doesn't implement GetRestoredBounds.
-TEST_F(WidgetTest, GetRestoredBounds) {
-  Widget* toplevel = CreateTopLevelPlatformWidget();
-  EXPECT_EQ(toplevel->GetWindowBoundsInScreen().ToString(),
-            toplevel->GetRestoredBounds().ToString());
+  // Fullscreen on Mac requires an interactive UI test, fake them here.
+  ui::test::ScopedFakeNSWindowFullscreen fake_fullscreen;
+#endif
+
+  Widget* toplevel = CreateNativeDesktopWidget();
   toplevel->Show();
+  // Initial restored bounds have non-zero size.
+  EXPECT_FALSE(toplevel->GetRestoredBounds().IsEmpty());
+
+  const gfx::Rect bounds(100, 100, 200, 200);
+  toplevel->SetBounds(bounds);
+  EXPECT_EQ(bounds, toplevel->GetWindowBoundsInScreen());
+  EXPECT_EQ(bounds, toplevel->GetRestoredBounds());
+
   toplevel->Maximize();
   RunPendingMessages();
 #if defined(OS_MACOSX)
   // Current expectation on Mac is to do nothing on Maximize.
-  EXPECT_EQ(toplevel->GetWindowBoundsInScreen().ToString(),
-            toplevel->GetRestoredBounds().ToString());
+  EXPECT_EQ(toplevel->GetWindowBoundsInScreen(), toplevel->GetRestoredBounds());
 #else
-  EXPECT_NE(toplevel->GetWindowBoundsInScreen().ToString(),
-            toplevel->GetRestoredBounds().ToString());
+  EXPECT_NE(toplevel->GetWindowBoundsInScreen(), toplevel->GetRestoredBounds());
 #endif
-  EXPECT_GT(toplevel->GetRestoredBounds().width(), 0);
-  EXPECT_GT(toplevel->GetRestoredBounds().height(), 0);
+  EXPECT_EQ(bounds, toplevel->GetRestoredBounds());
 
   toplevel->Restore();
   RunPendingMessages();
-  EXPECT_EQ(toplevel->GetWindowBoundsInScreen().ToString(),
-            toplevel->GetRestoredBounds().ToString());
+  EXPECT_EQ(bounds, toplevel->GetWindowBoundsInScreen());
+  EXPECT_EQ(bounds, toplevel->GetRestoredBounds());
 
   toplevel->SetFullscreen(true);
   RunPendingMessages();
 
   if (IsTestingSnowLeopard()) {
     // Fullscreen not implemented for Snow Leopard.
-    EXPECT_EQ(toplevel->GetWindowBoundsInScreen().ToString(),
-              toplevel->GetRestoredBounds().ToString());
+    EXPECT_EQ(toplevel->GetWindowBoundsInScreen(),
+              toplevel->GetRestoredBounds());
   } else {
-    EXPECT_NE(toplevel->GetWindowBoundsInScreen().ToString(),
-              toplevel->GetRestoredBounds().ToString());
+    EXPECT_NE(toplevel->GetWindowBoundsInScreen(),
+              toplevel->GetRestoredBounds());
   }
-  EXPECT_GT(toplevel->GetRestoredBounds().width(), 0);
-  EXPECT_GT(toplevel->GetRestoredBounds().height(), 0);
+  EXPECT_EQ(bounds, toplevel->GetRestoredBounds());
+
+  toplevel->SetFullscreen(false);
+  RunPendingMessages();
+  EXPECT_EQ(bounds, toplevel->GetWindowBoundsInScreen());
+  EXPECT_EQ(bounds, toplevel->GetRestoredBounds());
+
+  toplevel->CloseNow();
 }
-#endif
 
 // The key-event propagation from Widget happens differently on aura and
 // non-aura systems because of the difference in IME. So this test works only on
@@ -1801,28 +1697,44 @@ TEST_F(WidgetTest, EventHandlersOnRootView) {
 TEST_F(WidgetTest, SynthesizeMouseMoveEvent) {
   Widget* widget = CreateTopLevelNativeWidget();
   View* root_view = widget->GetRootView();
+  root_view->SetBoundsRect(gfx::Rect(0, 0, 500, 500));
 
   EventCountView* v1 = new EventCountView();
-  v1->SetBounds(0, 0, 10, 10);
+  v1->SetBounds(5, 5, 10, 10);
   root_view->AddChildView(v1);
   EventCountView* v2 = new EventCountView();
-  v2->SetBounds(0, 10, 10, 10);
+  v2->SetBounds(5, 15, 10, 10);
   root_view->AddChildView(v2);
 
+  widget->Show();
+
+  // SynthesizeMouseMoveEvent does nothing until the mouse is entered.
+  widget->SynthesizeMouseMoveEvent();
+  EXPECT_EQ(0, v1->GetEventCount(ui::ET_MOUSE_MOVED));
+  EXPECT_EQ(0, v2->GetEventCount(ui::ET_MOUSE_MOVED));
+
   gfx::Point cursor_location(5, 5);
+  View::ConvertPointToScreen(widget->GetRootView(), &cursor_location);
   ui::MouseEvent move(ui::ET_MOUSE_MOVED, cursor_location, cursor_location,
                       ui::EventTimeForNow(), ui::EF_NONE, ui::EF_NONE);
-  widget->OnMouseEvent(&move);
+  ui::EventDispatchDetails details =
+      WidgetTest::GetEventProcessor(widget)->OnEventFromSource(&move);
+  EXPECT_FALSE(details.dispatcher_destroyed);
 
-  EXPECT_EQ(1, v1->GetEventCount(ui::ET_MOUSE_ENTERED));
-  EXPECT_EQ(0, v2->GetEventCount(ui::ET_MOUSE_ENTERED));
+  EXPECT_EQ(1, v1->GetEventCount(ui::ET_MOUSE_MOVED));
+  EXPECT_EQ(0, v2->GetEventCount(ui::ET_MOUSE_MOVED));
+
+  // SynthesizeMouseMoveEvent dispatches an mousemove event.
+  widget->SynthesizeMouseMoveEvent();
+  EXPECT_EQ(2, v1->GetEventCount(ui::ET_MOUSE_MOVED));
 
   delete v1;
-  v2->SetBounds(0, 0, 10, 10);
-  EXPECT_EQ(0, v2->GetEventCount(ui::ET_MOUSE_ENTERED));
+  EXPECT_EQ(0, v2->GetEventCount(ui::ET_MOUSE_MOVED));
+  v2->SetBounds(5, 5, 10, 10);
+  EXPECT_EQ(0, v2->GetEventCount(ui::ET_MOUSE_MOVED));
 
   widget->SynthesizeMouseMoveEvent();
-  EXPECT_EQ(1, v2->GetEventCount(ui::ET_MOUSE_ENTERED));
+  EXPECT_EQ(1, v2->GetEventCount(ui::ET_MOUSE_MOVED));
 
   widget->CloseNow();
 }
@@ -2084,6 +1996,7 @@ class WidgetBoundsObserver : public WidgetObserver {
 
   // WidgetObserver:
   void OnWidgetDestroying(Widget* widget) override {
+    EXPECT_TRUE(widget->GetNativeWindow());
     bounds_ = widget->GetWindowBoundsInScreen();
   }
 
@@ -2127,7 +2040,7 @@ TEST_F(WidgetTest, CloseWidgetWhileAnimating) {
   widget->Init(params);
   AnimationEndObserver animation_observer;
   WidgetBoundsObserver widget_observer;
-  gfx::Rect bounds(0, 0, 50, 50);
+  gfx::Rect bounds(100, 100, 50, 50);
   {
     // Normal animations for tests have ZERO_DURATION, make sure we are actually
     // animating the movement.
@@ -2146,6 +2059,37 @@ TEST_F(WidgetTest, CloseWidgetWhileAnimating) {
   }
   EXPECT_TRUE(animation_observer.animation_completed());
   EXPECT_EQ(widget_observer.bounds(), bounds);
+}
+
+// Test that the NativeWidget is still valid during OnNativeWidgetDestroying(),
+// and properties that depend on it are valid, when closed via CloseNow().
+TEST_F(WidgetTest, ValidDuringOnNativeWidgetDestroyingFromCloseNow) {
+  Widget* widget = CreateNativeDesktopWidget();
+  widget->Show();
+  gfx::Rect screen_rect(50, 50, 100, 100);
+  widget->SetBounds(screen_rect);
+  WidgetBoundsObserver observer;
+  widget->AddObserver(&observer);
+  widget->CloseNow();
+  EXPECT_EQ(screen_rect, observer.bounds());
+}
+
+// Test that the NativeWidget is still valid during OnNativeWidgetDestroying(),
+// and properties that depend on it are valid, when closed via Close().
+TEST_F(WidgetTest, ValidDuringOnNativeWidgetDestroyingFromClose) {
+  Widget* widget = CreateNativeDesktopWidget();
+  widget->Show();
+  gfx::Rect screen_rect(50, 50, 100, 100);
+  widget->SetBounds(screen_rect);
+  WidgetBoundsObserver observer;
+  widget->AddObserver(&observer);
+  widget->Close();
+  EXPECT_EQ(gfx::Rect(), observer.bounds());
+  base::RunLoop().RunUntilIdle();
+// Broken on Linux. See http://crbug.com/515379.
+#if !defined(OS_LINUX) || defined(OS_CHROMEOS)
+  EXPECT_EQ(screen_rect, observer.bounds());
+#endif
 }
 
 // Tests that we do not crash when a Widget is destroyed by going out of
@@ -3053,92 +2997,6 @@ TEST_F(WidgetChildDestructionTest, DestroyChildWidgetsInOrder) {
   RunDestroyChildWidgetsTest(false, false);
 }
 
-#if !defined(OS_CHROMEOS)
-// Provides functionality to create a window modal dialog.
-class ModalDialogDelegate : public DialogDelegateView {
- public:
-  ModalDialogDelegate() {}
-  ~ModalDialogDelegate() override {}
-
-  // WidgetDelegate overrides.
-  ui::ModalType GetModalType() const override { return ui::MODAL_TYPE_WINDOW; }
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(ModalDialogDelegate);
-};
-
-// This test verifies that whether mouse events when a modal dialog is
-// displayed are eaten or recieved by the dialog.
-TEST_F(WidgetTest, WindowMouseModalityTest) {
-  // Create a top level widget.
-  Widget top_level_widget;
-  Widget::InitParams init_params =
-      CreateParams(Widget::InitParams::TYPE_WINDOW);
-  init_params.show_state = ui::SHOW_STATE_NORMAL;
-  gfx::Rect initial_bounds(0, 0, 500, 500);
-  init_params.bounds = initial_bounds;
-  init_params.ownership = Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
-  init_params.native_widget =
-      new PlatformDesktopNativeWidget(&top_level_widget);
-  top_level_widget.Init(init_params);
-  top_level_widget.Show();
-  EXPECT_TRUE(top_level_widget.IsVisible());
-
-  // Create a view and validate that a mouse moves makes it to the view.
-  EventCountView* widget_view = new EventCountView();
-  widget_view->SetBounds(0, 0, 10, 10);
-  top_level_widget.GetRootView()->AddChildView(widget_view);
-
-  gfx::Point cursor_location_main(5, 5);
-  ui::MouseEvent move_main(ui::ET_MOUSE_MOVED, cursor_location_main,
-                           cursor_location_main, ui::EventTimeForNow(),
-                           ui::EF_NONE, ui::EF_NONE);
-  ui::EventDispatchDetails details =
-      GetEventProcessor(&top_level_widget)->OnEventFromSource(&move_main);
-  ASSERT_FALSE(details.dispatcher_destroyed);
-
-  EXPECT_EQ(1, widget_view->GetEventCount(ui::ET_MOUSE_ENTERED));
-  widget_view->ResetCounts();
-
-  // Create a modal dialog and validate that a mouse down message makes it to
-  // the main view within the dialog.
-
-  // This instance will be destroyed when the dialog is destroyed.
-  ModalDialogDelegate* dialog_delegate = new ModalDialogDelegate;
-
-  Widget* modal_dialog_widget = views::DialogDelegate::CreateDialogWidget(
-      dialog_delegate, NULL, top_level_widget.GetNativeView());
-  modal_dialog_widget->SetBounds(gfx::Rect(100, 100, 200, 200));
-  EventCountView* dialog_widget_view = new EventCountView();
-  dialog_widget_view->SetBounds(0, 0, 50, 50);
-  modal_dialog_widget->GetRootView()->AddChildView(dialog_widget_view);
-  modal_dialog_widget->Show();
-  EXPECT_TRUE(modal_dialog_widget->IsVisible());
-
-  gfx::Point cursor_location_dialog(100, 100);
-  ui::MouseEvent mouse_down_dialog(
-      ui::ET_MOUSE_PRESSED, cursor_location_dialog, cursor_location_dialog,
-      ui::EventTimeForNow(), ui::EF_NONE, ui::EF_NONE);
-  details = GetEventProcessor(&top_level_widget)->OnEventFromSource(
-      &mouse_down_dialog);
-  ASSERT_FALSE(details.dispatcher_destroyed);
-  EXPECT_EQ(1, dialog_widget_view->GetEventCount(ui::ET_MOUSE_PRESSED));
-
-  // Send a mouse move message to the main window. It should not be received by
-  // the main window as the modal dialog is still active.
-  gfx::Point cursor_location_main2(6, 6);
-  ui::MouseEvent mouse_down_main(ui::ET_MOUSE_MOVED, cursor_location_main2,
-                                 cursor_location_main2, ui::EventTimeForNow(),
-                                 ui::EF_NONE, ui::EF_NONE);
-  details = GetEventProcessor(&top_level_widget)->OnEventFromSource(
-      &mouse_down_main);
-  ASSERT_FALSE(details.dispatcher_destroyed);
-  EXPECT_EQ(0, widget_view->GetEventCount(ui::ET_MOUSE_MOVED));
-
-  modal_dialog_widget->CloseNow();
-  top_level_widget.CloseNow();
-}
-
 // Verifies nativeview visbility matches that of Widget visibility when
 // SetFullscreen is invoked.
 TEST_F(WidgetTest, FullscreenStatePropagated) {
@@ -3169,45 +3027,6 @@ TEST_F(WidgetTest, FullscreenStatePropagated) {
   }
 #endif
 }
-#if defined(OS_WIN)
-
-// Tests whether we can activate the top level widget when a modal dialog is
-// active.
-TEST_F(WidgetTest, WindowModalityActivationTest) {
-  TestDesktopWidgetDelegate widget_delegate;
-  widget_delegate.InitWidget(CreateParams(Widget::InitParams::TYPE_WINDOW));
-
-  Widget* top_level_widget = widget_delegate.GetWidget();
-  top_level_widget->Show();
-  EXPECT_TRUE(top_level_widget->IsVisible());
-
-  HWND win32_window = views::HWNDForWidget(top_level_widget);
-  EXPECT_TRUE(::IsWindow(win32_window));
-
-  // This instance will be destroyed when the dialog is destroyed.
-  ModalDialogDelegate* dialog_delegate = new ModalDialogDelegate;
-
-  // We should be able to activate the window even if the WidgetDelegate
-  // says no, when a modal dialog is active.
-  widget_delegate.set_can_activate(false);
-
-  Widget* modal_dialog_widget = views::DialogDelegate::CreateDialogWidget(
-      dialog_delegate, NULL, top_level_widget->GetNativeView());
-  modal_dialog_widget->SetBounds(gfx::Rect(100, 100, 200, 200));
-  modal_dialog_widget->Show();
-  EXPECT_TRUE(modal_dialog_widget->IsVisible());
-
-  LRESULT activate_result = ::SendMessage(
-      win32_window,
-      WM_MOUSEACTIVATE,
-      reinterpret_cast<WPARAM>(win32_window),
-      MAKELPARAM(WM_LBUTTONDOWN, HTCLIENT));
-  EXPECT_EQ(activate_result, MA_ACTIVATE);
-
-  modal_dialog_widget->CloseNow();
-}
-#endif  // defined(OS_WIN)
-#endif  // !defined(OS_CHROMEOS)
 
 namespace {
 

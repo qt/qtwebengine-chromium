@@ -33,8 +33,6 @@
 
 #include "bindings/core/v8/ExceptionState.h"
 #include "bindings/core/v8/ScriptState.h"
-#include "bindings/core/v8/ScriptValue.h"
-#include "bindings/core/v8/ScriptWrappable.h"
 #include "bindings/core/v8/SerializedScriptValueFactory.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExecutionContext.h"
@@ -42,14 +40,16 @@
 #include "core/dom/ScopedWindowFocusAllowedIndicator.h"
 #include "core/events/Event.h"
 #include "core/frame/UseCounter.h"
+#include "modules/notifications/NotificationAction.h"
+#include "modules/notifications/NotificationData.h"
 #include "modules/notifications/NotificationOptions.h"
 #include "modules/notifications/NotificationPermissionClient.h"
 #include "platform/RuntimeEnabledFeatures.h"
 #include "platform/UserGestureIndicator.h"
 #include "public/platform/Platform.h"
-#include "public/platform/WebSerializedOrigin.h"
+#include "public/platform/WebSecurityOrigin.h"
 #include "public/platform/WebString.h"
-#include "public/platform/modules/notifications/WebNotificationData.h"
+#include "public/platform/modules/notifications/WebNotificationAction.h"
 #include "public/platform/modules/notifications/WebNotificationManager.h"
 
 namespace blink {
@@ -79,81 +79,37 @@ Notification* Notification::create(ExecutionContext* context, const String& titl
         return nullptr;
     }
 
-    // If options's silent is true, and options's vibrate is present, throw a TypeError exception.
-    if (options.hasVibrate() && options.silent()) {
-        exceptionState.throwTypeError("Silent notifications must not specify vibration patterns.");
-        return nullptr;
-    }
-
-    RefPtr<SerializedScriptValue> data;
-    if (options.hasData()) {
-        data = SerializedScriptValueFactory::instance().create(options.data().isolate(), options.data(), nullptr, exceptionState);
-        if (exceptionState.hadException())
-            return nullptr;
-    }
-
-    Notification* notification = new Notification(title, context);
-
-    notification->setBody(options.body());
-    notification->setTag(options.tag());
-    notification->setLang(options.lang());
-    notification->setDir(options.dir());
-    notification->setVibrate(NavigatorVibration::sanitizeVibrationPattern(options.vibrate()));
-    notification->setSilent(options.silent());
-    notification->setSerializedData(data.release());
-    if (options.hasIcon()) {
-        KURL iconUrl = options.icon().isEmpty() ? KURL() : context->completeURL(options.icon());
-        if (!iconUrl.isEmpty() && iconUrl.isValid())
-            notification->setIconUrl(iconUrl);
-    }
-
     String insecureOriginMessage;
-    UseCounter::Feature feature = context->isPrivilegedContext(insecureOriginMessage)
+    UseCounter::Feature feature = context->isSecureContext(insecureOriginMessage)
         ? UseCounter::NotificationSecureOrigin
         : UseCounter::NotificationInsecureOrigin;
+
     UseCounter::count(context, feature);
 
+    WebNotificationData data = createWebNotificationData(context, title, options, exceptionState);
+    if (exceptionState.hadException())
+        return nullptr;
+
+    Notification* notification = new Notification(context, data);
     notification->scheduleShow();
     notification->suspendIfNeeded();
+
     return notification;
 }
 
 Notification* Notification::create(ExecutionContext* context, int64_t persistentId, const WebNotificationData& data)
 {
-    Notification* notification = new Notification(data.title, context);
-
+    Notification* notification = new Notification(context, data);
     notification->setPersistentId(persistentId);
-    notification->setDir(data.direction == WebNotificationData::DirectionLeftToRight ? "ltr" : "rtl");
-    notification->setLang(data.lang);
-    notification->setBody(data.body);
-    notification->setTag(data.tag);
-    notification->setSilent(data.silent);
-
-    if (!data.icon.isEmpty())
-        notification->setIconUrl(data.icon);
-
-    if (!data.vibrate.isEmpty()) {
-        NavigatorVibration::VibrationPattern pattern;
-        pattern.appendRange(data.vibrate.begin(), data.vibrate.end());
-        notification->setVibrate(pattern);
-    }
-
-    const WebVector<char>& dataBytes = data.data;
-    if (!dataBytes.isEmpty()) {
-        notification->setSerializedData(SerializedScriptValueFactory::instance().createFromWireBytes(dataBytes.data(), dataBytes.size()));
-        notification->serializedData()->registerMemoryAllocatedWithCurrentScriptContext();
-    }
-
     notification->setState(NotificationStateShowing);
     notification->suspendIfNeeded();
+
     return notification;
 }
 
-Notification::Notification(const String& title, ExecutionContext* context)
+Notification::Notification(ExecutionContext* context, const WebNotificationData& data)
     : ActiveDOMObject(context)
-    , m_title(title)
-    , m_dir("auto")
-    , m_silent(false)
+    , m_data(data)
     , m_persistentId(kInvalidPersistentId)
     , m_state(NotificationStateIdle)
     , m_asyncRunner(this, &Notification::show)
@@ -184,15 +140,7 @@ void Notification::show()
     SecurityOrigin* origin = executionContext()->securityOrigin();
     ASSERT(origin);
 
-    // FIXME: Do CSP checks on the associated notification icon.
-    WebNotificationData::Direction dir = m_dir == "rtl" ? WebNotificationData::DirectionRightToLeft : WebNotificationData::DirectionLeftToRight;
-
-    // The lifetime and availability of non-persistent notifications is tied to the page
-    // they were created by, and thus the data doesn't have to be known to the embedder.
-    Vector<char> emptyDataWireBytes;
-
-    WebNotificationData notificationData(m_title, dir, m_lang, m_body, m_tag, m_iconUrl, m_vibrate, m_silent, emptyDataWireBytes);
-    notificationManager()->show(WebSerializedOrigin(*origin), notificationData, this);
+    notificationManager()->show(WebSecurityOrigin(origin), m_data, this);
 
     m_state = NotificationStateShowing;
 }
@@ -214,7 +162,7 @@ void Notification::close()
         SecurityOrigin* origin = executionContext()->securityOrigin();
         ASSERT(origin);
 
-        notificationManager()->closePersistent(WebSerializedOrigin(*origin), m_persistentId);
+        notificationManager()->closePersistent(WebSecurityOrigin(origin), m_persistentId);
     }
 }
 
@@ -246,16 +194,95 @@ void Notification::dispatchCloseEvent()
     dispatchEvent(Event::create(EventTypeNames::close));
 }
 
-NavigatorVibration::VibrationPattern Notification::vibrate(bool& isNull) const
+String Notification::title() const
 {
-    isNull = m_vibrate.isEmpty();
-    return m_vibrate;
+    return m_data.title;
 }
 
-TextDirection Notification::direction() const
+String Notification::dir() const
 {
-    // FIXME: Resolve dir()=="auto" against the document.
-    return dir() == "rtl" ? RTL : LTR;
+    switch (m_data.direction) {
+    case WebNotificationData::DirectionLeftToRight:
+        return "ltr";
+    case WebNotificationData::DirectionRightToLeft:
+        return "rtl";
+    case WebNotificationData::DirectionAuto:
+        return "auto";
+    }
+
+    ASSERT_NOT_REACHED();
+    return String();
+}
+
+String Notification::lang() const
+{
+    return m_data.lang;
+}
+
+String Notification::body() const
+{
+    return m_data.body;
+}
+
+String Notification::tag() const
+{
+    return m_data.tag;
+}
+
+String Notification::icon() const
+{
+    return m_data.icon.string();
+}
+
+NavigatorVibration::VibrationPattern Notification::vibrate(bool& isNull) const
+{
+    NavigatorVibration::VibrationPattern pattern;
+    pattern.appendRange(m_data.vibrate.begin(), m_data.vibrate.end());
+
+    if (!pattern.size())
+        isNull = true;
+
+    return pattern;
+}
+
+bool Notification::silent() const
+{
+    return m_data.silent;
+}
+
+bool Notification::requireInteraction() const
+{
+    return m_data.requireInteraction;
+}
+
+ScriptValue Notification::data(ScriptState* scriptState)
+{
+    if (m_developerData.isEmpty()) {
+        RefPtr<SerializedScriptValue> serializedValue;
+
+        const WebVector<char>& serializedData = m_data.data;
+        if (serializedData.size())
+            serializedValue = SerializedScriptValueFactory::instance().createFromWireBytes(serializedData.data(), serializedData.size());
+        else
+            serializedValue = SerializedScriptValueFactory::instance().create();
+
+        m_developerData = ScriptValue(scriptState, serializedValue->deserialize(scriptState->isolate()));
+    }
+
+    return m_developerData;
+}
+
+HeapVector<NotificationAction> Notification::actions() const
+{
+    HeapVector<NotificationAction> actions;
+    actions.grow(m_data.actions.size());
+
+    for (size_t i = 0; i < m_data.actions.size(); ++i) {
+        actions[i].setAction(m_data.actions[i].action);
+        actions[i].setTitle(m_data.actions[i].title);
+    }
+
+    return actions;
 }
 
 String Notification::permissionString(WebNotificationPermission permission)
@@ -283,21 +310,33 @@ WebNotificationPermission Notification::checkPermission(ExecutionContext* contex
     SecurityOrigin* origin = context->securityOrigin();
     ASSERT(origin);
 
-    return notificationManager()->checkPermission(WebSerializedOrigin(*origin));
+    return notificationManager()->checkPermission(WebSecurityOrigin(origin));
 }
 
-void Notification::requestPermission(ExecutionContext* context, NotificationPermissionCallback* callback)
+ScriptPromise Notification::requestPermission(ScriptState* scriptState, NotificationPermissionCallback* deprecatedCallback)
 {
-    // FIXME: Assert that this code-path will only be reached for Document environments
-    // when Blink supports [Exposed] annotations on class members in IDL definitions.
+    ExecutionContext* context = scriptState->executionContext();
     if (NotificationPermissionClient* permissionClient = NotificationPermissionClient::from(context))
-        permissionClient->requestPermission(context, callback);
+        return permissionClient->requestPermission(scriptState, deprecatedCallback);
+
+    // The context has been detached. Return a promise that will never settle.
+    ASSERT(context->activeDOMObjectsAreStopped());
+    return ScriptPromise();
 }
 
-bool Notification::dispatchEvent(PassRefPtrWillBeRawPtr<Event> event)
+size_t Notification::maxActions()
+{
+    // Returns a fixed number for unit tests, which run without the availability of the Platform object.
+    if (!notificationManager())
+        return 2;
+
+    return notificationManager()->maxActions();
+}
+
+bool Notification::dispatchEventInternal(PassRefPtrWillBeRawPtr<Event> event)
 {
     ASSERT(executionContext()->isContextThread());
-    return EventTarget::dispatchEvent(event);
+    return EventTarget::dispatchEventInternal(event);
 }
 
 const AtomicString& Notification::interfaceName() const
@@ -317,14 +356,6 @@ void Notification::stop()
 bool Notification::hasPendingActivity() const
 {
     return m_state == NotificationStateShowing || m_asyncRunner.isActive();
-}
-
-ScriptValue Notification::data(ScriptState* scriptState) const
-{
-    if (!m_serializedData)
-        return ScriptValue::createNull(scriptState);
-
-    return ScriptValue(scriptState, m_serializedData->deserialize(scriptState->isolate()));
 }
 
 DEFINE_TRACE(Notification)

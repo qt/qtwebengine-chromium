@@ -44,20 +44,20 @@ class BitmapShaderGM : public GM {
 
 protected:
     void onOnceBeforeDraw() override {
-        this->setBGColor(SK_ColorGRAY);
+        this->setBGColor(sk_tool_utils::color_to_565(SK_ColorGRAY));
         draw_bm(&fBitmap);
         draw_mask(&fMask);
     }
 
-    virtual SkString onShortName() {
+    SkString onShortName() override {
         return SkString("bitmapshaders");
     }
 
-    virtual SkISize onISize() {
+    SkISize onISize() override {
         return SkISize::Make(150, 100);
     }
 
-    virtual void onDraw(SkCanvas* canvas) {
+    void onDraw(SkCanvas* canvas) override {
         SkPaint paint;
 
         for (int i = 0; i < 2; i++) {
@@ -84,7 +84,7 @@ protected:
             canvas->translate(0, 25);
 
             // clear the shader, colorized by a solid color with a bitmap mask
-            paint.setShader(NULL);
+            paint.setShader(nullptr);
             paint.setColor(SK_ColorGREEN);
             canvas->drawBitmap(fMask, 0, 0, &paint);
             canvas->drawBitmap(fMask, 30, 0, &paint);

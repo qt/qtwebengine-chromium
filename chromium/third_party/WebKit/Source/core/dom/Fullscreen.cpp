@@ -34,6 +34,7 @@
 #include "core/events/Event.h"
 #include "core/frame/FrameHost.h"
 #include "core/frame/LocalFrame.h"
+#include "core/frame/OriginsUsingFeatures.h"
 #include "core/frame/Settings.h"
 #include "core/frame/UseCounter.h"
 #include "core/html/HTMLIFrameElement.h"
@@ -76,12 +77,8 @@ static bool fullscreenElementReady(const Element& element, Fullscreen::RequestTy
         return false;
 
     // |element|'s node document's fullscreen enabled flag is set.
-    if (!fullscreenIsAllowedForAllOwners(element.document())) {
-        if (requestType == Fullscreen::PrefixedVideoRequest)
-            UseCounter::countDeprecation(element.document(), UseCounter::VideoFullscreenAllowedExemption);
-        else
-            return false;
-    }
+    if (!fullscreenIsAllowedForAllOwners(element.document()))
+        return false;
 
     // |element|'s node document's fullscreen element stack is either empty or its top element is an
     // inclusive ancestor of |element|.
@@ -203,14 +200,16 @@ void Fullscreen::documentWasDisposed()
 
 void Fullscreen::requestFullscreen(Element& element, RequestType requestType)
 {
-    // It is required by isPrivilegedContext() but isn't
+    // It is required by isSecureContext() but isn't
     // actually used. This could be used later if a warning is shown in the
     // developer console.
     String errorMessage;
-    if (document()->isPrivilegedContext(errorMessage))
+    if (document()->isSecureContext(errorMessage)) {
         UseCounter::count(document(), UseCounter::FullscreenSecureOrigin);
-    else
-        UseCounter::countDeprecation(document(), UseCounter::FullscreenInsecureOrigin);
+    } else {
+        UseCounter::count(document(), UseCounter::FullscreenInsecureOrigin);
+        OriginsUsingFeatures::countAnyWorld(*document(), OriginsUsingFeatures::Feature::FullscreenInsecureOrigin);
+    }
 
     // Ignore this request if the document is not in a live frame.
     if (!document()->isActive())

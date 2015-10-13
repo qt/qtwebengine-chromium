@@ -10,10 +10,10 @@
 #include "base/files/file_path.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
+#include "chromecast/base/pref_names.h"
 #include "chromecast/browser/cast_browser_process.h"
 #include "chromecast/browser/devtools/cast_dev_tools_delegate.h"
 #include "chromecast/common/cast_content_client.h"
-#include "chromecast/common/pref_names.h"
 #include "components/devtools_http_handler/devtools_http_handler.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
@@ -113,7 +113,7 @@ std::string GetFrontendUrl() {
 
 }  // namespace
 
-RemoteDebuggingServer::RemoteDebuggingServer()
+RemoteDebuggingServer::RemoteDebuggingServer(bool start_immediately)
     : port_(kDefaultRemoteDebuggingPort) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   pref_enabled_.Init(prefs::kEnableRemoteDebugging,
@@ -135,7 +135,7 @@ RemoteDebuggingServer::RemoteDebuggingServer()
 
   // Starts new dev tools, clearing port number saved in config.
   // Remote debugging in production must be triggered only by config server.
-  pref_enabled_.SetValue(ShouldStartImmediately() && port_ != 0);
+  pref_enabled_.SetValue(start_immediately && port_ != 0);
   OnEnabledChanged();
 }
 

@@ -5,7 +5,8 @@
 #ifndef NET_SSL_SSL_CONFIG_H_
 #define NET_SSL_SSL_CONFIG_H_
 
-#include "base/basictypes.h"
+#include <stdint.h>
+
 #include "base/memory/ref_counted.h"
 #include "net/base/net_export.h"
 #include "net/cert/x509_certificate.h"
@@ -27,13 +28,13 @@ enum {
 };
 
 // Default minimum protocol version.
-NET_EXPORT extern const uint16 kDefaultSSLVersionMin;
+NET_EXPORT extern const uint16_t kDefaultSSLVersionMin;
 
-// For maximum supported protocol version, use
-// SSLClientSocket::GetMaxSupportedSSLVersion().
+// Default maximum protocol version.
+NET_EXPORT extern const uint16_t kDefaultSSLVersionMax;
 
 // Default minimum protocol version that it's acceptable to fallback to.
-NET_EXPORT extern const uint16 kDefaultSSLVersionFallbackMin;
+NET_EXPORT extern const uint16_t kDefaultSSLVersionFallbackMin;
 
 // A collection of SSL-related configuration settings.
 struct NET_EXPORT SSLConfig {
@@ -169,16 +170,6 @@ struct NET_EXPORT SSLConfig {
   NextProtoVector renego_allowed_for_protos;
 
   scoped_refptr<X509Certificate> client_cert;
-
-  // Information about how to proceed with fastradio padding.
-  // |fastradio_padding_enabled| determines if the feature is enabled globally.
-  // |fastradio_padding_eligible| determines if the endpoint associated with
-  // this config should use it.
-  // |fastradio_padding_eligible| can be true when |fastradio_padding_enabled|
-  // is false: in this case, fastradio padding would not be enabled, but
-  // metrics can be collected for experiments.
-  bool fastradio_padding_enabled;
-  bool fastradio_padding_eligible;
 };
 
 }  // namespace net

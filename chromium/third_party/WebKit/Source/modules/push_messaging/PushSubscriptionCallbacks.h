@@ -6,10 +6,8 @@
 #define PushSubscriptionCallbacks_h
 
 #include "platform/heap/Handle.h"
-#include "public/platform/WebCallbacks.h"
+#include "public/platform/modules/push_messaging/WebPushProvider.h"
 #include "wtf/Noncopyable.h"
-#include "wtf/PassRefPtr.h"
-#include "wtf/RefPtr.h"
 
 namespace blink {
 
@@ -22,17 +20,18 @@ struct WebPushSubscription;
 // that will resolve the underlying promise depending on the result passed to
 // the callback. It takes a ServiceWorkerRegistration in its constructor and
 // will pass it to the PushSubscription.
-class PushSubscriptionCallbacks final : public WebCallbacks<WebPushSubscription, WebPushError> {
+class PushSubscriptionCallbacks final : public WebPushSubscriptionCallbacks {
     WTF_MAKE_NONCOPYABLE(PushSubscriptionCallbacks);
+    WTF_MAKE_FAST_ALLOCATED(PushSubscriptionCallbacks);
 public:
-    PushSubscriptionCallbacks(PassRefPtrWillBeRawPtr<ScriptPromiseResolver>, ServiceWorkerRegistration*);
+    PushSubscriptionCallbacks(ScriptPromiseResolver*, ServiceWorkerRegistration*);
     ~PushSubscriptionCallbacks() override;
 
-    void onSuccess(WebPushSubscription*) override;
-    void onError(WebPushError*) override;
+    void onSuccess(WebPassOwnPtr<WebPushSubscription>) override;
+    void onError(const WebPushError&) override;
 
 private:
-    RefPtrWillBePersistent<ScriptPromiseResolver> m_resolver;
+    Persistent<ScriptPromiseResolver> m_resolver;
     Persistent<ServiceWorkerRegistration> m_serviceWorkerRegistration;
 };
 

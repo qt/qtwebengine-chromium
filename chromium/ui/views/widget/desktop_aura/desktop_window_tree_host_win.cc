@@ -140,12 +140,13 @@ void DesktopWindowTreeHostWin::Init(aura::Window* content_window,
 
   gfx::Rect pixel_bounds = gfx::win::DIPToScreenRect(params.bounds);
   message_handler_->Init(parent_hwnd, pixel_bounds);
-  if (params.type == Widget::InitParams::TYPE_MENU) {
+  if (params.force_software_compositing) {
     ::SetProp(GetAcceleratedWidget(),
               kForceSoftwareCompositor,
               reinterpret_cast<HANDLE>(true));
   }
-  CreateCompositor(GetAcceleratedWidget());
+  CreateCompositor();
+  OnAcceleratedWidgetAvailable();
 }
 
 void DesktopWindowTreeHostWin::OnNativeWidgetCreated(
@@ -804,15 +805,8 @@ bool DesktopWindowTreeHostWin::HandleMouseEvent(const ui::MouseEvent& event) {
   return event.handled();
 }
 
-bool DesktopWindowTreeHostWin::HandleKeyEvent(const ui::KeyEvent& event) {
-  return false;
-}
-
-bool DesktopWindowTreeHostWin::HandleUntranslatedKeyEvent(
-    const ui::KeyEvent& event) {
-  ui::KeyEvent duplicate_event(event);
-  SendEventToProcessor(&duplicate_event);
-  return duplicate_event.handled();
+void DesktopWindowTreeHostWin::HandleKeyEvent(ui::KeyEvent* event) {
+  GetInputMethod()->DispatchKeyEvent(event);
 }
 
 void DesktopWindowTreeHostWin::HandleTouchEvent(

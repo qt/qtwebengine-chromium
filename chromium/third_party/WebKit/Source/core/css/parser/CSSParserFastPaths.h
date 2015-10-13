@@ -9,6 +9,7 @@
 #include "core/CSSValueKeywords.h"
 #include "platform/graphics/Color.h"
 #include "platform/heap/Handle.h"
+#include "wtf/Allocator.h"
 #include "wtf/Forward.h"
 
 namespace blink {
@@ -16,6 +17,7 @@ namespace blink {
 class CSSValue;
 
 class CSSParserFastPaths {
+    STATIC_ONLY(CSSParserFastPaths);
 public:
     // Parses simple values like '10px' or 'green', but makes no guarantees
     // about handling any property completely.
@@ -25,7 +27,7 @@ public:
     static bool isKeywordPropertyID(CSSPropertyID);
     static bool isValidKeywordPropertyAndValue(CSSPropertyID, CSSValueID);
 
-    static PassRefPtrWillBeRawPtr<CSSValue> parseColor(const String&, bool quirksMode);
+    static PassRefPtrWillBeRawPtr<CSSValue> parseColor(const String&, CSSParserMode);
 };
 
 } // namespace blink

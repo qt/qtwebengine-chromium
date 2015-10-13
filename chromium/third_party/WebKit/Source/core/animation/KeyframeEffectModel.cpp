@@ -61,56 +61,61 @@ void KeyframeEffectModelBase::setFrames(KeyframeVector& keyframes)
     m_keyframes = keyframes;
     m_keyframeGroups = nullptr;
     m_interpolationEffect = nullptr;
+    m_lastFraction = std::numeric_limits<double>::quiet_NaN();
 }
 
-void KeyframeEffectModelBase::sample(int iteration, double fraction, double iterationDuration, OwnPtrWillBeRawPtr<WillBeHeapVector<RefPtrWillBeMember<Interpolation>>>& result) const
+bool KeyframeEffectModelBase::sample(int iteration, double fraction, double iterationDuration, OwnPtr<Vector<RefPtr<Interpolation>>>& result) const
 {
     ASSERT(iteration >= 0);
     ASSERT(!isNull(fraction));
     ensureKeyframeGroups();
     ensureInterpolationEffect();
 
-    return m_interpolationEffect->getActiveInterpolations(fraction, iterationDuration, result);
+    bool changed = iteration != m_lastIteration || fraction != m_lastFraction || iterationDuration != m_lastIterationDuration;
+    m_lastIteration = iteration;
+    m_lastFraction = fraction;
+    m_lastIterationDuration = iterationDuration;
+    m_interpolationEffect->getActiveInterpolations(fraction, iterationDuration, result);
+    return changed;
 }
 
 void KeyframeEffectModelBase::forceConversionsToAnimatableValues(Element& element, const ComputedStyle* baseStyle)
 {
     ensureKeyframeGroups();
-    snapshotCompositableProperties(element, baseStyle);
+    snapshotAllCompositorKeyframes(element, baseStyle);
     ensureInterpolationEffect(&element, baseStyle);
 }
 
-void KeyframeEffectModelBase::snapshotCompositableProperties(Element& element, const ComputedStyle* baseStyle)
+bool KeyframeEffectModelBase::snapshotNeutralCompositorKeyframes(Element& element, const ComputedStyle& oldStyle, const ComputedStyle& newStyle)
 {
+    bool updated = false;
     ensureKeyframeGroups();
-    for (CSSPropertyID id : CompositorAnimations::compositableProperties) {
-        PropertyHandle property = PropertyHandle(id);
-        if (!affects(property))
+    for (CSSPropertyID property : CompositorAnimations::compositableProperties) {
+        if (CSSPropertyEquality::propertiesEqual(property, oldStyle, newStyle))
             continue;
-        for (auto& keyframe : m_keyframeGroups->get(property)->m_keyframes)
-            keyframe->populateAnimatableValue(id, element, baseStyle);
+        PropertySpecificKeyframeGroup* keyframeGroup = m_keyframeGroups->get(PropertyHandle(property));
+        if (!keyframeGroup)
+            continue;
+        for (auto& keyframe : keyframeGroup->m_keyframes) {
+            if (keyframe->isNeutral())
+                updated |= keyframe->populateAnimatableValue(property, element, &newStyle, true);
+        }
     }
+    return updated;
 }
 
-bool KeyframeEffectModelBase::updateNeutralKeyframeAnimatableValues(CSSPropertyID property, PassRefPtrWillBeRawPtr<AnimatableValue> value)
+bool KeyframeEffectModelBase::snapshotAllCompositorKeyframes(Element& element, const ComputedStyle* baseStyle)
 {
-    ASSERT(CompositorAnimations::isCompositableProperty(property));
-
-    if (!value)
-        return false;
-
+    bool updated = false;
     ensureKeyframeGroups();
-    auto& keyframes = m_keyframeGroups->get(PropertyHandle(property))->m_keyframes;
-    ASSERT(keyframes.size() >= 2);
-
-    auto& first = toCSSPropertySpecificKeyframe(*keyframes.first());
-    auto& last = toCSSPropertySpecificKeyframe(*keyframes.last());
-
-    if (!first.value())
-        first.setAnimatableValue(value);
-    if (!last.value())
-        last.setAnimatableValue(value);
-    return !first.value() || !last.value();
+    for (CSSPropertyID property : CompositorAnimations::compositableProperties) {
+        PropertySpecificKeyframeGroup* keyframeGroup = m_keyframeGroups->get(PropertyHandle(property));
+        if (!keyframeGroup)
+            continue;
+        for (auto& keyframe : keyframeGroup->m_keyframes)
+            updated |= keyframe->populateAnimatableValue(property, element, baseStyle, true);
+    }
+    return updated;
 }
 
 KeyframeEffectModelBase::KeyframeVector KeyframeEffectModelBase::normalizedKeyframes(const KeyframeVector& keyframes)
@@ -167,7 +172,7 @@ void KeyframeEffectModelBase::ensureKeyframeGroups() const
     if (m_keyframeGroups)
         return;
 
-    m_keyframeGroups = adoptPtrWillBeNoop(new KeyframeGroupMap);
+    m_keyframeGroups = adoptPtr(new KeyframeGroupMap);
     for (const auto& keyframe : normalizedKeyframes(getFrames())) {
         for (const PropertyHandle& property : keyframe->properties()) {
             if (property.isCSSProperty())
@@ -175,7 +180,7 @@ void KeyframeEffectModelBase::ensureKeyframeGroups() const
             KeyframeGroupMap::iterator groupIter = m_keyframeGroups->find(property);
             PropertySpecificKeyframeGroup* group;
             if (groupIter == m_keyframeGroups->end())
-                group = m_keyframeGroups->add(property, adoptPtrWillBeNoop(new PropertySpecificKeyframeGroup)).storedValue->value.get();
+                group = m_keyframeGroups->add(property, adoptPtr(new PropertySpecificKeyframeGroup)).storedValue->value.get();
             else
                 group = groupIter->value.get();
 
@@ -224,16 +229,6 @@ bool KeyframeEffectModelBase::isReplaceOnly()
     return true;
 }
 
-DEFINE_TRACE(KeyframeEffectModelBase)
-{
-    visitor->trace(m_keyframes);
-#if ENABLE(OILPAN)
-    visitor->trace(m_keyframeGroups);
-#endif
-    visitor->trace(m_interpolationEffect);
-    EffectModel::trace(visitor);
-}
-
 Keyframe::PropertySpecificKeyframe::PropertySpecificKeyframe(double offset, PassRefPtr<TimingFunction> easing, EffectModel::CompositeOperation composite)
     : m_offset(offset)
     , m_easing(easing)
@@ -241,7 +236,7 @@ Keyframe::PropertySpecificKeyframe::PropertySpecificKeyframe(double offset, Pass
 {
 }
 
-void KeyframeEffectModelBase::PropertySpecificKeyframeGroup::appendKeyframe(PassOwnPtrWillBeRawPtr<Keyframe::PropertySpecificKeyframe> keyframe)
+void KeyframeEffectModelBase::PropertySpecificKeyframeGroup::appendKeyframe(PassOwnPtr<Keyframe::PropertySpecificKeyframe> keyframe)
 {
     ASSERT(m_keyframes.isEmpty() || m_keyframes.last()->offset() <= keyframe->offset());
     m_keyframes.append(keyframe);
@@ -282,13 +277,6 @@ bool KeyframeEffectModelBase::PropertySpecificKeyframeGroup::addSyntheticKeyfram
     }
 
     return addedSyntheticKeyframe;
-}
-
-DEFINE_TRACE(KeyframeEffectModelBase::PropertySpecificKeyframeGroup)
-{
-#if ENABLE(OILPAN)
-    visitor->trace(m_keyframes);
-#endif
 }
 
 } // namespace

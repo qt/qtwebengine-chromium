@@ -11,7 +11,6 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "gpu/command_buffer/service/gl_utils.h"
-#include "gpu/command_buffer/service/query_manager.h"
 #include "gpu/command_buffer/service/texture_manager.h"
 #include "gpu/command_buffer/service/valuebuffer_manager.h"
 #include "gpu/command_buffer/service/vertex_attrib_manager.h"
@@ -26,6 +25,7 @@ class ErrorState;
 class ErrorStateClient;
 class FeatureInfo;
 class Framebuffer;
+class Logger;
 class Program;
 class Renderbuffer;
 
@@ -80,24 +80,6 @@ struct GPU_EXPORT TextureUnit {
 
     NOTREACHED();
     return NULL;
-  }
-
-  void Unbind(TextureRef* texture) {
-    if (bound_texture_2d.get() == texture) {
-      bound_texture_2d = NULL;
-    }
-    if (bound_texture_cube_map.get() == texture) {
-      bound_texture_cube_map = NULL;
-    }
-    if (bound_texture_external_oes.get() == texture) {
-      bound_texture_external_oes = NULL;
-    }
-    if (bound_texture_3d.get() == texture) {
-      bound_texture_3d = NULL;
-    }
-    if (bound_texture_2d_array.get() == texture) {
-      bound_texture_2d_array = NULL;
-    }
   }
 };
 
@@ -234,6 +216,8 @@ struct GPU_EXPORT ContextState {
   void SetBoundBuffer(GLenum target, Buffer* buffer);
   void RemoveBoundBuffer(Buffer* buffer);
 
+  void UnbindTexture(TextureRef* texture);
+
   #include "gpu/command_buffer/service/context_state_autogen.h"
 
   EnableFlags enable_flags;
@@ -273,10 +257,6 @@ struct GPU_EXPORT ContextState {
 
   // The currently bound valuebuffer
   scoped_refptr<Valuebuffer> bound_valuebuffer;
-
-  // A map of of target -> Query for current queries
-  typedef std::map<GLuint, scoped_refptr<QueryManager::Query> > QueryMap;
-  QueryMap current_queries;
 
   bool pack_reverse_row_order;
   bool ignore_cached_state;

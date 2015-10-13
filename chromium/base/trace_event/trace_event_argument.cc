@@ -4,6 +4,7 @@
 
 #include "base/trace_event/trace_event_argument.h"
 
+#include "base/bits.h"
 #include "base/json/json_writer.h"
 #include "base/trace_event/trace_event_memory_overhead.h"
 #include "base/values.h"
@@ -356,7 +357,8 @@ scoped_ptr<base::Value> TracedValue::ToBaseValue() const {
       case kTypeStartDict: {
         auto new_dict = new DictionaryValue();
         if (cur_dict) {
-          cur_dict->Set(ReadKeyName(it), make_scoped_ptr(new_dict));
+          cur_dict->SetWithoutPathExpansion(ReadKeyName(it),
+                                            make_scoped_ptr(new_dict));
           stack.push_back(cur_dict);
           cur_dict = new_dict;
         } else {
@@ -380,7 +382,8 @@ scoped_ptr<base::Value> TracedValue::ToBaseValue() const {
       case kTypeStartArray: {
         auto new_list = new ListValue();
         if (cur_dict) {
-          cur_dict->Set(ReadKeyName(it), make_scoped_ptr(new_list));
+          cur_dict->SetWithoutPathExpansion(ReadKeyName(it),
+                                            make_scoped_ptr(new_list));
           stack.push_back(cur_dict);
           cur_dict = nullptr;
           cur_list = new_list;
@@ -395,7 +398,7 @@ scoped_ptr<base::Value> TracedValue::ToBaseValue() const {
         bool value;
         CHECK(it.ReadBool(&value));
         if (cur_dict) {
-          cur_dict->SetBoolean(ReadKeyName(it), value);
+          cur_dict->SetBooleanWithoutPathExpansion(ReadKeyName(it), value);
         } else {
           cur_list->AppendBoolean(value);
         }
@@ -405,7 +408,7 @@ scoped_ptr<base::Value> TracedValue::ToBaseValue() const {
         int value;
         CHECK(it.ReadInt(&value));
         if (cur_dict) {
-          cur_dict->SetInteger(ReadKeyName(it), value);
+          cur_dict->SetIntegerWithoutPathExpansion(ReadKeyName(it), value);
         } else {
           cur_list->AppendInteger(value);
         }
@@ -415,7 +418,7 @@ scoped_ptr<base::Value> TracedValue::ToBaseValue() const {
         double value;
         CHECK(it.ReadDouble(&value));
         if (cur_dict) {
-          cur_dict->SetDouble(ReadKeyName(it), value);
+          cur_dict->SetDoubleWithoutPathExpansion(ReadKeyName(it), value);
         } else {
           cur_list->AppendDouble(value);
         }
@@ -425,7 +428,7 @@ scoped_ptr<base::Value> TracedValue::ToBaseValue() const {
         std::string value;
         CHECK(it.ReadString(&value));
         if (cur_dict) {
-          cur_dict->SetString(ReadKeyName(it), value);
+          cur_dict->SetStringWithoutPathExpansion(ReadKeyName(it), value);
         } else {
           cur_list->AppendString(value);
         }
@@ -453,9 +456,14 @@ void TracedValue::AppendAsTraceFormat(std::string* out) const {
 
 void TracedValue::EstimateTraceMemoryOverhead(
     TraceEventMemoryOverhead* overhead) {
+  const size_t kPickleHeapAlign = 4096;  // Must be == Pickle::kPickleHeapAlign.
   overhead->Add("TracedValue",
-                pickle_.GetTotalAllocatedSize() /* allocated size */,
-                pickle_.size() /* resident size */);
+
+                /* allocated size */
+                bits::Align(pickle_.GetTotalAllocatedSize(), kPickleHeapAlign),
+
+                /* resident size */
+                bits::Align(pickle_.size(), kPickleHeapAlign));
 }
 
 }  // namespace trace_event

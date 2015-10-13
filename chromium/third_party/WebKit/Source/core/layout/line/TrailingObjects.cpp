@@ -24,6 +24,7 @@
 #include "config.h"
 #include "core/layout/line/TrailingObjects.h"
 
+#include "core/layout/api/LineLayoutItem.h"
 #include "core/layout/line/BreakingContextInlineHeaders.h"
 #include "core/layout/line/InlineIterator.h"
 
@@ -50,7 +51,7 @@ void TrailingObjects::updateMidpointsForTrailingObjects(LineMidpointState& lineM
         for (size_t i = 0; i < m_objects.size(); ++i) {
             if (currentMidpoint >= lineMidpointState.numMidpoints()) {
                 // We don't have a midpoint for this box yet.
-                ensureLineBoxInsideIgnoredSpaces(&lineMidpointState, m_objects[i]);
+                ensureLineBoxInsideIgnoredSpaces(&lineMidpointState, LineLayoutItem(m_objects[i]));
             } else {
                 ASSERT(lineMidpointState.midpoints()[currentMidpoint].object() == m_objects[i]);
                 ASSERT(lineMidpointState.midpoints()[currentMidpoint + 1].object() == m_objects[i]);
@@ -60,9 +61,9 @@ void TrailingObjects::updateMidpointsForTrailingObjects(LineMidpointState& lineM
     } else if (!lBreak.object()) {
         ASSERT(collapseFirstSpace == CollapseFirstSpace);
         // Add a new end midpoint that stops right at the very end.
-        unsigned length = m_whitespace->textLength();
+        unsigned length = m_whitespace.textLength();
         unsigned pos = length >= 2 ? length - 2 : UINT_MAX;
-        InlineIterator endMid(0, LineLayoutItem(m_whitespace), pos);
+        InlineIterator endMid(0, m_whitespace, pos);
         lineMidpointState.startIgnoringSpaces(endMid);
         for (size_t i = 0; i < m_objects.size(); ++i) {
             ensureLineBoxInsideIgnoredSpaces(&lineMidpointState, m_objects[i]);

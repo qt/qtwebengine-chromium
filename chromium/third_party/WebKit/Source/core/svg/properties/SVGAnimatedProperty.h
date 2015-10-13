@@ -92,7 +92,6 @@ public:
 
     DEFINE_INLINE_VIRTUAL_TRACE()
     {
-        visitor->trace(m_contextElement);
     }
 
 protected:
@@ -102,8 +101,10 @@ private:
     const AnimatedPropertyType m_type;
     bool m_isReadOnly;
 
-    // This reference is kept alive from V8 wrapper
-    RawPtrWillBeMember<SVGElement> m_contextElement;
+    // This raw pointer is safe since the SVG element is guaranteed to be kept
+    // alive by a V8 wrapper.
+    GC_PLUGIN_IGNORE("crbug.com/528275")
+    SVGElement* m_contextElement;
 
     const QualifiedName& m_attributeName;
 };

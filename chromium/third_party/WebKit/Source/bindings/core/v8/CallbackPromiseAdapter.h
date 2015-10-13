@@ -33,236 +33,189 @@
 
 #include "bindings/core/v8/ScriptPromiseResolver.h"
 #include "public/platform/WebCallbacks.h"
+#include "public/platform/WebPassOwnPtr.h"
+#include "wtf/OwnPtr.h"
+#include "wtf/PassOwnPtr.h"
+#include "wtf/TypeTraits.h"
 
 namespace blink {
 
-// This class provides an easy way to convert from a Script-exposed
-// class (i.e. a class that has a toV8() overload) that uses Promises
-// to a WebKit API class that uses WebCallbacks. You can define
-// separate Success and Error classes, but this example just uses one
-// object for both.
+// CallbackPromiseAdapter is a WebCallbacks subclass and resolves / rejects the
+// stored resolver when onSuccess / onError is called, respectively.
 //
-// To use:
+// Basically CallbackPromiseAdapter<S, T> is a subclass of
+// WebCallbacks<S::WebType, T::WebType>. There are some exceptions:
+//  - If S or T don't have WebType (e.g. S = bool), a default WebType holder
+//    called trivial WebType holder is used. For example,
+//    CallbackPromiseAdapter<bool, void> is a subclass of
+//    WebCallbacks<bool, void>.
+//  - If a WebType is OwnPtr<T>, its corresponding type parameter on
+//    WebCallbacks is WebPassOwnPtr<T>, because WebCallbacks must be exposed to
+//    Chromium.
 //
-// class MyClass ... {
-//    typedef blink::WebMyClass WebType;
+// When onSuccess is called with a S::WebType value, the value is passed to
+// S::take and the resolver is resolved with its return value. Ditto for
+// onError.
 //
-//    // Takes ownership of |webInstance|.
-//    static PassRefPtr<MyClass> take(ScriptPromiseResolver* resolver,
-//                                    PassOwnPtr<blink::WebMyClass> webInstance) {
-//        // convert/create as appropriate, but often it's just:
-//        return MyClass::create(webInstance);
+// ScriptPromiseResolver::resolve / reject will not be called when the execution
+// context is stopped.
 //
-//        // Since promise resolving is done as an async task, it's not
-//        // guaranteed that the script context has seen the promise resolve
-//        // immediately after calling onSuccess/onError. You can use the
-//        // ScriptPromise from the resolver to schedule a task that executes
-//        // after resolving:
-//        ScriptState::Scope scope(resolver->scriptState());
-//        resolver->promise().then(...);
-//    }
+// Example:
+// class MyClass {
+// public:
+//     using WebType = OwnPtr<WebMyClass>;
+//     static PassRefPtr<MyClass> take(ScriptPromiseResolver* resolver,
+//         PassOwnPtr<WebMyClass> webInstance)
+//     {
+//         return MyClass::create(webInstance);
+//     }
+//     ...
+// };
+// class MyErrorClass {
+// public:
+//     using WebType = const WebMyErrorClass&;
+//     static MyErrorClass take(ScriptPromiseResolver* resolver,
+//         const WebErrorClass& webError)
+//     {
+//         return MyErrorClass(webError);
+//     }
+//     ...
+// };
+// OwnPtr<WebCallbacks<WebPassOwnPtr<WebMyClass>, const WebMyErrorClass&>>
+//     callbacks = adoptPtr(new CallbackPromiseAdapter<MyClass, MyErrorClass>(
+//     resolver));
+// ...
 //
-// Now when calling into a WebKit API that requires a WebCallbacks<blink::WebMyClass, blink::WebMyClass>*:
+// OwnPtr<WebCallbacks<bool, const WebMyErrorClass&>> callbacks2 =
+//     adoptPtr(new CallbackPromiseAdapter<bool, MyErrorClass>(resolver));
+// ...
 //
-//    // call signature: callSomeMethod(WebCallbacks<MyClass, MyClass>* callbacks)
-//    webObject->callSomeMethod(new CallbackPromiseAdapter<MyClass, MyClass>(resolver, scriptExecutionContext));
 //
-// Note:
-// - This class does not manage its own lifetime. In this example that ownership
-//   of the WebCallbacks instance is being passed in and it is up to the callee
-//   to free the WebCallbacks instance.
-// - onSuccess and onError take ownership of the given WebType instance.
-template<typename S, typename T>
-class CallbackPromiseAdapter final : public WebCallbacks<typename S::WebType, typename T::WebType> {
-    WTF_MAKE_NONCOPYABLE(CallbackPromiseAdapter);
-public:
-    explicit CallbackPromiseAdapter(PassRefPtrWillBeRawPtr<ScriptPromiseResolver> resolver)
-        : m_resolver(resolver)
-    {
-        ASSERT(m_resolver);
-    }
-    ~CallbackPromiseAdapter() override { }
+// In order to implement the above exceptions, we have template classes below.
+// OnSuccess and OnError provide onSuccess and onError implementation, and there
+// are utility templates that provide
+//  - OwnPtr - WebPassOwnPtr translation ([Web]PassType[Impl], adopt, pass),
+//  - trivial WebType holder (TrivialWebTypeHolder).
 
-    // Takes ownership of |result|.
-    void onSuccess(typename S::WebType* result) override
-    {
-        OwnPtr<typename S::WebType> ownPtr = adoptPtr(result);
-        if (!m_resolver->executionContext() || m_resolver->executionContext()->activeDOMObjectsAreStopped())
-            return;
-        if (!result) {
-            m_resolver->resolve(v8::Null(m_resolver->scriptState()->isolate()));
-            return;
+namespace internal {
+
+// This template is placed outside of CallbackPromiseAdapterInternal because
+// explicit specialization is forbidden in a class scope.
+template <typename T>
+struct CallbackPromiseAdapterTrivialWebTypeHolder {
+    using WebType = T;
+    static T take(ScriptPromiseResolver*, const T& x) { return x; }
+};
+template <>
+struct CallbackPromiseAdapterTrivialWebTypeHolder<void> {
+    using WebType = void;
+};
+
+class CallbackPromiseAdapterInternal {
+private:
+    template <typename T> static T webTypeHolderMatcher(typename WTF::RemoveReference<typename T::WebType>::Type*);
+    template <typename T> static CallbackPromiseAdapterTrivialWebTypeHolder<T> webTypeHolderMatcher(...);
+    template <typename T> using WebTypeHolder = decltype(webTypeHolderMatcher<T>(nullptr));
+
+    // The following templates should be gone when the repositories are merged
+    // and we can use C++11 libraries.
+    template <typename T>
+    struct PassTypeImpl {
+        using Type = T;
+    };
+    template <typename T>
+    struct PassTypeImpl<OwnPtr<T>> {
+        using Type = PassOwnPtr<T>;
+    };
+    template <typename T>
+    struct WebPassTypeImpl {
+        using Type = T;
+    };
+    template <typename T>
+    struct WebPassTypeImpl<OwnPtr<T>> {
+        using Type = WebPassOwnPtr<T>;
+    };
+    template <typename T> using PassType = typename PassTypeImpl<T>::Type;
+    template <typename T> using WebPassType = typename WebPassTypeImpl<T>::Type;
+    template <typename T> static T& adopt(T& x) { return x; }
+    template <typename T> static PassOwnPtr<T> adopt(WebPassOwnPtr<T>& x) { return x.release(); }
+    template <typename T> static PassType<T> pass(T& x) { return x; }
+    template <typename T> static PassOwnPtr<T> pass(OwnPtr<T>& x) { return x.release(); }
+
+    template <typename S, typename T>
+    class Base : public WebCallbacks<WebPassType<typename S::WebType>, WebPassType<typename T::WebType>> {
+    public:
+        explicit Base(ScriptPromiseResolver* resolver) : m_resolver(resolver) {}
+        ScriptPromiseResolver* resolver() { return m_resolver; }
+
+    private:
+        Persistent<ScriptPromiseResolver> m_resolver;
+    };
+
+    template <typename S, typename T>
+    class OnSuccess : public Base<S, T> {
+    public:
+        explicit OnSuccess(ScriptPromiseResolver* resolver) : Base<S, T>(resolver) {}
+        void onSuccess(WebPassType<typename S::WebType> r) override
+        {
+            typename S::WebType result(adopt(r));
+            ScriptPromiseResolver* resolver = this->resolver();
+            if (!resolver->executionContext() || resolver->executionContext()->activeDOMObjectsAreStopped())
+                return;
+            resolver->resolve(S::take(resolver, pass(result)));
         }
-        m_resolver->resolve(S::take(m_resolver.get(), ownPtr.release()));
-    }
+    };
+    template <typename T>
+    class OnSuccess<CallbackPromiseAdapterTrivialWebTypeHolder<void>, T> : public Base<CallbackPromiseAdapterTrivialWebTypeHolder<void>, T> {
+    public:
+        explicit OnSuccess(ScriptPromiseResolver* resolver) : Base<CallbackPromiseAdapterTrivialWebTypeHolder<void>, T>(resolver) {}
+        void onSuccess() override
+        {
+            ScriptPromiseResolver* resolver = this->resolver();
+            if (!resolver->executionContext() || resolver->executionContext()->activeDOMObjectsAreStopped())
+                return;
+            resolver->resolve();
+        }
+    };
+    template <typename S, typename T>
+    class OnError : public OnSuccess<S, T> {
+    public:
+        explicit OnError(ScriptPromiseResolver* resolver) : OnSuccess<S, T>(resolver) {}
+        void onError(WebPassType<typename T::WebType> e) override
+        {
+            typename T::WebType result(adopt(e));
+            ScriptPromiseResolver* resolver = this->resolver();
+            if (!resolver->executionContext() || resolver->executionContext()->activeDOMObjectsAreStopped())
+                return;
+            resolver->reject(T::take(resolver, pass(result)));
+        }
+    };
+    template <typename S>
+    class OnError<S, CallbackPromiseAdapterTrivialWebTypeHolder<void>> : public OnSuccess<S, CallbackPromiseAdapterTrivialWebTypeHolder<void>> {
+    public:
+        explicit OnError(ScriptPromiseResolver* resolver) : OnSuccess<S, CallbackPromiseAdapterTrivialWebTypeHolder<void>>(resolver) {}
+        void onError() override
+        {
+            ScriptPromiseResolver* resolver = this->resolver();
+            if (!resolver->executionContext() || resolver->executionContext()->activeDOMObjectsAreStopped())
+                return;
+            resolver->reject();
+        }
+    };
 
-    // Takes ownership of |error|.
-    void onError(typename T::WebType* error) override
-    {
-        OwnPtr<typename T::WebType> ownPtr = adoptPtr(error);
-        if (!m_resolver->executionContext() || m_resolver->executionContext()->activeDOMObjectsAreStopped())
-            return;
-        m_resolver->reject(T::take(m_resolver.get(), ownPtr.release()));
-    }
-
-private:
-    RefPtrWillBePersistent<ScriptPromiseResolver> m_resolver;
-};
-
-template<typename T>
-class CallbackPromiseAdapter<void, T> final : public WebCallbacks<void, typename T::WebType> {
-    WTF_MAKE_NONCOPYABLE(CallbackPromiseAdapter);
 public:
-    explicit CallbackPromiseAdapter(PassRefPtrWillBeRawPtr<ScriptPromiseResolver> resolver)
-        : m_resolver(resolver)
-    {
-        ASSERT(m_resolver);
-    }
-    ~CallbackPromiseAdapter() override { }
-
-    void onSuccess() override
-    {
-        if (!m_resolver->executionContext() || m_resolver->executionContext()->activeDOMObjectsAreStopped())
-            return;
-        m_resolver->resolve();
-    }
-
-    // Takes ownership of |error|.
-    void onError(typename T::WebType* error) override
-    {
-        OwnPtr<typename T::WebType> ownPtr = adoptPtr(error);
-        if (!m_resolver->executionContext() || m_resolver->executionContext()->activeDOMObjectsAreStopped())
-            return;
-        m_resolver->reject(T::take(m_resolver.get(), ownPtr.release()));
-    }
-
-private:
-    RefPtrWillBePersistent<ScriptPromiseResolver> m_resolver;
+    template <typename S, typename T>
+    class CallbackPromiseAdapter final : public OnError<WebTypeHolder<S>, WebTypeHolder<T>> {
+        WTF_MAKE_NONCOPYABLE(CallbackPromiseAdapter);
+    public:
+        explicit CallbackPromiseAdapter(ScriptPromiseResolver* resolver) : OnError<WebTypeHolder<S>, WebTypeHolder<T>>(resolver) {}
+    };
 };
 
-template<typename S>
-class CallbackPromiseAdapter<S, void> final : public WebCallbacks<typename S::WebType, void> {
-    WTF_MAKE_NONCOPYABLE(CallbackPromiseAdapter);
-public:
-    explicit CallbackPromiseAdapter(PassRefPtrWillBeRawPtr<ScriptPromiseResolver> resolver)
-        : m_resolver(resolver)
-    {
-        ASSERT(m_resolver);
-    }
-    ~CallbackPromiseAdapter() override { }
+} // namespace internal
 
-    // Takes ownership of |result|.
-    void onSuccess(typename S::WebType* result) override
-    {
-        OwnPtr<typename S::WebType> ownPtr = adoptPtr(result);
-        if (!m_resolver->executionContext() || m_resolver->executionContext()->activeDOMObjectsAreStopped())
-            return;
-        m_resolver->resolve(S::take(m_resolver.get(), ownPtr.release()));
-    }
-
-    void onError() override
-    {
-        if (!m_resolver->executionContext() || m_resolver->executionContext()->activeDOMObjectsAreStopped())
-            return;
-        m_resolver->reject();
-    }
-
-private:
-    RefPtrWillBePersistent<ScriptPromiseResolver> m_resolver;
-};
-
-template<typename T>
-class CallbackPromiseAdapter<bool, T> final : public WebCallbacks<bool, typename T::WebType> {
-    WTF_MAKE_NONCOPYABLE(CallbackPromiseAdapter);
-public:
-    explicit CallbackPromiseAdapter(PassRefPtrWillBeRawPtr<ScriptPromiseResolver> resolver)
-        : m_resolver(resolver)
-    {
-        ASSERT(m_resolver);
-    }
-    ~CallbackPromiseAdapter() override { }
-
-    // TODO(nhiroki): onSuccess should take ownership of a bool object for
-    // consistency. (http://crbug.com/493531)
-    void onSuccess(bool* result) override
-    {
-        if (!m_resolver->executionContext() || m_resolver->executionContext()->activeDOMObjectsAreStopped())
-            return;
-        m_resolver->resolve(*result);
-    }
-
-    // Takes ownership of |error|.
-    void onError(typename T::WebType* error) override
-    {
-        OwnPtr<typename T::WebType> ownPtr = adoptPtr(error);
-        if (!m_resolver->executionContext() || m_resolver->executionContext()->activeDOMObjectsAreStopped())
-            return;
-        m_resolver->reject(T::take(m_resolver.get(), ownPtr.release()));
-    }
-
-private:
-    RefPtrWillBePersistent<ScriptPromiseResolver> m_resolver;
-};
-
-template<>
-class CallbackPromiseAdapter<void, void> final : public WebCallbacks<void, void> {
-    WTF_MAKE_NONCOPYABLE(CallbackPromiseAdapter);
-public:
-    explicit CallbackPromiseAdapter(PassRefPtrWillBeRawPtr<ScriptPromiseResolver> resolver)
-        : m_resolver(resolver)
-    {
-        ASSERT(m_resolver);
-    }
-    ~CallbackPromiseAdapter() override { }
-
-    void onSuccess() override
-    {
-        if (!m_resolver->executionContext() || m_resolver->executionContext()->activeDOMObjectsAreStopped())
-            return;
-        m_resolver->resolve();
-    }
-
-    void onError() override
-    {
-        if (!m_resolver->executionContext() || m_resolver->executionContext()->activeDOMObjectsAreStopped())
-            return;
-        m_resolver->reject();
-    }
-
-private:
-    RefPtrWillBePersistent<ScriptPromiseResolver> m_resolver;
-};
-
-template<>
-class CallbackPromiseAdapter<bool, void> final : public WebCallbacks<bool, void> {
-    WTF_MAKE_NONCOPYABLE(CallbackPromiseAdapter);
-public:
-    explicit CallbackPromiseAdapter(PassRefPtrWillBeRawPtr<ScriptPromiseResolver> resolver)
-        : m_resolver(resolver)
-    {
-        ASSERT(m_resolver);
-    }
-    ~CallbackPromiseAdapter() override { }
-
-    // TODO(nhiroki): onSuccess should take ownership of a bool object for
-    // consistency. (http://crbug.com/493531)
-    void onSuccess(bool* result) override
-    {
-        if (!m_resolver->executionContext() || m_resolver->executionContext()->activeDOMObjectsAreStopped())
-            return;
-        m_resolver->resolve(*result);
-    }
-
-    void onError() override
-    {
-        if (!m_resolver->executionContext() || m_resolver->executionContext()->activeDOMObjectsAreStopped())
-            return;
-        m_resolver->reject();
-    }
-
-private:
-    RefPtrWillBePersistent<ScriptPromiseResolver> m_resolver;
-};
+template <typename S, typename T>
+using CallbackPromiseAdapter = internal::CallbackPromiseAdapterInternal::CallbackPromiseAdapter<S, T>;
 
 } // namespace blink
 

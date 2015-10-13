@@ -12,6 +12,7 @@
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
 #include "modules/mediastream/MediaStream.h"
+#include "modules/mediastream/MediaStreamConstraints.h"
 #include "modules/mediastream/NavigatorMediaStream.h"
 #include "modules/mediastream/NavigatorUserMediaErrorCallback.h"
 #include "modules/mediastream/NavigatorUserMediaSuccessCallback.h"
@@ -34,7 +35,7 @@ namespace {
 
 class PromiseSuccessCallback final : public NavigatorUserMediaSuccessCallback {
 public:
-    PromiseSuccessCallback(PassRefPtrWillBeRawPtr<ScriptPromiseResolver> resolver)
+    explicit PromiseSuccessCallback(ScriptPromiseResolver* resolver)
         : m_resolver(resolver)
     {
     }
@@ -55,12 +56,12 @@ public:
     }
 
 private:
-    RefPtrWillBeMember<ScriptPromiseResolver> m_resolver;
+    Member<ScriptPromiseResolver> m_resolver;
 };
 
 class PromiseErrorCallback final : public NavigatorUserMediaErrorCallback {
 public:
-    PromiseErrorCallback(PassRefPtrWillBeRawPtr<ScriptPromiseResolver> resolver)
+    explicit PromiseErrorCallback(ScriptPromiseResolver* resolver)
         : m_resolver(resolver)
     {
     }
@@ -81,14 +82,14 @@ public:
     }
 
 private:
-    RefPtrWillBeMember<ScriptPromiseResolver> m_resolver;
+    Member<ScriptPromiseResolver> m_resolver;
 };
 
 } // namespace
 
-ScriptPromise MediaDevices::getUserMedia(ScriptState* scriptState, const Dictionary& options, ExceptionState& exceptionState)
+ScriptPromise MediaDevices::getUserMedia(ScriptState* scriptState, const MediaStreamConstraints& options, ExceptionState& exceptionState)
 {
-    RefPtrWillBeRawPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(scriptState);
+    ScriptPromiseResolver* resolver = ScriptPromiseResolver::create(scriptState);
 
     NavigatorUserMediaSuccessCallback* successCallback = new PromiseSuccessCallback(resolver);
     NavigatorUserMediaErrorCallback* errorCallback = new PromiseErrorCallback(resolver);
@@ -102,6 +103,11 @@ ScriptPromise MediaDevices::getUserMedia(ScriptState* scriptState, const Diction
     if (!request) {
         ASSERT(exceptionState.hadException());
         return exceptionState.reject(scriptState);
+    }
+
+    String errorMessage;
+    if (!request->isSecureContextUse(errorMessage)) {
+        return ScriptPromise::rejectWithDOMException(scriptState, DOMException::create(NotSupportedError, errorMessage));
     }
 
     request->start();

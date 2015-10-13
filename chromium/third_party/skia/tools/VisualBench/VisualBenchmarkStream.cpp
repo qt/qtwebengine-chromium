@@ -7,13 +7,15 @@
  */
 
 #include <VisualBench/VisualBenchmarkStream.h>
+#include "CpuWrappedBenchmark.h"
 #include "GMBench.h"
 #include "SkOSFile.h"
 #include "SkPictureRecorder.h"
 #include "SkStream.h"
 #include "VisualSKPBench.h"
 
-DEFINE_string2(match, m, NULL,
+DEFINE_bool(cpu, false, "Run in CPU mode?");
+DEFINE_string2(match, m, nullptr,
                "[~][^]substring[$] [...] of bench name to run.\n"
                "Multiple matches may be separated by spaces.\n"
                "~ causes a matching bench to always be skipped\n"
@@ -27,8 +29,8 @@ DEFINE_string(skps, "skps", "Directory to read skps from.");
 VisualBenchmarkStream::VisualBenchmarkStream()
     : fBenches(BenchRegistry::Head())
     , fGMs(skiagm::GMRegistry::Head())
-    , fSourceType(NULL)
-    , fBenchType(NULL)
+    , fSourceType(nullptr)
+    , fBenchType(nullptr)
     , fCurrentSKP(0) {
     for (int i = 0; i < FLAGS_skps.count(); i++) {
         if (SkStrEndsWith(FLAGS_skps[i], ".skp")) {
@@ -51,13 +53,13 @@ bool VisualBenchmarkStream::ReadPicture(const char* path, SkAutoTUnref<SkPicture
     }
 
     SkAutoTDelete<SkStream> stream(SkStream::NewFromFile(path));
-    if (stream.get() == NULL) {
+    if (stream.get() == nullptr) {
         SkDebugf("Could not read %s.\n", path);
         return false;
     }
 
     pic->reset(SkPicture::CreateFromStream(stream.get()));
-    if (pic->get() == NULL) {
+    if (pic->get() == nullptr) {
         SkDebugf("Could not read %s as an SkPicture.\n", path);
         return false;
     }
@@ -65,23 +67,38 @@ bool VisualBenchmarkStream::ReadPicture(const char* path, SkAutoTUnref<SkPicture
 }
 
 Benchmark* VisualBenchmarkStream::next() {
+    Benchmark* bench;
+    // skips non matching benches
+    while ((bench = this->innerNext()) &&
+           (SkCommandLineFlags::ShouldSkip(FLAGS_match, bench->getUniqueName()) ||
+            !bench->isSuitableFor(Benchmark::kGPU_Backend))) {
+        bench->unref();
+    }
+    if (FLAGS_cpu) {
+        return new CpuWrappedBenchmark(bench);
+    }
+    return bench;
+}
+
+Benchmark* VisualBenchmarkStream::innerNext() {
     while (fBenches) {
-        Benchmark* bench = fBenches->factory()(NULL);
+        Benchmark* bench = fBenches->factory()(nullptr);
         fBenches = fBenches->next();
         if (bench->isVisual()) {
             fSourceType = "bench";
             fBenchType  = "micro";
             return bench;
         }
+        bench->unref();
     }
 
     while (fGMs) {
-        SkAutoTDelete<skiagm::GM> gm(fGMs->factory()(NULL));
+        SkAutoTDelete<skiagm::GM> gm(fGMs->factory()(nullptr));
         fGMs = fGMs->next();
         if (gm->runAsBench()) {
             fSourceType = "gm";
             fBenchType  = "micro";
-            return SkNEW_ARGS(GMBench, (gm.detach()));
+            return new GMBench(gm.detach());
         }
     }
 
@@ -96,8 +113,8 @@ Benchmark* VisualBenchmarkStream::next() {
         SkString name = SkOSPath::Basename(path.c_str());
         fSourceType = "skp";
         fBenchType = "playback";
-        return SkNEW_ARGS(VisualSKPBench, (name.c_str(), pic.get()));
+        return new VisualSKPBench(name.c_str(), pic.get());
     }
 
-    return NULL;
+    return nullptr;
 }

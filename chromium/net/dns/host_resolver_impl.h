@@ -8,14 +8,13 @@
 #include <map>
 
 #include "base/basictypes.h"
-#include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
 #include "base/memory/weak_ptr.h"
 #include "base/threading/non_thread_safe.h"
 #include "base/time/time.h"
+#include "net/base/ip_address_number.h"
 #include "net/base/net_export.h"
-#include "net/base/net_util.h"
 #include "net/base/network_change_notifier.h"
 #include "net/dns/host_cache.h"
 #include "net/dns/host_resolver.h"

@@ -261,12 +261,12 @@ void StringStats::printStats()
 void* StringImpl::operator new(size_t size)
 {
     ASSERT(size == sizeof(StringImpl));
-    return partitionAllocGeneric(Partitions::bufferPartition(), size);
+    return Partitions::bufferMalloc(size);
 }
 
 void StringImpl::operator delete(void* ptr)
 {
-    partitionFreeGeneric(Partitions::bufferPartition(), ptr);
+    Partitions::bufferFree(ptr);
 }
 
 inline StringImpl::~StringImpl()
@@ -295,7 +295,7 @@ PassRefPtr<StringImpl> StringImpl::createUninitialized(unsigned length, LChar*& 
     // Allocate a single buffer large enough to contain the StringImpl
     // struct as well as the data which it contains. This removes one
     // heap allocation from this call.
-    StringImpl* string = static_cast<StringImpl*>(partitionAllocGeneric(Partitions::bufferPartition(), allocationSize<LChar>(length)));
+    StringImpl* string = static_cast<StringImpl*>(Partitions::bufferMalloc(allocationSize<LChar>(length)));
 
     data = reinterpret_cast<LChar*>(string + 1);
     return adoptRef(new (string) StringImpl(length, Force8BitConstructor));
@@ -311,7 +311,7 @@ PassRefPtr<StringImpl> StringImpl::createUninitialized(unsigned length, UChar*& 
     // Allocate a single buffer large enough to contain the StringImpl
     // struct as well as the data which it contains. This removes one
     // heap allocation from this call.
-    StringImpl* string = static_cast<StringImpl*>(partitionAllocGeneric(Partitions::bufferPartition(), allocationSize<UChar>(length)));
+    StringImpl* string = static_cast<StringImpl*>(Partitions::bufferMalloc(allocationSize<UChar>(length)));
 
     data = reinterpret_cast<UChar*>(string + 1);
     return adoptRef(new (string) StringImpl(length));
@@ -328,7 +328,7 @@ PassRefPtr<StringImpl> StringImpl::reallocate(PassRefPtr<StringImpl> originalStr
     // Same as createUninitialized() except here we use realloc.
     size_t size = is8Bit ? allocationSize<LChar>(length) : allocationSize<UChar>(length);
     originalString->~StringImpl();
-    StringImpl* string = static_cast<StringImpl*>(partitionReallocGeneric(Partitions::bufferPartition(), originalString.leakRef(), size));
+    StringImpl* string = static_cast<StringImpl*>(Partitions::bufferRealloc(originalString.leakRef(), size));
     if (is8Bit)
         return adoptRef(new (string) StringImpl(length, Force8BitConstructor));
     return adoptRef(new (string) StringImpl(length));
@@ -379,7 +379,7 @@ StringImpl* StringImpl::createStatic(const char* string, unsigned length, unsign
     size_t size = sizeof(StringImpl) + length * sizeof(LChar);
 
     WTF_ANNOTATE_SCOPED_MEMORY_LEAK;
-    StringImpl* impl = static_cast<StringImpl*>(partitionAllocGeneric(Partitions::bufferPartition(), size));
+    StringImpl* impl = static_cast<StringImpl*>(Partitions::bufferMalloc(size));
 
     LChar* data = reinterpret_cast<LChar*>(impl + 1);
     impl = new (impl) StringImpl(length, hash, StaticString);
@@ -395,6 +395,12 @@ StringImpl* StringImpl::createStatic(const char* string, unsigned length, unsign
         "Benign race on the reference counter of a static string created by StringImpl::createStatic");
 
     return impl;
+}
+
+void StringImpl::reserveStaticStringsCapacityForSize(unsigned size)
+{
+    ASSERT(s_allowCreationOfStaticStrings);
+    staticStrings().reserveCapacityForSize(size);
 }
 
 PassRefPtr<StringImpl> StringImpl::create(const UChar* characters, unsigned length)
@@ -521,8 +527,8 @@ PassRefPtr<StringImpl> StringImpl::lower()
 
         for (unsigned i = firstIndexToBeLowered; i < m_length; ++i) {
             LChar ch = characters8()[i];
-            data8[i] = UNLIKELY(ch & ~0x7F) ? static_cast<LChar>(Unicode::toLower(ch))
-                                            : toASCIILower(ch);
+            data8[i] = UNLIKELY(ch & ~0x7F)
+                ? static_cast<LChar>(Unicode::toLower(ch)) : toASCIILower(ch);
         }
 
         return newImpl.release();
@@ -625,8 +631,9 @@ PassRefPtr<StringImpl> StringImpl::upper()
             if (c == smallLetterSharpSCharacter) {
                 *dest++ = 'S';
                 *dest++ = 'S';
-            } else
+            } else {
                 *dest++ = static_cast<LChar>(Unicode::toUpper(c));
+            }
         }
 
         return newImpl.release();
@@ -1599,7 +1606,7 @@ PassRefPtr<StringImpl> StringImpl::replace(unsigned position, unsigned lengthToR
         if (str)
             memcpy(data + position, str->characters8(), lengthToInsert * sizeof(LChar));
         memcpy(data + position + lengthToInsert, characters8() + position + lengthToReplace,
-               (length() - position - lengthToReplace) * sizeof(LChar));
+            (length() - position - lengthToReplace) * sizeof(LChar));
         return newImpl.release();
     }
     UChar* data;

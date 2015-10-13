@@ -31,8 +31,10 @@
 #include "bindings/core/v8/ScriptValue.h"
 #include "bindings/core/v8/UnionTypesCore.h"
 #include "core/CoreExport.h"
+#include "core/dom/DOMTypedArray.h"
 #include "core/dom/Document.h"
 #include "core/dom/DocumentVisibilityObserver.h"
+#include "core/fileapi/FileCallback.h"
 #include "core/html/HTMLElement.h"
 #include "core/html/canvas/CanvasImageSource.h"
 #include "platform/geometry/FloatRect.h"
@@ -41,6 +43,7 @@
 #include "platform/graphics/GraphicsTypes3D.h"
 #include "platform/graphics/ImageBufferClient.h"
 #include "platform/heap/Handle.h"
+#include "public/platform/WebThread.h"
 
 #define CanvasDefaultInterpolationQuality InterpolationLow
 
@@ -55,6 +58,7 @@ class HTMLCanvasElement;
 class Image;
 class ImageBuffer;
 class ImageBufferSurface;
+class ImageData;
 class IntSize;
 
 class CORE_EXPORT CanvasObserver : public WillBeGarbageCollectedMixin {
@@ -75,6 +79,8 @@ class CORE_EXPORT HTMLCanvasElement final : public HTMLElement, public DocumentV
 public:
     DECLARE_NODE_FACTORY(HTMLCanvasElement);
     ~HTMLCanvasElement() override;
+
+    static WebThread* getToBlobThreadInstance();
 
     void addObserver(CanvasObserver*);
     void removeObserver(CanvasObserver*);
@@ -112,6 +118,9 @@ public:
     String toDataURL(const String& mimeType, const ScriptValue& qualityArgument, ExceptionState&) const;
     String toDataURL(const String& mimeType, ExceptionState& exceptionState) const { return toDataURL(mimeType, ScriptValue(), exceptionState); }
 
+    void toBlob(FileCallback*, const String& mimeType, const ScriptValue& qualityArgument, ExceptionState&);
+    void toBlob(FileCallback* callback, const String& mimeType, ExceptionState& exceptionState) { return toBlob(callback, mimeType, ScriptValue(), exceptionState); }
+
     // Used for rendering
     void didDraw(const FloatRect&);
     void notifyObserversCanvasChanged(const FloatRect&);
@@ -119,6 +128,7 @@ public:
     void paint(GraphicsContext*, const LayoutRect&);
 
     SkCanvas* drawingCanvas() const;
+    void disableDeferral() const;
     SkCanvas* existingDrawingCanvas() const;
 
     void setRenderingContext(PassOwnPtrWillBeRawPtr<CanvasRenderingContext>);
@@ -126,7 +136,7 @@ public:
 
     void ensureUnacceleratedImageBuffer();
     ImageBuffer* buffer() const;
-    PassRefPtr<Image> copiedImage(SourceDrawingBuffer) const;
+    PassRefPtr<Image> copiedImage(SourceDrawingBuffer, AccelerationHint) const;
     void clearCopiedImage();
 
     SecurityOrigin* securityOrigin() const;
@@ -136,6 +146,7 @@ public:
     AffineTransform baseTransform() const;
 
     bool is3D() const;
+    bool isAnimated2D() const;
 
     bool hasImageBuffer() const { return m_imageBuffer; }
     void discardImageBuffer();
@@ -143,6 +154,8 @@ public:
     bool shouldAccelerate(const IntSize&) const;
 
     bool shouldBeDirectComposited() const;
+
+    void prepareSurfaceForPaintingIfNeeded() const;
 
     const AtomicString imageSourceURL() const override;
 
@@ -152,7 +165,7 @@ public:
     void didChangeVisibilityState(PageVisibilityState) override;
 
     // CanvasImageSource implementation
-    PassRefPtr<Image> getSourceImageForCanvas(SourceImageMode, SourceImageStatus*) const override;
+    PassRefPtr<Image> getSourceImageForCanvas(SourceImageStatus*, AccelerationHint) const override;
     bool wouldTaintOrigin(SecurityOrigin*) const override;
     FloatSize elementSize() const override;
     bool isCanvasElement() const override { return true; }
@@ -162,7 +175,7 @@ public:
     void notifySurfaceInvalid() override;
     bool isDirty() override { return !m_dirtyRect.isEmpty(); }
     void didFinalizeFrame() override;
-    void restoreCanvasMatrixClipStack() override;
+    void restoreCanvasMatrixClipStack(SkCanvas*) const override;
 
     void doDeferredPaintInvalidation();
 
@@ -172,6 +185,8 @@ public:
 
     static void registerRenderingContextFactory(PassOwnPtr<CanvasRenderingContextFactory>);
     void updateExternallyAllocatedMemory() const;
+
+    void styleDidChange(const ComputedStyle* oldStyle, const ComputedStyle& newStyle);
 
 protected:
     void didMoveToNewDocument(Document& oldDocument) override;
@@ -199,7 +214,11 @@ private:
 
     bool paintsIntoCanvasBuffer() const;
 
-    String toDataURLInternal(const String& mimeType, const double* quality, SourceDrawingBuffer) const;
+    ImageData* toImageData(SourceDrawingBuffer) const;
+    String toDataURLInternal(const String& mimeType, const double& quality, SourceDrawingBuffer) const;
+
+    static void encodeImageAsync(DOMUint8ClampedArray* imagedata, IntSize imageSize, FileCallback*, const String& mimeType, double quality);
+    static void createBlobAndCall(PassOwnPtr<Vector<char>> encodedImage, const String& mimeType, FileCallback*);
 
     WillBeHeapHashSet<RawPtrWillBeWeakMember<CanvasObserver>> m_observers;
 

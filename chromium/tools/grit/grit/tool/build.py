@@ -7,6 +7,7 @@
 SCons build system.
 '''
 
+import codecs
 import filecmp
 import getopt
 import os
@@ -238,9 +239,9 @@ are exported to translation interchange files (e.g. XMB files), etc.
     return 0
 
   def __init__(self, defines=None):
-    # Default file-creation function is built-in open().  Only done to allow
+    # Default file-creation function is codecs.open().  Only done to allow
     # overriding by unit test.
-    self.fo_create = open
+    self.fo_create = codecs.open
 
     # key/value pairs of C-preprocessor like defines that are used for
     # conditional output of resources
@@ -487,7 +488,7 @@ Extra output files:
 
     depfile_contents = output_file + ': ' + deps_text
     self.MakeDirectoriesTo(depfile)
-    outfile = self.fo_create(depfile, 'wb')
+    outfile = self.fo_create(depfile, 'w', encoding='utf-8')
     outfile.writelines(depfile_contents)
 
   @staticmethod

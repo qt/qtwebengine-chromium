@@ -26,14 +26,13 @@
 #define HTMLTextFormControlElement_h
 
 #include "core/CoreExport.h"
-#include "core/dom/Position.h"
+#include "core/editing/VisiblePosition.h"
 #include "core/html/HTMLFormControlElementWithState.h"
 
 namespace blink {
 
 class ExceptionState;
 class Range;
-class VisiblePosition;
 
 enum TextFieldSelectionDirection { SelectionHasNoDirection, SelectionHasForwardDirection, SelectionHasBackwardDirection };
 enum TextFieldEventBehavior { DispatchNoEvent, DispatchChangeEvent, DispatchInputAndChangeEvent };
@@ -60,11 +59,12 @@ public:
     InsertionNotificationRequest insertedInto(ContainerNode*) override;
 
     // The derived class should return true if placeholder processing is needed.
+    virtual bool isPlaceholderVisible() const = 0;
+    virtual void setPlaceholderVisibility(bool) = 0;
     virtual bool supportsPlaceholder() const = 0;
     String strippedPlaceholder() const;
-    bool placeholderShouldBeVisible() const;
     HTMLElement* placeholderElement() const;
-    void updatePlaceholderVisibility(bool);
+    void updatePlaceholderVisibility();
 
     VisiblePosition visiblePositionForIndex(int) const;
     int indexForVisiblePosition(const VisiblePosition&) const;
@@ -141,8 +141,8 @@ private:
     int computeSelectionEnd() const;
     TextFieldSelectionDirection computeSelectionDirection() const;
 
-    void dispatchFocusEvent(Element* oldFocusedElement, WebFocusType) final;
-    void dispatchBlurEvent(Element* newFocusedElement, WebFocusType) final;
+    void dispatchFocusEvent(Element* oldFocusedElement, WebFocusType, InputDeviceCapabilities* sourceCapabilities) final;
+    void dispatchBlurEvent(Element* newFocusedElement, WebFocusType, InputDeviceCapabilities* sourceCapabilities) final;
     void scheduleSelectEvent();
 
     // Returns true if user-editable value is empty. Used to check placeholder visibility.
@@ -153,6 +153,8 @@ private:
     virtual void handleFocusEvent(Element* /* oldFocusedNode */, WebFocusType) { }
     // Called in dispatchBlurEvent(), after placeholder process, before calling parent's dispatchBlurEvent().
     virtual void handleBlurEvent() { }
+
+    bool placeholderShouldBeVisible() const;
 
     String m_textAsOfLastFormControlChangeEvent;
     bool m_lastChangeWasUserEdit;

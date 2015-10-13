@@ -31,10 +31,11 @@
 #include "config.h"
 #include "core/editing/RenderedPosition.h"
 
-#include "core/dom/Position.h"
+#include "core/editing/TextAffinity.h"
 #include "core/editing/VisiblePosition.h"
+#include "core/editing/VisibleUnits.h"
 #include "core/layout/compositing/CompositedSelectionBound.h"
-#include "core/paint/DeprecatedPaintLayer.h"
+#include "core/paint/PaintLayer.h"
 
 namespace blink {
 
@@ -66,24 +67,16 @@ static inline LayoutObject* layoutObjectFromPosition(const Position& position)
 }
 
 RenderedPosition::RenderedPosition(const VisiblePosition& position)
-    : m_layoutObject(nullptr)
-    , m_inlineBox(nullptr)
-    , m_offset(0)
-    , m_prevLeafChild(uncachedInlineBox())
-    , m_nextLeafChild(uncachedInlineBox())
+    : RenderedPosition(position.deepEquivalent(), position.affinity())
 {
-    if (position.isNull())
-        return;
-    InlineBoxPosition boxPosition = position.computeInlineBoxPosition();
-    m_inlineBox = boxPosition.inlineBox;
-    m_offset = boxPosition.offsetInBox;
-    if (m_inlineBox)
-        m_layoutObject = &m_inlineBox->layoutObject();
-    else
-        m_layoutObject = layoutObjectFromPosition(position.deepEquivalent());
 }
 
-RenderedPosition::RenderedPosition(const Position& position, EAffinity affinity)
+RenderedPosition::RenderedPosition(const VisiblePositionInComposedTree& position)
+    : RenderedPosition(position.deepEquivalent(), position.affinity())
+{
+}
+
+RenderedPosition::RenderedPosition(const Position& position, TextAffinity affinity)
     : m_layoutObject(nullptr)
     , m_inlineBox(nullptr)
     , m_offset(0)
@@ -92,7 +85,7 @@ RenderedPosition::RenderedPosition(const Position& position, EAffinity affinity)
 {
     if (position.isNull())
         return;
-    InlineBoxPosition boxPosition = position.computeInlineBoxPosition(affinity);
+    InlineBoxPosition boxPosition = computeInlineBoxPosition(position, affinity);
     m_inlineBox = boxPosition.inlineBox;
     m_offset = boxPosition.offsetInBox;
     if (m_inlineBox)
@@ -101,7 +94,7 @@ RenderedPosition::RenderedPosition(const Position& position, EAffinity affinity)
         m_layoutObject = layoutObjectFromPosition(position);
 }
 
-RenderedPosition::RenderedPosition(const PositionInComposedTree& position, EAffinity affinity)
+RenderedPosition::RenderedPosition(const PositionInComposedTree& position, TextAffinity affinity)
     : RenderedPosition(toPositionInDOMTree(position), affinity)
 {
 }
@@ -218,9 +211,9 @@ Position RenderedPosition::positionAtLeftBoundaryOfBiDiRun() const
     ASSERT(atLeftBoundaryOfBidiRun());
 
     if (atLeftmostOffsetInBox())
-        return createLegacyEditingPosition(m_layoutObject->node(), m_offset);
+        return Position::editingPositionOf(m_layoutObject->node(), m_offset);
 
-    return createLegacyEditingPosition(nextLeafChild()->layoutObject().node(), nextLeafChild()->caretLeftmostOffset());
+    return Position::editingPositionOf(nextLeafChild()->layoutObject().node(), nextLeafChild()->caretLeftmostOffset());
 }
 
 Position RenderedPosition::positionAtRightBoundaryOfBiDiRun() const
@@ -228,9 +221,9 @@ Position RenderedPosition::positionAtRightBoundaryOfBiDiRun() const
     ASSERT(atRightBoundaryOfBidiRun());
 
     if (atRightmostOffsetInBox())
-        return createLegacyEditingPosition(m_layoutObject->node(), m_offset);
+        return Position::editingPositionOf(m_layoutObject->node(), m_offset);
 
-    return createLegacyEditingPosition(prevLeafChild()->layoutObject().node(), prevLeafChild()->caretRightmostOffset());
+    return Position::editingPositionOf(prevLeafChild()->layoutObject().node(), prevLeafChild()->caretRightmostOffset());
 }
 
 IntRect RenderedPosition::absoluteRect(LayoutUnit* extraWidthToEndOfLine) const
@@ -251,7 +244,7 @@ void RenderedPosition::positionInGraphicsLayerBacking(CompositedSelectionBound& 
         return;
 
     LayoutRect rect = m_layoutObject->localCaretRect(m_inlineBox, m_offset);
-    DeprecatedPaintLayer* layer = nullptr;
+    PaintLayer* layer = nullptr;
     bound.edgeTopInLayer = m_layoutObject->localToInvalidationBackingPoint(rect.minXMinYCorner(), &layer);
     bound.edgeBottomInLayer = m_layoutObject->localToInvalidationBackingPoint(rect.minXMaxYCorner(), nullptr);
     bound.layer = layer ? layer->graphicsLayerBacking() : nullptr;

@@ -45,6 +45,8 @@ class TouchList;
 class TreeScope;
 
 class CORE_EXPORT EventPath final : public NoBaseWillBeGarbageCollectedFinalized<EventPath> {
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(EventPath);
+    WTF_MAKE_NONCOPYABLE(EventPath);
 public:
     explicit EventPath(Node&, Event* = nullptr);
 
@@ -79,17 +81,17 @@ private:
     void initialize();
     void calculatePath();
     void calculateAdjustedTargets();
-    void calculateTreeScopePrePostOrderNumbers();
+    void calculateTreeOrderAndSetNearestAncestorClosedTree();
 
     void shrink(size_t newSize) { ASSERT(!m_windowEventContext); m_nodeEventContexts.shrink(newSize); }
     void shrinkIfNeeded(const Node& target, const EventTarget& relatedTarget);
 
     void adjustTouchList(const TouchList*, WillBeHeapVector<RawPtrWillBeMember<TouchList>> adjustedTouchList, const WillBeHeapVector<RawPtrWillBeMember<TreeScope>>& treeScopes);
 
-    typedef WillBeHeapHashMap<RawPtrWillBeMember<TreeScope>, RefPtrWillBeMember<TreeScopeEventContext>> TreeScopeEventContextMap;
+    using TreeScopeEventContextMap = WillBeHeapHashMap<RawPtrWillBeMember<TreeScope>, RefPtrWillBeMember<TreeScopeEventContext>>;
     TreeScopeEventContext* ensureTreeScopeEventContext(Node* currentTarget, TreeScope*, TreeScopeEventContextMap&);
 
-    typedef WillBeHeapHashMap<RawPtrWillBeMember<TreeScope>, RawPtrWillBeMember<EventTarget>> RelatedTargetMap;
+    using RelatedTargetMap = WillBeHeapHashMap<RawPtrWillBeMember<TreeScope>, RawPtrWillBeMember<EventTarget>>;
 
     static void buildRelatedNodeMap(const Node&, RelatedTargetMap&);
     static EventTarget* findRelatedNode(TreeScope&, RelatedTargetMap&);

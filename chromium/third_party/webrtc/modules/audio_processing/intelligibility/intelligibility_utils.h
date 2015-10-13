@@ -23,6 +23,26 @@ namespace webrtc {
 
 namespace intelligibility {
 
+// Return |current| changed towards |target|, with the change being at most
+// |limit|.
+float UpdateFactor(float target, float current, float limit);
+
+// Apply a small fudge to degenerate complex values. The numbers in the array
+// were chosen randomly, so that even a series of all zeroes has some small
+// variability.
+std::complex<float> zerofudge(std::complex<float> c);
+
+// Incremental mean computation. Return the mean of the series with the
+// mean |mean| with added |data|.
+std::complex<float> NewMean(std::complex<float> mean,
+                            std::complex<float> data,
+                            size_t count);
+
+// Updates |mean| with added |data|;
+void AddToMean(std::complex<float> data,
+               size_t count,
+               std::complex<float>* mean);
+
 // Internal helper for computing the variances of a stream of arrays.
 // The result is an array of variances per position: the i-th variance
 // is the variance of the stream of data on the i-th positions in the
@@ -43,7 +63,8 @@ class VarianceArray {
     kStepInfinite = 0,
     kStepDecaying,
     kStepWindowed,
-    kStepBlocked
+    kStepBlocked,
+    kStepBlockBasedMovingAverage
   };
 
   // Construct an instance for the given input array length (|freqs|) and
@@ -51,7 +72,7 @@ class VarianceArray {
   // |window_size| is the number of samples for kStepWindowed and
   // the number of blocks for kStepBlocked. |decay| is the forgetting factor
   // for kStepDecaying.
-  VarianceArray(int freqs, StepType type, int window_size, float decay);
+  VarianceArray(size_t freqs, StepType type, size_t window_size, float decay);
 
   // Add a new data point to the series and compute the new variances.
   // TODO(bercic) |skip_fudge| is a flag for kStepWindowed and kStepDecaying,
@@ -77,6 +98,7 @@ class VarianceArray {
   void DecayStep(const std::complex<float>* data, bool dummy);
   void WindowedStep(const std::complex<float>* data, bool dummy);
   void BlockedStep(const std::complex<float>* data, bool dummy);
+  void BlockBasedMovingAverage(const std::complex<float>* data, bool dummy);
 
   // TODO(ekmeyerson): Switch the following running means
   // and histories from rtc::scoped_ptr to std::vector.
@@ -99,12 +121,13 @@ class VarianceArray {
   rtc::scoped_ptr<float[]> variance_;
   rtc::scoped_ptr<float[]> conj_sum_;
 
-  const int freqs_;
-  const int window_size_;
+  const size_t num_freqs_;
+  const size_t window_size_;
   const float decay_;
-  int history_cursor_;
-  int count_;
+  size_t history_cursor_;
+  size_t count_;
   float array_mean_;
+  bool buffer_full_;
   void (VarianceArray::*step_func_)(const std::complex<float>*, bool);
 };
 
@@ -113,7 +136,7 @@ class VarianceArray {
 // constrained by a limit on the magnitude of the changes.
 class GainApplier {
  public:
-  GainApplier(int freqs, float change_limit);
+  GainApplier(size_t freqs, float change_limit);
 
   // Copy |in_block| to |out_block|, multiplied by the current set of gains,
   // and step the current set of gains towards the target set.
@@ -124,7 +147,7 @@ class GainApplier {
   float* target() const { return target_.get(); }
 
  private:
-  const int freqs_;
+  const size_t num_freqs_;
   const float change_limit_;
   rtc::scoped_ptr<float[]> target_;
   rtc::scoped_ptr<float[]> current_;

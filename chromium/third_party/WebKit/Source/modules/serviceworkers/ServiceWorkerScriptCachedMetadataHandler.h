@@ -6,6 +6,7 @@
 #define ServiceWorkerScriptCachedMetadataHandler_h
 
 #include "core/fetch/CachedMetadataHandler.h"
+#include "platform/heap/Handle.h"
 #include "platform/weborigin/KURL.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/Vector.h"
@@ -17,11 +18,12 @@ class CachedMetadata;
 
 class ServiceWorkerScriptCachedMetadataHandler : public CachedMetadataHandler {
 public:
-    static PassOwnPtr<ServiceWorkerScriptCachedMetadataHandler> create(WorkerGlobalScope* workerGlobalScope, const KURL& scriptURL, const Vector<char>* metaData)
+    static PassOwnPtrWillBeRawPtr<ServiceWorkerScriptCachedMetadataHandler> create(WorkerGlobalScope* workerGlobalScope, const KURL& scriptURL, const Vector<char>* metaData)
     {
-        return adoptPtr(new ServiceWorkerScriptCachedMetadataHandler(workerGlobalScope, scriptURL, metaData));
+        return adoptPtrWillBeNoop(new ServiceWorkerScriptCachedMetadataHandler(workerGlobalScope, scriptURL, metaData));
     }
     ~ServiceWorkerScriptCachedMetadataHandler() override;
+    DECLARE_VIRTUAL_TRACE();
     void setCachedMetadata(unsigned dataTypeID, const char*, size_t, CacheType) override;
     void clearCachedMetadata(CacheType) override;
     CachedMetadata* cachedMetadata(unsigned dataTypeID) const override;
@@ -30,7 +32,7 @@ public:
 private:
     ServiceWorkerScriptCachedMetadataHandler(WorkerGlobalScope*, const KURL& scriptURL, const Vector<char>* metaData);
 
-    WorkerGlobalScope* m_workerGlobalScope;
+    RawPtrWillBeMember<WorkerGlobalScope> m_workerGlobalScope;
     KURL m_scriptURL;
     RefPtr<CachedMetadata> m_cachedMetadata;
 };

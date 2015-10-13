@@ -37,7 +37,7 @@ class CONTENT_EXPORT AndroidVideoEncodeAccelerator
   // media::VideoEncodeAccelerator implementation.
   media::VideoEncodeAccelerator::SupportedProfiles GetSupportedProfiles()
       override;
-  bool Initialize(media::VideoFrame::Format format,
+  bool Initialize(media::VideoPixelFormat format,
                   const gfx::Size& input_visible_size,
                   media::VideoCodecProfile output_profile,
                   uint32 initial_bitrate,
@@ -90,7 +90,7 @@ class CONTENT_EXPORT AndroidVideoEncodeAccelerator
   PendingFrames pending_frames_;
 
   // Repeating timer responsible for draining pending IO to the codec.
-  base::RepeatingTimer<AndroidVideoEncodeAccelerator> io_timer_;
+  base::RepeatingTimer io_timer_;
 
   // The difference between number of buffers queued & dequeued at the codec.
   int32 num_buffers_at_codec_;

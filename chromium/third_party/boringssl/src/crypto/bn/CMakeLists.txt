@@ -1,4 +1,4 @@
-include_directories(. .. ../../include)
+include_directories(../../include)
 
 if (${ARCH} STREQUAL "x86_64")
   set(
@@ -39,6 +39,7 @@ add_library(
   add.c
   asm/x86_64-gcc.c
   bn.c
+  bn_asn1.c
   cmp.c
   convert.c
   ctx.c

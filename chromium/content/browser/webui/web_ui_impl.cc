@@ -4,6 +4,7 @@
 
 #include "content/browser/webui/web_ui_impl.h"
 
+#include "base/debug/dump_without_crashing.h"
 #include "base/json/json_writer.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
@@ -43,10 +44,11 @@ base::string16 WebUI::GetJavascriptCall(
       base::char16('(') + parameters + base::char16(')') + base::char16(';');
 }
 
-WebUIImpl::WebUIImpl(WebContents* contents)
+WebUIImpl::WebUIImpl(WebContents* contents, const std::string& frame_name)
     : link_transition_type_(ui::PAGE_TRANSITION_LINK),
       bindings_(BINDINGS_POLICY_WEB_UI),
-      web_contents_(contents) {
+      web_contents_(contents),
+      frame_name_(frame_name) {
   DCHECK(contents);
 }
 
@@ -85,6 +87,16 @@ void WebUIImpl::RenderViewCreated(RenderViewHost* render_view_host) {
   controller_->RenderViewCreated(render_view_host);
 }
 
+void WebUIImpl::RenderViewReused(RenderViewHost* render_view_host,
+                                 bool was_main_frame) {
+  if (was_main_frame) {
+    GURL site_url = render_view_host->GetSiteInstance()->GetSiteURL();
+    GetContentClient()->browser()->LogWebUIUrl(site_url);
+  }
+
+  controller_->RenderViewReused(render_view_host);
+}
+
 WebContents* WebUIImpl::GetWebContents() const {
   return web_contents_;
 }
@@ -117,8 +129,8 @@ void WebUIImpl::SetBindings(int bindings) {
   bindings_ = bindings;
 }
 
-void WebUIImpl::OverrideJavaScriptFrame(const std::string& frame_name) {
-  frame_name_ = frame_name;
+bool WebUIImpl::HasRenderFrame() {
+  return TargetFrame() != nullptr;
 }
 
 WebUIController* WebUIImpl::GetController() const {
@@ -219,8 +231,19 @@ void WebUIImpl::AddMessageHandler(WebUIMessageHandler* handler) {
 
 void WebUIImpl::ExecuteJavascript(const base::string16& javascript) {
   RenderFrameHost* target_frame = TargetFrame();
-  if (target_frame)
+  if (target_frame) {
+    if (!(ChildProcessSecurityPolicyImpl::GetInstance()->HasWebUIBindings(
+              target_frame->GetProcess()->GetID()) ||
+          // It's possible to load about:blank in a Web UI renderer.
+          // See http://crbug.com/42547
+          target_frame->GetLastCommittedURL().spec() == url::kAboutBlankURL)) {
+      // Don't crash when we try to inject JavaScript into a non-WebUI page, but
+      // upload a crash report anyways. http://crbug.com/516690
+      base::debug::DumpWithoutCrashing();
+      return;
+    }
     target_frame->ExecuteJavaScript(javascript);
+  }
 }
 
 RenderFrameHost* WebUIImpl::TargetFrame() {

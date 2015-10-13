@@ -4,6 +4,7 @@
 
 #include "media/renderers/mock_gpu_video_accelerator_factories.h"
 
+#include "ui/gfx/buffer_format_util.h"
 #include "ui/gfx/gpu_memory_buffer.h"
 
 namespace media {
@@ -12,13 +13,24 @@ namespace {
 
 class GpuMemoryBufferImpl : public gfx::GpuMemoryBuffer {
  public:
-  GpuMemoryBufferImpl(const gfx::Size& size) : size_(size) {
-    bytes_.resize(size_.GetArea());
+  GpuMemoryBufferImpl(const gfx::Size& size, gfx::BufferFormat format)
+      : format_(format), size_(size),
+        num_planes_(gfx::NumberOfPlanesForBufferFormat(format)) {
+    DCHECK(gfx::BufferFormat::R_8 == format_ ||
+           gfx::BufferFormat::YUV_420_BIPLANAR == format_ ||
+           gfx::BufferFormat::UYVY_422 == format_);
+    DCHECK(num_planes_ <= kMaxPlanes);
+    for (int i = 0; i < static_cast<int>(num_planes_); ++i) {
+      bytes_[i].resize(
+          gfx::RowSizeForBufferFormat(size_.width(), format_, i) *
+          size_.height() / gfx::SubsamplingFactorForBufferFormat(format_, i));
+    }
   }
 
   // Overridden from gfx::GpuMemoryBuffer:
   bool Map(void** data) override {
-    data[0] = &bytes_[0];
+    for (size_t plane = 0; plane < num_planes_; ++plane)
+      data[plane] = &bytes_[plane][0];
     return true;
   }
   void Unmap() override{};
@@ -26,8 +38,19 @@ class GpuMemoryBufferImpl : public gfx::GpuMemoryBuffer {
     NOTREACHED();
     return false;
   }
-  Format GetFormat() const override { return gfx::GpuMemoryBuffer::R_8; }
-  void GetStride(int* stride) const override { stride[0] = size_.width(); }
+  gfx::BufferFormat GetFormat() const override {
+    return format_;
+  }
+  void GetStride(int* strides) const override {
+    for (int plane = 0; plane < static_cast<int>(num_planes_); ++plane) {
+      strides[plane] = static_cast<int>(
+          gfx::RowSizeForBufferFormat(size_.width(), format_, plane));
+    }
+  }
+  gfx::GpuMemoryBufferId GetId() const override {
+    NOTREACHED();
+    return gfx::GpuMemoryBufferId(0);
+  }
   gfx::GpuMemoryBufferHandle GetHandle() const override {
     NOTREACHED();
     return gfx::GpuMemoryBufferHandle();
@@ -37,8 +60,12 @@ class GpuMemoryBufferImpl : public gfx::GpuMemoryBuffer {
   }
 
  private:
-  std::vector<unsigned char> bytes_;
+  static const size_t kMaxPlanes = 3;
+
+  gfx::BufferFormat format_;
   const gfx::Size size_;
+  size_t num_planes_;
+  std::vector<uint8> bytes_[kMaxPlanes];
 };
 
 }  // unnamed namespace
@@ -54,10 +81,12 @@ bool MockGpuVideoAcceleratorFactories::IsGpuVideoAcceleratorEnabled() {
 scoped_ptr<gfx::GpuMemoryBuffer>
 MockGpuVideoAcceleratorFactories::AllocateGpuMemoryBuffer(
     const gfx::Size& size,
-    gfx::GpuMemoryBuffer::Format format,
-    gfx::GpuMemoryBuffer::Usage usage) {
-  DCHECK_EQ(gfx::GpuMemoryBuffer::R_8, format);
-  return make_scoped_ptr<gfx::GpuMemoryBuffer>(new GpuMemoryBufferImpl(size));
+    gfx::BufferFormat format,
+    gfx::BufferUsage usage) {
+  if (fail_to_allocate_gpu_memory_buffer_)
+    return nullptr;
+  return make_scoped_ptr<gfx::GpuMemoryBuffer>(
+      new GpuMemoryBufferImpl(size, format));
 }
 
 scoped_ptr<base::SharedMemory>
@@ -73,6 +102,11 @@ MockGpuVideoAcceleratorFactories::CreateVideoDecodeAccelerator() {
 scoped_ptr<VideoEncodeAccelerator>
 MockGpuVideoAcceleratorFactories::CreateVideoEncodeAccelerator() {
   return scoped_ptr<VideoEncodeAccelerator>(DoCreateVideoEncodeAccelerator());
+}
+
+bool MockGpuVideoAcceleratorFactories::ShouldUseGpuMemoryBuffersForVideoFrames()
+    const {
+  return false;
 }
 
 unsigned MockGpuVideoAcceleratorFactories::ImageTextureTarget() {

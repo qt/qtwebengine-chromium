@@ -113,14 +113,6 @@ class Android2GrdUnittest(unittest.TestCase):
     self.assertTrue(msg.IsTranslateable())
     self.assertEqual(msg.attrs["desc"], "A string with placeholder.")
 
-  def testProductAttribute(self):
-    grd = self.__ParseAndroidXml([])
-    messages = grd.GetChildrenOfType(message.MessageNode)
-    msg = filter(lambda x: x.GetTextualIds()[0] ==
-                   "IDS_SIMPLE_product_nosdcard",
-                 messages)
-    self.assertTrue(msg)
-
   def testTranslatableAttribute(self):
     grd = self.__ParseAndroidXml([])
     messages = grd.GetChildrenOfType(message.MessageNode)

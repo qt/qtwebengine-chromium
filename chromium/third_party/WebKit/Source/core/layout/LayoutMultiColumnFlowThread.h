@@ -117,11 +117,11 @@ enum BalancedColumnHeightCalculation { GuessFromFlowThreadPortion, StretchBySpac
 // https://sites.google.com/a/chromium.org/dev/developers/design-documents/multi-column-layout
 class CORE_EXPORT LayoutMultiColumnFlowThread : public LayoutFlowThread {
 public:
-    virtual ~LayoutMultiColumnFlowThread();
+    ~LayoutMultiColumnFlowThread() override;
 
     static LayoutMultiColumnFlowThread* createAnonymous(Document&, const ComputedStyle& parentStyle);
 
-    virtual bool isLayoutMultiColumnFlowThread() const override final { return true; }
+    bool isLayoutMultiColumnFlowThread() const final { return true; }
 
     LayoutBlockFlow* multiColumnBlockFlow() const { return toLayoutBlockFlow(parent()); }
 
@@ -163,16 +163,27 @@ public:
     void setColumnHeightAvailable(LayoutUnit available) { m_columnHeightAvailable = available; }
     bool progressionIsInline() const { return m_progressionIsInline; }
 
-    virtual LayoutSize columnOffset(const LayoutPoint&) const override final;
+    LayoutSize columnOffset(const LayoutPoint&) const final;
 
     // Do we need to set a new width and lay out?
     virtual bool needsNewWidth() const;
 
-    virtual LayoutPoint visualPointToFlowThreadPoint(const LayoutPoint& visualPoint) const override;
+    bool isPageLogicalHeightKnown() const final;
 
-    virtual LayoutMultiColumnSet* columnSetAtBlockOffset(LayoutUnit) const override final;
+    LayoutSize flowThreadTranslationAtOffset(LayoutUnit) const;
+
+    LayoutPoint visualPointToFlowThreadPoint(const LayoutPoint& visualPoint) const override;
+
+    LayoutMultiColumnSet* columnSetAtBlockOffset(LayoutUnit) const final;
 
     void layoutColumns(bool relayoutChildren, SubtreeLayoutScope&);
+
+    bool isInInitialLayoutPass() const { return !m_inBalancingPass; }
+
+    // Skip past a column spanner during flow thread layout. Spanners are not laid out inside the
+    // flow thread, since the flow thread is not in a spanner's containing block chain (since the
+    // containing block is the multicol container).
+    void skipColumnSpanner(LayoutBox*, LayoutUnit logicalTopInFlowThread);
 
     bool recalculateColumnHeights();
 
@@ -181,13 +192,24 @@ public:
     // Remove the spanner placeholder and return true if the specified object is no longer a valid spanner.
     bool removeSpannerPlaceholderIfNoLongerValid(LayoutBox* spannerObjectInFlowThread);
 
-    virtual const char* name() const override { return "LayoutMultiColumnFlowThread"; }
+    LayoutMultiColumnFlowThread* enclosingFlowThread() const;
+    LayoutUnit blockOffsetInEnclosingFlowThread() const { ASSERT(enclosingFlowThread()); return m_blockOffsetInEnclosingFlowThread; }
+
+    // Return true if we have a fragmentainer group that can hold a column at the specified flow thread block offset.
+    bool hasFragmentainerGroupForColumnAt(LayoutUnit offsetInFlowThread) const;
+
+    // If we've run out of columns in the last fragmentainer group (column row), we have to insert
+    // another fragmentainer group in order to hold more columns. This means that we're moving to
+    // the next outer column (in the enclosing fragmentation context).
+    void appendNewFragmentainerGroupIfNeeded(LayoutUnit offsetInFlowThread);
+
+    const char* name() const override { return "LayoutMultiColumnFlowThread"; }
 
 protected:
     LayoutMultiColumnFlowThread();
     void setProgressionIsInline(bool isInline) { m_progressionIsInline = isInline; }
 
-    virtual void layout() override;
+    void layout() override;
 
 private:
     void calculateColumnCountAndWidth(LayoutUnit& width, unsigned& count) const;
@@ -196,20 +218,18 @@ private:
     void destroySpannerPlaceholder(LayoutMultiColumnSpannerPlaceholder*);
     virtual bool descendantIsValidColumnSpanner(LayoutObject* descendant) const;
 
-    virtual void addColumnSetToThread(LayoutMultiColumnSet*) override;
-    virtual void willBeRemovedFromTree() override;
-    virtual void skipColumnSpanner(LayoutBox*, LayoutUnit logicalTopInFlowThread) override;
-    virtual void flowThreadDescendantWasInserted(LayoutObject*) final;
-    virtual void flowThreadDescendantWillBeRemoved(LayoutObject*) final;
-    virtual void flowThreadDescendantStyleWillChange(LayoutObject*, StyleDifference, const ComputedStyle& newStyle) override;
-    virtual void flowThreadDescendantStyleDidChange(LayoutObject*, StyleDifference, const ComputedStyle& oldStyle) override;
-    virtual void computePreferredLogicalWidths() override;
-    virtual void computeLogicalHeight(LayoutUnit logicalHeight, LayoutUnit logicalTop, LogicalExtentComputedValues&) const override;
-    virtual void updateLogicalWidth() override;
-    virtual void setPageBreak(LayoutUnit offset, LayoutUnit spaceShortage) override;
-    virtual void updateMinimumPageHeight(LayoutUnit offset, LayoutUnit minHeight) override;
-    virtual bool addForcedColumnBreak(LayoutUnit, LayoutObject* breakChild, bool isBefore, LayoutUnit* offsetBreakAdjustment = nullptr) override;
-    virtual bool isPageLogicalHeightKnown() const override;
+    void addColumnSetToThread(LayoutMultiColumnSet*) override;
+    void willBeRemovedFromTree() override;
+    void flowThreadDescendantWasInserted(LayoutObject*) final;
+    void flowThreadDescendantWillBeRemoved(LayoutObject*) final;
+    void flowThreadDescendantStyleWillChange(LayoutBox*, StyleDifference, const ComputedStyle& newStyle) override;
+    void flowThreadDescendantStyleDidChange(LayoutBox*, StyleDifference, const ComputedStyle& oldStyle) override;
+    void computePreferredLogicalWidths() override;
+    void computeLogicalHeight(LayoutUnit logicalHeight, LayoutUnit logicalTop, LogicalExtentComputedValues&) const override;
+    void updateLogicalWidth() override;
+    void setPageBreak(LayoutUnit offset, LayoutUnit spaceShortage) override;
+    void updateMinimumPageHeight(LayoutUnit offset, LayoutUnit minHeight) override;
+    bool addForcedColumnBreak(LayoutUnit, LayoutObject* breakChild, bool isBefore, LayoutUnit* offsetBreakAdjustment = nullptr) override;
 
     // The last set we worked on. It's not to be used as the "current set". The concept of a
     // "current set" is difficult, since layout may jump back and forth in the tree, due to wrong
@@ -218,11 +238,20 @@ private:
 
     unsigned m_columnCount; // The used value of column-count
     LayoutUnit m_columnHeightAvailable; // Total height available to columns, or 0 if auto.
+
+    // Cached block offset from this flow thread to the enclosing flow thread, if any. In the
+    // coordinate space of the enclosing flow thread.
+    LayoutUnit m_blockOffsetInEnclosingFlowThread;
+
     bool m_inBalancingPass; // Set when relayouting for column balancing.
     bool m_needsColumnHeightsRecalculation; // Set when we need to recalculate the column set heights after layout.
     bool m_progressionIsInline; // Always true for regular multicol. False for paged-y overflow.
     bool m_isBeingEvacuated;
 };
+
+// Cannot use DEFINE_LAYOUT_OBJECT_TYPE_CASTS here, because isMultiColumnFlowThread() is defined in
+// LayoutFlowThread, not in LayoutObject.
+DEFINE_TYPE_CASTS(LayoutMultiColumnFlowThread, LayoutFlowThread, object, object->isLayoutMultiColumnFlowThread(), object.isLayoutMultiColumnFlowThread());
 
 } // namespace blink
 

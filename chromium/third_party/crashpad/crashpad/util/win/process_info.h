@@ -23,6 +23,7 @@
 
 #include "base/basictypes.h"
 #include "util/misc/initialization_state_dcheck.h"
+#include "util/numeric/checked_range.h"
 #include "util/win/address_types.h"
 
 namespace crashpad {
@@ -47,6 +48,40 @@ class ProcessInfo {
 
     //! \brief The module's timestamp.
     time_t timestamp;
+  };
+
+  // \brief Contains information about a range of pages in the virtual address
+  //    space of a process.
+  struct MemoryInfo {
+    explicit MemoryInfo(const MEMORY_BASIC_INFORMATION& mbi);
+    ~MemoryInfo();
+
+    //! \brief The base address of the region of pages.
+    WinVMAddress base_address;
+
+    //! \brief The size of the region beginning at base_address in bytes.
+    WinVMSize region_size;
+
+    //! \brief The base address of a range of pages that was allocated by
+    //!     `VirtualAlloc()`. The page pointed to base_address is within this
+    //!     range of pages.
+    WinVMAddress allocation_base;
+
+    //! \brief The state of the pages, one of `MEM_COMMIT`, `MEM_FREE`, or
+    //!     `MEM_RESERVE`.
+    uint32_t state;
+
+    //! \brief The memory protection option when this page was originally
+    //!     allocated. This will be `PAGE_EXECUTE`, `PAGE_EXECUTE_READ`, etc.
+    uint32_t allocation_protect;
+
+    //! \brief The current memoryprotection state. This will be `PAGE_EXECUTE`,
+    //!   `PAGE_EXECUTE_READ`, etc.
+    uint32_t protect;
+
+    //! \brief The type of the pages. This will be one of `MEM_IMAGE`,
+    //!     `MEM_MAPPED`, or `MEM_PRIVATE`.
+    uint32_t type;
   };
 
   ProcessInfo();
@@ -78,6 +113,13 @@ class ProcessInfo {
   //!     Block.
   bool CommandLine(std::wstring* command_line) const;
 
+  //! \brief Gets the address and size of the process's Process Environment
+  //!     Block.
+  //!
+  //! \param[out] peb_address The address of the Process Environment Block.
+  //! \param[out] peb_size The size of the Process Environment Block.
+  void Peb(WinVMAddress* peb_address, WinVMSize* peb_size) const;
+
   //! \brief Retrieves the modules loaded into the target process.
   //!
   //! The modules are enumerated in initialization order as detailed in the
@@ -85,22 +127,58 @@ class ProcessInfo {
   //!     first element.
   bool Modules(std::vector<Module>* modules) const;
 
+  //! \brief Retrieves information about all pages mapped into the process.
+  const std::vector<MemoryInfo>& MemoryInformation() const;
+
+  //! \brief Given a range to be read from the target process, returns a vector
+  //!     of ranges, representing the readable portions of the original range.
+  //!
+  //! \param[in] range The range being identified.
+  //!
+  //! \return A vector of ranges corresponding to the portion of \a range that
+  //!     is readable based on the memory map.
+  std::vector<CheckedRange<WinVMAddress, WinVMSize>> GetReadableRanges(
+      const CheckedRange<WinVMAddress, WinVMSize>& range) const;
+
  private:
-  template <class T>
+  template <class Traits>
+  friend bool GetProcessBasicInformation(HANDLE process,
+                                         bool is_wow64,
+                                         ProcessInfo* process_info,
+                                         WinVMAddress* peb_address,
+                                         WinVMSize* peb_size);
+  template <class Traits>
   friend bool ReadProcessData(HANDLE process,
                               WinVMAddress peb_address_vmaddr,
                               ProcessInfo* process_info);
 
+  friend bool ReadMemoryInfo(HANDLE process,
+                             bool is_64_bit,
+                             ProcessInfo* process_info);
+
   pid_t process_id_;
   pid_t inherited_from_process_id_;
   std::wstring command_line_;
+  WinVMAddress peb_address_;
+  WinVMSize peb_size_;
   std::vector<Module> modules_;
+  std::vector<MemoryInfo> memory_info_;
   bool is_64_bit_;
   bool is_wow64_;
   InitializationStateDcheck initialized_;
 
   DISALLOW_COPY_AND_ASSIGN(ProcessInfo);
 };
+
+//! \brief Given a memory map of a process, and a range to be read from the
+//!     target process, returns a vector of ranges, representing the readable
+//!     portions of the original range.
+//!
+//! This is a free function for testing, but prefer
+//! ProcessInfo::GetReadableRanges().
+std::vector<CheckedRange<WinVMAddress, WinVMSize>> GetReadableRangesOfMemoryMap(
+    const CheckedRange<WinVMAddress, WinVMSize>& range,
+    const std::vector<ProcessInfo::MemoryInfo>& memory_info);
 
 }  // namespace crashpad
 

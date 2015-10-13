@@ -17,10 +17,8 @@ class VideoFramePool::PoolImpl
  public:
   PoolImpl();
 
-  // Returns a frame from the pool that matches the specified
-  // parameters or creates a new frame if no suitable frame exists in
-  // the pool. The pool is drained if no matching frame is found.
-  scoped_refptr<VideoFrame> CreateFrame(VideoFrame::Format format,
+  // See VideoFramePool::CreateFrame() for usage.
+  scoped_refptr<VideoFrame> CreateFrame(VideoPixelFormat format,
                                         const gfx::Size& coded_size,
                                         const gfx::Rect& visible_rect,
                                         const gfx::Size& natural_size,
@@ -56,7 +54,7 @@ VideoFramePool::PoolImpl::~PoolImpl() {
 }
 
 scoped_refptr<VideoFrame> VideoFramePool::PoolImpl::CreateFrame(
-    VideoFrame::Format format,
+    VideoPixelFormat format,
     const gfx::Size& coded_size,
     const gfx::Rect& visible_rect,
     const gfx::Size& natural_size,
@@ -65,7 +63,6 @@ scoped_refptr<VideoFrame> VideoFramePool::PoolImpl::CreateFrame(
   DCHECK(!is_shutdown_);
 
   scoped_refptr<VideoFrame> frame;
-
   while (!frame.get() && !frames_.empty()) {
       scoped_refptr<VideoFrame> pool_frame = frames_.front();
       frames_.pop_front();
@@ -81,7 +78,7 @@ scoped_refptr<VideoFrame> VideoFramePool::PoolImpl::CreateFrame(
   }
 
   if (!frame.get()) {
-    frame = VideoFrame::CreateFrame(
+    frame = VideoFrame::CreateZeroInitializedFrame(
         format, coded_size, visible_rect, natural_size, timestamp);
   }
 
@@ -115,7 +112,7 @@ VideoFramePool::~VideoFramePool() {
 }
 
 scoped_refptr<VideoFrame> VideoFramePool::CreateFrame(
-    VideoFrame::Format format,
+    VideoPixelFormat format,
     const gfx::Size& coded_size,
     const gfx::Rect& visible_rect,
     const gfx::Size& natural_size,

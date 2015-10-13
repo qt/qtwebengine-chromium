@@ -31,42 +31,143 @@
     SkSwizzler::GetResult(zeroAlpha, maxAlpha);
 
 /*
- *
- * Copy the codec color table back to the client when kIndex8 color type is requested
- *
+ * returns a scaled dimension based on the original dimension and the sampleSize
+ * NOTE: we round down here for scaled dimension to match the behavior of SkImageDecoder
  */
-static inline void copy_color_table(const SkImageInfo& dstInfo, SkColorTable* colorTable,
-        SkPMColor* inputColorPtr, int* inputColorCount) {
-    if (kIndex_8_SkColorType == dstInfo.colorType()) {
-        SkASSERT(NULL != inputColorPtr);
-        SkASSERT(NULL != inputColorCount);
-        SkASSERT(NULL != colorTable);
-        sk_memcpy32(inputColorPtr, colorTable->readColors(), *inputColorCount);
+static int get_scaled_dimension(int srcDimension, int sampleSize) {
+    if (sampleSize > srcDimension) {
+        return 1;
+    }
+    return srcDimension / sampleSize;
+}
+
+/*
+ * Returns the first coordinate that we will keep during a scaled decode.
+ * The output can be interpreted as an x-coordinate or a y-coordinate.
+ *
+ * This does not need to be called and is not called when sampleFactor == 1.
+ */
+static int get_start_coord(int sampleFactor) { return sampleFactor / 2; };
+
+/*
+ * Given a coordinate in the original image, this returns the corresponding
+ * coordinate in the scaled image.  This function is meaningless if
+ * IsCoordNecessary returns false.
+ * The output can be interpreted as an x-coordinate or a y-coordinate.
+ *
+ * This does not need to be called and is not called when sampleFactor == 1.
+ */
+static int get_dst_coord(int srcCoord, int sampleFactor) { return srcCoord / sampleFactor; };
+
+/*
+ * When scaling, we will discard certain y-coordinates (rows) and
+ * x-coordinates (columns).  This function returns true if we should keep the
+ * coordinate and false otherwise.
+ * The inputs may be x-coordinates or y-coordinates.
+ *
+ * This does not need to be called and is not called when sampleFactor == 1.
+ */
+static bool is_coord_necessary(int srcCoord, int sampleFactor, int scaledDim) {
+    // Get the first coordinate that we want to keep
+    int startCoord = get_start_coord(sampleFactor);
+
+    // Return false on edge cases
+    if (srcCoord < startCoord || get_dst_coord(srcCoord, sampleFactor) >= scaledDim) {
+        return false;
+    }
+
+    // Every sampleFactor rows are necessary
+    return ((srcCoord - startCoord) % sampleFactor) == 0;
+}
+
+static inline bool valid_alpha(SkAlphaType dstAlpha, SkAlphaType srcAlpha) {
+    // Check for supported alpha types
+    if (srcAlpha != dstAlpha) {
+        if (kOpaque_SkAlphaType == srcAlpha) {
+            // If the source is opaque, we must decode to opaque
+            return false;
+        }
+
+        // The source is not opaque
+        switch (dstAlpha) {
+            case kPremul_SkAlphaType:
+            case kUnpremul_SkAlphaType:
+                // The source is not opaque, so either of these is okay
+                break;
+            default:
+                // We cannot decode a non-opaque image to opaque (or unknown)
+                return false;
+        }
+    }
+    return true;
+}
+
+/*
+ * Most of our codecs support the same conversions:
+ * - profileType must be the same
+ * - opaque only to opaque (and 565 only if opaque)
+ * - premul to unpremul and vice versa
+ * - always support N32
+ * - otherwise match the src color type
+ */
+static bool conversion_possible(const SkImageInfo& dst, const SkImageInfo& src) {
+    if (dst.profileType() != src.profileType()) {
+        return false;
+    }
+
+    // Ensure the alpha type is valid
+    if (!valid_alpha(dst.alphaType(), src.alphaType())) {
+        return false;
+    }
+
+    // Check for supported color types
+    switch (dst.colorType()) {
+        case kN32_SkColorType:
+            return true;
+        case kRGB_565_SkColorType:
+            return src.alphaType() == kOpaque_SkAlphaType;
+        default:
+            return dst.colorType() == src.colorType();
     }
 }
 
 /*
+ * If there is a color table, get a pointer to the colors, otherwise return nullptr
+ */
+static const SkPMColor* get_color_ptr(SkColorTable* colorTable) {
+     return nullptr != colorTable ? colorTable->readColors() : nullptr;
+}
+
+/*
  *
+ * Copy the codec color table back to the client when kIndex8 color type is requested
+ */
+static inline void copy_color_table(const SkImageInfo& dstInfo, SkColorTable* colorTable,
+        SkPMColor* inputColorPtr, int* inputColorCount) {
+    if (kIndex_8_SkColorType == dstInfo.colorType()) {
+        SkASSERT(nullptr != inputColorPtr);
+        SkASSERT(nullptr != inputColorCount);
+        SkASSERT(nullptr != colorTable);
+        memcpy(inputColorPtr, colorTable->readColors(), *inputColorCount * sizeof(SkPMColor));
+    }
+}
+
+/*
  * Compute row bytes for an image using pixels per byte
- *
  */
 static inline size_t compute_row_bytes_ppb(int width, uint32_t pixelsPerByte) {
     return (width + pixelsPerByte - 1) / pixelsPerByte;
 }
 
 /*
- *
  * Compute row bytes for an image using bytes per pixel
- *
  */
 static inline size_t compute_row_bytes_bpp(int width, uint32_t bytesPerPixel) {
     return width * bytesPerPixel;
 }
 
 /*
- *
  * Compute row bytes for an image
- *
  */
 static inline size_t compute_row_bytes(int width, uint32_t bitsPerPixel) {
     if (bitsPerPixel < 16) {
@@ -81,20 +182,33 @@ static inline size_t compute_row_bytes(int width, uint32_t bitsPerPixel) {
 }
 
 /*
- *
+ * On incomplete images, get the color to fill with
+ */
+static inline SkPMColor get_fill_color_or_index(SkAlphaType alphaType) {
+    // This condition works properly for all supported output color types.
+    // kIndex8: The low 8-bits of both possible return values is 0, which is
+    //          our desired default index.
+    // kGray8:  The low 8-bits of both possible return values is 0, which is
+    //          black, our desired fill value.
+    // kRGB565: The low 16-bits of both possible return values is 0, which is
+    //          black, our desired fill value.
+    // kN32:    Return black for opaque images and transparent for non-opaque
+    //          images.
+    return kOpaque_SkAlphaType == alphaType ?
+            SK_ColorBLACK : SK_ColorTRANSPARENT;
+}
+
+/*
  * Get a byte from a buffer
  * This method is unsafe, the caller is responsible for performing a check
- *
  */
 static inline uint8_t get_byte(uint8_t* buffer, uint32_t i) {
     return buffer[i];
 }
 
 /*
- *
  * Get a short from a buffer
  * This method is unsafe, the caller is responsible for performing a check
- *
  */
 static inline uint16_t get_short(uint8_t* buffer, uint32_t i) {
     uint16_t result;
@@ -107,10 +221,8 @@ static inline uint16_t get_short(uint8_t* buffer, uint32_t i) {
 }
 
 /*
- *
  * Get an int from a buffer
  * This method is unsafe, the caller is responsible for performing a check
- *
  */
 static inline uint32_t get_int(uint8_t* buffer, uint32_t i) {
     uint32_t result;

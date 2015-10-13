@@ -79,7 +79,7 @@ rtc::StreamResult StreamInterfaceChannel::Write(const void* data,
 bool StreamInterfaceChannel::OnPacketReceived(const char* data, size_t size) {
   // We force a read event here to ensure that we don't overflow our queue.
   bool ret = packets_.WriteBack(data, size, NULL);
-  CHECK(ret) << "Failed to write packet to queue.";
+  RTC_CHECK(ret) << "Failed to write packet to queue.";
   if (ret) {
     SignalEvent(this, rtc::SE_READ, 0);
   }
@@ -87,31 +87,26 @@ bool StreamInterfaceChannel::OnPacketReceived(const char* data, size_t size) {
 }
 
 DtlsTransportChannelWrapper::DtlsTransportChannelWrapper(
-                                           Transport* transport,
-                                           TransportChannelImpl* channel)
-    : TransportChannelImpl(channel->content_name(), channel->component()),
+    Transport* transport,
+    TransportChannelImpl* channel)
+    : TransportChannelImpl(channel->transport_name(), channel->component()),
       transport_(transport),
       worker_thread_(rtc::Thread::Current()),
       channel_(channel),
       downward_(NULL),
       dtls_state_(STATE_NONE),
-      local_identity_(NULL),
       ssl_role_(rtc::SSL_CLIENT),
       ssl_max_version_(rtc::SSL_PROTOCOL_DTLS_10) {
-  channel_->SignalReadableState.connect(this,
-      &DtlsTransportChannelWrapper::OnReadableState);
   channel_->SignalWritableState.connect(this,
       &DtlsTransportChannelWrapper::OnWritableState);
   channel_->SignalReadPacket.connect(this,
       &DtlsTransportChannelWrapper::OnReadPacket);
   channel_->SignalReadyToSend.connect(this,
       &DtlsTransportChannelWrapper::OnReadyToSend);
-  channel_->SignalRequestSignaling.connect(this,
-      &DtlsTransportChannelWrapper::OnRequestSignaling);
-  channel_->SignalCandidateReady.connect(this,
-      &DtlsTransportChannelWrapper::OnCandidateReady);
-  channel_->SignalCandidatesAllocationDone.connect(this,
-      &DtlsTransportChannelWrapper::OnCandidatesAllocationDone);
+  channel_->SignalGatheringState.connect(
+      this, &DtlsTransportChannelWrapper::OnGatheringState);
+  channel_->SignalCandidateGathered.connect(
+      this, &DtlsTransportChannelWrapper::OnCandidateGathered);
   channel_->SignalRoleConflict.connect(this,
       &DtlsTransportChannelWrapper::OnRoleConflict);
   channel_->SignalRouteChange.connect(this,
@@ -133,10 +128,10 @@ void DtlsTransportChannelWrapper::Connect() {
   channel_->Connect();
 }
 
-bool DtlsTransportChannelWrapper::SetLocalIdentity(
-    rtc::SSLIdentity* identity) {
+bool DtlsTransportChannelWrapper::SetLocalCertificate(
+    const rtc::scoped_refptr<rtc::RTCCertificate>& certificate) {
   if (dtls_state_ != STATE_NONE) {
-    if (identity == local_identity_) {
+    if (certificate == local_certificate_) {
       // This may happen during renegotiation.
       LOG_J(LS_INFO, this) << "Ignoring identical DTLS identity";
       return true;
@@ -146,8 +141,8 @@ bool DtlsTransportChannelWrapper::SetLocalIdentity(
     }
   }
 
-  if (identity) {
-    local_identity_ = identity;
+  if (certificate) {
+    local_certificate_ = certificate;
     dtls_state_ = STATE_OFFERED;
   } else {
     LOG_J(LS_INFO, this) << "NULL DTLS identity supplied. Not doing DTLS";
@@ -156,13 +151,9 @@ bool DtlsTransportChannelWrapper::SetLocalIdentity(
   return true;
 }
 
-bool DtlsTransportChannelWrapper::GetLocalIdentity(
-    rtc::SSLIdentity** identity) const {
-  if (!local_identity_)
-    return false;
-
-  *identity = local_identity_->GetReference();
-  return true;
+rtc::scoped_refptr<rtc::RTCCertificate>
+DtlsTransportChannelWrapper::GetLocalCertificate() const {
+  return local_certificate_;
 }
 
 bool DtlsTransportChannelWrapper::SetSslMaxProtocolVersion(
@@ -195,12 +186,12 @@ bool DtlsTransportChannelWrapper::GetSslRole(rtc::SSLRole* role) const {
   return true;
 }
 
-bool DtlsTransportChannelWrapper::GetSslCipher(std::string* cipher) {
+bool DtlsTransportChannelWrapper::GetSslCipherSuite(uint16_t* cipher) {
   if (dtls_state_ != STATE_OPEN) {
     return false;
   }
 
-  return dtls_->GetSslCipher(cipher);
+  return dtls_->GetSslCipherSuite(cipher);
 }
 
 bool DtlsTransportChannelWrapper::SetRemoteFingerprint(
@@ -218,7 +209,7 @@ bool DtlsTransportChannelWrapper::SetRemoteFingerprint(
     return true;
   }
 
-  // Allow SetRemoteFingerprint with a NULL digest even if SetLocalIdentity
+  // Allow SetRemoteFingerprint with a NULL digest even if SetLocalCertificate
   // hasn't been called.
   if (dtls_state_ > STATE_OFFERED ||
       (dtls_state_ == STATE_NONE && !digest_alg.empty())) {
@@ -245,7 +236,7 @@ bool DtlsTransportChannelWrapper::SetRemoteFingerprint(
   return true;
 }
 
-bool DtlsTransportChannelWrapper::GetRemoteCertificate(
+bool DtlsTransportChannelWrapper::GetRemoteSSLCertificate(
     rtc::SSLCertificate** cert) const {
   if (!dtls_)
     return false;
@@ -265,7 +256,7 @@ bool DtlsTransportChannelWrapper::SetupDtls() {
 
   downward_ = downward;
 
-  dtls_->SetIdentity(local_identity_->GetReference());
+  dtls_->SetIdentity(local_certificate_->identity()->GetReference());
   dtls_->SetMode(rtc::SSL_MODE_DTLS);
   dtls_->SetMaxProtocolVersion(ssl_max_version_);
   dtls_->SetServerRole(ssl_role_);
@@ -339,7 +330,7 @@ bool DtlsTransportChannelWrapper::SetSrtpCiphers(
   return true;
 }
 
-bool DtlsTransportChannelWrapper::GetSrtpCipher(std::string* cipher) {
+bool DtlsTransportChannelWrapper::GetSrtpCryptoSuite(std::string* cipher) {
   if (dtls_state_ != STATE_OPEN) {
     return false;
   }
@@ -397,25 +388,12 @@ int DtlsTransportChannelWrapper::SendPacket(
 // (1) If we're not doing DTLS-SRTP, then the state is just the
 //     state of the underlying impl()
 // (2) If we're doing DTLS-SRTP:
-//     - Prior to the DTLS handshake, the state is neither readable or
+//     - Prior to the DTLS handshake, the state is neither receiving nor
 //       writable
 //     - When the impl goes writable for the first time we
 //       start the DTLS handshake
 //     - Once the DTLS handshake completes, the state is that of the
 //       impl again
-void DtlsTransportChannelWrapper::OnReadableState(TransportChannel* channel) {
-  ASSERT(rtc::Thread::Current() == worker_thread_);
-  ASSERT(channel == channel_);
-  LOG_J(LS_VERBOSE, this)
-      << "DTLSTransportChannelWrapper: channel readable state changed to "
-      << channel_->readable();
-
-  if (dtls_state_ == STATE_NONE || dtls_state_ == STATE_OPEN) {
-    set_readable(channel_->readable());
-    // Note: SignalReadableState fired by set_readable.
-  }
-}
-
 void DtlsTransportChannelWrapper::OnWritableState(TransportChannel* channel) {
   ASSERT(rtc::Thread::Current() == worker_thread_);
   ASSERT(channel == channel_);
@@ -550,8 +528,6 @@ void DtlsTransportChannelWrapper::OnDtlsEvent(rtc::StreamInterface* dtls,
       // The check for OPEN shouldn't be necessary but let's make
       // sure we don't accidentally frob the state if it's closed.
       dtls_state_ = STATE_OPEN;
-
-      set_readable(true);
       set_writable(true);
     }
   }
@@ -569,8 +545,6 @@ void DtlsTransportChannelWrapper::OnDtlsEvent(rtc::StreamInterface* dtls,
     } else {
       LOG_J(LS_INFO, this) << "DTLS channel error, code=" << err;
     }
-
-    set_readable(false);
     set_writable(false);
     dtls_state_ = STATE_CLOSED;
   }
@@ -615,22 +589,17 @@ bool DtlsTransportChannelWrapper::HandleDtlsPacket(const char* data,
   return downward_->OnPacketReceived(data, size);
 }
 
-void DtlsTransportChannelWrapper::OnRequestSignaling(
+void DtlsTransportChannelWrapper::OnGatheringState(
     TransportChannelImpl* channel) {
   ASSERT(channel == channel_);
-  SignalRequestSignaling(this);
+  SignalGatheringState(this);
 }
 
-void DtlsTransportChannelWrapper::OnCandidateReady(
-    TransportChannelImpl* channel, const Candidate& c) {
+void DtlsTransportChannelWrapper::OnCandidateGathered(
+    TransportChannelImpl* channel,
+    const Candidate& c) {
   ASSERT(channel == channel_);
-  SignalCandidateReady(this, c);
-}
-
-void DtlsTransportChannelWrapper::OnCandidatesAllocationDone(
-    TransportChannelImpl* channel) {
-  ASSERT(channel == channel_);
-  SignalCandidatesAllocationDone(this);
+  SignalCandidateGathered(this, c);
 }
 
 void DtlsTransportChannelWrapper::OnRoleConflict(

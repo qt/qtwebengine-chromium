@@ -9,7 +9,28 @@
 #ifndef SkBitmapDevice_DEFINED
 #define SkBitmapDevice_DEFINED
 
+#include "SkBitmap.h"
+#include "SkCanvas.h"
+#include "SkColor.h"
 #include "SkDevice.h"
+#include "SkImageFilter.h"
+#include "SkImageInfo.h"
+#include "SkRect.h"
+#include "SkScalar.h"
+#include "SkSize.h"
+#include "SkSurfaceProps.h"
+#include "SkTypes.h"
+
+class SkDraw;
+class SkMatrix;
+class SkPaint;
+class SkPath;
+class SkPixelRef;
+class SkPixmap;
+class SkRRect;
+class SkSurface;
+class SkXfermode;
+struct SkPoint;
 
 ///////////////////////////////////////////////////////////////////////////////
 class SK_API SkBitmapDevice : public SkBaseDevice {
@@ -81,10 +102,8 @@ protected:
      *  The default impl. will create a bitmap-shader from the bitmap,
      *  and call drawRect with it.
      */
-    virtual void drawBitmapRect(const SkDraw&, const SkBitmap&,
-                                const SkRect* srcOrNull, const SkRect& dst,
-                                const SkPaint& paint,
-                                SkCanvas::DrawBitmapRectFlags flags) override;
+    void drawBitmapRect(const SkDraw&, const SkBitmap&, const SkRect*, const SkRect&,
+                        const SkPaint&, SkCanvas::SrcRectConstraint) override;
 
     /**
      *  Does not handle text decoration.

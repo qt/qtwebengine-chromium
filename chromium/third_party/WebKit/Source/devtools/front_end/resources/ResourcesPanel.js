@@ -98,19 +98,6 @@ WebInspector.ResourcesPanel = function()
     this.panelSidebarElement().addEventListener("mousemove", this._onmousemove.bind(this), false);
     this.panelSidebarElement().addEventListener("mouseleave", this._onmouseleave.bind(this), false);
 
-    /**
-     * @this {WebInspector.ResourcesPanel}
-     * @return {?WebInspector.SourceFrame}
-     */
-    function sourceFrameGetter()
-    {
-        var view = this.visibleView;
-        if (view && view instanceof WebInspector.SourceFrame)
-            return /** @type {!WebInspector.SourceFrame} */ (view);
-        return null;
-    }
-    WebInspector.GoToLineDialog.install(this, sourceFrameGetter.bind(this));
-
     WebInspector.targetManager.observeTargets(this);
 }
 
@@ -1105,7 +1092,7 @@ WebInspector.FrameTreeElement.prototype = {
         var categoryName = resourceType.name();
         var categoryElement = resourceType === WebInspector.resourceTypes.Document ? this : this._categoryElements[categoryName];
         if (!categoryElement) {
-            categoryElement = new WebInspector.StorageCategoryTreeElement(this._storagePanel, resource.resourceType().categoryTitle(), categoryName, null, true);
+            categoryElement = new WebInspector.StorageCategoryTreeElement(this._storagePanel, resource.resourceType().category().title, categoryName, null, true);
             this._categoryElements[resourceType.name()] = categoryElement;
             this._insertInPresentationOrder(this, categoryElement);
         }

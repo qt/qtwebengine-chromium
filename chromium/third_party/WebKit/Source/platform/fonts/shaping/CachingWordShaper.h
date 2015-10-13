@@ -29,6 +29,7 @@
 
 #include "platform/geometry/FloatRect.h"
 #include "platform/text/TextRun.h"
+#include "wtf/OwnPtr.h"
 #include "wtf/PassRefPtr.h"
 
 namespace blink {
@@ -48,6 +49,7 @@ public:
     float width(const Font*, const TextRun&,
         HashSet<const SimpleFontData*>* fallbackFonts,
         FloatRect* glyphBounds);
+    int offsetForPosition(const Font*, const TextRun&, float targetX);
     float fillGlyphBuffer(const Font*, const TextRun&,
         HashSet<const SimpleFontData*>*, GlyphBuffer*,
         unsigned from, unsigned to);
@@ -58,7 +60,7 @@ public:
         int height, unsigned from, unsigned to);
 
 private:
-    ShapeCache* m_shapeCache;
+    OwnPtr<ShapeCache> m_shapeCache;
 };
 
 } // namespace blink

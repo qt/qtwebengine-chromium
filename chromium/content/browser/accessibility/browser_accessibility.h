@@ -27,6 +27,8 @@ namespace content {
 class BrowserAccessibilityManager;
 #if defined(OS_WIN)
 class BrowserAccessibilityWin;
+#elif defined(OS_LINUX) && !defined(OS_CHROMEOS) && defined(USE_X11)
+class BrowserAccessibilityAuraLinux;
 #endif
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -65,7 +67,10 @@ class CONTENT_EXPORT BrowserAccessibility {
   virtual void OnLocationChanged() {}
 
   // Return true if this object is equal to or a descendant of |ancestor|.
-  bool IsDescendantOf(BrowserAccessibility* ancestor);
+  bool IsDescendantOf(const BrowserAccessibility* ancestor) const;
+
+  // Returns true if this object is used only for representing text.
+  bool IsTextOnlyObject() const;
 
   // Returns true if this is a leaf node on this platform, meaning any
   // children should not be exposed to this platform's native accessibility
@@ -88,13 +93,13 @@ class CONTENT_EXPORT BrowserAccessibility {
   // platform.
   bool PlatformIsChildOfLeaf() const;
 
-  // Return the previous sibling of this object, or NULL if it's the first
-  // child of its parent.
-  BrowserAccessibility* GetPreviousSibling();
+  BrowserAccessibility* GetPreviousSibling() const;
+  BrowserAccessibility* GetNextSibling() const;
 
-  // Return the next sibling of this object, or NULL if it's the last child
-  // of its parent.
-  BrowserAccessibility* GetNextSibling();
+  // Returns nullptr if there are no children.
+  BrowserAccessibility* PlatformDeepestFirstChild() const;
+  // Returns nullptr if there are no children.
+  BrowserAccessibility* PlatformDeepestLastChild() const;
 
   // Returns the bounds of this object in coordinates relative to the
   // top-left corner of the overall web area.
@@ -182,6 +187,8 @@ class CONTENT_EXPORT BrowserAccessibility {
   BrowserAccessibilityCocoa* ToBrowserAccessibilityCocoa();
 #elif defined(OS_WIN)
   BrowserAccessibilityWin* ToBrowserAccessibilityWin();
+#elif defined(OS_LINUX) && !defined(OS_CHROMEOS) && defined(USE_X11)
+  BrowserAccessibilityAuraLinux* ToBrowserAccessibilityAuraLinux();
 #endif
 
   // Accessing accessibility attributes:
@@ -277,11 +284,6 @@ class CONTENT_EXPORT BrowserAccessibility {
   // Return the sum of the lengths of all static text descendants,
   // including this object if it's static text.
   int GetStaticTextLenRecursive() const;
-
-  // Similar to GetParent(), but includes nodes that are the host of a
-  // subtree rather than skipping over them - because they contain important
-  // bounds offsets.
-  BrowserAccessibility* GetParentForBoundsCalculation() const;
 
   // If a bounding rectangle is empty, compute it based on the union of its
   // children, since most accessibility APIs don't like elements with no

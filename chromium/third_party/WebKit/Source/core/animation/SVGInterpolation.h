@@ -13,13 +13,13 @@ namespace blink {
 
 class SVGInterpolation : public Interpolation {
 public:
-    virtual bool isSVGInterpolation() const override final { return true; }
+    bool isSVGInterpolation() const final { return true; }
 
     SVGAnimatedPropertyBase* attribute() const { return m_attribute.get(); }
 
     const QualifiedName& attributeName() const { return m_attribute->attributeName(); }
 
-    virtual PropertyHandle property() const override final
+    PropertyHandle property() const final
     {
         return PropertyHandle(attributeName());
     }
@@ -28,20 +28,14 @@ public:
 
     virtual PassRefPtrWillBeRawPtr<SVGPropertyBase> interpolatedValue(SVGElement&) const = 0;
 
-    DEFINE_INLINE_VIRTUAL_TRACE()
-    {
-        visitor->trace(m_attribute);
-        Interpolation::trace(visitor);
-    }
-
 protected:
-    SVGInterpolation(PassOwnPtrWillBeRawPtr<InterpolableValue> start, PassOwnPtrWillBeRawPtr<InterpolableValue> end, PassRefPtrWillBeRawPtr<SVGAnimatedPropertyBase> attribute)
+    SVGInterpolation(PassOwnPtr<InterpolableValue> start, PassOwnPtr<InterpolableValue> end, PassRefPtrWillBeRawPtr<SVGAnimatedPropertyBase> attribute)
         : Interpolation(start, end)
         , m_attribute(attribute)
     {
     }
 
-    RefPtrWillBeMember<SVGAnimatedPropertyBase> m_attribute;
+    RefPtrWillBePersistent<SVGAnimatedPropertyBase> m_attribute;
 };
 
 DEFINE_TYPE_CASTS(SVGInterpolation, Interpolation, value, value->isSVGInterpolation(), value.isSVGInterpolation());

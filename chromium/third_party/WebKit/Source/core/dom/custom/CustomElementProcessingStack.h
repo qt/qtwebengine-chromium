@@ -37,11 +37,13 @@
 
 namespace blink {
 
-class CORE_EXPORT CustomElementProcessingStack {
+class CORE_EXPORT CustomElementProcessingStack : public NoBaseWillBeGarbageCollectedFinalized<CustomElementProcessingStack> {
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(CustomElementProcessingStack);
     WTF_MAKE_NONCOPYABLE(CustomElementProcessingStack);
 public:
     // This is stack allocated in many DOM callbacks. Make it cheap.
     class CallbackDeliveryScope {
+        STACK_ALLOCATED();
     public:
         CallbackDeliveryScope()
             : m_savedElementQueueStart(s_elementQueueStart)
@@ -64,6 +66,8 @@ public:
 
     static CustomElementProcessingStack& instance();
     void enqueue(CustomElementCallbackQueue*);
+
+    DECLARE_TRACE();
 
 private:
     CustomElementProcessingStack()
@@ -96,7 +100,7 @@ private:
     // stack appear toward the head of the vector. The first element
     // is a null sentinel value.
     static const size_t kNumSentinels = 1;
-    Vector<CustomElementCallbackQueue*> m_flattenedProcessingStack;
+    WillBeHeapVector<RawPtrWillBeMember<CustomElementCallbackQueue>> m_flattenedProcessingStack;
 };
 
 } // namespace blink

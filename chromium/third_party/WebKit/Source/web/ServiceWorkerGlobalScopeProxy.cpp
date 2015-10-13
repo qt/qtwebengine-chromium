@@ -39,33 +39,34 @@
 #include "core/events/MessageEvent.h"
 #include "core/inspector/ConsoleMessage.h"
 #include "core/workers/WorkerGlobalScope.h"
+#include "core/workers/WorkerThread.h"
 #include "modules/background_sync/SyncEvent.h"
+#include "modules/background_sync/SyncRegistration.h"
 #include "modules/fetch/Headers.h"
 #include "modules/geofencing/CircularGeofencingRegion.h"
 #include "modules/geofencing/GeofencingEvent.h"
 #include "modules/navigatorconnect/AcceptConnectionObserver.h"
-#include "modules/navigatorconnect/CrossOriginConnectEvent.h"
 #include "modules/navigatorconnect/CrossOriginServiceWorkerClient.h"
 #include "modules/navigatorconnect/ServicePortCollection.h"
 #include "modules/navigatorconnect/WorkerNavigatorServices.h"
 #include "modules/notifications/Notification.h"
 #include "modules/notifications/NotificationEvent.h"
+#include "modules/notifications/NotificationEventInit.h"
 #include "modules/push_messaging/PushEvent.h"
 #include "modules/push_messaging/PushMessageData.h"
 #include "modules/serviceworkers/ExtendableEvent.h"
 #include "modules/serviceworkers/FetchEvent.h"
 #include "modules/serviceworkers/ServiceWorkerGlobalScope.h"
-#include "modules/serviceworkers/StashedMessagePort.h"
-#include "modules/serviceworkers/StashedPortCollection.h"
 #include "modules/serviceworkers/WaitUntilObserver.h"
 #include "platform/RuntimeEnabledFeatures.h"
 #include "public/platform/WebCrossOriginServiceWorkerClient.h"
-#include "public/platform/WebServiceWorkerEventResult.h"
-#include "public/platform/WebServiceWorkerRequest.h"
 #include "public/platform/modules/notifications/WebNotificationData.h"
+#include "public/platform/modules/serviceworker/WebServiceWorkerEventResult.h"
+#include "public/platform/modules/serviceworker/WebServiceWorkerRequest.h"
 #include "public/web/WebSerializedScriptValue.h"
-#include "public/web/WebServiceWorkerContextClient.h"
+#include "public/web/modules/serviceworker/WebServiceWorkerContextClient.h"
 #include "web/WebEmbeddedWorkerImpl.h"
+#include "wtf/Assertions.h"
 #include "wtf/Functional.h"
 #include "wtf/PassOwnPtr.h"
 
@@ -80,10 +81,10 @@ ServiceWorkerGlobalScopeProxy::~ServiceWorkerGlobalScopeProxy()
 {
 }
 
-void ServiceWorkerGlobalScopeProxy::setRegistration(WebServiceWorkerRegistration* registration)
+void ServiceWorkerGlobalScopeProxy::setRegistration(WebPassOwnPtr<WebServiceWorkerRegistration::Handle> handle)
 {
     ASSERT(m_workerGlobalScope);
-    m_workerGlobalScope->setRegistration(registration);
+    m_workerGlobalScope->setRegistration(handle);
 }
 
 void ServiceWorkerGlobalScopeProxy::dispatchActivateEvent(int eventID)
@@ -97,7 +98,7 @@ void ServiceWorkerGlobalScopeProxy::dispatchActivateEvent(int eventID)
 void ServiceWorkerGlobalScopeProxy::dispatchFetchEvent(int eventID, const WebServiceWorkerRequest& webRequest)
 {
     ASSERT(m_workerGlobalScope);
-    RespondWithObserver* observer = RespondWithObserver::create(m_workerGlobalScope, eventID, webRequest.mode(), webRequest.frameType());
+    RespondWithObserver* observer = RespondWithObserver::create(m_workerGlobalScope, eventID, webRequest.url(), webRequest.mode(), webRequest.frameType(), webRequest.requestContext());
     bool defaultPrevented = false;
     Request* request = Request::create(m_workerGlobalScope, webRequest);
     request->headers()->setGuard(Headers::ImmutableGuard);
@@ -134,12 +135,14 @@ void ServiceWorkerGlobalScopeProxy::dispatchMessageEvent(const WebString& messag
     m_workerGlobalScope->dispatchEvent(MessageEvent::create(ports, value));
 }
 
-void ServiceWorkerGlobalScopeProxy::dispatchNotificationClickEvent(int eventID, int64_t notificationID, const WebNotificationData& data)
+void ServiceWorkerGlobalScopeProxy::dispatchNotificationClickEvent(int eventID, int64_t notificationID, const WebNotificationData& data, int actionIndex)
 {
     ASSERT(m_workerGlobalScope);
     WaitUntilObserver* observer = WaitUntilObserver::create(m_workerGlobalScope, WaitUntilObserver::NotificationClick, eventID);
     NotificationEventInit eventInit;
     eventInit.setNotification(Notification::create(m_workerGlobalScope, notificationID, data));
+    if (0 <= actionIndex && actionIndex < static_cast<int>(data.actions.size()))
+        eventInit.setAction(data.actions[actionIndex].action);
     RefPtrWillBeRawPtr<Event> event(NotificationEvent::create(EventTypeNames::notificationclick, eventInit, observer));
     m_workerGlobalScope->dispatchExtendableEvent(event.release(), observer);
 }
@@ -160,7 +163,7 @@ void ServiceWorkerGlobalScopeProxy::dispatchServicePortConnectEvent(WebServicePo
     collection->dispatchConnectEvent(callbacks.release(), targetURL, origin, portID);
 }
 
-void ServiceWorkerGlobalScopeProxy::dispatchSyncEvent(int eventID)
+void ServiceWorkerGlobalScopeProxy::dispatchSyncEvent(int eventID, const WebSyncRegistration& registration)
 {
     ASSERT(m_workerGlobalScope);
     if (!RuntimeEnabledFeatures::backgroundSyncEnabled()) {
@@ -168,18 +171,8 @@ void ServiceWorkerGlobalScopeProxy::dispatchSyncEvent(int eventID)
         return;
     }
     WaitUntilObserver* observer = WaitUntilObserver::create(m_workerGlobalScope, WaitUntilObserver::Sync, eventID);
-    // TODO(chasej) - Send registration as in crbug.com/482066
-    RefPtrWillBeRawPtr<Event> event(SyncEvent::create(EventTypeNames::sync, nullptr /* registration */, observer));
+    RefPtrWillBeRawPtr<Event> event(SyncEvent::create(EventTypeNames::sync, SyncRegistration::create(registration, m_workerGlobalScope->registration()), observer));
     m_workerGlobalScope->dispatchExtendableEvent(event.release(), observer);
-}
-
-void ServiceWorkerGlobalScopeProxy::dispatchCrossOriginConnectEvent(int eventID, const WebCrossOriginServiceWorkerClient& webClient)
-{
-    ASSERT(m_workerGlobalScope);
-    AcceptConnectionObserver* observer = AcceptConnectionObserver::create(m_workerGlobalScope, eventID);
-    CrossOriginServiceWorkerClient* client = CrossOriginServiceWorkerClient::create(webClient);
-    m_workerGlobalScope->dispatchEvent(CrossOriginConnectEvent::create(observer, client));
-    observer->didDispatchEvent();
 }
 
 void ServiceWorkerGlobalScopeProxy::dispatchCrossOriginMessageEvent(const WebCrossOriginServiceWorkerClient& webClient, const WebString& message, const WebMessagePortChannelArray& webChannels)
@@ -191,13 +184,6 @@ void ServiceWorkerGlobalScopeProxy::dispatchCrossOriginMessageEvent(const WebCro
     RefPtrWillBeRawPtr<MessageEvent> event = MessageEvent::create(ports, value, webClient.origin.string());
     event->setType(EventTypeNames::crossoriginmessage);
     m_workerGlobalScope->dispatchEvent(event);
-}
-
-void ServiceWorkerGlobalScopeProxy::addStashedMessagePorts(const WebMessagePortChannelArray& webChannels, const WebVector<WebString>& webChannelNames)
-{
-    ASSERT(m_workerGlobalScope);
-    StashedMessagePortArray* ports = StashedMessagePort::toStashedMessagePortArray(m_workerGlobalScope, webChannels, webChannelNames);
-    m_workerGlobalScope->ports()->addPorts(*ports);
 }
 
 void ServiceWorkerGlobalScopeProxy::reportException(const String& errorMessage, int lineNumber, int columnNumber, const String& sourceURL, int)
@@ -220,6 +206,13 @@ void ServiceWorkerGlobalScopeProxy::didEvaluateWorkerScript(bool success)
     m_client.didEvaluateWorkerScript(success);
 }
 
+void ServiceWorkerGlobalScopeProxy::didInitializeWorkerContext()
+{
+    ASSERT(m_workerGlobalScope);
+    ScriptState::Scope scope(m_workerGlobalScope->script()->scriptState());
+    m_client.didInitializeWorkerContext(m_workerGlobalScope->script()->context(), WebURL(m_documentURL));
+}
+
 void ServiceWorkerGlobalScopeProxy::workerGlobalScopeStarted(WorkerGlobalScope* workerGlobalScope)
 {
     ASSERT(!m_workerGlobalScope);
@@ -234,8 +227,9 @@ void ServiceWorkerGlobalScopeProxy::workerGlobalScopeClosed()
 
 void ServiceWorkerGlobalScopeProxy::willDestroyWorkerGlobalScope()
 {
-    m_workerGlobalScope = 0;
-    m_client.willDestroyWorkerContext();
+    v8::HandleScope handleScope(m_workerGlobalScope->thread()->isolate());
+    m_client.willDestroyWorkerContext(m_workerGlobalScope->script()->context());
+    m_workerGlobalScope = nullptr;
 }
 
 void ServiceWorkerGlobalScopeProxy::workerThreadTerminated()
@@ -246,8 +240,9 @@ void ServiceWorkerGlobalScopeProxy::workerThreadTerminated()
 ServiceWorkerGlobalScopeProxy::ServiceWorkerGlobalScopeProxy(WebEmbeddedWorkerImpl& embeddedWorker, Document& document, WebServiceWorkerContextClient& client)
     : m_embeddedWorker(embeddedWorker)
     , m_document(document)
+    , m_documentURL(document.url().copy())
     , m_client(client)
-    , m_workerGlobalScope(0)
+    , m_workerGlobalScope(nullptr)
 {
 }
 

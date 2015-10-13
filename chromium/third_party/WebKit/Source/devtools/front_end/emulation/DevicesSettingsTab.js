@@ -14,16 +14,15 @@ WebInspector.DevicesSettingsTab = function()
     this.registerRequiredCSS("emulation/devicesSettingsTab.css");
 
     var header = this.element.createChild("header");
-    header.createChild("h3").createTextChild(WebInspector.UIString("Devices"));
+    header.createChild("h3").createTextChild(WebInspector.UIString("Emulated Devices"));
     this.containerElement = this.element.createChild("div", "help-container-wrapper").createChild("div", "settings-tab help-content help-container");
-
-    this.containerElement.createChild("div", "devices-title").textContent = WebInspector.UIString("Emulated devices");
-    this._devicesList = this.containerElement.createChild("div", "devices-list");
-    this._customListSearator = createElementWithClass("div", "devices-custom-separator");
 
     var buttonsRow = this.containerElement.createChild("div", "devices-button-row");
     this._addCustomButton = createTextButton(WebInspector.UIString("Add custom device..."), this._addCustomDevice.bind(this));
     buttonsRow.appendChild(this._addCustomButton);
+
+    this._devicesList = this.containerElement.createChild("div", "devices-list");
+    this._customListSearator = createElementWithClass("div", "devices-custom-separator");
 
     this._editDevice = null;
     this._editDeviceListItem = null;
@@ -95,7 +94,6 @@ WebInspector.DevicesSettingsTab.prototype = {
         item.createChild("div", "devices-list-title").textContent = device.title;
         item.addEventListener("click", onItemClicked.bind(this), false);
         item.classList.toggle("device-list-item-show", device.show());
-
         if (custom) {
             var editButton = item.createChild("div", "devices-list-edit");
             editButton.title = WebInspector.UIString("Edit");
@@ -160,9 +158,9 @@ WebInspector.DevicesSettingsTab.prototype = {
         fields.appendChild(this._editDeviceTitle);
 
         var screen = fields.createChild("div", "hbox");
-        this._editDeviceWidth = this._createInput(WebInspector.UIString("Width"), "120px");
+        this._editDeviceWidth = this._createInput(WebInspector.UIString("Width"), "80px");
         screen.appendChild(this._editDeviceWidth);
-        this._editDeviceHeight = this._createInput(WebInspector.UIString("Height"), "120px");
+        this._editDeviceHeight = this._createInput(WebInspector.UIString("Height"), "80px");
         screen.appendChild(this._editDeviceHeight);
         this._editDeviceScale = this._createInput(WebInspector.UIString("Device pixel ratio"));
         screen.appendChild(this._editDeviceScale);
@@ -203,24 +201,28 @@ WebInspector.DevicesSettingsTab.prototype = {
         if (width)
             input.style.width = width;
         input.placeholder = title;
-        input.addEventListener("input", this._validateInputs.bind(this), false);
+        input.addEventListener("input", this._validateInputs.bind(this, false), false);
+        input.addEventListener("blur", this._validateInputs.bind(this, false), false);
         return input;
     },
 
-    _validateInputs: function()
+    /**
+     * @param {boolean} forceValid
+     */
+    _validateInputs: function(forceValid)
     {
         var trimmedTitle = this._editDeviceTitle.value.trim();
         var titleValid = trimmedTitle.length > 0 && trimmedTitle.length < 50;
-        this._editDeviceTitle.classList.toggle("error-input", !titleValid);
+        this._editDeviceTitle.classList.toggle("error-input", !titleValid && !forceValid);
 
         var widthValid = !WebInspector.OverridesSupport.deviceSizeValidator(this._editDeviceWidth.value);
-        this._editDeviceWidth.classList.toggle("error-input", !widthValid);
+        this._editDeviceWidth.classList.toggle("error-input", !widthValid && !forceValid);
 
         var heightValid = !WebInspector.OverridesSupport.deviceSizeValidator(this._editDeviceHeight.value);
-        this._editDeviceHeight.classList.toggle("error-input", !heightValid);
+        this._editDeviceHeight.classList.toggle("error-input", !heightValid && !forceValid);
 
         var scaleValid = !WebInspector.OverridesSupport.deviceScaleFactorValidator(this._editDeviceScale.value);
-        this._editDeviceScale.classList.toggle("error-input", !scaleValid);
+        this._editDeviceScale.classList.toggle("error-input", !scaleValid && !forceValid);
 
         var allValid = titleValid && widthValid && heightValid && scaleValid;
         this._editDeviceCommitButton.disabled = !allValid;
@@ -257,7 +259,7 @@ WebInspector.DevicesSettingsTab.prototype = {
         this._editDeviceHeight.value = listItem ? this._toNumericInputValue(device.vertical.height) : "";
         this._editDeviceScale.value = listItem ? this._toNumericInputValue(device.deviceScaleFactor) : "";
         this._editDeviceUserAgent.value = device.userAgent;
-        this._validateInputs();
+        this._validateInputs(true);
 
         if (listItem && listItem.nextElementSibling)
             this._devicesList.insertBefore(this._editDeviceElement, listItem.nextElementSibling);

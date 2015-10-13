@@ -29,15 +29,17 @@
 
 #include "platform/geometry/IntRect.h"
 #include "platform/graphics/CompositingReasons.h"
+#include "wtf/Allocator.h"
 #include "wtf/Vector.h"
 
 namespace blink {
 
 class CompositingReasonFinder;
-class DeprecatedPaintLayer;
+class PaintLayer;
 class LayoutView;
 
 class CompositingRequirementsUpdater {
+    STACK_ALLOCATED();
 public:
     CompositingRequirementsUpdater(LayoutView&, CompositingReasonFinder&);
     ~CompositingRequirementsUpdater();
@@ -51,13 +53,13 @@ public:
     //      must be compositing so that its contents render over that child.
     //      This implies that its positive z-index children must also be compositing.
     //
-    void update(DeprecatedPaintLayer* root);
+    void update(PaintLayer* root);
 
 private:
     class OverlapMap;
     class RecursionData;
 
-    void updateRecursive(DeprecatedPaintLayer* ancestorLayer, DeprecatedPaintLayer* currentLayer, OverlapMap&, RecursionData&, bool& descendantHas3DTransform, Vector<DeprecatedPaintLayer*>& unclippedDescendants, IntRect& absoluteDecendantBoundingBox);
+    void updateRecursive(PaintLayer* ancestorLayer, PaintLayer* currentLayer, OverlapMap&, RecursionData&, bool& descendantHas3DTransform, Vector<PaintLayer*>& unclippedDescendants, IntRect& absoluteDecendantBoundingBox);
 
     LayoutView& m_layoutView;
     CompositingReasonFinder& m_compositingReasonFinder;

@@ -11,7 +11,6 @@
 
 #include "base/basictypes.h"
 #include "base/containers/hash_tables.h"
-#include "base/gtest_prod_util.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/values.h"
@@ -400,6 +399,7 @@ class GPU_EXPORT GpuControlList {
                          const std::string& int_string2);
 
     void SetDirectRenderingInfo(bool value);
+    void SetInProcessGPUInfo(bool value);
 
     bool SetFeatures(const std::vector<std::string>& features,
                      const FeatureMap& feature_map,
@@ -456,6 +456,7 @@ class GPU_EXPORT GpuControlList {
     scoped_ptr<VersionInfo> machine_model_version_info_;
     scoped_ptr<IntInfo> gpu_count_info_;
     scoped_ptr<BoolInfo> direct_rendering_info_;
+    scoped_ptr<BoolInfo> in_process_gpu_info_;
     std::set<int> features_;
     std::vector<ScopedGpuControlListEntry> exceptions_;
   };

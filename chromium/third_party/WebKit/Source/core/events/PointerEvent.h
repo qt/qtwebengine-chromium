@@ -33,8 +33,10 @@ public:
     const String& pointerType() const { return m_pointerType; }
     bool isPrimary() const { return m_isPrimary; }
 
-    virtual bool isMouseEvent() const override;
-    virtual bool isPointerEvent() const override;
+    bool isMouseEvent() const override;
+    bool isPointerEvent() const override;
+
+    PassRefPtrWillBeRawPtr<EventDispatchMediator> createMediator() override;
 
     DECLARE_VIRTUAL_TRACE();
 
@@ -60,7 +62,7 @@ public:
 private:
     explicit PointerEventDispatchMediator(PassRefPtrWillBeRawPtr<PointerEvent>);
     PointerEvent& event() const;
-    virtual bool dispatchEvent(EventDispatcher&) const override;
+    bool dispatchEvent(EventDispatcher&) const override;
 };
 
 DEFINE_EVENT_TYPE_CASTS(PointerEvent);

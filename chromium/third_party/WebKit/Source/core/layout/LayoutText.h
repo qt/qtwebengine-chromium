@@ -37,6 +37,36 @@ namespace blink {
 class AbstractInlineTextBox;
 class InlineTextBox;
 
+// LayoutText is the root class for anything that represents
+// a text node (see core/dom/Text.h).
+//
+// This is a common node in the tree so to the limit memory overhead,
+// this class inherits directly from LayoutObject.
+// Also this class is used by both CSS and SVG layouts so LayoutObject
+// was a natural choice.
+//
+// The actual layout of text is handled by the containing inline
+// (LayoutInline) or block (LayoutBlock). They will invoke the Unicode
+// Bidirectional Algorithm to break the text into actual lines.
+// The result of layout is the line box tree, which represents lines
+// on the screen. It is stored into m_firstTextBox and m_lastTextBox.
+// To understand how lines are broken by the bidi algorithm, read e.g.
+// LayoutBlockFlow::layoutInlineChildren.
+//
+//
+// ***** LINE BOXES OWNERSHIP *****
+// m_firstTextBox and m_lastTextBox are not owned by LayoutText
+// but are pointers into the enclosing inline / block (see LayoutInline's
+// and LayoutBlock's m_lineBoxes).
+//
+//
+// This class implements the preferred logical widths computation
+// for its underlying text. The widths are stored into m_minWidth
+// and m_maxWidth. They are computed lazily based on
+// m_preferredLogicalWidthsDirty.
+//
+// The previous comment applies also for painting. See e.g.
+// BlockPainter::paintContents in particular the use of LineBoxListPainter.
 class CORE_EXPORT LayoutText : public LayoutObject {
 public:
     // FIXME: If the node argument is not a Text node or the string argument is
@@ -44,10 +74,10 @@ public:
     // doesn't re-transform the string.
     LayoutText(Node*, PassRefPtr<StringImpl>);
 #if ENABLE(ASSERT)
-    virtual ~LayoutText();
+    ~LayoutText() override;
 #endif
 
-    virtual const char* name() const override { return "LayoutText"; }
+    const char* name() const override { return "LayoutText"; }
 
     virtual bool isTextFragment() const;
     virtual bool isWordBreak() const;
@@ -66,16 +96,16 @@ public:
     void dirtyOrDeleteLineBoxesIfNeeded(bool fullLayout);
     void dirtyLineBoxes();
 
-    virtual void absoluteRects(Vector<IntRect>&, const LayoutPoint& accumulatedOffset) const override final;
+    void absoluteRects(Vector<IntRect>&, const LayoutPoint& accumulatedOffset) const final;
     void absoluteRectsForRange(Vector<IntRect>&, unsigned startOffset = 0, unsigned endOffset = INT_MAX, bool useSelectionHeight = false, bool* wasFixed = nullptr);
 
-    virtual void absoluteQuads(Vector<FloatQuad>&, bool* wasFixed) const override final;
+    void absoluteQuads(Vector<FloatQuad>&, bool* wasFixed) const final;
     void absoluteQuadsForRange(Vector<FloatQuad>&, unsigned startOffset = 0, unsigned endOffset = INT_MAX, bool useSelectionHeight = false, bool* wasFixed = nullptr);
 
     enum ClippingOption { NoClipping, ClipToEllipsis };
     void absoluteQuads(Vector<FloatQuad>&, bool* wasFixed = nullptr, ClippingOption = NoClipping) const;
 
-    virtual PositionWithAffinity positionForPoint(const LayoutPoint&) override;
+    PositionWithAffinity positionForPoint(const LayoutPoint&) override;
 
     bool is8Bit() const { return m_text.is8Bit(); }
     const LChar* characters8() const { return m_text.impl()->characters8(); }
@@ -102,7 +132,9 @@ public:
         TextDirection);
 
     virtual IntRect linesBoundingBox() const;
-    LayoutRect linesVisualOverflowBoundingBox() const;
+
+    // Returns the bounding box of visual overflow rects of all line boxes.
+    LayoutRect visualOverflowRect() const;
 
     FloatPoint firstRunOrigin() const;
     float firstRunX() const;
@@ -113,21 +145,24 @@ public:
 
     virtual void transformText();
 
-    virtual bool canBeSelectionLeaf() const override { return true; }
-    virtual void setSelectionState(SelectionState) override final;
-    virtual LayoutRect selectionRectForPaintInvalidation(const LayoutBoxModelObject* paintInvalidationContainer) const override;
-    virtual LayoutRect localCaretRect(InlineBox*, int caretOffset, LayoutUnit* extraWidthToEndOfLine = nullptr) override;
+    bool canBeSelectionLeaf() const override { return true; }
+    void setSelectionState(SelectionState) final;
+    LayoutRect selectionRectForPaintInvalidation(const LayoutBoxModelObject* paintInvalidationContainer) const override;
+    LayoutRect localCaretRect(InlineBox*, int caretOffset, LayoutUnit* extraWidthToEndOfLine = nullptr) override;
 
     InlineTextBox* firstTextBox() const { return m_firstTextBox; }
     InlineTextBox* lastTextBox() const { return m_lastTextBox; }
 
-    virtual int caretMinOffset() const override;
-    virtual int caretMaxOffset() const override;
+    // True if we have inline text box children which implies rendered text (or whitespace) output.
+    bool hasTextBoxes() const { return firstTextBox(); }
+
+    int caretMinOffset() const override;
+    int caretMaxOffset() const override;
     unsigned resolvedTextLength() const;
 
-    virtual int previousOffset(int current) const override final;
-    virtual int previousOffsetForBackwardDeletion(int current) const override final;
-    virtual int nextOffset(int current) const override final;
+    int previousOffset(int current) const final;
+    int previousOffsetForBackwardDeletion(int current) const final;
+    int nextOffset(int current) const final;
 
     bool containsReversedText() const { return m_containsReversedText; }
 
@@ -135,6 +170,7 @@ public:
     void momentarilyRevealLastTypedCharacter(unsigned lastTypedCharacterOffset);
 
     bool isAllCollapsibleWhitespace() const;
+    bool isRenderedCharacter(int offsetInNode) const;
 
     bool canUseSimpleFontCodePath() const { return m_canUseSimpleFontCodePath; }
 
@@ -145,19 +181,19 @@ public:
     float hyphenWidth(const Font&, TextDirection);
 
 protected:
-    virtual void willBeDestroyed() override;
+    void willBeDestroyed() override;
 
-    virtual void styleWillChange(StyleDifference, const ComputedStyle&) override final { }
-    virtual void styleDidChange(StyleDifference, const ComputedStyle* oldStyle) override;
+    void styleWillChange(StyleDifference, const ComputedStyle&) final { }
+    void styleDidChange(StyleDifference, const ComputedStyle* oldStyle) override;
 
     virtual void setTextInternal(PassRefPtr<StringImpl>);
     virtual UChar previousCharacter() const;
 
-    virtual void addLayerHitTestRects(LayerHitTestRects&, const DeprecatedPaintLayer* currentLayer, const LayoutPoint& layerOffset, const LayoutRect& containerRect) const override;
+    void addLayerHitTestRects(LayerHitTestRects&, const PaintLayer* currentLayer, const LayoutPoint& layerOffset, const LayoutRect& containerRect) const override;
 
     virtual InlineTextBox* createTextBox(int start, unsigned short length); // Subclassed by SVG.
 
-    virtual void invalidateDisplayItemClients(const LayoutBoxModelObject& paintInvalidationContainer) const override;
+    void invalidateDisplayItemClients(const LayoutBoxModelObject& paintInvalidationContainer) const override;
 
 private:
     void computePreferredLogicalWidths(float leadWidth);
@@ -168,11 +204,12 @@ private:
     // Make length() private so that callers that have a LayoutText*
     // will use the more efficient textLength() instead, while
     // callers with a LayoutObject* can continue to use length().
-    virtual unsigned length() const override final { return textLength(); }
+    unsigned length() const final { return textLength(); }
 
-    virtual void paint(const PaintInfo&, const LayoutPoint&) override final { ASSERT_NOT_REACHED(); }
-    virtual void layout() override final { ASSERT_NOT_REACHED(); }
-    virtual bool nodeAtPoint(HitTestResult&, const HitTestLocation&, const LayoutPoint&, HitTestAction) override final { ASSERT_NOT_REACHED(); return false; }
+    // See the class comment as to why we shouldn't call this function directly.
+    void paint(const PaintInfo&, const LayoutPoint&) const final { ASSERT_NOT_REACHED(); }
+    void layout() final { ASSERT_NOT_REACHED(); }
+    bool nodeAtPoint(HitTestResult&, const HitTestLocation&, const LayoutPoint&, HitTestAction) final { ASSERT_NOT_REACHED(); return false; }
 
     void deleteTextBoxes();
     bool containsOnlyWhitespace(unsigned from, unsigned len) const;
@@ -182,7 +219,7 @@ private:
 
     bool isText() const = delete; // This will catch anyone doing an unnecessary check.
 
-    virtual LayoutRect clippedOverflowRectForPaintInvalidation(const LayoutBoxModelObject* paintInvalidationContainer, const PaintInvalidationState* = nullptr) const override;
+    LayoutRect clippedOverflowRectForPaintInvalidation(const LayoutBoxModelObject* paintInvalidationContainer, const PaintInvalidationState* = nullptr) const override;
 
     void checkConsistency() const;
 
@@ -209,6 +246,8 @@ private:
 
     String m_text;
 
+    // The line boxes associated with this object.
+    // Read the LINE BOXES OWNERSHIP section in the class header comment.
     InlineTextBox* m_firstTextBox;
     InlineTextBox* m_lastTextBox;
 };
@@ -230,7 +269,7 @@ inline UChar LayoutText::characterAt(unsigned i) const
 inline float LayoutText::hyphenWidth(const Font& font, TextDirection direction)
 {
     const ComputedStyle& style = styleRef();
-    return font.width(constructTextRun(this, font, style.hyphenString().string(), style, direction));
+    return font.width(constructTextRun(font, style.hyphenString().string(), style, direction));
 }
 
 DEFINE_LAYOUT_OBJECT_TYPE_CASTS(LayoutText, isText());

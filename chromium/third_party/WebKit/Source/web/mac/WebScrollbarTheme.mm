@@ -43,9 +43,9 @@ namespace blink {
 static_assert(static_cast<NSScrollerStyle>(ScrollerStyleLegacy) == NSScrollerStyleLegacy, "ScrollerStyleLegacy must match NSScrollerStyleLegacy");
 static_assert(static_cast<NSScrollerStyle>(ScrollerStyleOverlay) == NSScrollerStyleOverlay, "ScrollerStyleOverlay must match NSScrollerStyleOverlay");
 
-void WebScrollbarTheme::updateScrollbars(
+void WebScrollbarTheme::updateScrollbarsWithNSDefaults(
     float initialButtonDelay, float autoscrollButtonDelay,
-    ScrollerStyle preferredScrollerStyle, bool redraw)
+    ScrollerStyle preferredScrollerStyle, bool redraw, bool scrollAnimationEnabled, ScrollbarButtonsPlacement buttonPlacement)
 {
     ScrollbarTheme* theme = ScrollbarTheme::theme();
     if (theme->isMockTheme())
@@ -53,7 +53,8 @@ void WebScrollbarTheme::updateScrollbars(
 
     static_cast<ScrollbarThemeMacCommon*>(ScrollbarTheme::theme())->preferencesChanged(
         initialButtonDelay, autoscrollButtonDelay,
-        static_cast<NSScrollerStyle>(preferredScrollerStyle), redraw);
+        static_cast<NSScrollerStyle>(preferredScrollerStyle),
+        redraw, scrollAnimationEnabled, buttonPlacement);
 }
 
 } // namespace blink

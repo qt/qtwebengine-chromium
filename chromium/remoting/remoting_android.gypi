@@ -5,11 +5,23 @@
 {
   'conditions': [
     ['OS=="android"', {
+      'variables': {
+        # These hooks allow official builds to modify the remoting_apk target:
+        # Official build of remoting_apk pulls in extra code.
+        'remoting_apk_extra_dependencies%': [],
+        # A different ProGuard config for Google Play Services is needed since the one used by
+        # Chromium and Google Chrome strips out code that we need.
+        'remoting_android_google_play_services_javalib%': '../third_party/android_tools/android_tools.gyp:google_play_services_javalib',
+        # Allows official builds to define the ApplicationContext class differently, and provide
+        # different implementations of parts of the product.
+        'remoting_apk_java_in_dir%': 'android/apk',
+      },
       'targets': [
         {
           'target_name': 'remoting_jni_headers',
           'type': 'none',
           'sources': [
+            'android/java/src/org/chromium/chromoting/jni/Client.java',
             'android/java/src/org/chromium/chromoting/jni/JniInterface.java',
           ],
           'variables': {
@@ -26,6 +38,7 @@
             'remoting_jni_headers',
             'remoting_protocol',
             '../google_apis/google_apis.gyp:google_apis',
+            '../ui/events/events.gyp:dom_keycode_converter',
             '../ui/gfx/gfx.gyp:gfx',
           ],
           'sources': [
@@ -33,11 +46,15 @@
             'client/jni/android_keymap.h',
             'client/jni/chromoting_jni_instance.cc',
             'client/jni/chromoting_jni_instance.h',
-            'client/jni/chromoting_jni_onload.cc',
             'client/jni/chromoting_jni_runtime.cc',
             'client/jni/chromoting_jni_runtime.h',
+            'client/jni/jni_client.cc',
+            'client/jni/jni_client.h',
             'client/jni/jni_frame_consumer.cc',
             'client/jni/jni_frame_consumer.h',
+            'client/jni/remoting_jni_onload.cc',
+            'client/jni/remoting_jni_registrar.cc',
+            'client/jni/remoting_jni_registrar.h',
           ],
         },  # end of target 'remoting_client_jni'
         {
@@ -79,6 +96,7 @@
               '--variables', '<(branding_path)',
               '--template', '<(RULE_INPUT_PATH)',
               '--locale_output', '<@(_outputs)',
+              '--define', 'ENABLE_CARDBOARD=<(enable_cardboard)',
               'en',
             ],
           }],
@@ -103,7 +121,8 @@
             '../third_party/android_tools/android_tools.gyp:android_support_v7_appcompat_javalib',
             '../third_party/android_tools/android_tools.gyp:android_support_v7_mediarouter_javalib',
             '../third_party/android_tools/android_tools.gyp:android_support_v13_javalib',
-            '../third_party/android_tools/android_tools.gyp:google_play_services_javalib',
+            '../third_party/cardboard-java/cardboard.gyp:cardboard_jar',
+            '<(remoting_android_google_play_services_javalib)',
           ],
           'includes': [ '../build/java.gypi' ],
           'conditions' : [
@@ -123,13 +142,14 @@
             'remoting_apk_manifest',
             'remoting_client_jni',
             'remoting_android_client_java',
+            '<@(remoting_apk_extra_dependencies)',
           ],
           'variables': {
             'apk_name': '<!(python <(version_py_path) -f <(branding_path) -t "@APK_FILE_NAME@")',
             'android_app_version_name': '<(version_full)',
             'android_app_version_code': '<!(python tools/android_version.py <(android_app_version_name))',
             'android_manifest_path': '<(SHARED_INTERMEDIATE_DIR)/remoting/android/AndroidManifest.xml',
-            'java_in_dir': 'android/apk',
+            'java_in_dir': '<(remoting_apk_java_in_dir)',
             'native_lib_target': 'libremoting_client_jni',
           },
           'includes': [ '../build/java_apk.gypi' ],

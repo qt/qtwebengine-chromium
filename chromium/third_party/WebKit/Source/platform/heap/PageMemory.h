@@ -5,6 +5,7 @@
 #ifndef PageMemory_h
 #define PageMemory_h
 
+#include "platform/heap/Heap.h"
 #include "wtf/Assertions.h"
 #include "wtf/PageAllocator.h"
 
@@ -82,16 +83,15 @@ class PageMemoryRegion : public MemoryRegion {
 public:
     ~PageMemoryRegion()
     {
+        Heap::removePageMemoryRegion(this);
         release();
     }
 
     void pageDeleted(Address page)
     {
         markPageUnused(page);
-        if (!--m_numPages) {
-            Heap::removePageMemoryRegion(this);
+        if (!--m_numPages)
             delete this;
-        }
     }
 
     void markPageUsed(Address page)
@@ -131,6 +131,7 @@ private:
         , m_isLargePage(numPages == 1)
         , m_numPages(numPages)
     {
+        Heap::addPageMemoryRegion(this);
         for (size_t i = 0; i < blinkPagesPerRegion; ++i)
             m_inUse[i] = false;
     }
@@ -203,9 +204,8 @@ public:
 
     static PageMemory* setupPageMemoryInRegion(PageMemoryRegion* region, size_t pageOffset, size_t payloadSize)
     {
-        // Setup the payload one OS page into the page memory. The
-        // first os page is the guard page.
-        Address payloadAddress = region->base() + pageOffset + WTF::kSystemPageSize;
+        // Setup the payload one guard page into the page memory.
+        Address payloadAddress = region->base() + pageOffset + blinkGuardPageSize;
         return new PageMemory(region, MemoryRegion(payloadAddress, payloadSize));
     }
 
@@ -227,7 +227,7 @@ public:
 
         // Overallocate by 2 times OS page size to have space for a
         // guard page at the beginning and end of blink heap page.
-        size_t allocationSize = payloadSize + 2 * WTF::kSystemPageSize;
+        size_t allocationSize = payloadSize + 2 * blinkGuardPageSize;
         PageMemoryRegion* pageMemoryRegion = PageMemoryRegion::allocateLargePage(allocationSize);
         PageMemory* storage = setupPageMemoryInRegion(pageMemoryRegion, 0, payloadSize);
         RELEASE_ASSERT(storage->commit());

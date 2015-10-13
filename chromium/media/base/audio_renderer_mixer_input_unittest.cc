@@ -4,6 +4,7 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
+#include "base/run_loop.h"
 #include "media/base/audio_renderer_mixer.h"
 #include "media/base/audio_renderer_mixer_input.h"
 #include "media/base/fake_audio_render_callback.h"
@@ -17,6 +18,10 @@ static const int kBitsPerChannel = 16;
 static const int kSampleRate = 48000;
 static const int kBufferSize = 8192;
 static const ChannelLayout kChannelLayout = CHANNEL_LAYOUT_STEREO;
+static const std::string kDefaultDeviceId;
+static const std::string kUnauthorizedDeviceId("unauthorized");
+static const std::string kNonexistentDeviceId("nonexistent");
+static const url::Origin kDefaultSecurityOrigin;
 
 class AudioRendererMixerInputTest : public testing::Test {
  public:
@@ -33,40 +38,72 @@ class AudioRendererMixerInputTest : public testing::Test {
 
   void CreateMixerInput() {
     mixer_input_ = new AudioRendererMixerInput(
-        base::Bind(
-            &AudioRendererMixerInputTest::GetMixer, base::Unretained(this)),
-        base::Bind(
-            &AudioRendererMixerInputTest::RemoveMixer, base::Unretained(this)));
+        base::Bind(&AudioRendererMixerInputTest::GetMixer,
+                   base::Unretained(this)),
+        base::Bind(&AudioRendererMixerInputTest::RemoveMixer,
+                   base::Unretained(this)),
+        kDefaultDeviceId, kDefaultSecurityOrigin);
   }
 
-  AudioRendererMixer* GetMixer(const AudioParameters& params) {
-    if (!mixer_) {
+  AudioRendererMixer* GetMixer(const AudioParameters& params,
+                               const std::string& device_id,
+                               const url::Origin& security_origin,
+                               OutputDeviceStatus* device_status) {
+    if (device_id == kNonexistentDeviceId) {
+      if (device_status)
+        *device_status = OUTPUT_DEVICE_STATUS_ERROR_NOT_FOUND;
+      return nullptr;
+    }
+
+    if (device_id == kUnauthorizedDeviceId) {
+      if (device_status)
+        *device_status = OUTPUT_DEVICE_STATUS_ERROR_NOT_AUTHORIZED;
+      return nullptr;
+    }
+
+    size_t idx = device_id.empty() ? 0 : 1;
+    if (!mixers_[idx]) {
       scoped_refptr<MockAudioRendererSink> sink = new MockAudioRendererSink();
       EXPECT_CALL(*sink.get(), Start());
       EXPECT_CALL(*sink.get(), Stop());
 
-      mixer_.reset(new AudioRendererMixer(
-          audio_parameters_, audio_parameters_, sink));
+      mixers_[idx].reset(
+          new AudioRendererMixer(audio_parameters_, audio_parameters_, sink));
     }
-    EXPECT_CALL(*this, RemoveMixer(testing::_));
-    return mixer_.get();
+    EXPECT_CALL(*this, RemoveMixer(testing::_, device_id, testing::_));
+
+    if (device_status)
+      *device_status = OUTPUT_DEVICE_STATUS_OK;
+    return mixers_[idx].get();
   }
 
   double ProvideInput() {
     return mixer_input_->ProvideInput(audio_bus_.get(), base::TimeDelta());
   }
 
-  MOCK_METHOD1(RemoveMixer, void(const AudioParameters&));
+  MOCK_METHOD3(RemoveMixer,
+               void(const AudioParameters&,
+                    const std::string&,
+                    const url::Origin&));
+
+  MOCK_METHOD1(SwitchCallbackCalled, void(OutputDeviceStatus));
+  void SwitchCallback(base::RunLoop* loop, OutputDeviceStatus result) {
+    SwitchCallbackCalled(result);
+    loop->Quit();
+  }
+
+  AudioRendererMixer* GetInputMixer() { return mixer_input_->mixer_; }
 
  protected:
   virtual ~AudioRendererMixerInputTest() {}
 
   AudioParameters audio_parameters_;
-  scoped_ptr<AudioRendererMixer> mixer_;
+  scoped_ptr<AudioRendererMixer> mixers_[2];
   scoped_refptr<AudioRendererMixerInput> mixer_input_;
   scoped_ptr<FakeAudioRenderCallback> fake_callback_;
   scoped_ptr<AudioBus> audio_bus_;
 
+ private:
   DISALLOW_COPY_AND_ASSIGN(AudioRendererMixerInputTest);
 };
 
@@ -113,6 +150,82 @@ TEST_F(AudioRendererMixerInputTest, StopBeforeInitializeOrStart) {
 // TODO(dalecurtis): We shouldn't allow this.  See http://crbug.com/151051
 TEST_F(AudioRendererMixerInputTest, StartAfterStop) {
   mixer_input_->Stop();
+  mixer_input_->Start();
+  mixer_input_->Stop();
+}
+
+// Test SwitchOutputDevice().
+TEST_F(AudioRendererMixerInputTest, SwitchOutputDevice) {
+  mixer_input_->Start();
+  const std::string kDeviceId("mock-device-id");
+  EXPECT_CALL(*this, SwitchCallbackCalled(OUTPUT_DEVICE_STATUS_OK));
+  AudioRendererMixer* old_mixer = GetInputMixer();
+  EXPECT_EQ(old_mixer, mixers_[0].get());
+  base::RunLoop run_loop;
+  mixer_input_->SwitchOutputDevice(
+      kDeviceId, kDefaultSecurityOrigin,
+      base::Bind(&AudioRendererMixerInputTest::SwitchCallback,
+                 base::Unretained(this), &run_loop));
+  run_loop.Run();
+  AudioRendererMixer* new_mixer = GetInputMixer();
+  EXPECT_EQ(new_mixer, mixers_[1].get());
+  EXPECT_NE(old_mixer, new_mixer);
+  mixer_input_->Stop();
+}
+
+// Test SwitchOutputDevice() to the same device as the current (default) device
+TEST_F(AudioRendererMixerInputTest, SwitchOutputDeviceToSameDevice) {
+  mixer_input_->Start();
+  EXPECT_CALL(*this, SwitchCallbackCalled(OUTPUT_DEVICE_STATUS_OK));
+  AudioRendererMixer* old_mixer = GetInputMixer();
+  base::RunLoop run_loop;
+  mixer_input_->SwitchOutputDevice(
+      kDefaultDeviceId, kDefaultSecurityOrigin,
+      base::Bind(&AudioRendererMixerInputTest::SwitchCallback,
+                 base::Unretained(this), &run_loop));
+  run_loop.Run();
+  AudioRendererMixer* new_mixer = GetInputMixer();
+  EXPECT_EQ(old_mixer, new_mixer);
+  mixer_input_->Stop();
+}
+
+// Test SwitchOutputDevice() to a nonexistent device
+TEST_F(AudioRendererMixerInputTest, SwitchOutputDeviceToNonexistentDevice) {
+  mixer_input_->Start();
+  EXPECT_CALL(*this,
+              SwitchCallbackCalled(OUTPUT_DEVICE_STATUS_ERROR_NOT_FOUND));
+  base::RunLoop run_loop;
+  mixer_input_->SwitchOutputDevice(
+      kNonexistentDeviceId, kDefaultSecurityOrigin,
+      base::Bind(&AudioRendererMixerInputTest::SwitchCallback,
+                 base::Unretained(this), &run_loop));
+  run_loop.Run();
+  mixer_input_->Stop();
+}
+
+// Test SwitchOutputDevice() to an unauthorized device
+TEST_F(AudioRendererMixerInputTest, SwitchOutputDeviceToUnauthorizedDevice) {
+  mixer_input_->Start();
+  EXPECT_CALL(*this,
+              SwitchCallbackCalled(OUTPUT_DEVICE_STATUS_ERROR_NOT_AUTHORIZED));
+  base::RunLoop run_loop;
+  mixer_input_->SwitchOutputDevice(
+      kUnauthorizedDeviceId, kDefaultSecurityOrigin,
+      base::Bind(&AudioRendererMixerInputTest::SwitchCallback,
+                 base::Unretained(this), &run_loop));
+  run_loop.Run();
+  mixer_input_->Stop();
+}
+
+// Test that calling SwitchOutputDevice() before Start() fails.
+TEST_F(AudioRendererMixerInputTest, SwitchOutputDeviceBeforeStart) {
+  EXPECT_CALL(*this, SwitchCallbackCalled(OUTPUT_DEVICE_STATUS_ERROR_INTERNAL));
+  base::RunLoop run_loop;
+  mixer_input_->SwitchOutputDevice(
+      std::string(), url::Origin(),
+      base::Bind(&AudioRendererMixerInputTest::SwitchCallback,
+                 base::Unretained(this), &run_loop));
+  run_loop.Run();
   mixer_input_->Start();
   mixer_input_->Stop();
 }

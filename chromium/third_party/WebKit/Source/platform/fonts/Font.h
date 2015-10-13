@@ -39,12 +39,6 @@
 #include "wtf/MathExtras.h"
 #include "wtf/text/CharacterNames.h"
 
-// "X11/X.h" defines Complex to 0 and conflicts
-// with Complex value in CodePath enum.
-#ifdef Complex
-#undef Complex
-#endif
-
 class SkCanvas;
 class SkPaint;
 class SkTextBlob;
@@ -92,7 +86,11 @@ public:
     FloatRect selectionRectForText(const TextRun&, const FloatPoint&, int h, int from = 0, int to = -1, bool accountForGlyphBounds = false) const;
 
     // Metrics that we query the FontFallbackList for.
-    const FontMetrics& fontMetrics() const { return primaryFont()->fontMetrics(); }
+    const FontMetrics& fontMetrics() const
+    {
+        RELEASE_ASSERT(primaryFont());
+        return primaryFont()->fontMetrics();
+    }
     float spaceWidth() const { return primaryFont()->spaceWidth() + fontDescription().letterSpacing(); }
     float tabWidth(const SimpleFontData&, const TabSize&, float position) const;
     float tabWidth(const TabSize& tabSize, float position) const { return tabWidth(*primaryFont(), tabSize, position); }

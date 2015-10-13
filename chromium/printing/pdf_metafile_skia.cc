@@ -9,6 +9,7 @@
 #include "base/metrics/histogram.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/posix/eintr_wrapper.h"
+#include "base/time/time.h"
 #include "skia/ext/refptr.h"
 #include "third_party/skia/include/core/SkData.h"
 #include "third_party/skia/include/core/SkDocument.h"
@@ -33,6 +34,7 @@
 #endif
 
 namespace {
+
 // This struct represents all the data we need to draw and redraw this
 // page into a SkDocument.
 struct Page {
@@ -46,11 +48,10 @@ struct Page {
   float scale_factor_;
   skia::RefPtr<SkPicture> content_;
 };
-}  // namespace
 
-static bool WriteAssetToBuffer(const SkStreamAsset* asset,
-                               void* buffer,
-                               size_t size) {
+bool WriteAssetToBuffer(const SkStreamAsset* asset,
+                        void* buffer,
+                        size_t size) {
   // Calling duplicate() keeps original asset state unchanged.
   scoped_ptr<SkStreamAsset> assetCopy(asset->duplicate());
   size_t length = assetCopy->getLength();
@@ -58,6 +59,8 @@ static bool WriteAssetToBuffer(const SkStreamAsset* asset,
     return false;
   return (length == assetCopy->read(buffer, length));
 }
+
+}  // namespace
 
 namespace printing {
 
@@ -82,7 +85,7 @@ bool PdfMetafileSkia::Init() {
 // Metafile::InitFromData is orthogonal to what the rest of
 // PdfMetafileSkia does.
 bool PdfMetafileSkia::InitFromData(const void* src_buffer,
-                                   uint32 src_buffer_size) {
+                                   uint32_t src_buffer_size) {
   data_->pdf_data_.reset(new SkMemoryStream(src_buffer, src_buffer_size, true));
   return true;
 }
@@ -125,6 +128,21 @@ bool PdfMetafileSkia::FinishPage() {
   return true;
 }
 
+static SkTime::DateTime TimeToSkTime(base::Time time) {
+    base::Time::Exploded exploded;
+    time.UTCExplode(&exploded);
+    SkTime::DateTime skdate;
+    skdate.fTimeZoneMinutes = 0;
+    skdate.fYear = exploded.year;
+    skdate.fMonth = exploded.month;
+    skdate.fDayOfWeek = exploded.day_of_week;
+    skdate.fDay = exploded.day_of_month;
+    skdate.fHour = exploded.hour;
+    skdate.fMinute = exploded.minute;
+    skdate.fSecond = exploded.second;
+    return skdate;
+}
+
 bool PdfMetafileSkia::FinishDocument() {
   // If we've already set the data in InitFromData, leave it be.
   if (data_->pdf_data_)
@@ -144,6 +162,10 @@ bool PdfMetafileSkia::FinishDocument() {
     canvas->drawPicture(page.content_.get());
     pdf_doc->endPage();
   }
+  SkTArray<SkDocument::Attribute> info;
+  info.emplace_back(SkString("Creator"), SkString("Chromium"));
+  SkTime::DateTime now = TimeToSkTime(base::Time::Now());
+  pdf_doc->setMetadata(info, &now, &now);
   if (!pdf_doc->close())
     return false;
 
@@ -151,14 +173,14 @@ bool PdfMetafileSkia::FinishDocument() {
   return true;
 }
 
-uint32 PdfMetafileSkia::GetDataSize() const {
+uint32_t PdfMetafileSkia::GetDataSize() const {
   if (!data_->pdf_data_)
     return 0;
-  return base::checked_cast<uint32>(data_->pdf_data_->getLength());
+  return base::checked_cast<uint32_t>(data_->pdf_data_->getLength());
 }
 
 bool PdfMetafileSkia::GetData(void* dst_buffer,
-                              uint32 dst_buffer_size) const {
+                              uint32_t dst_buffer_size) const {
   if (!data_->pdf_data_)
     return false;
   return WriteAssetToBuffer(data_->pdf_data_.get(), dst_buffer,
@@ -213,7 +235,8 @@ bool PdfMetafileSkia::RenderPage(unsigned int page_number,
     size_t length = data_->pdf_data_->getLength();
     std::vector<uint8_t> buffer(length);
     (void)WriteAssetToBuffer(data_->pdf_data_.get(), &buffer[0], length);
-    data_->pdf_cg_.InitFromData(&buffer[0], base::checked_cast<uint32>(length));
+    data_->pdf_cg_.InitFromData(&buffer[0],
+                                base::checked_cast<uint32_t>(length));
   }
   return data_->pdf_cg_.RenderPage(page_number, context, rect, params);
 }

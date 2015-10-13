@@ -294,12 +294,11 @@ WebInspector.JavaScriptSourceFrame.prototype = {
         }
 
         /**
-         * @this {WebInspector.JavaScriptSourceFrame}
          * @param {!WebInspector.ResourceScriptFile} scriptFile
          */
         function addSourceMapURL(scriptFile)
         {
-            WebInspector.AddSourceMapURLDialog.show(this.element, addSourceMapURLDialogCallback.bind(null, scriptFile));
+            WebInspector.AddSourceMapURLDialog.show(addSourceMapURLDialogCallback.bind(null, scriptFile));
         }
 
         /**
@@ -319,7 +318,7 @@ WebInspector.JavaScriptSourceFrame.prototype = {
             if (this._scriptFileForTarget.size) {
                 var scriptFile = this._scriptFileForTarget.valuesArray()[0];
                 var addSourceMapURLLabel = WebInspector.UIString.capitalize("Add ^source ^map\u2026");
-                contextMenu.appendItem(addSourceMapURLLabel, addSourceMapURL.bind(this, scriptFile));
+                contextMenu.appendItem(addSourceMapURLLabel, addSourceMapURL.bind(null, scriptFile));
                 contextMenu.appendSeparator();
             }
         }
@@ -729,7 +728,7 @@ WebInspector.JavaScriptSourceFrame.prototype = {
 
     _generateValuesInSource: function()
     {
-        if (!Runtime.experiments.isEnabled("inlineVariableValues") || !WebInspector.moduleSetting("inlineVariableValues").get())
+        if (!WebInspector.moduleSetting("inlineVariableValues").get())
             return;
         var executionContext = WebInspector.context.flavor(WebInspector.ExecutionContext);
         if (!executionContext)
@@ -1090,7 +1089,7 @@ WebInspector.JavaScriptSourceFrame.prototype = {
     _createNewBreakpoint: function(lineNumber, columnNumber, condition, enabled)
     {
         this._setBreakpoint(lineNumber, columnNumber, condition, enabled);
-        WebInspector.userMetrics.ScriptsBreakpointSet.record();
+        WebInspector.userMetrics.actionTaken(WebInspector.UserMetrics.Action.ScriptsBreakpointSet);
     },
 
     toggleBreakpointOnCurrentLine: function()

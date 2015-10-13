@@ -5,6 +5,8 @@
 #ifndef ReplicaPainter_h
 #define ReplicaPainter_h
 
+#include "wtf/Allocator.h"
+
 namespace blink {
 
 struct PaintInfo;
@@ -12,13 +14,14 @@ class LayoutPoint;
 class LayoutReplica;
 
 class ReplicaPainter {
+    STACK_ALLOCATED();
 public:
-    ReplicaPainter(LayoutReplica& layoutReplica) : m_layoutReplica(layoutReplica) { }
+    ReplicaPainter(const LayoutReplica& layoutReplica) : m_layoutReplica(layoutReplica) { }
 
     void paint(const PaintInfo&, const LayoutPoint& paintOffset);
 
 private:
-    LayoutReplica& m_layoutReplica;
+    const LayoutReplica& m_layoutReplica;
 };
 
 } // namespace blink

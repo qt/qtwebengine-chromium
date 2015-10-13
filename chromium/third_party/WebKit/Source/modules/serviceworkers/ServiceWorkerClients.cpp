@@ -14,8 +14,9 @@
 #include "modules/serviceworkers/ServiceWorkerError.h"
 #include "modules/serviceworkers/ServiceWorkerGlobalScopeClient.h"
 #include "modules/serviceworkers/ServiceWorkerWindowClient.h"
-#include "public/platform/WebServiceWorkerClientQueryOptions.h"
-#include "public/platform/WebServiceWorkerClientsInfo.h"
+#include "public/platform/modules/serviceworker/WebServiceWorkerClientQueryOptions.h"
+#include "public/platform/modules/serviceworker/WebServiceWorkerClientsInfo.h"
+#include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/RefPtr.h"
 #include "wtf/Vector.h"
@@ -26,12 +27,12 @@ namespace {
 
 class ClientArray {
 public:
-    typedef WebServiceWorkerClientsInfo WebType;
-    static HeapVector<Member<ServiceWorkerClient>> take(ScriptPromiseResolver*, PassOwnPtr<WebType> webClients)
+    using WebType = const WebServiceWorkerClientsInfo&;
+    static HeapVector<Member<ServiceWorkerClient>> take(ScriptPromiseResolver*, const WebServiceWorkerClientsInfo& webClients)
     {
         HeapVector<Member<ServiceWorkerClient>> clients;
-        for (size_t i = 0; i < webClients->clients.size(); ++i) {
-            const WebServiceWorkerClientInfo& client = webClients->clients[i];
+        for (size_t i = 0; i < webClients.clients.size(); ++i) {
+            const WebServiceWorkerClientInfo& client = webClients.clients[i];
             if (client.clientType == WebServiceWorkerClientTypeWindow)
                 clients.append(ServiceWorkerWindowClient::create(client));
             else
@@ -77,7 +78,7 @@ ScriptPromise ServiceWorkerClients::matchAll(ScriptState* scriptState, const Cli
     if (!executionContext)
         return ScriptPromise();
 
-    RefPtrWillBeRawPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(scriptState);
+    ScriptPromiseResolver* resolver = ScriptPromiseResolver::create(scriptState);
     ScriptPromise promise = resolver->promise();
 
     WebServiceWorkerClientQueryOptions webOptions;
@@ -95,7 +96,7 @@ ScriptPromise ServiceWorkerClients::claim(ScriptState* scriptState)
     if (!executionContext)
         return ScriptPromise();
 
-    RefPtrWillBeRawPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(scriptState);
+    ScriptPromiseResolver* resolver = ScriptPromiseResolver::create(scriptState);
     ScriptPromise promise = resolver->promise();
 
     WebServiceWorkerClientsClaimCallbacks* callbacks = new CallbackPromiseAdapter<void, ServiceWorkerError>(resolver);
@@ -105,7 +106,7 @@ ScriptPromise ServiceWorkerClients::claim(ScriptState* scriptState)
 
 ScriptPromise ServiceWorkerClients::openWindow(ScriptState* scriptState, const String& url)
 {
-    RefPtrWillBeRawPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(scriptState);
+    ScriptPromiseResolver* resolver = ScriptPromiseResolver::create(scriptState);
     ScriptPromise promise = resolver->promise();
     ExecutionContext* context = scriptState->executionContext();
 

@@ -13,11 +13,15 @@
 
 #include <stddef.h> // size_t, ptrdiff_t
 
+#include "webrtc/base/scoped_ptr.h"
 #include "webrtc/modules/rtp_rtcp/interface/rtp_rtcp_defines.h"
 #include "webrtc/modules/rtp_rtcp/source/rtp_rtcp_config.h"
 #include "webrtc/typedefs.h"
 
 namespace webrtc {
+namespace rtcp {
+class RtcpPacket;
+}
 namespace RTCPUtility {
 
 class NackStats {
@@ -294,6 +298,9 @@ enum class RTCPPacketTypes {
 
   kApp,
   kAppItem,
+
+  // draft-holmer-rmcat-transport-wide-cc-extensions
+  kTransportFeedback,
 };
 
 struct RTCPRawPacket {
@@ -306,12 +313,24 @@ struct RTCPModRawPacket {
   uint8_t* _ptrPacketEnd;
 };
 
-struct RTCPCommonHeader {
-  uint8_t V;   // Version
-  bool P;      // Padding
-  uint8_t IC;  // Item count/subtype
-  uint8_t PT;  // Packet Type
-  uint16_t LengthInOctets;
+struct RtcpCommonHeader {
+  static const uint8_t kHeaderSizeBytes = 4;
+  RtcpCommonHeader()
+      : version(2),
+        count_or_format(0),
+        packet_type(0),
+        payload_size_bytes(0),
+        padding_bytes(0) {}
+
+  uint32_t BlockSize() const {
+    return kHeaderSizeBytes + payload_size_bytes + padding_bytes;
+  }
+
+  uint8_t version;
+  uint8_t count_or_format;
+  uint8_t packet_type;
+  uint32_t payload_size_bytes;
+  uint8_t padding_bytes;
 };
 
 enum RTCPPT : uint8_t {
@@ -333,9 +352,9 @@ enum RtcpXrBlockType : uint8_t {
   kBtVoipMetric = 7
 };
 
-bool RTCPParseCommonHeader(const uint8_t* ptrDataBegin,
-                           const uint8_t* ptrDataEnd,
-                           RTCPCommonHeader& parsedHeader);
+bool RtcpParseCommonHeader(const uint8_t* buffer,
+                           size_t size_bytes,
+                           RtcpCommonHeader* parsed_header);
 
 class RTCPParserV2 {
  public:
@@ -347,10 +366,12 @@ class RTCPParserV2 {
 
   RTCPPacketTypes PacketType() const;
   const RTCPPacket& Packet() const;
+  rtcp::RtcpPacket* ReleaseRtcpPacket();
   const RTCPRawPacket& RawPacket() const;
   ptrdiff_t LengthLeft() const;
 
   bool IsValid() const;
+  size_t NumSkippedBlocks() const;
 
   RTCPPacketTypes Begin();
   RTCPPacketTypes Iterate();
@@ -418,7 +439,7 @@ class RTCPParserV2 {
   bool ParseXrVoipMetricItem(int block_length_4bytes);
   bool ParseXrUnsupportedBlockType(int block_length_4bytes);
 
-  bool ParseFBCommon(const RTCPCommonHeader& header);
+  bool ParseFBCommon(const RtcpCommonHeader& header);
   bool ParseNACKItem();
   bool ParseTMMBRItem();
   bool ParseTMMBNItem();
@@ -428,7 +449,7 @@ class RTCPParserV2 {
   bool ParsePsfbAppItem();
   bool ParsePsfbREMBItem();
 
-  bool ParseAPP(const RTCPCommonHeader& header);
+  bool ParseAPP(const RtcpCommonHeader& header);
   bool ParseAPPItem();
 
  private:
@@ -442,9 +463,11 @@ class RTCPParserV2 {
 
   ParseState _state;
   uint8_t _numberOfBlocks;
+  size_t num_skipped_blocks_;
 
   RTCPPacketTypes _packetType;
   RTCPPacket _packet;
+  rtc::scoped_ptr<webrtc::rtcp::RtcpPacket> rtcp_packet_;
 };
 
 class RTCPPacketIterator {
@@ -452,9 +475,9 @@ class RTCPPacketIterator {
   RTCPPacketIterator(uint8_t* rtcpData, size_t rtcpDataLength);
   ~RTCPPacketIterator();
 
-  const RTCPCommonHeader* Begin();
-  const RTCPCommonHeader* Iterate();
-  const RTCPCommonHeader* Current();
+  const RtcpCommonHeader* Begin();
+  const RtcpCommonHeader* Iterate();
+  const RtcpCommonHeader* Current();
 
  private:
   uint8_t* const _ptrBegin;
@@ -462,7 +485,7 @@ class RTCPPacketIterator {
 
   uint8_t* _ptrBlock;
 
-  RTCPCommonHeader _header;
+  RtcpCommonHeader _header;
 };
 }  // RTCPUtility
 }  // namespace webrtc

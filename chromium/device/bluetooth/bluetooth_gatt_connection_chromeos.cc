@@ -6,9 +6,9 @@
 
 #include "base/bind.h"
 #include "base/logging.h"
-#include "chromeos/dbus/dbus_thread_manager.h"
 #include "device/bluetooth/bluetooth_adapter.h"
 #include "device/bluetooth/bluetooth_device.h"
+#include "device/bluetooth/dbus/bluez_dbus_manager.h"
 
 namespace chromeos {
 
@@ -16,24 +16,20 @@ BluetoothGattConnectionChromeOS::BluetoothGattConnectionChromeOS(
     scoped_refptr<device::BluetoothAdapter> adapter,
     const std::string& device_address,
     const dbus::ObjectPath& object_path)
-    : connected_(true),
-      adapter_(adapter),
-      device_address_(device_address),
+    : BluetoothGattConnection(adapter.get(), device_address),
+      connected_(true),
       object_path_(object_path) {
   DCHECK(adapter_.get());
   DCHECK(!device_address_.empty());
   DCHECK(object_path_.IsValid());
 
-  DBusThreadManager::Get()->GetBluetoothDeviceClient()->AddObserver(this);
+  bluez::BluezDBusManager::Get()->GetBluetoothDeviceClient()->AddObserver(this);
 }
 
 BluetoothGattConnectionChromeOS::~BluetoothGattConnectionChromeOS() {
-  DBusThreadManager::Get()->GetBluetoothDeviceClient()->RemoveObserver(this);
-  Disconnect(base::Bind(&base::DoNothing));
-}
-
-std::string BluetoothGattConnectionChromeOS::GetDeviceAddress() const {
-  return device_address_;
+  bluez::BluezDBusManager::Get()->GetBluetoothDeviceClient()->RemoveObserver(
+      this);
+  Disconnect();
 }
 
 bool BluetoothGattConnectionChromeOS::IsConnected() {
@@ -45,20 +41,18 @@ bool BluetoothGattConnectionChromeOS::IsConnected() {
   if (!connected_)
     return false;
 
-  BluetoothDeviceClient::Properties* properties =
-      DBusThreadManager::Get()->GetBluetoothDeviceClient()->
-          GetProperties(object_path_);
+  bluez::BluetoothDeviceClient::Properties* properties =
+      bluez::BluezDBusManager::Get()->GetBluetoothDeviceClient()->GetProperties(
+          object_path_);
   if (!properties || !properties->connected.value())
     connected_ = false;
 
   return connected_;
 }
 
-void BluetoothGattConnectionChromeOS::Disconnect(
-    const base::Closure& callback) {
+void BluetoothGattConnectionChromeOS::Disconnect() {
   if (!connected_) {
     VLOG(1) << "Connection already inactive.";
-    callback.Run();
     return;
   }
 
@@ -70,7 +64,6 @@ void BluetoothGattConnectionChromeOS::Disconnect(
   // even though the underlying connection won't actually be disconnected. This
   // technically doesn't violate the contract put forth by this API.
   connected_ = false;
-  callback.Run();
 }
 
 void BluetoothGattConnectionChromeOS::DeviceRemoved(
@@ -90,9 +83,9 @@ void BluetoothGattConnectionChromeOS::DevicePropertyChanged(
   if (!connected_)
     return;
 
-  BluetoothDeviceClient::Properties* properties =
-      DBusThreadManager::Get()->GetBluetoothDeviceClient()->
-          GetProperties(object_path_);
+  bluez::BluetoothDeviceClient::Properties* properties =
+      bluez::BluezDBusManager::Get()->GetBluetoothDeviceClient()->GetProperties(
+          object_path_);
 
   if (!properties) {
     connected_ = false;
@@ -102,6 +95,11 @@ void BluetoothGattConnectionChromeOS::DevicePropertyChanged(
   if (property_name == properties->connected.name() &&
       !properties->connected.value())
     connected_ = false;
+
+  // The remote device's bluetooth address may change if it is paired while
+  // connected.
+  if (property_name == properties->address.name())
+    device_address_ = properties->address.value();
 }
 
 }  // namespace chromeos

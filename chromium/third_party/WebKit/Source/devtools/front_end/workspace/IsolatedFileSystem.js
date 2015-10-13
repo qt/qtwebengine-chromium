@@ -32,15 +32,62 @@
  * @constructor
  * @param {!WebInspector.IsolatedFileSystemManager} manager
  * @param {string} path
- * @param {string} name
- * @param {string} rootURL
+ * @param {!DOMFileSystem} domFileSystem
  */
-WebInspector.IsolatedFileSystem = function(manager, path, name, rootURL)
+WebInspector.IsolatedFileSystem = function(manager, path, domFileSystem)
 {
     this._manager = manager;
     this._path = path;
-    this._name = name;
-    this._rootURL = rootURL;
+    this._domFileSystem = domFileSystem;
+    this._excludedFoldersSetting = WebInspector.settings.createLocalSetting("workspaceExcludedFolders", {});
+    /** @type {!Set<string>} */
+    this._excludedFolders = new Set(this._excludedFoldersSetting.get()[path]);
+    /** @type {!Set<string>} */
+    this._nonConfigurableExcludedFolders = new Set();
+}
+
+/**
+ * @constructor
+ * @param {!WebInspector.IsolatedFileSystemManager} manager
+ * @param {string} path
+ * @param {string} name
+ * @param {string} rootURL
+ * @return {!Promise<?WebInspector.IsolatedFileSystem>}
+ */
+WebInspector.IsolatedFileSystem.create = function(manager, path, name, rootURL)
+{
+    return new Promise(promiseBody);
+
+    /**
+     * @param {function(?WebInspector.IsolatedFileSystem)} resolve
+     * @param {function(!Error)} reject
+     */
+    function promiseBody(resolve, reject)
+    {
+        var domFileSystem = InspectorFrontendHost.isolatedFileSystem(name, rootURL);
+        if (!domFileSystem) {
+            resolve(null);
+            return;
+        }
+        var fileSystem = new WebInspector.IsolatedFileSystem(manager, path, domFileSystem);
+        fileSystem.requestFileContent(".devtools", onConfigAvailable);
+
+        /**
+         * @param {?string} projectText
+         */
+        function onConfigAvailable(projectText)
+        {
+            if (projectText) {
+                try {
+                    var projectObject = JSON.parse(projectText);
+                    fileSystem._initializeProject(typeof projectObject === "object" ? /** @type {!Object} */ (projectObject) : null);
+                } catch (e) {
+                    WebInspector.console.error("Invalid project file: " + projectText);
+                }
+            }
+            resolve(fileSystem);
+        }
+    }
 }
 
 /**
@@ -84,27 +131,28 @@ WebInspector.IsolatedFileSystem.prototype = {
     },
 
     /**
-     * @return {string}
+     * @param {?Object} projectObject
      */
-    name: function()
+    _initializeProject: function(projectObject)
     {
-        return this._name;
+        this._projectObject = projectObject;
+
+        var projectExcludes = this.projectProperty("excludes");
+        if (Array.isArray(projectExcludes)) {
+            for (var folder of /** @type {!Array<*>} */ (projectExcludes)) {
+                if (typeof folder === "string")
+                    this._nonConfigurableExcludedFolders.add(folder);
+            }
+        }
     },
 
     /**
-     * @return {string}
+     * @param {string} key
+     * @return {*}
      */
-    rootURL: function()
+    projectProperty: function(key)
     {
-        return this._rootURL;
-    },
-
-    /**
-     * @param {function(?DOMFileSystem)} callback
-     */
-    _requestFileSystem: function(callback)
-    {
-        this._manager.requestDOMFileSystem(this._path, callback);
+        return this._projectObject ? this._projectObject[key] : null;
     },
 
     /**
@@ -114,20 +162,8 @@ WebInspector.IsolatedFileSystem.prototype = {
      */
     requestFilesRecursive: function(path, fileCallback, finishedCallback)
     {
-        var domFileSystem;
-        var pendingRequests = 0;
-        this._requestFileSystem(fileSystemLoaded.bind(this));
-        /**
-         * @param {?DOMFileSystem} fs
-         * @this {WebInspector.IsolatedFileSystem}
-         */
-        function fileSystemLoaded(fs)
-        {
-            domFileSystem = /** @type {!DOMFileSystem} */ (fs);
-            console.assert(domFileSystem);
-            ++pendingRequests;
-            this._requestEntries(domFileSystem, path, innerCallback.bind(this));
-        }
+        var pendingRequests = 1;
+        this._requestEntries(path, innerCallback.bind(this));
 
         /**
          * @param {!Array.<!FileEntry>} entries
@@ -138,15 +174,14 @@ WebInspector.IsolatedFileSystem.prototype = {
             for (var i = 0; i < entries.length; ++i) {
                 var entry = entries[i];
                 if (!entry.isDirectory) {
-                    if (this._manager.excludedFolderManager().isFileExcluded(this._path, entry.fullPath))
+                    if (this._isFileExcluded(entry.fullPath))
                         continue;
                     fileCallback(entry.fullPath.substr(1));
-                }
-                else {
-                    if (this._manager.excludedFolderManager().isFileExcluded(this._path, entry.fullPath + "/"))
+                } else {
+                    if (this._isFileExcluded(entry.fullPath + "/"))
                         continue;
                     ++pendingRequests;
-                    this._requestEntries(domFileSystem, entry.fullPath, innerCallback.bind(this));
+                    this._requestEntries(entry.fullPath, innerCallback.bind(this));
                 }
             }
             if (finishedCallback && (--pendingRequests === 0))
@@ -161,22 +196,12 @@ WebInspector.IsolatedFileSystem.prototype = {
      */
     createFile: function(path, name, callback)
     {
-        this._requestFileSystem(fileSystemLoaded.bind(this));
         var newFileIndex = 1;
         if (!name)
             name = "NewFile";
         var nameCandidate;
 
-        /**
-         * @param {?DOMFileSystem} fs
-         * @this {WebInspector.IsolatedFileSystem}
-         */
-        function fileSystemLoaded(fs)
-        {
-            var domFileSystem = /** @type {!DOMFileSystem} */ (fs);
-            console.assert(domFileSystem);
-            domFileSystem.root.getDirectory(path, null, dirEntryLoaded.bind(this), errorHandler.bind(this));
-        }
+        this._domFileSystem.root.getDirectory(path, null, dirEntryLoaded.bind(this), errorHandler.bind(this));
 
         /**
          * @param {!DirectoryEntry} dirEntry
@@ -230,18 +255,7 @@ WebInspector.IsolatedFileSystem.prototype = {
      */
     deleteFile: function(path)
     {
-        this._requestFileSystem(fileSystemLoaded.bind(this));
-
-        /**
-         * @param {?DOMFileSystem} fs
-         * @this {WebInspector.IsolatedFileSystem}
-         */
-        function fileSystemLoaded(fs)
-        {
-            var domFileSystem = /** @type {!DOMFileSystem} */ (fs);
-            console.assert(domFileSystem);
-            domFileSystem.root.getFile(path, null, fileEntryLoaded.bind(this), errorHandler.bind(this));
-        }
+        this._domFileSystem.root.getFile(path, null, fileEntryLoaded.bind(this), errorHandler.bind(this));
 
         /**
          * @param {!FileEntry} fileEntry
@@ -273,17 +287,7 @@ WebInspector.IsolatedFileSystem.prototype = {
      */
     requestMetadata: function(path, callback)
     {
-        this._requestFileSystem(fileSystemLoaded);
-
-        /**
-         * @param {?DOMFileSystem} fs
-         */
-        function fileSystemLoaded(fs)
-        {
-            var domFileSystem = /** @type {!DOMFileSystem} */ (fs);
-            console.assert(domFileSystem);
-            domFileSystem.root.getFile(path, null, fileEntryLoaded, errorHandler);
-        }
+        this._domFileSystem.root.getFile(path, null, fileEntryLoaded, errorHandler);
 
         /**
          * @param {!FileEntry} entry
@@ -316,18 +320,7 @@ WebInspector.IsolatedFileSystem.prototype = {
      */
     requestFileContent: function(path, callback)
     {
-        this._requestFileSystem(fileSystemLoaded.bind(this));
-
-        /**
-         * @param {?DOMFileSystem} fs
-         * @this {WebInspector.IsolatedFileSystem}
-         */
-        function fileSystemLoaded(fs)
-        {
-            var domFileSystem = /** @type {!DOMFileSystem} */ (fs);
-            console.assert(domFileSystem);
-            domFileSystem.root.getFile(path, null, fileEntryLoaded.bind(this), errorHandler.bind(this));
-        }
+        this._domFileSystem.root.getFile(path, null, fileEntryLoaded.bind(this), errorHandler.bind(this));
 
         /**
          * @param {!FileEntry} entry
@@ -386,19 +379,8 @@ WebInspector.IsolatedFileSystem.prototype = {
      */
     setFileContent: function(path, content, callback)
     {
-        this._requestFileSystem(fileSystemLoaded.bind(this));
-        WebInspector.userMetrics.FileSavedInWorkspace.record();
-
-        /**
-         * @param {?DOMFileSystem} fs
-         * @this {WebInspector.IsolatedFileSystem}
-         */
-        function fileSystemLoaded(fs)
-        {
-            var domFileSystem = /** @type {!DOMFileSystem} */ (fs);
-            console.assert(domFileSystem);
-            domFileSystem.root.getFile(path, { create: true }, fileEntryLoaded.bind(this), errorHandler.bind(this));
-        }
+        WebInspector.userMetrics.actionTaken(WebInspector.UserMetrics.Action.FileSavedInWorkspace);
+        this._domFileSystem.root.getFile(path, { create: true }, fileEntryLoaded.bind(this), errorHandler.bind(this));
 
         /**
          * @param {!FileEntry} entry
@@ -422,14 +404,9 @@ WebInspector.IsolatedFileSystem.prototype = {
 
             function fileWritten()
             {
-                fileWriter.onwriteend = writerEnd;
+                fileWriter.onwriteend = callback;
                 fileWriter.truncate(blob.size);
             }
-        }
-
-        function writerEnd()
-        {
-            callback();
         }
 
         /**
@@ -457,18 +434,8 @@ WebInspector.IsolatedFileSystem.prototype = {
         }
         var fileEntry;
         var dirEntry;
-        this._requestFileSystem(fileSystemLoaded.bind(this));
 
-        /**
-         * @param {?DOMFileSystem} fs
-         * @this {WebInspector.IsolatedFileSystem}
-         */
-        function fileSystemLoaded(fs)
-        {
-            var domFileSystem = /** @type {!DOMFileSystem} */ (fs);
-            console.assert(domFileSystem);
-            domFileSystem.root.getFile(path, null, fileEntryLoaded.bind(this), errorHandler.bind(this));
-        }
+        this._domFileSystem.root.getFile(path, null, fileEntryLoaded.bind(this), errorHandler.bind(this));
 
         /**
          * @param {!FileEntry} entry
@@ -569,13 +536,12 @@ WebInspector.IsolatedFileSystem.prototype = {
     },
 
     /**
-     * @param {!DOMFileSystem} domFileSystem
      * @param {string} path
      * @param {function(!Array.<!FileEntry>)} callback
      */
-    _requestEntries: function(domFileSystem, path, callback)
+    _requestEntries: function(path, callback)
     {
-        domFileSystem.root.getDirectory(path, null, innerCallback.bind(this), errorHandler);
+        this._domFileSystem.root.getDirectory(path, null, innerCallback.bind(this), errorHandler);
 
         /**
          * @param {!DirectoryEntry} dirEntry
@@ -592,5 +558,67 @@ WebInspector.IsolatedFileSystem.prototype = {
             console.error(errorMessage + " when requesting entry '" + path + "'");
             callback([]);
         }
+    },
+
+    _saveExcludedFolders: function()
+    {
+        var settingValue = this._excludedFoldersSetting.get();
+        settingValue[this._path] = Array.from(this._excludedFolders.values());
+        this._excludedFoldersSetting.set(settingValue);
+    },
+
+    /**
+     * @param {string} path
+     */
+    addExcludedFolder: function(path)
+    {
+        this._excludedFolders.add(path);
+        this._saveExcludedFolders();
+        this._manager.dispatchEventToListeners(WebInspector.IsolatedFileSystemManager.Events.ExcludedFolderAdded, path);
+    },
+
+    /**
+     * @param {string} path
+     */
+    removeExcludedFolder: function(path)
+    {
+        this._excludedFolders.delete(path);
+        this._saveExcludedFolders();
+        this._manager.dispatchEventToListeners(WebInspector.IsolatedFileSystemManager.Events.ExcludedFolderRemoved, path);
+    },
+
+    fileSystemRemoved: function()
+    {
+        var settingValue = this._excludedFoldersSetting.get();
+        delete settingValue[this._path];
+        this._excludedFoldersSetting.set(settingValue);
+    },
+
+    /**
+     * @param {string} folderPath
+     * @return {boolean}
+     */
+    _isFileExcluded: function(folderPath)
+    {
+        if (this._nonConfigurableExcludedFolders.has(folderPath) || this._excludedFolders.has(folderPath))
+            return true;
+        var regex = this._manager.workspaceFolderExcludePatternSetting().asRegExp();
+        return !!(regex && regex.test(folderPath));
+    },
+
+    /**
+     * @return {!Set<string>}
+     */
+    excludedFolders: function()
+    {
+        return this._excludedFolders;
+    },
+
+    /**
+     * @return {!Set<string>}
+     */
+    nonConfigurableExcludedFolders: function()
+    {
+        return this._nonConfigurableExcludedFolders;
     }
 }

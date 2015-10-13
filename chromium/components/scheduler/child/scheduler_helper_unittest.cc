@@ -7,10 +7,9 @@
 #include "base/callback.h"
 #include "base/test/simple_test_tick_clock.h"
 #include "cc/test/ordered_simple_task_runner.h"
-#include "components/scheduler/child/nestable_task_runner_for_test.h"
-#include "components/scheduler/child/scheduler_message_loop_delegate.h"
-#include "components/scheduler/child/task_queue.h"
-#include "components/scheduler/child/test_time_source.h"
+#include "components/scheduler/base/task_queue.h"
+#include "components/scheduler/base/test_time_source.h"
+#include "components/scheduler/child/scheduler_task_runner_delegate_for_test.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -47,14 +46,13 @@ class SchedulerHelperTest : public testing::Test {
   SchedulerHelperTest()
       : clock_(new base::SimpleTestTickClock()),
         mock_task_runner_(new cc::OrderedSimpleTaskRunner(clock_.get(), false)),
-        nestable_task_runner_(
-            NestableTaskRunnerForTest::Create(mock_task_runner_)),
-        scheduler_helper_(
-            new SchedulerHelper(nestable_task_runner_,
-                                "test.scheduler",
-                                TRACE_DISABLED_BY_DEFAULT("test.scheduler"),
-                                TRACE_DISABLED_BY_DEFAULT("test.scheduler.dbg"),
-                                SchedulerHelper::TASK_QUEUE_COUNT)),
+        main_task_runner_(
+            SchedulerTaskRunnerDelegateForTest::Create(mock_task_runner_)),
+        scheduler_helper_(new SchedulerHelper(
+            main_task_runner_,
+            "test.scheduler",
+            TRACE_DISABLED_BY_DEFAULT("test.scheduler"),
+            TRACE_DISABLED_BY_DEFAULT("test.scheduler.dbg"))),
         default_task_runner_(scheduler_helper_->DefaultTaskRunner()) {
     clock_->Advance(base::TimeDelta::FromMicroseconds(5000));
     scheduler_helper_->SetTimeSourceForTesting(
@@ -84,17 +82,11 @@ class SchedulerHelperTest : public testing::Test {
     }
   }
 
-  static void CheckAllTaskQueueIdToString() {
-    CallForEachEnumValue<SchedulerHelper::QueueId>(
-        SchedulerHelper::FIRST_QUEUE_ID, SchedulerHelper::TASK_QUEUE_COUNT,
-        &SchedulerHelper::TaskQueueIdToString);
-  }
-
  protected:
   scoped_ptr<base::SimpleTestTickClock> clock_;
   scoped_refptr<cc::OrderedSimpleTaskRunner> mock_task_runner_;
 
-  scoped_refptr<NestableSingleThreadTaskRunner> nestable_task_runner_;
+  scoped_refptr<SchedulerTaskRunnerDelegateForTest> main_task_runner_;
   scoped_ptr<SchedulerHelper> scheduler_helper_;
   scoped_refptr<base::SingleThreadTaskRunner> default_task_runner_;
 
@@ -136,8 +128,82 @@ TEST_F(SchedulerHelperTest, IsShutdown) {
   EXPECT_TRUE(scheduler_helper_->IsShutdown());
 }
 
-TEST_F(SchedulerHelperTest, TaskQueueIdToString) {
-  CheckAllTaskQueueIdToString();
+TEST_F(SchedulerHelperTest, DefaultTaskRunnerRegistration) {
+  EXPECT_EQ(main_task_runner_->default_task_runner(),
+            scheduler_helper_->DefaultTaskRunner());
+  scheduler_helper_->Shutdown();
+  EXPECT_EQ(nullptr, main_task_runner_->default_task_runner());
+}
+
+namespace {
+class MockTaskObserver : public base::MessageLoop::TaskObserver {
+ public:
+  MOCK_METHOD1(DidProcessTask, void(const base::PendingTask& task));
+  MOCK_METHOD1(WillProcessTask, void(const base::PendingTask& task));
+};
+
+void NopTask() {}
+} // namespace
+
+TEST_F(SchedulerHelperTest, ObserversNotifiedFor_DefaultTaskRunner) {
+  MockTaskObserver observer;
+  scheduler_helper_->AddTaskObserver(&observer);
+
+  scheduler_helper_->DefaultTaskRunner()->PostTask(FROM_HERE,
+                                                   base::Bind(&NopTask));
+
+  EXPECT_CALL(observer, WillProcessTask(_)).Times(1);
+  EXPECT_CALL(observer, DidProcessTask(_)).Times(1);
+  RunUntilIdle();
+}
+
+TEST_F(SchedulerHelperTest, ObserversNotNotifiedFor_ControlTaskRunner) {
+  MockTaskObserver observer;
+  scheduler_helper_->AddTaskObserver(&observer);
+
+  scheduler_helper_->ControlTaskRunner()->PostTask(FROM_HERE,
+                                                   base::Bind(&NopTask));
+
+  EXPECT_CALL(observer, WillProcessTask(_)).Times(0);
+  EXPECT_CALL(observer, DidProcessTask(_)).Times(0);
+  RunUntilIdle();
+}
+
+TEST_F(SchedulerHelperTest,
+       ObserversNotNotifiedFor_ControlAfterWakeUpTaskRunner) {
+  MockTaskObserver observer;
+  scheduler_helper_->AddTaskObserver(&observer);
+
+  scheduler_helper_->ControlAfterWakeUpTaskRunner()->PostTask(
+      FROM_HERE, base::Bind(&NopTask));
+
+  EXPECT_CALL(observer, WillProcessTask(_)).Times(0);
+  EXPECT_CALL(observer, DidProcessTask(_)).Times(0);
+  scheduler_helper_->ControlAfterWakeUpTaskRunner()->PumpQueue();
+  RunUntilIdle();
+}
+
+namespace {
+
+class MockObserver : public SchedulerHelper::Observer {
+ public:
+  MOCK_METHOD1(OnUnregisterTaskQueue,
+               void(const scoped_refptr<TaskQueue>& queue));
+};
+
+}  // namespace
+
+TEST_F(SchedulerHelperTest, OnUnregisterTaskQueue) {
+  MockObserver observer;
+  scheduler_helper_->SetObserver(&observer);
+
+  scoped_refptr<TaskQueue> task_queue =
+      scheduler_helper_->NewTaskQueue(TaskQueue::Spec("test_queue"));
+
+  EXPECT_CALL(observer, OnUnregisterTaskQueue(_)).Times(1);
+  task_queue->UnregisterTaskQueue();
+
+  scheduler_helper_->SetObserver(nullptr);
 }
 
 }  // namespace scheduler

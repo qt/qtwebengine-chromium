@@ -143,6 +143,9 @@ const int kMaxFramesToDelayReuse = 64;
 const base::TimeDelta kReuseDelay = base::TimeDelta::FromSeconds(1);
 // Simulate WebRTC and call VDA::Decode 30 times per second.
 const int kWebRtcDecodeCallsPerSecond = 30;
+// Simulate an adjustment to a larger number of pictures to make sure the
+// decoder supports an upwards adjustment.
+const int kExtraPictureBuffers = 2;
 
 struct TestVideoFile {
   explicit TestVideoFile(base::FilePath::StringType file_name)
@@ -180,25 +183,25 @@ void ReadGoldenThumbnailMD5s(const TestVideoFile* video_file,
   filepath = filepath.AddExtension(FILE_PATH_LITERAL(".md5"));
   std::string all_md5s;
   base::ReadFileToString(filepath, &all_md5s);
-  base::SplitString(all_md5s, '\n', md5_strings);
+  *md5_strings = base::SplitString(
+      all_md5s, "\n", base::TRIM_WHITESPACE, base::SPLIT_WANT_ALL);
   // Check these are legitimate MD5s.
-  for (std::vector<std::string>::iterator md5_string = md5_strings->begin();
-      md5_string != md5_strings->end(); ++md5_string) {
+  for (const std::string& md5_string : *md5_strings) {
       // Ignore the empty string added by SplitString
-      if (!md5_string->length())
+      if (!md5_string.length())
         continue;
       // Ignore comments
-      if (md5_string->at(0) == '#')
+      if (md5_string.at(0) == '#')
         continue;
 
-      CHECK_EQ(static_cast<int>(md5_string->length()),
-               kMD5StringLength) << *md5_string;
-      bool hex_only = std::count_if(md5_string->begin(),
-                                    md5_string->end(), isxdigit) ==
+      LOG_ASSERT(static_cast<int>(md5_string.length()) ==
+               kMD5StringLength) << md5_string;
+      bool hex_only = std::count_if(md5_string.begin(),
+                                    md5_string.end(), isxdigit) ==
                                     kMD5StringLength;
-      CHECK(hex_only) << *md5_string;
+      LOG_ASSERT(hex_only) << md5_string;
   }
-  CHECK_GE(md5_strings->size(), 1U) << "  MD5 checksum file ("
+  LOG_ASSERT(md5_strings->size() >= 1U) << "  MD5 checksum file ("
                                     << filepath.MaybeAsASCII()
                                     << ") missing or empty.";
 }
@@ -481,11 +484,11 @@ GLRenderingVDAClient::GLRenderingVDAClient(
       decode_calls_per_second_(decode_calls_per_second),
       render_as_thumbnails_(render_as_thumbnails),
       next_picture_buffer_id_(1) {
-  CHECK_GT(num_in_flight_decodes, 0);
-  CHECK_GT(num_play_throughs, 0);
+  LOG_ASSERT(num_in_flight_decodes > 0);
+  LOG_ASSERT(num_play_throughs > 0);
   // |num_in_flight_decodes_| is unsupported if |decode_calls_per_second_| > 0.
   if (decode_calls_per_second_ > 0)
-    CHECK_EQ(1, num_in_flight_decodes_);
+    LOG_ASSERT(1 == num_in_flight_decodes_);
 
   // Default to H264 baseline if no profile provided.
   profile_ = (profile != media::VIDEO_CODEC_PROFILE_UNKNOWN
@@ -495,7 +498,7 @@ GLRenderingVDAClient::GLRenderingVDAClient(
 
 GLRenderingVDAClient::~GLRenderingVDAClient() {
   DeleteDecoder();  // Clean up in case of expected error.
-  CHECK(decoder_deleted());
+  LOG_ASSERT(decoder_deleted());
   SetState(CS_DESTROYED);
 }
 
@@ -577,8 +580,8 @@ void GLRenderingVDAClient::BindImage(uint32 client_texture_id,
 }
 
 void GLRenderingVDAClient::CreateAndStartDecoder() {
-  CHECK(decoder_deleted());
-  CHECK(!decoder_.get());
+  LOG_ASSERT(decoder_deleted());
+  LOG_ASSERT(!decoder_.get());
 
   VideoDecodeAccelerator::Client* client = this;
 
@@ -604,7 +607,7 @@ void GLRenderingVDAClient::CreateAndStartDecoder() {
   }
   // Decoders are all initialize failed.
   LOG(ERROR) << "VideoDecodeAccelerator::Initialize() failed";
-  CHECK(false);
+  LOG_ASSERT(false);
 }
 
 void GLRenderingVDAClient::ProvidePictureBuffers(
@@ -615,6 +618,8 @@ void GLRenderingVDAClient::ProvidePictureBuffers(
     return;
   std::vector<media::PictureBuffer> buffers;
 
+  requested_num_of_buffers += kExtraPictureBuffers;
+
   texture_target_ = texture_target;
   for (uint32 i = 0; i < requested_num_of_buffers; ++i) {
     uint32 texture_id;
@@ -624,7 +629,7 @@ void GLRenderingVDAClient::ProvidePictureBuffers(
     done.Wait();
 
     int32 picture_buffer_id = next_picture_buffer_id_++;
-    CHECK(active_textures_
+    LOG_ASSERT(active_textures_
               .insert(std::make_pair(
                   picture_buffer_id,
                   new TextureRef(texture_id,
@@ -640,12 +645,12 @@ void GLRenderingVDAClient::ProvidePictureBuffers(
 }
 
 void GLRenderingVDAClient::DismissPictureBuffer(int32 picture_buffer_id) {
-  CHECK_EQ(1U, active_textures_.erase(picture_buffer_id));
+  LOG_ASSERT(1U == active_textures_.erase(picture_buffer_id));
 }
 
 void GLRenderingVDAClient::PictureReady(const media::Picture& picture) {
   // We shouldn't be getting pictures delivered after Reset has completed.
-  CHECK_LT(state_, CS_RESET);
+  LOG_ASSERT(state_ < CS_RESET);
 
   if (decoder_deleted())
     return;
@@ -661,7 +666,7 @@ void GLRenderingVDAClient::PictureReady(const media::Picture& picture) {
   decode_time_.push_back(now - it->second);
   decode_start_time_.erase(it);
 
-  CHECK_LE(picture.bitstream_buffer_id(), next_bitstream_buffer_id_);
+  LOG_ASSERT(picture.bitstream_buffer_id() <= next_bitstream_buffer_id_);
   ++num_decoded_frames_;
 
   // Mid-stream reset applies only to the last play-through per constructor
@@ -696,7 +701,7 @@ void GLRenderingVDAClient::PictureReady(const media::Picture& picture) {
 void GLRenderingVDAClient::ReturnPicture(int32 picture_buffer_id) {
   if (decoder_deleted())
     return;
-  CHECK_EQ(1U, pending_textures_.erase(picture_buffer_id));
+  LOG_ASSERT(1U == pending_textures_.erase(picture_buffer_id));
 
   if (pending_textures_.empty() && state_ == CS_RESETTING) {
     SetState(CS_RESET);
@@ -724,8 +729,19 @@ void GLRenderingVDAClient::NotifyEndOfBitstreamBuffer(
   // VaapiVideoDecodeAccelerator::FinishReset()).
   ++num_done_bitstream_buffers_;
   --outstanding_decodes_;
-  if (decode_calls_per_second_ == 0)
+
+  // Flush decoder after all BitstreamBuffers are processed.
+  if (encoded_data_next_pos_to_decode_ == encoded_data_.size()) {
+    // TODO(owenlin): We should not have to check the number of
+    // |outstanding_decodes_|. |decoder_| should be able to accept Flush()
+    // before it's done with outstanding decodes. (crbug.com/528183)
+    if (outstanding_decodes_ == 0) {
+      decoder_->Flush();
+      SetState(CS_FLUSHING);
+    }
+  } else if (decode_calls_per_second_ == 0) {
     DecodeNextFragment();
+  }
 }
 
 void GLRenderingVDAClient::NotifyFlushDone() {
@@ -797,7 +813,7 @@ void GLRenderingVDAClient::SetState(ClientState new_state) {
   note_->Notify(new_state);
   state_ = new_state;
   if (!remaining_play_throughs_ && new_state == delete_decoder_state_) {
-    CHECK(!decoder_deleted());
+    LOG_ASSERT(!decoder_deleted());
     DeleteDecoder();
   }
 }
@@ -866,7 +882,7 @@ void GLRenderingVDAClient::GetBytesForNextNALU(
   *end_pos = start_pos;
   if (*end_pos + 4 > encoded_data_.size())
     return;
-  CHECK(LookingAtNAL(encoded_data_, start_pos));
+  LOG_ASSERT(LookingAtNAL(encoded_data_, start_pos));
   *end_pos += 4;
   while (*end_pos + 4 <= encoded_data_.size() &&
          !LookingAtNAL(encoded_data_, *end_pos)) {
@@ -917,13 +933,8 @@ static bool FragmentHasConfigInfo(const uint8* data, size_t size,
 void GLRenderingVDAClient::DecodeNextFragment() {
   if (decoder_deleted())
     return;
-  if (encoded_data_next_pos_to_decode_ == encoded_data_.size()) {
-    if (outstanding_decodes_ == 0) {
-      decoder_->Flush();
-      SetState(CS_FLUSHING);
-    }
+  if (encoded_data_next_pos_to_decode_ == encoded_data_.size())
     return;
-  }
   size_t end_pos;
   std::string next_fragment_bytes;
   if (encoded_data_next_pos_to_decode_ == 0) {
@@ -950,10 +961,12 @@ void GLRenderingVDAClient::DecodeNextFragment() {
   // Populate the shared memory buffer w/ the fragment, duplicate its handle,
   // and hand it off to the decoder.
   base::SharedMemory shm;
-  CHECK(shm.CreateAndMapAnonymous(next_fragment_size));
+  LOG_ASSERT(shm.CreateAndMapAnonymous(next_fragment_size));
   memcpy(shm.memory(), next_fragment_bytes.data(), next_fragment_size);
   base::SharedMemoryHandle dup_handle;
-  CHECK(shm.ShareToProcess(base::GetCurrentProcessHandle(), &dup_handle));
+  bool result = shm.ShareToProcess(base::GetCurrentProcessHandle(),
+      &dup_handle);
+  LOG_ASSERT(result);
   media::BitstreamBuffer bitstream_buffer(
       next_bitstream_buffer_id_, dup_handle, next_fragment_size);
   decode_start_time_[next_bitstream_buffer_id_] = base::TimeTicks::Now();
@@ -1061,35 +1074,37 @@ void VideoDecodeAcceleratorTest::TearDown() {
 void VideoDecodeAcceleratorTest::ParseAndReadTestVideoData(
     base::FilePath::StringType data,
     std::vector<TestVideoFile*>* test_video_files) {
-  std::vector<base::FilePath::StringType> entries;
-  base::SplitString(data, ';', &entries);
-  CHECK_GE(entries.size(), 1U) << data;
+  std::vector<base::FilePath::StringType> entries = base::SplitString(
+      data, base::FilePath::StringType(1, ';'),
+      base::TRIM_WHITESPACE, base::SPLIT_WANT_ALL);
+  LOG_ASSERT(entries.size() >= 1U) << data;
   for (size_t index = 0; index < entries.size(); ++index) {
-    std::vector<base::FilePath::StringType> fields;
-    base::SplitString(entries[index], ':', &fields);
-    CHECK_GE(fields.size(), 1U) << entries[index];
-    CHECK_LE(fields.size(), 8U) << entries[index];
+    std::vector<base::FilePath::StringType> fields = base::SplitString(
+        entries[index], base::FilePath::StringType(1, ':'),
+        base::TRIM_WHITESPACE, base::SPLIT_WANT_ALL);
+    LOG_ASSERT(fields.size() >= 1U) << entries[index];
+    LOG_ASSERT(fields.size() <= 8U) << entries[index];
     TestVideoFile* video_file = new TestVideoFile(fields[0]);
     if (!fields[1].empty())
-      CHECK(base::StringToInt(fields[1], &video_file->width));
+      LOG_ASSERT(base::StringToInt(fields[1], &video_file->width));
     if (!fields[2].empty())
-      CHECK(base::StringToInt(fields[2], &video_file->height));
+      LOG_ASSERT(base::StringToInt(fields[2], &video_file->height));
     if (!fields[3].empty())
-      CHECK(base::StringToInt(fields[3], &video_file->num_frames));
+      LOG_ASSERT(base::StringToInt(fields[3], &video_file->num_frames));
     if (!fields[4].empty())
-      CHECK(base::StringToInt(fields[4], &video_file->num_fragments));
+      LOG_ASSERT(base::StringToInt(fields[4], &video_file->num_fragments));
     if (!fields[5].empty())
-      CHECK(base::StringToInt(fields[5], &video_file->min_fps_render));
+      LOG_ASSERT(base::StringToInt(fields[5], &video_file->min_fps_render));
     if (!fields[6].empty())
-      CHECK(base::StringToInt(fields[6], &video_file->min_fps_no_render));
+      LOG_ASSERT(base::StringToInt(fields[6], &video_file->min_fps_no_render));
     int profile = -1;
     if (!fields[7].empty())
-      CHECK(base::StringToInt(fields[7], &profile));
+      LOG_ASSERT(base::StringToInt(fields[7], &profile));
     video_file->profile = static_cast<media::VideoCodecProfile>(profile);
 
     // Read in the video data.
     base::FilePath filepath(video_file->file_name);
-    CHECK(base::ReadFileToString(filepath, &video_file->data_str))
+    LOG_ASSERT(base::ReadFileToString(filepath, &video_file->data_str))
         << "test_video_file: " << filepath.MaybeAsASCII();
 
     test_video_files->push_back(video_file);
@@ -1244,7 +1259,7 @@ TEST_P(VideoDecodeAcceleratorParamTest, TestSimpleDecode) {
   helper_params.render_as_thumbnails = render_as_thumbnails;
   if (render_as_thumbnails) {
     // Only one decoder is supported with thumbnail rendering
-    CHECK_EQ(num_concurrent_decoders, 1U);
+    LOG_ASSERT(num_concurrent_decoders == 1U);
     helper_params.thumbnails_page_size = kThumbnailsPageSize;
     helper_params.thumbnail_size = kThumbnailSize;
   }
@@ -1570,7 +1585,7 @@ int main(int argc, char **argv) {
   // Needed to enable DVLOG through --vmodule.
   logging::LoggingSettings settings;
   settings.logging_dest = logging::LOG_TO_SYSTEM_DEBUG_LOG;
-  CHECK(logging::InitLogging(settings));
+  LOG_ASSERT(logging::InitLogging(settings));
 
   const base::CommandLine* cmd_line = base::CommandLine::ForCurrentProcess();
   DCHECK(cmd_line);
@@ -1591,12 +1606,12 @@ int main(int argc, char **argv) {
       // On Windows, CommandLine::StringType is wstring. We need to convert
       // it to std::string first
       std::string input(it->second.begin(), it->second.end());
-      CHECK(base::StringToDouble(input, &content::g_rendering_fps));
+      LOG_ASSERT(base::StringToDouble(input, &content::g_rendering_fps));
       continue;
     }
     if (it->first == "rendering_warm_up") {
       std::string input(it->second.begin(), it->second.end());
-      CHECK(base::StringToInt(input, &content::g_rendering_warm_up));
+      LOG_ASSERT(base::StringToInt(input, &content::g_rendering_warm_up));
       continue;
     }
     // TODO(owenlin): Remove this flag once it is not used in autotest.
@@ -1607,7 +1622,7 @@ int main(int argc, char **argv) {
 
     if (it->first == "num_play_throughs") {
       std::string input(it->second.begin(), it->second.end());
-      CHECK(base::StringToInt(input, &content::g_num_play_throughs));
+      LOG_ASSERT(base::StringToInt(input, &content::g_num_play_throughs));
       continue;
     }
     if (it->first == "fake_decoder") {

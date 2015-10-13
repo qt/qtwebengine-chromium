@@ -59,19 +59,8 @@
     background-color: rgb(255, 255, 255);
 }
 
-.timeline-overview-frames-mode #timeline-overview-grid,
-.timeline-overview-frames-mode .overview-grid-cursor-area,
-.timeline-overview-frames-mode .overview-grid-cursor-position {
-    display: none;
-}
-
 #timeline-overview-grid .resources-dividers-label-bar {
     pointer-events: auto;
-}
-
-.timeline-overview-frames-mode .overview-grid-window,
-.timeline-overview-frames-mode .overview-grid-dividers-background {
-    height: 100%;
 }
 
 #timeline-container {
@@ -140,7 +129,7 @@
     display: inline-block;
     -webkit-user-select: none;
     -webkit-mask-image: url(Images/toolbarButtonGlyphs.png);
-    -webkit-mask-size: 352px 144px;
+    -webkit-mask-size: 352px 168px;
     width: 10px;
     height: 10px;
     content: "";
@@ -166,7 +155,7 @@
 
 .timeline-expandable-arrow {
     background-image: url(Images/toolbarButtonGlyphs.png);
-    background-size: 352px 144px;
+    background-size: 352px 168px;
     opacity: 0.5;
     width: 10px;
     height: 10px;
@@ -216,7 +205,7 @@
 .timeline-tree-item-warning {
     display: block;
     background-image: url(Images/toolbarButtonGlyphs.png);
-    background-size: 352px 144px;
+    background-size: 352px 168px;
     width: 10px;
     height: 10px;
     float: right;
@@ -250,6 +239,18 @@
     background-color: white;
 }
 
+.timeline.panel .status-pane-container {
+    z-index: 1000;
+    pointer-events: none;
+    display: flex;
+    align-items: center;
+}
+
+.timeline.panel .status-pane-container.tinted {
+    background-color: hsla(0, 0%, 90%, 0.8);
+    pointer-events: auto;
+}
+
 #timeline-overview-panel .overview-strip {
     margin-top: 2px;
     justify-content: center;
@@ -268,8 +269,9 @@
     flex-basis: 25px;
 }
 
-#timeline-overview-main-thread,
-#timeline-overview-framerate {
+#timeline-overview-cpu-activity,
+#timeline-overview-framerate,
+#timeline-overview-memory {
     flex-basis: 21px;
 }
 
@@ -296,8 +298,12 @@
     display: none;
 }
 
-#timeline-overview-main-thread::before {
+#timeline-overview-cpu-activity::before {
     content: "100%";
+}
+
+#timeline-overview-cpu-activity .background {
+    z-index: -10;
 }
 
 #timeline-overview-framerate::before {
@@ -311,14 +317,6 @@
 
 #timeline-overview-input {
     flex-basis: 6px;
-}
-
-#timeline-overview-memory {
-    flex-basis: 20px;
-}
-
-#timeline-overview-frames {
-    flex-basis: 100px;
 }
 
 #timeline-overview-pane {
@@ -338,12 +336,6 @@
 #timeline-overview-container canvas {
     width: 100%;
     height: 100%;
-}
-
-#timeline-overview-frames canvas {
-    z-index: 200;
-    opacity: 0.8;
-    background-color: rgb(255, 255, 255);
 }
 
 #timeline-graphs {
@@ -422,10 +414,13 @@
 
 .memory-graph-label {
     position: absolute;
-    left: 5px;
+    right: 0;
+    top: 0;
     font-size: 9px;
-    color: rgb(50%, 50%, 50%);
+    color: #888;
     white-space: nowrap;
+    padding: 0 4px;
+    background-color: hsla(0, 0%, 100%, 0.8);
 }
 
 #memory-graphs-canvas-container {
@@ -458,28 +453,15 @@
 }
 
 .memory-counter-sidebar-info {
-    flex: 0 0 18px;
+    flex: 0 0 20px;
     margin-left: 5px;
     white-space: nowrap;
 }
 
-.memory-counter-sidebar-info .swatch {
-    margin-left: 1px;
-    margin-right: 2px;
-    width: 10px;
-    height: 10px;
-    position: relative;
-    top: 1px;
-    display: inline-block;
-    line-height: 1px;
-    background-image: none;
-    border: 1px solid rgba(0,0,0,0.3);
-    opacity: 0.5;
-    -webkit-user-select: none;
-}
-
-.memory-counter-sidebar-info .title {
-    margin: 4px;
+.memory-counter-sidebar-info .range {
+    margin: 0 4px;
+    align-items: center;
+    display: inline-flex;
 }
 
 .memory-counter-value {
@@ -698,7 +680,7 @@
     overflow: hidden;
 }
 
-.timeline-details-view-row-title .timeline-details-warning-marker {
+.timeline-details-warning .timeline-details-view-row-title::after {
     width: 16px;
     height: 16px;
     background-color: red;
@@ -706,6 +688,13 @@
     right: -8px;
     top: -8px;
     transform: rotate(45deg);
+    content: "";
+}
+
+.timeline-details-warning .timeline-details-view-row-value {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .timeline-details-view-row-value {
@@ -722,6 +711,12 @@
 
 .timeline-details-view-row-details {
     padding-left: 10px;
+}
+
+.timeline-details-view-row-details .timeline-details-warning-marker {
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    overflow: hidden;
 }
 
 .timeline-details-view-pie-chart-wrapper {
@@ -790,8 +785,8 @@
     justify-content: center;
     align-items: center;
     text-align: center;
-    padding: 20px;
-    overflow: hidden;
+    padding: 0 20px;
+    overflow: auto;
 }
 
 .timeline-status-pane .recording-hint {
@@ -964,4 +959,102 @@
 
 .timeline-overview-popover .frame .thumbnail img {
     max-width: 200px;
+}
+
+.timeline-tree-view {
+    display: flex;
+    overflow: hidden;
+}
+
+.timeline-tree-view > .toolbar {
+    border-bottom: 1px solid #dadada;
+}
+
+.timeline-tree-view .data-grid {
+    border: none;
+    flex: auto;
+}
+
+.timeline-tree-view .data-grid table.data {
+    background: white;
+}
+
+.timeline-tree-view .data-grid tr:not(.selected) .highlight {
+    background-color: rgb(255, 230, 179);
+}
+
+.timeline-tree-view .data-grid tr:hover td:not(.bottom-filler-td) {
+    background-color: rgba(0, 0, 0, 0.1);
+}
+
+.timeline-tree-view .data-grid td.numeric-column {
+    text-align: right;
+    position: relative;
+}
+
+.timeline-tree-view .data-grid div.profile-multiple-values {
+    float: right;
+}
+
+.timeline-tree-view .data-grid span.percent-column {
+    color: #888;
+    width: 48px;
+    display: inline-block;
+}
+
+.timeline-tree-view .data-grid tr.selected span {
+    color: inherit;
+}
+
+.timeline-tree-view .data-grid .name-container {
+    display: flex;
+    align-items: center;
+}
+
+.timeline-tree-view .data-grid .name-container div {
+    flex: none;
+}
+
+.timeline-tree-view .data-grid .name-container .activity-icon {
+    width: 8px;
+    height: 8px;
+    margin: 0 4px 0 2px;
+    border: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.timeline-tree-view .data-grid .name-container .activity-warning::after {
+    content: "[deopt]";
+    margin: 0 4px;
+    line-height: 12px;
+    font-size: 10px;
+    color: #777;
+}
+
+.timeline-tree-view .data-grid tr.selected .name-container .activity-warning::after {
+    color: white;
+}
+
+.timeline-tree-view .data-grid .name-container .activity-link {
+    flex: auto;
+    text-align: right;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.timeline-tree-view .data-grid .background-bar-container {
+    position: absolute;
+    left: 3px;
+    right: 0;
+}
+
+.timeline-tree-view .data-grid .background-bar {
+    float: right;
+    height: 15px;
+    background-color: hsla(43, 84%, 64%, 0.2);
+    border-bottom: 1px solid hsl(43, 84%, 64%);
+}
+
+.timeline-tree-view .data-grid .selected .background-bar {
+    background-color: rgba(255, 255, 255, 0.25);
+    border-bottom-color: transparent;
 }

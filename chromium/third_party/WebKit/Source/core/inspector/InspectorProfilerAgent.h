@@ -39,13 +39,15 @@
 #include "wtf/PassOwnPtr.h"
 #include "wtf/text/WTFString.h"
 
+namespace v8 {
+class CpuProfile;
+}
+
 namespace blink {
 
 class ExecutionContext;
 class InjectedScriptManager;
 class InspectorFrontend;
-class InspectorOverlay;
-
 
 typedef String ErrorString;
 
@@ -53,8 +55,15 @@ class CORE_EXPORT InspectorProfilerAgent final : public InspectorBaseAgent<Inspe
     WTF_MAKE_NONCOPYABLE(InspectorProfilerAgent);
     WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(InspectorProfilerAgent);
 public:
-    static PassOwnPtrWillBeRawPtr<InspectorProfilerAgent> create(InjectedScriptManager*, InspectorOverlay*);
-    virtual ~InspectorProfilerAgent();
+    class Client {
+    public:
+        virtual ~Client() { }
+        virtual void profilingStarted() { }
+        virtual void profilingStopped() { }
+    };
+
+    static PassOwnPtrWillBeRawPtr<InspectorProfilerAgent> create(v8::Isolate*, InjectedScriptManager*, Client*);
+    ~InspectorProfilerAgent() override;
     DECLARE_VIRTUAL_TRACE();
 
     void consoleProfile(ExecutionContext*, const String& title);
@@ -74,25 +83,26 @@ public:
     void didLeaveNestedRunLoop();
 
 private:
-    InspectorProfilerAgent(InjectedScriptManager*, InspectorOverlay*);
+    InspectorProfilerAgent(v8::Isolate*, InjectedScriptManager*, Client*);
     bool enabled();
     void doEnable();
     void stop(ErrorString*, RefPtr<TypeBuilder::Profiler::CPUProfile>*);
     String nextProfileId();
 
+    void startProfiling(const String& title);
+    PassRefPtr<TypeBuilder::Profiler::CPUProfile> stopProfiling(const String& title, bool serialize);
+
+    bool isRecording() const;
+    void idleStarted();
+    void idleFinished();
+
+    v8::Isolate* m_isolate;
     RawPtrWillBeMember<InjectedScriptManager> m_injectedScriptManager;
     bool m_recordingCPUProfile;
     class ProfileDescriptor;
     Vector<ProfileDescriptor> m_startedProfiles;
     String m_frontendInitiatedProfileId;
-
-    typedef HashMap<String, double> ProfileNameIdleTimeMap;
-    ProfileNameIdleTimeMap* m_profileNameIdleTimeMap;
-    double m_idleStartTime;
-    RawPtrWillBeMember<InspectorOverlay> m_overlay;
-
-    void idleStarted();
-    void idleFinished();
+    Client* m_client;
 };
 
 } // namespace blink

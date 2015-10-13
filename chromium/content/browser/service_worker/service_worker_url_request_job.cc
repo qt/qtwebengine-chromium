@@ -104,6 +104,7 @@ ServiceWorkerURLRequestJob::ServiceWorkerURLRequestJob(
     const ResourceContext* resource_context,
     FetchRequestMode request_mode,
     FetchCredentialsMode credentials_mode,
+    FetchRedirectMode redirect_mode,
     bool is_main_resource_load,
     RequestContextType request_context_type,
     RequestContextFrameType frame_type,
@@ -118,13 +119,13 @@ ServiceWorkerURLRequestJob::ServiceWorkerURLRequestJob(
       stream_pending_buffer_size_(0),
       request_mode_(request_mode),
       credentials_mode_(credentials_mode),
+      redirect_mode_(redirect_mode),
       is_main_resource_load_(is_main_resource_load),
       request_context_type_(request_context_type),
       frame_type_(frame_type),
       fall_back_required_(false),
       body_(body),
-      weak_factory_(this) {
-}
+      weak_factory_(this) {}
 
 void ServiceWorkerURLRequestJob::FallbackToNetwork() {
   DCHECK_EQ(NOT_DETERMINED, response_type_);
@@ -482,6 +483,7 @@ ServiceWorkerURLRequestJob::CreateFetchRequest() {
   request->blob_uuid = blob_uuid;
   request->blob_size = blob_size;
   request->credentials_mode = credentials_mode_;
+  request->redirect_mode = redirect_mode_;
   const ResourceRequestInfo* info = ResourceRequestInfo::ForRequest(request_);
   if (info) {
     request->is_reload = ui::PageTransitionCoreTypeIs(
@@ -587,6 +589,14 @@ void ServiceWorkerURLRequestJob::DidDispatchFetchEvent(
     return;
   }
 
+  // A null |provider_host_| probably means the tab was closed. The null value
+  // would cause problems down the line, so bail out.
+  if (!provider_host_) {
+    RecordResult(ServiceWorkerMetrics::REQUEST_JOB_ERROR_NO_PROVIDER_HOST);
+    DeliverErrorResponse();
+    return;
+  }
+
   if (status != SERVICE_WORKER_OK) {
     RecordResult(ServiceWorkerMetrics::REQUEST_JOB_ERROR_FETCH_EVENT_DISPATCH);
     if (is_main_resource_load_) {
@@ -602,12 +612,16 @@ void ServiceWorkerURLRequestJob::DidDispatchFetchEvent(
   }
 
   if (fetch_result == SERVICE_WORKER_FETCH_EVENT_RESULT_FALLBACK) {
-    // When the request_mode is |CORS| or |CORS-with-forced-preflight| we can't
-    // simply fallback to the network in the browser process. It is because the
-    // CORS preflight logic is implemented in the renderer. So we returns a
-    // fall_back_required response to the renderer.
-    if (request_mode_ == FETCH_REQUEST_MODE_CORS ||
-        request_mode_ == FETCH_REQUEST_MODE_CORS_WITH_FORCED_PREFLIGHT) {
+    ServiceWorkerMetrics::RecordFallbackedRequestMode(request_mode_);
+    // When the request_mode is |CORS| or |CORS-with-forced-preflight| and the
+    // origin of the request URL is different from the security origin of the
+    // document, we can't simply fallback to the network in the browser process.
+    // It is because the CORS preflight logic is implemented in the renderer. So
+    // we returns a fall_back_required response to the renderer.
+    if ((request_mode_ == FETCH_REQUEST_MODE_CORS ||
+         request_mode_ == FETCH_REQUEST_MODE_CORS_WITH_FORCED_PREFLIGHT) &&
+        provider_host_->document_url().GetOrigin() !=
+            request()->url().GetOrigin()) {
       fall_back_required_ = true;
       RecordResult(ServiceWorkerMetrics::REQUEST_JOB_FALLBACK_FOR_CORS);
       CreateResponseHeader(

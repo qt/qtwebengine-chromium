@@ -38,16 +38,26 @@
 namespace blink {
 
 class WebLocalFrame;
+class WebView;
 class WebWidgetClient;
 
 class WebFrameWidget : public WebWidget {
 public:
     BLINK_EXPORT static WebFrameWidget* create(WebWidgetClient*, WebLocalFrame*);
+    // Creates a frame widget for a WebView. Temporary helper to help transition
+    // away from WebView inheriting WebWidget.
+    // TODO(dcheng): Remove once transition is complete.
+    BLINK_EXPORT static WebFrameWidget* create(WebWidgetClient*, WebView*, WebLocalFrame* mainFrame);
 
+    // Sets the visibility of the WebFrameWidget.
     // We still track page-level visibility, but additionally we need to notify a WebFrameWidget
     // when its owning RenderWidget receives a Show or Hide directive, so that it knows whether
     // it needs to draw or not.
     virtual void setVisibilityState(WebPageVisibilityState visibilityState, bool isInitialState) { }
+
+    // Temporary: there should only be one WebFrameWidget implementation but the
+    // Blink API is currently in a transition state. See https://goo.gl/7yVrnb
+    virtual bool forSubframe() const { return true; }
 };
 
 } // namespace blink

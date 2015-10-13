@@ -64,6 +64,7 @@ WebInspector.FilmStripView.prototype = {
     {
         var time = frame.timestamp;
         var element = createElementWithClass("div", "frame");
+        element.title = WebInspector.UIString("Doubleclick to zoom image. Click to view preceding requests.");
         element.createChild("div", "time").textContent = Number.millisToString(time - this._zeroTime);
         var imageElement = element.createChild("div", "thumbnail").createChild("img");
         element.addEventListener("mousedown", this._onMouseEvent.bind(this, WebInspector.FilmStripView.Events.FrameSelected, time), false);
@@ -243,7 +244,7 @@ WebInspector.FilmStripView.DialogDelegate = function(filmStripFrame, zeroTime)
     footerElement.createChild("div", "flex-auto");
 
     this._contentElement.addEventListener("keydown", this._keyDown.bind(this), false);
-    this._render().then(WebInspector.Dialog.show.bind(null, null, this));
+    this._render().then(WebInspector.Dialog.show.bind(null, this));
 }
 
 WebInspector.FilmStripView.DialogDelegate.prototype = {

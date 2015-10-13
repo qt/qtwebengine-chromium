@@ -35,6 +35,11 @@ namespace media {
 
 namespace {
 
+const std::string kDefaultDeviceId;
+const std::string kNonDefaultDeviceId("valid-nondefault-device-id");
+const std::string kUnauthorizedDeviceId("unauthorized-device-id");
+const url::Origin kDefaultSecurityOrigin;
+
 class MockRenderCallback : public AudioRendererSink::RenderCallback {
  public:
   MockRenderCallback() {}
@@ -49,22 +54,26 @@ class MockAudioOutputIPC : public AudioOutputIPC {
   MockAudioOutputIPC() {}
   virtual ~MockAudioOutputIPC() {}
 
-  MOCK_METHOD3(CreateStream, void(AudioOutputIPCDelegate* delegate,
-                                  const AudioParameters& params,
-                                  int session_id));
+  MOCK_METHOD4(RequestDeviceAuthorization,
+               void(AudioOutputIPCDelegate* delegate,
+                    int session_id,
+                    const std::string& device_id,
+                    const url::Origin& security_origin));
+  MOCK_METHOD2(CreateStream,
+               void(AudioOutputIPCDelegate* delegate,
+                    const AudioParameters& params));
   MOCK_METHOD0(PlayStream, void());
   MOCK_METHOD0(PauseStream, void());
   MOCK_METHOD0(CloseStream, void());
   MOCK_METHOD1(SetVolume, void(double volume));
-  MOCK_METHOD3(SwitchOutputDevice,
+  MOCK_METHOD2(SwitchOutputDevice,
                void(const std::string& device_id,
-                    const GURL& security_origin,
-                    int request_id));
+                    const url::Origin& security_origin));
 };
 
 class MockSwitchOutputDeviceCallback {
  public:
-  MOCK_METHOD1(Callback, void(media::SwitchOutputDeviceResult result));
+  MOCK_METHOD1(Callback, void(OutputDeviceStatus result));
 };
 
 ACTION_P2(SendPendingBytes, socket, pending_bytes) {
@@ -86,12 +95,14 @@ class AudioOutputDeviceTest
   AudioOutputDeviceTest();
   ~AudioOutputDeviceTest();
 
+  void ReceiveAuthorization(OutputDeviceStatus device_status);
   void StartAudioDevice();
   void CreateStream();
   void ExpectRenderCallback();
   void WaitUntilRenderCallback();
   void StopAudioDevice();
   void SwitchOutputDevice();
+  void SetDevice(const std::string& device_id);
 
  protected:
   // Used to clean up TLS pointers that the test(s) will initialize.
@@ -103,10 +114,11 @@ class AudioOutputDeviceTest
   MockAudioOutputIPC* audio_output_ipc_;  // owned by audio_device_
   scoped_refptr<AudioOutputDevice> audio_device_;
   MockSwitchOutputDeviceCallback switch_output_device_callback_;
+  OutputDeviceStatus device_status_;
 
  private:
   int CalculateMemorySize();
-  void SwitchOutputDeviceCallback(SwitchOutputDeviceResult result);
+  void SwitchOutputDeviceCallback(OutputDeviceStatus result);
 
   SharedMemory shared_memory_;
   CancelableSyncSocket browser_socket_;
@@ -120,31 +132,54 @@ int AudioOutputDeviceTest::CalculateMemorySize() {
   return AudioBus::CalculateMemorySize(default_audio_parameters_);
 }
 
-AudioOutputDeviceTest::AudioOutputDeviceTest() {
-  default_audio_parameters_.Reset(
-      AudioParameters::AUDIO_PCM_LINEAR,
-      CHANNEL_LAYOUT_STEREO, 2, 48000, 16, 1024);
-
-  audio_output_ipc_ = new MockAudioOutputIPC();
-  audio_device_ = new AudioOutputDevice(
-      scoped_ptr<AudioOutputIPC>(audio_output_ipc_),
-      io_loop_.task_runner());
-
-  audio_device_->Initialize(default_audio_parameters_,
-                            &callback_);
-
-  io_loop_.RunUntilIdle();
+AudioOutputDeviceTest::AudioOutputDeviceTest()
+    : device_status_(OUTPUT_DEVICE_STATUS_ERROR_INTERNAL) {
+  default_audio_parameters_.Reset(AudioParameters::AUDIO_PCM_LINEAR,
+                                  CHANNEL_LAYOUT_STEREO, 48000, 16, 1024);
+  SetDevice(kDefaultDeviceId);
 }
 
 AudioOutputDeviceTest::~AudioOutputDeviceTest() {
   audio_device_ = NULL;
 }
 
+void AudioOutputDeviceTest::SetDevice(const std::string& device_id) {
+  audio_output_ipc_ = new MockAudioOutputIPC();
+  audio_device_ = new AudioOutputDevice(
+      scoped_ptr<AudioOutputIPC>(audio_output_ipc_), io_loop_.task_runner(), 0,
+      device_id, kDefaultSecurityOrigin);
+  EXPECT_CALL(*audio_output_ipc_,
+              RequestDeviceAuthorization(audio_device_.get(), 0, device_id, _));
+  audio_device_->RequestDeviceAuthorization();
+  io_loop_.RunUntilIdle();
+
+  // Simulate response from browser
+  OutputDeviceStatus device_status =
+      (device_id == kUnauthorizedDeviceId)
+          ? OUTPUT_DEVICE_STATUS_ERROR_NOT_AUTHORIZED
+          : OUTPUT_DEVICE_STATUS_OK;
+  ReceiveAuthorization(device_status);
+
+  audio_device_->Initialize(default_audio_parameters_,
+                            &callback_);
+}
+
+void AudioOutputDeviceTest::ReceiveAuthorization(OutputDeviceStatus status) {
+  device_status_ = status;
+  if (device_status_ != OUTPUT_DEVICE_STATUS_OK)
+    EXPECT_CALL(*audio_output_ipc_, CloseStream());
+
+  audio_device_->OnDeviceAuthorized(device_status_, default_audio_parameters_);
+  io_loop_.RunUntilIdle();
+}
+
 void AudioOutputDeviceTest::StartAudioDevice() {
+  if (device_status_ == OUTPUT_DEVICE_STATUS_OK)
+    EXPECT_CALL(*audio_output_ipc_, CreateStream(audio_device_.get(), _));
+  else
+    EXPECT_CALL(callback_, OnRenderError());
+
   audio_device_->Start();
-
-  EXPECT_CALL(*audio_output_ipc_, CreateStream(audio_device_.get(), _, 0));
-
   io_loop_.RunUntilIdle();
 }
 
@@ -205,38 +240,33 @@ void AudioOutputDeviceTest::WaitUntilRenderCallback() {
 }
 
 void AudioOutputDeviceTest::StopAudioDevice() {
+  if (device_status_ == OUTPUT_DEVICE_STATUS_OK)
+    EXPECT_CALL(*audio_output_ipc_, CloseStream());
+
   audio_device_->Stop();
-
-  EXPECT_CALL(*audio_output_ipc_, CloseStream());
-
   io_loop_.RunUntilIdle();
 }
 
 void AudioOutputDeviceTest::SwitchOutputDevice() {
-  const GURL security_origin("http://localhost");
-  const std::string device_id;
-  const int request_id = 1;
-
   // Switch the output device and check that the IPC message is sent
-  EXPECT_CALL(*audio_output_ipc_,
-              SwitchOutputDevice(device_id, security_origin, request_id));
+  EXPECT_CALL(*audio_output_ipc_, SwitchOutputDevice(kNonDefaultDeviceId, _));
   audio_device_->SwitchOutputDevice(
-      device_id, security_origin,
+      kNonDefaultDeviceId, url::Origin(),
       base::Bind(&MockSwitchOutputDeviceCallback::Callback,
                  base::Unretained(&switch_output_device_callback_)));
   io_loop_.RunUntilIdle();
 
   // Simulate the reception of a successful response from the browser
   EXPECT_CALL(switch_output_device_callback_,
-              Callback(SWITCH_OUTPUT_DEVICE_RESULT_SUCCESS));
-  audio_device_->OnOutputDeviceSwitched(request_id,
-                                        SWITCH_OUTPUT_DEVICE_RESULT_SUCCESS);
+              Callback(OUTPUT_DEVICE_STATUS_OK));
+  audio_device_->OnOutputDeviceSwitched(OUTPUT_DEVICE_STATUS_OK);
   io_loop_.RunUntilIdle();
 }
 
 TEST_P(AudioOutputDeviceTest, Initialize) {
   // Tests that the object can be constructed, initialized and destructed
-  // without having ever been started/stopped.
+  // without having ever been started.
+  StopAudioDevice();
 }
 
 // Calls Start() followed by an immediate Stop() and check for the basic message
@@ -281,6 +311,37 @@ TEST_P(AudioOutputDeviceTest, CreateStream) {
 TEST_P(AudioOutputDeviceTest, SwitchOutputDevice) {
   StartAudioDevice();
   SwitchOutputDevice();
+  StopAudioDevice();
+}
+
+// Full test with output only with nondefault device.
+TEST_P(AudioOutputDeviceTest, NonDefaultCreateStream) {
+  SetDevice(kNonDefaultDeviceId);
+  StartAudioDevice();
+  ExpectRenderCallback();
+  CreateStream();
+  WaitUntilRenderCallback();
+  StopAudioDevice();
+}
+
+// Multiple start/stop with nondefault device
+TEST_P(AudioOutputDeviceTest, NonDefaultStartStopStartStop) {
+  SetDevice(kNonDefaultDeviceId);
+  StartAudioDevice();
+  StopAudioDevice();
+
+  EXPECT_CALL(*audio_output_ipc_,
+              RequestDeviceAuthorization(audio_device_.get(), 0, _, _));
+  StartAudioDevice();
+  // Simulate reply from browser
+  ReceiveAuthorization(OUTPUT_DEVICE_STATUS_OK);
+
+  StopAudioDevice();
+}
+
+TEST_P(AudioOutputDeviceTest, UnauthorizedDevice) {
+  SetDevice(kUnauthorizedDeviceId);
+  StartAudioDevice();
   StopAudioDevice();
 }
 

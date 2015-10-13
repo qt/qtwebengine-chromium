@@ -33,6 +33,30 @@ namespace blink {
 class LayoutTable;
 class LayoutTableCell;
 
+// LayoutTableCol is used to represent table column or column groups
+// (display: table-column and display: table-column-group).
+//
+// The reason to use the same LayoutObject is that both objects behave in a very
+// similar way. The main difference between the 2 is that table-column-group
+// allows table-column children, when table-column don't.
+// Note that this matches how <col> and <colgroup> map to the same class:
+// HTMLTableColElement.
+//
+// In HTML and CSS, table columns and colgroups don't own the cells, they are
+// descendants of the rows.
+// As such table columns and colgroups have a very limited scope in the table:
+// - column / cell sizing (the 'width' property)
+// - background painting (the 'background' property).
+// - border collapse resolution
+//   (http://www.w3.org/TR/CSS21/tables.html#border-conflict-resolution)
+//
+// See http://www.w3.org/TR/CSS21/tables.html#columns for the standard.
+// Note that we don't implement the "visibility: collapse" inheritance to the
+// cells.
+//
+// Because table columns and column groups are placeholder elements (see
+// previous paragraph), they are never laid out and layout() should not be
+// called on them.
 class LayoutTableCol final : public LayoutBox {
 public:
     explicit LayoutTableCol(Element*);
@@ -48,6 +72,8 @@ public:
 
     void clearPreferredLogicalWidthsDirtyBits();
 
+    // The 'span' attribute in HTML.
+    // For CSS table columns or colgroups, this is always 1.
     unsigned span() const { return m_span; }
 
     bool isTableColumnGroupWithColumnChildren() { return firstChild(); }
@@ -78,27 +104,27 @@ public:
     const BorderValue& borderAdjoiningCellBefore(const LayoutTableCell*) const;
     const BorderValue& borderAdjoiningCellAfter(const LayoutTableCell*) const;
 
-    virtual const char* name() const override { return "LayoutTableCol"; }
+    const char* name() const override { return "LayoutTableCol"; }
 
 private:
-    virtual LayoutObjectChildList* virtualChildren() override { return children(); }
-    virtual const LayoutObjectChildList* virtualChildren() const override { return children(); }
+    LayoutObjectChildList* virtualChildren() override { return children(); }
+    const LayoutObjectChildList* virtualChildren() const override { return children(); }
 
-    virtual bool isOfType(LayoutObjectType type) const override { return type == LayoutObjectLayoutTableCol || LayoutBox::isOfType(type); }
-    virtual void updateFromElement() override;
-    virtual void computePreferredLogicalWidths() override { ASSERT_NOT_REACHED(); }
+    bool isOfType(LayoutObjectType type) const override { return type == LayoutObjectLayoutTableCol || LayoutBox::isOfType(type); }
+    void updateFromElement() override;
+    void computePreferredLogicalWidths() override { ASSERT_NOT_REACHED(); }
 
-    virtual void insertedIntoTree() override;
-    virtual void willBeRemovedFromTree() override;
+    void insertedIntoTree() override;
+    void willBeRemovedFromTree() override;
 
-    virtual bool isChildAllowed(LayoutObject*, const ComputedStyle&) const override;
-    virtual bool canHaveChildren() const override;
-    virtual DeprecatedPaintLayerType layerTypeRequired() const override { return NoDeprecatedPaintLayer; }
+    bool isChildAllowed(LayoutObject*, const ComputedStyle&) const override;
+    bool canHaveChildren() const override;
+    PaintLayerType layerTypeRequired() const override { return NoPaintLayer; }
 
-    virtual LayoutRect clippedOverflowRectForPaintInvalidation(const LayoutBoxModelObject* paintInvalidationContainer, const PaintInvalidationState* = nullptr) const override;
-    virtual void imageChanged(WrappedImagePtr, const IntRect* = nullptr) override;
+    LayoutRect clippedOverflowRectForPaintInvalidation(const LayoutBoxModelObject* paintInvalidationContainer, const PaintInvalidationState* = nullptr) const override;
+    void imageChanged(WrappedImagePtr, const IntRect* = nullptr) override;
 
-    virtual void styleDidChange(StyleDifference, const ComputedStyle* oldStyle) override;
+    void styleDidChange(StyleDifference, const ComputedStyle* oldStyle) override;
 
     LayoutTable* table() const;
 

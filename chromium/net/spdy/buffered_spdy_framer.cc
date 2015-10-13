@@ -15,7 +15,6 @@ SpdyMajorVersion NextProtoToSpdyMajorVersion(NextProto next_proto) {
     case kProtoSPDY3:
     case kProtoSPDY31:
       return SPDY3;
-    case kProtoHTTP2_14:
     case kProtoHTTP2:
       return HTTP2;
     case kProtoUnknown:
@@ -278,7 +277,7 @@ SpdyFramer::SpdyState BufferedSpdyFramer::state() const {
 }
 
 bool BufferedSpdyFramer::MessageFullyRead() {
-  return state() == SpdyFramer::SPDY_AUTO_RESET;
+  return state() == SpdyFramer::SPDY_FRAME_COMPLETE;
 }
 
 bool BufferedSpdyFramer::HasError() {
@@ -299,7 +298,7 @@ SpdyFrame* BufferedSpdyFramer::CreateSynStream(
   syn_stream.set_fin((flags & CONTROL_FLAG_FIN) != 0);
   syn_stream.set_unidirectional((flags & CONTROL_FLAG_UNIDIRECTIONAL) != 0);
   // TODO(hkhalil): Avoid copy here.
-  syn_stream.set_name_value_block(*headers);
+  syn_stream.set_header_block(*headers);
   return spdy_framer_.SerializeSynStream(syn_stream);
 }
 
@@ -312,7 +311,7 @@ SpdyFrame* BufferedSpdyFramer::CreateSynReply(
   SpdySynReplyIR syn_reply(stream_id);
   syn_reply.set_fin(flags & CONTROL_FLAG_FIN);
   // TODO(hkhalil): Avoid copy here.
-  syn_reply.set_name_value_block(*headers);
+  syn_reply.set_header_block(*headers);
   return spdy_framer_.SerializeSynReply(syn_reply);
 }
 
@@ -372,7 +371,7 @@ SpdyFrame* BufferedSpdyFramer::CreateHeaders(
     headers_ir.set_has_priority(true);
     headers_ir.set_priority(priority);
   }
-  headers_ir.set_name_value_block(*headers);
+  headers_ir.set_header_block(*headers);
   return spdy_framer_.SerializeHeaders(headers_ir);
 }
 
@@ -402,7 +401,7 @@ SpdyFrame* BufferedSpdyFramer::CreatePushPromise(
     SpdyStreamId promised_stream_id,
     const SpdyHeaderBlock* headers) {
   SpdyPushPromiseIR push_promise_ir(stream_id, promised_stream_id);
-  push_promise_ir.set_name_value_block(*headers);
+  push_promise_ir.set_header_block(*headers);
   return spdy_framer_.SerializePushPromise(push_promise_ir);
 }
 

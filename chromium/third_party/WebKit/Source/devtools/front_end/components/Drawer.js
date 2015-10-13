@@ -41,12 +41,8 @@ WebInspector.Drawer = function(splitWidget)
     splitWidget.hideDefaultResizer();
     splitWidget.setSidebarWidget(this);
 
-    this._toggleDrawerButton = new WebInspector.ToolbarButton(WebInspector.UIString("Show drawer"), "console-toolbar-item");
-    this._toggleDrawerButton.addEventListener("click", this.toggle, this);
-
     this._tabbedPane = new WebInspector.TabbedPane();
     this._tabbedPane.element.id = "drawer-tabbed-pane";
-    this._tabbedPane.setCloseableTabs(false);
     this._tabbedPane.addEventListener(WebInspector.TabbedPane.EventTypes.TabSelected, this._tabSelected, this);
     new WebInspector.ExtensibleTabbedPaneController(this._tabbedPane, "drawer-view");
 
@@ -56,14 +52,6 @@ WebInspector.Drawer = function(splitWidget)
 }
 
 WebInspector.Drawer.prototype = {
-    /**
-     * @return {!WebInspector.ToolbarButton}
-     */
-    toggleButton: function()
-    {
-        return this._toggleDrawerButton;
-    },
-
     /**
      * @param {string} id
      */
@@ -104,6 +92,7 @@ WebInspector.Drawer.prototype = {
         }
         this._innerShow();
         this._tabbedPane.selectTab(id, true);
+        this._lastSelectedViewSetting.set(id);
     },
 
     showDrawer: function()
@@ -114,14 +103,10 @@ WebInspector.Drawer.prototype = {
     wasShown: function()
     {
         this.showView(this._lastSelectedViewSetting.get());
-        this._toggleDrawerButton.setToggled(true);
-        this._toggleDrawerButton.setTitle(WebInspector.UIString("Hide drawer"));
     },
 
     willHide: function()
     {
-        this._toggleDrawerButton.setToggled(false);
-        this._toggleDrawerButton.setTitle(WebInspector.UIString("Show drawer"));
     },
 
     /**
@@ -165,22 +150,6 @@ WebInspector.Drawer.prototype = {
             this._lastSelectedViewSetting.set(tabId);
     },
 
-    toggle: function()
-    {
-        if (this._toggleDrawerButton.toggled())
-            this.closeDrawer();
-        else
-            this.showDrawer();
-    },
-
-    /**
-     * @return {boolean}
-     */
-    visible: function()
-    {
-        return this._toggleDrawerButton.toggled();
-    },
-
     /**
      * @return {?string}
      */
@@ -195,42 +164,4 @@ WebInspector.Drawer.prototype = {
     },
 
     __proto__: WebInspector.VBox.prototype
-}
-
-/**
- * @interface
- */
-WebInspector.Drawer.ViewFactory = function()
-{
-}
-
-WebInspector.Drawer.ViewFactory.prototype = {
-    /**
-     * @return {!WebInspector.Widget}
-     */
-    createView: function() {}
-}
-
-/**
- * @constructor
- * @implements {WebInspector.Drawer.ViewFactory}
- * @param {function(new:T)} constructor
- * @template T
- */
-WebInspector.Drawer.SingletonViewFactory = function(constructor)
-{
-    this._constructor = constructor;
-}
-
-WebInspector.Drawer.SingletonViewFactory.prototype = {
-    /**
-     * @override
-     * @return {!WebInspector.Widget}
-     */
-    createView: function()
-    {
-        if (!this._instance)
-            this._instance = /** @type {!WebInspector.Widget} */(new this._constructor());
-        return this._instance;
-    }
 }

@@ -12,7 +12,7 @@
 #include "platform/Supplementable.h"
 #include "platform/heap/Handle.h"
 #include "public/platform/WebEncryptedMediaTypes.h"
-#include "public/platform/WebMediaPlayerClient.h"
+#include "public/platform/WebMediaPlayerEncryptedMediaClient.h"
 
 namespace blink {
 
@@ -21,10 +21,12 @@ class HTMLMediaElement;
 class MediaKeys;
 class ScriptPromise;
 class ScriptState;
+class WebContentDecryptionModule;
+class WebMediaPlayer;
 
-class MODULES_EXPORT HTMLMediaElementEncryptedMedia final : public NoBaseWillBeGarbageCollected<HTMLMediaElementEncryptedMedia>, public WillBeHeapSupplement<HTMLMediaElement> {
+class MODULES_EXPORT HTMLMediaElementEncryptedMedia final : public NoBaseWillBeGarbageCollectedFinalized<HTMLMediaElementEncryptedMedia>, public WillBeHeapSupplement<HTMLMediaElement>, public WebMediaPlayerEncryptedMediaClient {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(HTMLMediaElementEncryptedMedia);
-    DECLARE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(HTMLMediaElementEncryptedMedia);
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(HTMLMediaElementEncryptedMedia);
 public:
     // encrypted media extensions (v0.1b)
     static void webkitGenerateKeyRequest(HTMLMediaElement&, const String& keySystem, PassRefPtr<DOMUint8Array> initData, ExceptionState&);
@@ -43,29 +45,32 @@ public:
     static ScriptPromise setMediaKeys(ScriptState*, HTMLMediaElement&, MediaKeys*);
     DEFINE_STATIC_ATTRIBUTE_EVENT_LISTENER(encrypted);
 
-    static void keyAdded(HTMLMediaElement&, const String& keySystem, const String& sessionId);
-    static void keyError(HTMLMediaElement&, const String& keySystem, const String& sessionId, WebMediaPlayerClient::MediaKeyErrorCode, unsigned short systemCode);
-    static void keyMessage(HTMLMediaElement&, const String& keySystem, const String& sessionId, const unsigned char* message, unsigned messageLength, const WebURL& defaultURL);
-    static void encrypted(HTMLMediaElement&, WebEncryptedMediaInitDataType, const unsigned char* initData, unsigned initDataLength);
-    static void didBlockPlaybackWaitingForKey(HTMLMediaElement&);
-    static void didResumePlaybackBlockedForKey(HTMLMediaElement&);
-    static WebContentDecryptionModule* contentDecryptionModule(HTMLMediaElement&);
+    // WebMediaPlayerEncryptedMediaClient methods
+    void keyAdded(const WebString& keySystem, const WebString& sessionId) final;
+    void keyError(const WebString& keySystem, const WebString& sessionId, WebMediaPlayerEncryptedMediaClient::MediaKeyErrorCode, unsigned short systemCode) final;
+    void keyMessage(const WebString& keySystem, const WebString& sessionId, const unsigned char* message, unsigned messageLength, const WebURL& defaultURL) final;
+    void encrypted(WebEncryptedMediaInitDataType, const unsigned char* initData, unsigned initDataLength) final;
+    void didBlockPlaybackWaitingForKey() final;
+    void didResumePlaybackBlockedForKey() final;
+    WebContentDecryptionModule* contentDecryptionModule();
 
     static HTMLMediaElementEncryptedMedia& from(HTMLMediaElement&);
     static const char* supplementName();
+
+    ~HTMLMediaElementEncryptedMedia();
 
     DECLARE_VIRTUAL_TRACE();
 
 private:
     friend class SetMediaKeysHandler;
 
-    HTMLMediaElementEncryptedMedia();
+    HTMLMediaElementEncryptedMedia(HTMLMediaElement&);
     void generateKeyRequest(WebMediaPlayer*, const String& keySystem, PassRefPtr<DOMUint8Array> initData, ExceptionState&);
     void addKey(WebMediaPlayer*, const String& keySystem, PassRefPtr<DOMUint8Array> key, PassRefPtr<DOMUint8Array> initData, const String& sessionId, ExceptionState&);
     void cancelKeyRequest(WebMediaPlayer*, const String& keySystem, const String& sessionId, ExceptionState&);
 
     // EventTarget
-    bool setAttributeEventListener(const AtomicString& eventType, PassRefPtr<EventListener>);
+    bool setAttributeEventListener(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener>);
     EventListener* getAttributeEventListener(const AtomicString& eventType);
 
     // Currently we have both EME v0.1b and EME WD implemented in media element.
@@ -78,8 +83,7 @@ private:
     // (v0.1b or WD). Returns whether the mode is allowed and successfully set.
     bool setEmeMode(EmeMode);
 
-    WebContentDecryptionModule* contentDecryptionModule();
-
+    RawPtrWillBeMember<HTMLMediaElement> m_mediaElement;
     EmeMode m_emeMode;
 
     bool m_isWaitingForKey;

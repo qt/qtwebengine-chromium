@@ -847,6 +847,8 @@
   /* first character must be a delimiter or a part of a number */
   /* NB: `values' can be NULL if we just want to skip the      */
   /*     array; in this case we ignore `max_values'            */
+  /*                                                           */
+  /* return number of successfully parsed values               */
 
   static FT_Int
   ps_tofixedarray( FT_Byte*  *acur,
@@ -1193,7 +1195,7 @@
 
           result = ps_tofixedarray( &cur, limit, 4, temp, 0 );
 
-          if ( result < 0 )
+          if ( result < 4 )
           {
             FT_ERROR(( "ps_parser_load_field:"
                        " expected four integers in bounding box\n" ));

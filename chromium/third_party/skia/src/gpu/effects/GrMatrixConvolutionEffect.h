@@ -28,16 +28,8 @@ public:
                                        const SkIPoint& kernelOffset,
                                        GrTextureDomain::Mode tileMode,
                                        bool convolveAlpha) {
-        return SkNEW_ARGS(GrMatrixConvolutionEffect, (procDataManager,
-                                                      texture,
-                                                      bounds,
-                                                      kernelSize,
-                                                      kernel,
-                                                      gain,
-                                                      bias,
-                                                      kernelOffset,
-                                                      tileMode,
-                                                      convolveAlpha));
+        return new GrMatrixConvolutionEffect(procDataManager, texture, bounds, kernelSize, kernel,
+                                             gain, bias, kernelOffset, tileMode, convolveAlpha);
     }
 
     static GrFragmentProcessor* CreateGaussian(GrProcessorDataManager*,
@@ -65,10 +57,6 @@ public:
 
     const char* name() const override { return "MatrixConvolution"; }
 
-    void getGLProcessorKey(const GrGLSLCaps&, GrProcessorKeyBuilder*) const override;
-
-    GrGLFragmentProcessor* createGLInstance() const override;
-
 private:
     GrMatrixConvolutionEffect(GrProcessorDataManager*,
                               GrTexture*,
@@ -80,6 +68,10 @@ private:
                               const SkIPoint& kernelOffset,
                               GrTextureDomain::Mode tileMode,
                               bool convolveAlpha);
+
+    GrGLFragmentProcessor* onCreateGLInstance() const override;
+
+    void onGetGLProcessorKey(const GrGLSLCaps&, GrProcessorKeyBuilder*) const override;
 
     bool onIsEqual(const GrFragmentProcessor&) const override;
 

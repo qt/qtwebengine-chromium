@@ -65,9 +65,9 @@ void AXTable::init()
     m_isAXTable = isTableExposableThroughAccessibility();
 }
 
-PassRefPtrWillBeRawPtr<AXTable> AXTable::create(LayoutObject* layoutObject, AXObjectCacheImpl& axObjectCache)
+AXTable* AXTable::create(LayoutObject* layoutObject, AXObjectCacheImpl& axObjectCache)
 {
-    return adoptRefWillBeNoop(new AXTable(layoutObject, axObjectCache));
+    return new AXTable(layoutObject, axObjectCache);
 }
 
 bool AXTable::hasARIARole() const
@@ -393,7 +393,7 @@ void AXTable::addChildren()
     LayoutTableSection* initialTableSection = tableSection;
     while (tableSection) {
 
-        HashSet<AXObject*> appendedRows;
+        HeapHashSet<Member<AXObject>> appendedRows;
         unsigned numRows = tableSection->numRows();
         for (unsigned rowIndex = 0; rowIndex < numRows; ++rowIndex) {
 
@@ -531,8 +531,8 @@ AXTableCell* AXTable::cellForColumnAndRow(unsigned column, unsigned row)
             if (!child->isTableCell())
                 continue;
 
-            pair<unsigned, unsigned> columnRange;
-            pair<unsigned, unsigned> rowRange;
+            std::pair<unsigned, unsigned> columnRange;
+            std::pair<unsigned, unsigned> rowRange;
             AXTableCell* tableCellChild = toAXTableCell(child);
             tableCellChild->columnIndexRange(columnRange);
             tableCellChild->rowIndexRange(rowRange);

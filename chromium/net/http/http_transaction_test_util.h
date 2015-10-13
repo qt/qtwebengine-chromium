@@ -7,6 +7,8 @@
 
 #include "net/http/http_transaction.h"
 
+#include <stdint.h>
+
 #include <string>
 
 #include "base/callback.h"
@@ -195,7 +197,9 @@ class MockNetworkTransaction
 
   bool GetFullRequestHeaders(HttpRequestHeaders* headers) const override;
 
-  int64 GetTotalReceivedBytes() const override;
+  int64_t GetTotalReceivedBytes() const override;
+
+  int64_t GetTotalSentBytes() const override;
 
   void DoneReading() override;
 
@@ -208,6 +212,8 @@ class MockNetworkTransaction
   void SetQuicServerInfo(QuicServerInfo* quic_server_info) override;
 
   bool GetLoadTimingInfo(LoadTimingInfo* load_timing_info) const override;
+
+  bool GetRemoteEndpoint(IPEndPoint* endpoint) const override;
 
   void SetPriority(RequestPriority priority) override;
 
@@ -230,6 +236,13 @@ class MockNetworkTransaction
   RequestPriority priority() const { return priority_; }
   const HttpRequestInfo* request() const { return request_; }
 
+  // Bogus value that will be returned by GetTotalReceivedBytes() if the
+  // MockNetworkTransaction was started.
+  static const int64_t kTotalReceivedBytes;
+  // Bogus value that will be returned by GetTotalSentBytes() if the
+  // MockNetworkTransaction was started.
+  static const int64_t kTotalSentBytes;
+
  private:
   int StartInternal(const HttpRequestInfo* request,
                     const CompletionCallback& callback,
@@ -245,7 +258,8 @@ class MockNetworkTransaction
   RequestPriority priority_;
   CreateHelper* websocket_handshake_stream_create_helper_;
   base::WeakPtr<MockNetworkLayer> transaction_factory_;
-  int64 received_bytes_;
+  int64_t received_bytes_;
+  int64_t sent_bytes_;
 
   // NetLog ID of the fake / non-existent underlying socket used by the
   // connection. Requires Start() be passed a BoundNetLog with a real NetLog to

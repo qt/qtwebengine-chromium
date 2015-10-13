@@ -95,7 +95,7 @@ public:
 
 private:
     RawPtrWillBeMember<StyleRule> m_rule;
-    unsigned m_selectorIndex : 12;
+    unsigned m_selectorIndex : 13;
     unsigned m_isLastInArray : 1; // We store an array of RuleData objects in a primitive array.
     // This number was picked fairly arbitrarily. We can probably lower it if we need to.
     // Some simple testing showed <100,000 RuleData's on large sites.
@@ -110,6 +110,7 @@ private:
 };
 
 struct SameSizeAsRuleData {
+    DISALLOW_ALLOCATION();
     void* a;
     unsigned b;
     unsigned c;
@@ -163,8 +164,8 @@ public:
     DECLARE_TRACE();
 
 private:
-    typedef WillBeHeapHashMap<AtomicString, OwnPtrWillBeMember<WillBeHeapLinkedStack<RuleData>>> PendingRuleMap;
-    typedef WillBeHeapHashMap<AtomicString, OwnPtrWillBeMember<WillBeHeapTerminatedArray<RuleData>>> CompactRuleMap;
+    using PendingRuleMap = WillBeHeapHashMap<AtomicString, OwnPtrWillBeMember<WillBeHeapLinkedStack<RuleData>>>;
+    using CompactRuleMap = WillBeHeapHashMap<AtomicString, OwnPtrWillBeMember<WillBeHeapTerminatedArray<RuleData>>>;
 
     RuleSet()
         : m_ruleCount(0)
