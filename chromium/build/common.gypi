@@ -5672,6 +5672,8 @@
           # should work through these at some point -- they may be removed from
           # the RTM release in the /W4 set.
           4456, 4457, 4458, 4459,
+
+          4577, # 'noexcept' used with no exception handling mode specified
         ],
         'msvs_settings': {
           'VCCLCompilerTool': {
