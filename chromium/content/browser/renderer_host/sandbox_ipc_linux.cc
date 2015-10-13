@@ -446,7 +446,7 @@ SandboxIPCHandler::~SandboxIPCHandler() {
 }
 
 void SandboxIPCHandler::EnsureWebKitInitialized() {
-  if (blink_platform_impl_)
+  if (blink_platform_impl_ || blink::Platform::current())
     return;
   blink_platform_impl_.reset(new BlinkPlatformImpl);
   blink::initializeWithoutV8(blink_platform_impl_.get());
