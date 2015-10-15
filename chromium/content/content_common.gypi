@@ -4,6 +4,7 @@
 
 {
   'dependencies': [
+    '<(DEPTH)/third_party/khronos/khronos.gyp:khronos_headers',
     '../base/base.gyp:base',
     '../components/tracing.gyp:tracing',
     '../gpu/command_buffer/command_buffer.gyp:gles2_utils',

@@ -7,6 +7,9 @@
     'variables': {
       'ppapi_proxy_target': 0,
     },
+    'dependencies': [
+      '<(DEPTH)/third_party/khronos/khronos.gyp:khronos_headers',
+    ],
     'target_conditions': [
       # This part is shared between the targets defined below.
       ['ppapi_proxy_target==1', {

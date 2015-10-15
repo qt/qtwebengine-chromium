@@ -45,6 +45,7 @@
         'command_buffer/command_buffer.gyp:gles2_utils',
         'gles2_implementation',
         'gpu',
+        '<(DEPTH)/third_party/khronos/khronos.gyp:khronos_headers',
         '../base/base.gyp:base',
         '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
         '../ui/gfx/gfx.gyp:gfx_geometry',
@@ -90,7 +91,11 @@
       'dependencies': [
         '../base/base.gyp:base',
         '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
+        '<(DEPTH)/third_party/khronos/khronos.gyp:khronos_headers',
         'command_buffer/command_buffer.gyp:gles2_utils',
+        'command_buffer_client',
+      ],
+      'export_dependent_settings': [
         'command_buffer_client',
       ],
       'defines': [
@@ -118,6 +123,9 @@
         'command_buffer/command_buffer.gyp:gles2_utils',
         'command_buffer_client',
         'gles2_implementation_no_check',
+      ],
+      'export_dependent_settings': [
+        'command_buffer_client',
       ],
       'sources': [
         '<@(gles2_c_lib_source_files)',
@@ -482,6 +490,9 @@
             'gpu_config',
             'gpu_ipc',
           ],
+          'export_dependent_settings': [
+            'command_buffer_common',
+          ],
           'sources': [
             'gpu_export.h',
           ],
@@ -527,6 +538,9 @@
           'dependencies': [
             'command_buffer_common',
           ],
+          'export_dependent_settings': [
+            'command_buffer_common',
+          ],
           # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
           'msvs_disabled_warnings': [4267, ],
         },
@@ -559,10 +573,16 @@
           'dependencies': [
             'command_buffer_common',
           ],
+          'export_dependent_settings': [
+            'command_buffer_common',
+          ],
         },
         {
           'target_name': 'gpu_config',
           'type': 'static_library',
+          'dependencies': [
+            '../third_party/khronos/khronos.gyp:khronos_headers',
+          ],
           'includes': [
             'gpu_config.gypi',
           ],

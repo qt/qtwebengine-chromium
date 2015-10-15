@@ -603,6 +603,7 @@
         '../platform/blink_platform.gyp:blink_platform',
         '../wtf/wtf.gyp:wtf',
         '<(DEPTH)/skia/skia.gyp:skia',
+        '<(DEPTH)/third_party/khronos/khronos.gyp:khronos_headers',
         '<(DEPTH)/third_party/npapi/npapi.gyp:npapi',
         '<(DEPTH)/third_party/qcms/qcms.gyp:qcms',
         '<(DEPTH)/url/url.gyp:url_lib',
