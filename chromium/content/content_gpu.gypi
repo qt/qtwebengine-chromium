@@ -49,6 +49,14 @@
         ],
       },
     }],
+    ['qt_os=="mac"', {
+      'dependencies': [
+        '../third_party/khronos/khronos.gyp:khronos_headers',
+      ],
+      'export_dependent_settings': [
+        '../third_party/khronos/khronos.gyp:khronos_headers',
+      ],
+    }],
     ['qt_os=="win32" and qt_gl=="angle"', {
       'link_settings': {
         'libraries': [

@@ -40,6 +40,7 @@
     'type': '<(component)',
     'variables': { 'enable_wexit_time_destructors': 1 },
     'dependencies': [
+      '<(DEPTH)/third_party/khronos/khronos.gyp:khronos_headers',
       '../config.gyp:config',
       '../wtf/wtf.gyp:wtf',
       '<(DEPTH)/base/base.gyp:base',
@@ -125,6 +126,7 @@
     # Because of transitive dependency on make_platform_generated.
     'hard_dependency': 1,
     'dependencies': [
+      '<(DEPTH)/third_party/khronos/khronos.gyp:khronos_headers',
       '../config.gyp:config',
       '../wtf/wtf.gyp:wtf',
       'blink_common',
@@ -387,6 +389,7 @@
       ['target_arch=="arm"', {
         'type': 'static_library',
         'dependencies': [
+          '<(DEPTH)/third_party/khronos/khronos.gyp:khronos_headers',
           'blink_common',
         ],
         'hard_dependency': 1,

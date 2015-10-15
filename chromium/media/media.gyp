@@ -72,6 +72,7 @@
       'target_name': 'media',
       'type': '<(component)',
       'dependencies': [
+        '<(DEPTH)/third_party/khronos/khronos.gyp:khronos_headers',
         'media_features',
         '../base/base.gyp:base',
         '../base/base.gyp:base_i18n',

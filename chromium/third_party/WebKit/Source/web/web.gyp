@@ -54,6 +54,7 @@
             'type': '<(component)',
             'variables': { 'enable_wexit_time_destructors': 1, },
             'dependencies': [
+                '<(DEPTH)/third_party/khronos/khronos.gyp:khronos_headers',
                 '../config.gyp:config',
                 '../platform/blink_platform.gyp:blink_common',
                 '../modules/modules.gyp:modules',

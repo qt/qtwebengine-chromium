@@ -9,6 +9,7 @@
       'target_name': 'cc_blink',
       'type': '<(component)',
       'dependencies': [
+        '<(DEPTH)/third_party/khronos/khronos.gyp:khronos_headers',
         '../../gpu/gpu.gyp:command_buffer_common',
         '../../base/base.gyp:base',
         '../../third_party/WebKit/public/blink.gyp:blink',
