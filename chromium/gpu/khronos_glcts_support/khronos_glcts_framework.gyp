@@ -237,9 +237,6 @@
           '<(DEPTH)/third_party/khronos_glcts/framework/egl',
         ],
       },
-      'export_dependent_settings': [
-        '<(DEPTH)/third_party/khronos/khronos.gyp:khronos_headers',
-      ],
       'sources': [
         '<@(tcutil_egl_srcs)',
       ],

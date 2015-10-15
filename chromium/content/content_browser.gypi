@@ -4,6 +4,7 @@
 
 {
   'dependencies': [
+    '<(DEPTH)/third_party/khronos/khronos.gyp:khronos_headers',
     '../base/base.gyp:base_static',
     '../components/url_formatter/url_formatter.gyp:url_formatter',
     '../crypto/crypto.gyp:crypto',
@@ -1868,6 +1869,7 @@
         '../device/bluetooth/bluetooth.gyp:device_bluetooth',
         '../device/usb/usb.gyp:device_usb',
         '../gin/gin.gyp:gin',
+        '../gpu/gpu.gyp:gpu_ipc',
         '../net/net.gyp:http_server',
         '../storage/storage_browser.gyp:storage',
         '../storage/storage_common.gyp:storage_common',

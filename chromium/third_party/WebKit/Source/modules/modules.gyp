@@ -41,6 +41,7 @@
     'dependencies': [
       '<(DEPTH)/third_party/icu/icu.gyp:icui18n',
       '<(DEPTH)/third_party/icu/icu.gyp:icuuc',
+      '<(DEPTH)/third_party/khronos/khronos.gyp:khronos_headers',
       '<(DEPTH)/third_party/sqlite/sqlite.gyp:sqlite',
       '<(DEPTH)/third_party/zlib/zlib.gyp:zlib',
       '../config.gyp:config',
