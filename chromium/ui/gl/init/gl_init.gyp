@@ -16,6 +16,7 @@
         '../../gfx/gfx.gyp:gfx',
         '../../gfx/gfx.gyp:gfx_geometry',
         '../gl.gyp:gl',
+        '<(DEPTH)/third_party/khronos/khronos.gyp:khronos_headers',
       ],
       'defines': [
         'GL_INIT_IMPLEMENTATION',

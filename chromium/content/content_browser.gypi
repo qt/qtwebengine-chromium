@@ -4,6 +4,7 @@
 
 {
   'dependencies': [
+    '<(DEPTH)/third_party/khronos/khronos.gyp:khronos_headers',
     '../base/base.gyp:base_static',
     '../cc/cc.gyp:cc',
     '../cc/cc.gyp:cc_surfaces',

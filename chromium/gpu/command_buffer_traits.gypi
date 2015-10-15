@@ -28,6 +28,11 @@
         '../ipc/ipc.gyp:ipc',
       ],
     }],
+    ['qt_os=="mac" or qt_os=="win32"', {
+        'export_dependent_settings': [
+          '../third_party/khronos/khronos.gyp:khronos_headers',
+        ],
+    }],
     ['OS=="android"', {
       'sources': [
         'ipc/common/android/surface_texture_manager.cc',

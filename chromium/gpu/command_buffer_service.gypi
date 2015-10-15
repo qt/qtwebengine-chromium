@@ -141,20 +141,4 @@
     'command_buffer/service/vertex_attrib_manager.cc',
     'command_buffer/service/vertex_attrib_manager.h',
   ],
-  'conditions': [
-    ['ui_compositor_image_transport==1', {
-      'include_dirs': [
-        '../third_party/khronos',
-      ],
-    }],
-    ['OS=="mac"', {
-      # Required by gles2_cmd_decoder.cc on Mac.
-      'link_settings': {
-        'libraries': [
-          '$(SDKROOT)/System/Library/Frameworks/IOSurface.framework',
-          '$(SDKROOT)/System/Library/Frameworks/OpenGL.framework',
-        ],
-      },
-    }],
-  ],
 }
