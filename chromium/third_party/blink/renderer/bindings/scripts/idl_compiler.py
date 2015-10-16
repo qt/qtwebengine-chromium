@@ -44,6 +44,7 @@ from idl_reader import IdlReader
 from utilities import create_component_info_provider
 from utilities import read_idl_files_list_from_file
 from utilities import write_file
+from utilities import abs
 
 
 def parse_options():
@@ -131,7 +132,7 @@ class IdlCompiler(object):
 def generate_bindings(code_generator_class, info_provider, options,
                       input_filenames):
     idl_compiler = IdlCompiler(
-        output_directory=options.output_directory,
+        output_directory=abs(options.output_directory),
         cache_directory=options.cache_directory,
         code_generator_class=code_generator_class,
         info_provider=info_provider,
