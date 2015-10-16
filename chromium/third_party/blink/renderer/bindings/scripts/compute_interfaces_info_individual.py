@@ -56,6 +56,7 @@ from utilities import shorten_union_name
 from utilities import to_snake_case
 from utilities import read_pickle_file
 from utilities import write_pickle_file
+from utilities import abs
 
 module_path = os.path.dirname(__file__)
 source_path = os.path.normpath(os.path.join(module_path, os.pardir, os.pardir))
@@ -112,6 +113,13 @@ def include_path(idl_filename, implemented_as=None):
         relative_dir = relative_dir_posix(idl_filename, gen_path)
     else:
         relative_dir = relative_dir_posix(idl_filename, source_path)
+
+    # The generated relative include path might be wrong if the relative path
+    # points to a parent directory in case of shadow build. To avoid jumbled
+    # relative paths use absolute path instead.
+    if relative_dir.startswith(".."):
+        relative_dir = abs(os.path.dirname(idl_filename))
+        relative_dir = relative_dir.replace(os.path.sep, posixpath.sep)
 
     # IDL file basename is used even if only a partial interface file
     output_file_basename = implemented_as or idl_filename_to_basename(
@@ -233,7 +241,7 @@ class InterfaceInfoCollector(object):
             interface_info['unforgeable_attributes'] = unforgeable_attributes
             return interface_info
 
-        definitions = self.reader.read_idl_file(idl_filename)
+        definitions = self.reader.read_idl_file(abs(idl_filename))
 
         this_union_types = collect_union_types_from_definitions(definitions)
         self.union_types.update(this_union_types)
