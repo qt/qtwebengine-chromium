@@ -50,7 +50,7 @@ import sys
 from idl_compiler import idl_filename_to_interface_name
 from idl_definitions import Visitor
 from idl_reader import IdlReader
-from utilities import get_file_contents, read_file_to_list, idl_filename_to_interface_name, idl_filename_to_component, write_pickle_file, get_interface_extended_attributes_from_idl, is_callback_interface_from_idl, merge_dict_recursively
+from utilities import get_file_contents, read_file_to_list, idl_filename_to_interface_name, idl_filename_to_component, write_pickle_file, get_interface_extended_attributes_from_idl, is_callback_interface_from_idl, merge_dict_recursively, abs
 
 module_path = os.path.dirname(__file__)
 source_path = os.path.normpath(os.path.join(module_path, os.pardir, os.pardir))
@@ -99,6 +99,13 @@ def include_path(idl_filename, implemented_as=None):
     platform-independent.
     """
     relative_dir = relative_dir_posix(idl_filename)
+
+    # The generated relative include path might be wrong if the relative path
+    # points to a parent directory in case of shadow build. To avoid jumbled
+    # relative paths use absolute path instead.
+    if relative_dir.startswith(".."):
+        relative_dir = abs(os.path.dirname(idl_filename))
+        relative_dir = relative_dir.replace(os.path.sep, posixpath.sep)
 
     # IDL file basename is used even if only a partial interface file
     cpp_class_name = implemented_as or idl_filename_to_interface_name(idl_filename)
@@ -207,7 +214,7 @@ class InterfaceInfoCollector(object):
             interface_info['unforgeable_attributes'][component] = unforgeable_attributes
             return interface_info
 
-        definitions = self.reader.read_idl_file(idl_filename)
+        definitions = self.reader.read_idl_file(abs(idl_filename))
 
         this_union_types = collect_union_types_from_definitions(definitions)
         self.union_types.update(this_union_types)
