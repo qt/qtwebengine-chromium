@@ -54,6 +54,7 @@ import re
 import sys
 from utilities import idl_filename_to_basename
 from utilities import read_idl_files_list_from_file
+from utilities import abs
 from utilities import to_snake_case
 
 COPYRIGHT_TEMPLATE = """/*
@@ -120,11 +121,11 @@ def write_content(content, output_file_name):
 def main():
     options, filenames = parse_options()
     component = options.component
-    idl_filenames = read_idl_files_list_from_file(filenames[0])
+    idl_filenames = read_idl_files_list_from_file(abs(filenames[0]))
     basenames = [idl_filename_to_basename(file_path)
                  for file_path in idl_filenames]
     file_contents = generate_content(component, basenames)
-    write_content(file_contents, filenames[1])
+    write_content(file_contents, abs(filenames[1]))
 
 
 if __name__ == '__main__':
