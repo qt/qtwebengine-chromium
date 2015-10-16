@@ -48,6 +48,7 @@ from idl_reader import IdlReader
 from utilities import create_component_info_provider
 from utilities import read_idl_files_list_from_file
 from utilities import write_file
+from utilities import abs
 
 
 def parse_options():
@@ -151,8 +152,8 @@ def generate_bindings(options, input_filename):
     info_provider = create_component_info_provider(
         options.info_dir, options.target_component)
     idl_compiler = IdlCompilerV8(
-        options.output_directory,
-        cache_directory=options.cache_directory,
+        abs(options.output_directory),
+        cache_directory=abs(options.cache_directory),
         info_provider=info_provider,
         target_component=options.target_component)
     idl_compiler.compile_file(input_filename)

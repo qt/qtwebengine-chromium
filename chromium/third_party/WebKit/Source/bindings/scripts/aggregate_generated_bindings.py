@@ -54,6 +54,7 @@ import re
 import sys
 from utilities import idl_filename_to_interface_name
 from utilities import read_idl_files_list_from_file
+from utilities import abs
 
 COPYRIGHT_TEMPLATE = """/*
  * THIS FILE WAS AUTOMATICALLY GENERATED, DO NOT EDIT.
@@ -120,12 +121,12 @@ def write_content(content, output_file_name):
 def main():
     options, filenames = parse_options()
     component = options.component
-    idl_filenames = read_idl_files_list_from_file(filenames[0],
+    idl_filenames = read_idl_files_list_from_file(abs(filenames[0]),
                                                   is_gyp_format=False)
     interface_names = [idl_filename_to_interface_name(file_path)
                        for file_path in idl_filenames]
     file_contents = generate_content(component, interface_names)
-    write_content(file_contents, filenames[1])
+    write_content(file_contents, abs(filenames[1]))
 
 
 if __name__ == '__main__':
