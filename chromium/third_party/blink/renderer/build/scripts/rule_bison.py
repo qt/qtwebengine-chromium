@@ -41,11 +41,12 @@ import os
 import os.path
 import subprocess
 import sys
+from utilities import abs
 
 assert len(sys.argv) == 4 or len(sys.argv) == 5
 
-inputFile = sys.argv[1]
-outputDir = sys.argv[2]
+inputFile = abs(sys.argv[1])
+outputDir = abs(sys.argv[2])
 bisonExe = sys.argv[3]
 if len(sys.argv) > 4:
     os.environ['DEVELOPER_DIR'] = sys.argv[4]
