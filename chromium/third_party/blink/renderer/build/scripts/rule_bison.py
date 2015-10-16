@@ -41,6 +41,7 @@ import os
 import os.path
 import subprocess
 import sys
+from utilities import abs
 
 from blinkbuild.name_style_converter import NameStyleConverter
 
@@ -61,8 +62,8 @@ def modify_file(path, prefix_lines, suffix_lines, replace_list=[]):
 def main():
     assert len(sys.argv) == 4
 
-    input_file = sys.argv[1]
-    output_dir = sys.argv[2]
+    input_file = abs(sys.argv[1])
+    output_dir = abs(sys.argv[2])
     bison_exe = sys.argv[3]
 
     path_to_bison = os.path.split(bison_exe)[0]
