@@ -84,7 +84,7 @@ from v8_methods import method_filters
 import v8_types
 import v8_union
 from v8_utilities import capitalize, cpp_name, for_origin_trial_feature, unique_by
-from utilities import idl_filename_to_component, is_valid_component_dependency, is_testing_target, shorten_union_name
+from utilities import idl_filename_to_component, is_valid_component_dependency, is_testing_target, shorten_union_name, abs
 
 
 def normalize_and_sort_includes(include_paths):
@@ -463,7 +463,7 @@ def runtime_enabled_if(code, runtime_enabled_function_name):
 def main(argv):
     # If file itself executed, cache templates
     try:
-        cache_dir = argv[1]
+        cache_dir = abs(argv[1])
         dummy_filename = argv[2]
     except IndexError:
         print 'Usage: %s CACHE_DIR DUMMY_FILENAME' % argv[0]

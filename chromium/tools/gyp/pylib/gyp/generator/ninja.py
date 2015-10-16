@@ -243,6 +243,12 @@ class NinjaWriter(object):
     base_to_top = gyp.common.InvertRelativePath(base_dir, toplevel_dir)
     self.base_to_build = os.path.join(base_to_top, build_dir)
 
+    # Override relative paths and use absolute paths instead.
+    # It is necessary to prevent python IOError on Windows due to long
+    # relative paths while building QtWebEngine.
+    self.build_to_base = os.path.join(toplevel_dir, base_dir)
+    self.base_to_build = os.path.normpath(toplevel_build)
+
   def ExpandSpecial(self, path, product_dir=None):
     """Expand specials like $!PRODUCT_DIR in |path|.
 
