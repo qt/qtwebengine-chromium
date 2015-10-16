@@ -88,6 +88,8 @@ def parse_args(argv):
         static_files_list_position = argv.index('--static_files_list')
         static_files_list_path = argv[static_files_list_position + 1]
         source_files = argv[:static_files_list_position]
+        # Workaround for python's path length limit on Windows.
+        static_files_list_path = os.path.normpath(os.path.join(os.getcwd(), static_files_list_path))
         with open(static_files_list_path, 'r') as static_list_file:
             source_files.extend([line.rstrip('\n') for line in static_list_file.readlines()])
     elif '--static_files_args' in argv:
