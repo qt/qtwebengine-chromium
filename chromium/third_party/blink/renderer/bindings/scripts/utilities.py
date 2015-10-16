@@ -255,13 +255,20 @@ def create_component_info_provider(info_dir, component):
 # Basic file reading/writing
 ################################################################################
 
+def abs(filename):
+    # open, abspath, etc. are all limited to the 260 char MAX_PATH and this causes
+    # problems when we try to resolve long relative paths in the WebKit directory structure.
+    return os.path.normpath(os.path.join(os.getcwd(), filename))
+
 def get_file_contents(filename):
+    filename = abs(filename)
     with open(filename) as f:
         return f.read()
 
 
 def read_file_to_list(filename):
     """Returns a list of (stripped) lines for a given filename."""
+    filename = abs(filename)
     with open(filename) as f:
         return [line.rstrip('\n') for line in f]
 
@@ -283,7 +290,7 @@ def resolve_cygpath(cygdrive_names):
 
 def read_idl_files_list_from_file(filename):
     """Similar to read_file_to_list, but also resolves cygpath."""
-    with open(filename) as input_file:
+    with open(abs(filename)) as input_file:
         file_names = sorted(shlex.split(input_file))
         idl_file_names = [file_name for file_name in file_names
                           if not file_name.startswith('/cygdrive')]
@@ -299,11 +306,13 @@ def read_pickle_files(pickle_filenames):
 
 
 def read_pickle_file(pickle_filename):
+    pickle_filename = abs(pickle_filename)
     with open(pickle_filename) as pickle_file:
         return pickle.load(pickle_file)
 
 
 def write_file(new_text, destination_filename):
+    destination_filename = abs(destination_filename)
     # If |new_text| is same with the file content, we skip updating.
     if os.path.isfile(destination_filename):
         with open(destination_filename) as destination_file:
@@ -320,6 +329,7 @@ def write_file(new_text, destination_filename):
 
 
 def write_pickle_file(pickle_filename, data):
+    pickle_filename = abs(pickle_filename)
     # If |data| is same with the file content, we skip updating.
     if os.path.isfile(pickle_filename):
         with open(pickle_filename) as pickle_file:
