@@ -14,7 +14,11 @@ Origin::Origin() : string_("null") {}
 Origin::Origin(const std::string& origin) : string_(origin) {
   DCHECK(origin == "null" || base::MatchPattern(origin, "?*://?*"));
   DCHECK_GT(origin.size(), 0u);
+#ifdef TOOLKIT_QT
+  DCHECK(origin == "qrc://" || origin == "file://" || origin[origin.size() - 1] != '/');
+#else
   DCHECK(origin == "file://" || origin[origin.size() - 1] != '/');
+#endif
 }
 
 }  // namespace url
