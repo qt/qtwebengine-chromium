@@ -425,17 +425,11 @@ bool InitTable(sql::Connection* db) {
   if (!db->Execute("CREATE INDEX domain ON cookies(host_key)"))
     return false;
 
-#if defined(OS_IOS)
-  // iOS 8.1 and older doesn't support partial indices. iOS 8.2 supports
-  // partial indices.
-  if (!db->Execute("CREATE INDEX is_transient ON cookies(persistent)")) {
-#else
-  if (!db->Execute(
-          "CREATE INDEX is_transient ON cookies(persistent) "
-          "where persistent != 1")) {
-#endif
+  // Upstream Chromium only uses the following code on iOS and uses
+  // partial indexing elsewhere. We want the cookie store to stay
+  // compatible across Qt versions, so we use it on all platforms.
+  if (!db->Execute("CREATE INDEX is_transient ON cookies(persistent)"))
     return false;
-  }
 
   return true;
 }
@@ -971,16 +965,11 @@ bool SQLitePersistentCookieStore::Backend::EnsureDatabaseVersion() {
       return false;
     }
 
-#if defined(OS_IOS)
-    // iOS 8.1 and older doesn't support partial indices. iOS 8.2 supports
-    // partial indices.
+    // Upstream Chromium only uses the following code on iOS and uses
+    // partial indexing elsewhere. We want the cookie store to stay
+    // compatible across Qt versions, so we use it on all platforms.
     if (!db_->Execute(
             "CREATE INDEX IF NOT EXISTS is_transient ON cookies(persistent)")) {
-#else
-    if (!db_->Execute(
-            "CREATE INDEX IF NOT EXISTS is_transient ON cookies(persistent) "
-            "where persistent != 1")) {
-#endif
       LOG(WARNING)
           << "Unable to create index is_transient in update to version 9.";
       return false;
