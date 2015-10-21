@@ -5713,6 +5713,11 @@
           # shift' warning and 4595 is an 'illegal inline operator new' warning
           # Both are new in VS 2015 Update 2 and can safely be deferred for now.
           4334, 4595,
+
+          # Further added for MSVC 2015 support of Qt WebEngine
+          4302, # 'reinterpret_cast': truncation from 'BYTE *' to 'unsigned int'
+          4311, # 'reinterpret_cast': pointer truncation from 'BYTE *' to 'unsigned int'
+          4577, # 'noexcept' used with no exception handling mode specified
         ],
         'msvs_settings': {
           'VCCLCompilerTool': {
