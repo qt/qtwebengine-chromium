@@ -290,6 +290,7 @@ if platform.is_msvc():
               # Disable size_t -> int truncation warning.
               # We never have strings or arrays larger than 2**31.
               '/wd4267',
+              '/wd4577', # 'noexcept' used with no exception handling mode specified
               '/DNOMINMAX', '/D_CRT_SECURE_NO_WARNINGS',
               '/DNINJA_PYTHON="%s"' % options.with_python]
     if options.bootstrap:
