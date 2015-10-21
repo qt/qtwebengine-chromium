@@ -5697,6 +5697,11 @@
           # This is equivalent to clang's no-inline-new-delete warning.
           # See http://bugs.icu-project.org/trac/ticket/11122
           4595,
+
+          # Further added for MSVC 2015 support of Qt WebEngine
+          4302, # 'reinterpret_cast': truncation from 'BYTE *' to 'unsigned int'
+          4311, # 'reinterpret_cast': pointer truncation from 'BYTE *' to 'unsigned int'
+          4577, # 'noexcept' used with no exception handling mode specified
         ],
         'msvs_settings': {
           'VCCLCompilerTool': {
