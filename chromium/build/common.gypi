@@ -5745,6 +5745,11 @@
           # TODO(brucedawson): http://crbug.com/554200 4312 is a VS
           # 2015 64-bit warning for integer to larger pointer
           4312,
+
+          # Further added for MSVC 2015 support of Qt WebEngine
+          4302, # 'reinterpret_cast': truncation from 'BYTE *' to 'unsigned int'
+          4311, # 'reinterpret_cast': pointer truncation from 'BYTE *' to 'unsigned int'
+          4577, # 'noexcept' used with no exception handling mode specified
         ],
         'msvs_settings': {
           'VCCLCompilerTool': {
