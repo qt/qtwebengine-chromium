@@ -2494,7 +2494,7 @@ void LayoutObject::willBeDestroyed()
     ResourceLoadPriorityOptimizer::resourceLoadPriorityOptimizer()->removeLayoutObject(this);
 
     if (frameView())
-        setIsSlowRepaintObject(false);
+        setIsBackgroundAttachmentFixedObject(false);
 }
 
 void LayoutObject::insertedIntoTree()
@@ -3341,6 +3341,18 @@ void LayoutObject::invalidateDisplayItemClientForNonCompositingDescendantsOf(con
     traverseNonCompositingDescendants(const_cast<LayoutObject&>(object), Functor(paintInvalidationContainer));
 }
 
+void LayoutObject::invalidatePaintOfPreviousPaintInvalidationRect(const LayoutBoxModelObject& paintInvalidationContainer, PaintInvalidationReason reason) const
+{
+    // These disablers are valid because we want to use the current compositing/invalidation status.
+    DisablePaintInvalidationStateAsserts invalidationDisabler;
+    DisableCompositingQueryAsserts compositingDisabler;
+
+    LayoutRect invalidationRect = previousPaintInvalidationRect();
+    adjustInvalidationRectForCompositedScrolling(invalidationRect, paintInvalidationContainer);
+    invalidatePaintUsingContainer(paintInvalidationContainer, invalidationRect, PaintInvalidationLayer);
+    invalidateDisplayItemClients(paintInvalidationContainer);
+}
+
 void LayoutObject::invalidatePaintIncludingNonCompositingDescendants()
 {
     class Functor : public LayoutObjectTraversalFunctor {
@@ -3348,10 +3360,7 @@ void LayoutObject::invalidatePaintIncludingNonCompositingDescendants()
         explicit Functor(const LayoutBoxModelObject& paintInvalidationContainer) : m_paintInvalidationContainer(paintInvalidationContainer) { }
         void operator()(LayoutObject& object) const override
         {
-            LayoutRect invalidationRect = object.previousPaintInvalidationRect();
-            object.adjustInvalidationRectForCompositedScrolling(invalidationRect, m_paintInvalidationContainer);
-            object.invalidatePaintUsingContainer(m_paintInvalidationContainer, invalidationRect, PaintInvalidationLayer);
-            object.invalidateDisplayItemClients(m_paintInvalidationContainer);
+            object.invalidatePaintOfPreviousPaintInvalidationRect(m_paintInvalidationContainer, PaintInvalidationLayer);
         }
     private:
         const LayoutBoxModelObject& m_paintInvalidationContainer;
@@ -3378,16 +3387,25 @@ void LayoutObject::setShouldDoFullPaintInvalidationIncludingNonCompositingDescen
     traverseNonCompositingDescendants(*this, Functor());
 }
 
-void LayoutObject::setIsSlowRepaintObject(bool isSlowRepaintObject)
+void LayoutObject::invalidatePaintIncludingNonSelfPaintingLayerDescendants(const LayoutBoxModelObject& paintInvalidationContainer)
+{
+    invalidatePaintOfPreviousPaintInvalidationRect(paintInvalidationContainer, PaintInvalidationLayer);
+    for (LayoutObject* child = slowFirstChild(); child; child = child->nextSibling()) {
+        if (!child->hasLayer() || !toLayoutBoxModelObject(child)->layer()->isSelfPaintingLayer())
+            child->invalidatePaintIncludingNonSelfPaintingLayerDescendants(paintInvalidationContainer);
+    }
+}
+
+void LayoutObject::setIsBackgroundAttachmentFixedObject(bool isBackgroundAttachmentFixedObject)
 {
     ASSERT(frameView());
-    if (m_bitfields.isSlowRepaintObject() == isSlowRepaintObject)
+    if (m_bitfields.isBackgroundAttachmentFixedObject() == isBackgroundAttachmentFixedObject)
         return;
-    m_bitfields.setIsSlowRepaintObject(isSlowRepaintObject);
-    if (isSlowRepaintObject)
-        frameView()->addSlowRepaintObject();
+    m_bitfields.setIsBackgroundAttachmentFixedObject(isBackgroundAttachmentFixedObject);
+    if (isBackgroundAttachmentFixedObject)
+        frameView()->addBackgroundAttachmentFixedObject(this);
     else
-        frameView()->removeSlowRepaintObject();
+        frameView()->removeBackgroundAttachmentFixedObject(this);
 }
 
 } // namespace blink

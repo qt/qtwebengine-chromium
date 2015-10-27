@@ -569,6 +569,7 @@
       'browser/spellchecker/spellcheck_service_unittest.cc',
       'browser/spellchecker/spelling_service_client_unittest.cc',
       'browser/spellchecker/word_trimmer_unittest.cc',
+      'common/spellcheck_common_unittest.cc',
       'renderer/spellchecker/custom_dictionary_engine_unittest.cc',
       'renderer/spellchecker/spellcheck_multilingual_unittest.cc',
       'renderer/spellchecker/spellcheck_provider_hunspell_unittest.cc',
@@ -964,6 +965,7 @@
      ],
     'chrome_unit_tests_mobile_extended_safe_browsing_sources': [
       'browser/safe_browsing/safe_browsing_api_handler_unittest.cc',
+      'browser/safe_browsing/remote_database_manager_unittest.cc',
      ],
     'chrome_unit_tests_full_safe_browsing_sources': [
       'browser/safe_browsing/browser_feature_extractor_unittest.cc',
@@ -2680,6 +2682,7 @@
             '../third_party/libaddressinput/libaddressinput.gyp:libaddressinput',
           ],
           'sources!': [
+            'common/spellcheck_common_unittest.cc',
             'renderer/spellchecker/spellcheck_multilingual_unittest.cc',
             'renderer/spellchecker/spellcheck_provider_hunspell_unittest.cc',
             'renderer/spellchecker/spellcheck_unittest.cc',
