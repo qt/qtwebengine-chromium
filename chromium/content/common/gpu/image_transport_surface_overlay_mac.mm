@@ -153,7 +153,7 @@ class ImageTransportSurfaceOverlayMac::OverlayPlane {
       [ca_layer setOpaque:YES];
       [ca_layer setFrame:dip_frame_rect.ToCGRect()];
       [ca_layer setContentsRect:contents_rect.ToCGRect()];
-      id new_contents = static_cast<id>(io_surface.get());
+      id new_contents = (__bridge id)(io_surface.get());
       if ([ca_layer contents] == new_contents && type != OVERLAY) {
         [ca_layer setContentsChanged];
       } else {
