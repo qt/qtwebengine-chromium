@@ -122,7 +122,7 @@ deps = {
   'src/third_party/opus/src':
     (Var("chromium_git")) + '/chromium/deps/opus.git@cae696156f1e60006e39821e79a1811ae1933c69',
   'src/third_party/pdfium':
-    'https://pdfium.googlesource.com/pdfium.git@89b71f7a9b25bc752e9e019f869842169c325480',
+    'https://pdfium.googlesource.com/pdfium.git@5194d85954ed08b4205e71f071d8936a6ea4dda2',
   'src/third_party/py_trace_event/src':
     (Var("chromium_git")) + '/external/py_trace_event.git@dd463ea9e2c430de2b9e53dea57a77b4c3ac9b30',
   'src/third_party/pyftpdlib/src':
@@ -136,7 +136,7 @@ deps = {
   'src/third_party/sfntly/src':
     (Var("chromium_git")) + '/external/github.com/googlei18n/sfntly.git@130f832eddf98467e6578b548cb74ce17d04a26d',
   'src/third_party/skia':
-    (Var("chromium_git")) + '/skia.git@9442ab8a40dd0effde253e3b2d166bcf47222e92',
+    (Var("chromium_git")) + '/skia.git@a212697b5fcdbdb466dc353268a497b22ee086df',
   'src/third_party/smhasher/src':
     (Var("chromium_git")) + '/external/smhasher.git@e87738e57558e0ec472b2fc3a643b838e5b6e88f',
   'src/third_party/snappy/src':
@@ -150,7 +150,7 @@ deps = {
   'src/third_party/webpagereplay':
     (Var("chromium_git")) + '/external/github.com/chromium/web-page-replay.git@7564939bdf6482d57b9bd5e9c931679f96d8cf75',
   'src/third_party/webrtc':
-    (Var("chromium_git")) + '/external/webrtc/trunk/webrtc.git@a45515e56224c90faf38a15bf22677c05bf0a8a3',
+    (Var("chromium_git")) + '/external/webrtc/trunk/webrtc.git@78ddd634b4758f45537a5d08f578626a8e0bf65e',
   'src/third_party/yasm/source/patched-yasm':
     (Var("chromium_git")) + '/chromium/deps/yasm/patched-yasm.git@4671120cd8558ce62ee8672ebf3eb6f5216f909b',
   'src/tools/deps2git':
@@ -164,7 +164,7 @@ deps = {
   'src/tools/swarming_client':
     (Var("chromium_git")) + '/external/swarming.client.git@e4c0e242eeec361886ed2b89591a505ebe24db43',
   'src/v8':
-    (Var("chromium_git")) + '/v8/v8.git@124260461dfbcd202ca3eb0dbad0e9fb0bb3a5a4'
+    (Var("chromium_git")) + '/v8/v8.git@b9b10482e9d8064d81875a758cccf9d9a38183fe'
 }
 
 deps_os = {
@@ -188,7 +188,7 @@ deps_os = {
     'src/third_party/findbugs':
       (Var("chromium_git")) + '/chromium/deps/findbugs.git@57f05238d3ac77ea0a194813d3065dd780c6e566',
     'src/third_party/freetype-android/src':
-      (Var("chromium_git")) + '/chromium/src/third_party/freetype2.git@e186230678ee8e4ea4ac4797ece8125761e3225a',
+      (Var("chromium_git")) + '/chromium/src/third_party/freetype2.git@30fe5e762e062612fdf4b56b50d813525a5aa311',
     'src/third_party/httpcomponents-client':
       (Var("chromium_git")) + '/chromium/deps/httpcomponents-client.git@285c4dafc5de0e853fa845dce5773e223219601c',
     'src/third_party/httpcomponents-core':

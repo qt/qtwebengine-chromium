@@ -38,7 +38,14 @@ bool ParsePositiveIntegerImpl(StringPiece::const_iterator c,
 bool SpdyAltSvcWireFormat::ParseHeaderFieldValue(
     StringPiece value,
     AlternativeServiceVector* altsvc_vector) {
+  // Empty value is invalid according to the specification.
+  if (value.empty()) {
+    return false;
+  }
   altsvc_vector->clear();
+  if (value == StringPiece("clear")) {
+    return true;
+  }
   StringPiece::const_iterator c = value.begin();
   while (c != value.end()) {
     // Parse protocol-id.
@@ -119,7 +126,11 @@ bool SpdyAltSvcWireFormat::ParseHeaderFieldValue(
           return false;
         }
       } else if (parameter_name.compare("p") == 0) {
-        if (!ParseProbability(parameter_value_begin, c, &p)) {
+        // Probability value is enclosed in quotation marks.
+        if (*parameter_value_begin != '"' || *(c - 1) != '"') {
+          return false;
+        }
+        if (!ParseProbability(parameter_value_begin + 1, c - 1, &p)) {
           return false;
         }
       }
@@ -135,6 +146,9 @@ bool SpdyAltSvcWireFormat::ParseHeaderFieldValue(
 // static
 std::string SpdyAltSvcWireFormat::SerializeHeaderFieldValue(
     const AlternativeServiceVector& altsvc_vector) {
+  if (altsvc_vector.empty()) {
+    return std::string("clear");
+  }
   const char kNibbleToHex[] = "0123456789ABCDEF";
   std::string value;
   for (const AlternativeService& altsvc : altsvc_vector) {
@@ -186,7 +200,7 @@ std::string SpdyAltSvcWireFormat::SerializeHeaderFieldValue(
       base::StringAppendF(&value, "; ma=%d", altsvc.max_age);
     }
     if (altsvc.p != 1.0) {
-      base::StringAppendF(&value, "; p=%.2f", altsvc.p);
+      base::StringAppendF(&value, "; p=\"%.2f\"", altsvc.p);
     }
   }
   return value;

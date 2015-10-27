@@ -1368,26 +1368,6 @@ void CompositedLayerMapping::positionOverflowControlsLayers()
     }
 }
 
-bool CompositedLayerMapping::hasUnpositionedOverflowControlsLayers() const
-{
-    if (GraphicsLayer* layer = layerForHorizontalScrollbar()) {
-        if (!layer->drawsContent())
-            return true;
-    }
-
-    if (GraphicsLayer* layer = layerForVerticalScrollbar()) {
-        if (!layer->drawsContent())
-            return true;
-    }
-
-    if (GraphicsLayer* layer = layerForScrollCorner()) {
-        if (!layer->drawsContent())
-            return true;
-    }
-
-    return false;
-}
-
 enum ApplyToGraphicsLayersModeFlags {
     ApplyToLayersAffectedByPreserve3D = (1 << 0),
     ApplyToSquashingLayer = (1 << 1),
@@ -1601,16 +1581,20 @@ bool CompositedLayerMapping::updateScrollingLayers(bool needsScrollingLayers)
             }
 
             layerChanged = true;
-            if (scrollingCoordinator)
+            if (scrollingCoordinator) {
                 scrollingCoordinator->scrollableAreaScrollLayerDidChange(m_owningLayer.scrollableArea());
+                scrollingCoordinator->scrollableAreasDidChange();
+            }
         }
     } else if (m_scrollingLayer) {
         m_scrollingLayer = nullptr;
         m_scrollingContentsLayer = nullptr;
         m_scrollingBlockSelectionLayer = nullptr;
         layerChanged = true;
-        if (scrollingCoordinator)
+        if (scrollingCoordinator) {
             scrollingCoordinator->scrollableAreaScrollLayerDidChange(m_owningLayer.scrollableArea());
+            scrollingCoordinator->scrollableAreasDidChange();
+        }
     }
 
     return layerChanged;
@@ -2255,6 +2239,12 @@ void CompositedLayerMapping::verifyNotPainting()
 void CompositedLayerMapping::notifyAnimationStarted(const GraphicsLayer*, double monotonicTime, int group)
 {
     layoutObject()->node()->document().compositorPendingAnimations().notifyCompositorAnimationStarted(monotonicTime, group);
+}
+
+void CompositedLayerMapping::notifyTextPainted()
+{
+    if (Node* node = layoutObject()->node())
+        node->document().markFirstTextPaint();
 }
 
 IntRect CompositedLayerMapping::pixelSnappedCompositedBounds() const

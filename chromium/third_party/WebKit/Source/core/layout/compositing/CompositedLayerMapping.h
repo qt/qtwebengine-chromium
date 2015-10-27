@@ -131,7 +131,6 @@ public:
     IntRect pixelSnappedCompositedBounds() const;
 
     void positionOverflowControlsLayers();
-    bool hasUnpositionedOverflowControlsLayers() const;
 
     // Returns true if the assignment actually changed the assigned squashing layer.
     bool updateSquashingLayerAssignment(PaintLayer* squashedLayer, size_t nextSquashedLayerIndex);
@@ -146,6 +145,7 @@ public:
 
     // GraphicsLayerClient interface
     void notifyAnimationStarted(const GraphicsLayer*, double monotonicTime, int group) override;
+    void notifyTextPainted() override;
     void paintContents(const GraphicsLayer*, GraphicsContext&, GraphicsLayerPaintingPhase, const IntRect& clip) const override;
     bool isTrackingPaintInvalidations() const override;
 
