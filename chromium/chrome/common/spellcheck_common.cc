@@ -192,6 +192,10 @@ void GetISOLanguageCountryCodeFromLocale(const std::string& locale,
 }
 
 bool IsMultilingualSpellcheckEnabled() {
+#if defined(TOOLKIT_QT)
+  return base::CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kEnableMultilingualSpellChecker);
+#else
   // TODO(rouslan): Remove field trial and command line flags when M49 is
   // stable.
   const std::string& group_name =
@@ -207,6 +211,7 @@ bool IsMultilingualSpellcheckEnabled() {
   // Enabled by default, but can be disabled in field trial.
   return !base::StartsWith(group_name, "Disabled",
                            base::CompareCase::INSENSITIVE_ASCII);
+#endif
 }
 
 }  // namespace spellcheck_common
