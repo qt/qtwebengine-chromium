@@ -262,6 +262,7 @@ extern const char kSavePageAsMHTML[];
 extern const char kSbDisableAutoUpdate[];
 extern const char kSbDisableDownloadProtection[];
 extern const char kSbDisableExtensionBlacklist[];
+extern const char kSbManualDownloadBlacklist[];
 extern const char kServiceProcess[];
 extern const char kSilentDebuggerExtensionAPI[];
 extern const char kSilentLaunch[];
@@ -400,6 +401,11 @@ extern const char kAllowNaClFileHandleAPI[];
 extern const char kAllowNaClSocketAPI[];
 extern const char kDisablePluginPowerSaver[];
 extern const char kEnablePluginPowerSaver[];
+#endif
+
+#if defined(FULL_SAFE_BROWSING)
+extern const char kAllowUncheckedDangerousDownloads[];
+extern const char kDisallowUncheckedDangerousDownloads[];
 #endif
 
 #if defined(ENABLE_TASK_MANAGER)

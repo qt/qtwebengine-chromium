@@ -835,8 +835,8 @@ void ContainerNode::notifyNodeInsertedInternal(Node& root, NodeVector& postInser
 
     for (Node& node : NodeTraversal::inclusiveDescendantsOf(root)) {
         // As an optimization we don't notify leaf nodes when when inserting
-        // into detached subtrees.
-        if (!inDocument() && !node.isContainerNode())
+        // into detached subtrees that are not in a shadow tree.
+        if (!inDocument() && !isInShadowTree() && !node.isContainerNode())
             continue;
         if (Node::InsertionShouldCallDidNotifySubtreeInsertions == node.insertedInto(this))
             postInsertionNotificationTargets.append(&node);
@@ -935,12 +935,15 @@ bool ContainerNode::getUpperLeftCorner(FloatPoint& point) const
 
         if (p->node() && p->node() == this && o->isText() && !o->isBR() && !toLayoutText(o)->hasTextBoxes()) {
             // Do nothing - skip unrendered whitespace that is a child or next sibling of the anchor.
+            // FIXME: This fails to skip a whitespace sibling when there was also a whitespace child (because p has moved).
         } else if ((o->isText() && !o->isBR()) || o->isReplaced()) {
             point = FloatPoint();
-            if (o->isText() && toLayoutText(o)->firstTextBox()) {
-                point.move(toLayoutText(o)->linesBoundingBox().x(), toLayoutText(o)->firstTextBox()->root().lineTop().toFloat());
+            if (o->isText()) {
+                if (toLayoutText(o)->firstTextBox())
+                    point.move(toLayoutText(o)->linesBoundingBox().x(), toLayoutText(o)->firstTextBox()->root().lineTop().toFloat());
                 point = o->localToAbsolute(point, UseTransforms);
-            } else if (o->isBox()) {
+            } else {
+                ASSERT(o->isBox());
                 LayoutBox* box = toLayoutBox(o);
                 point.moveBy(box->location());
                 point = o->container()->localToAbsolute(point, UseTransforms);

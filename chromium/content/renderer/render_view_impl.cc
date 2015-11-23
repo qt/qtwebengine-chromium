@@ -364,7 +364,6 @@ static bool DeviceScaleEnsuresTextQuality(float device_scale_factor) {
   // devices main thread antialiasing is a heavy burden.
   return device_scale_factor >= 1.5f;
 #endif
-
 }
 
 static bool PreferCompositingToLCDText(CompositorDependencies* compositor_deps,
@@ -671,7 +670,7 @@ void RenderViewImpl::Initialize(const ViewMsg_New_Params& params,
   if (opener_view_routing_id != MSG_ROUTING_NONE && was_created_by_renderer)
     opener_id_ = opener_view_routing_id;
 
-  display_mode_= params.initial_size.display_mode;
+  display_mode_ = params.initial_size.display_mode;
 
   // Ensure we start with a valid next_page_id_ from the browser.
   DCHECK_GE(next_page_id_, 0);
@@ -1053,12 +1052,6 @@ void RenderView::ApplyWebPreferences(const WebPreferences& prefs,
   // TODO(bokan): Remove once Blink side is gone.
   settings->setInvertViewportScrollOrder(true);
 
-  settings->setViewportEnabled(prefs.viewport_enabled);
-  settings->setLoadWithOverviewMode(prefs.initialize_at_minimum_page_scale);
-  settings->setViewportMetaEnabled(prefs.viewport_meta_enabled);
-  settings->setMainFrameResizesAreOrientationChanges(
-      prefs.main_frame_resizes_are_orientation_changes);
-
   settings->setSmartInsertDeleteEnabled(prefs.smart_insert_delete_enabled);
 
   settings->setSpatialNavigationEnabled(prefs.spatial_navigation_enabled);
@@ -1120,6 +1113,12 @@ void RenderView::ApplyWebPreferences(const WebPreferences& prefs,
 #elif defined(TOOLKIT_QT)
   settings->setFullscreenSupported(prefs.fullscreen_supported);
 #endif
+
+  settings->setViewportEnabled(prefs.viewport_enabled);
+  settings->setLoadWithOverviewMode(prefs.initialize_at_minimum_page_scale);
+  settings->setViewportMetaEnabled(prefs.viewport_meta_enabled);
+  settings->setMainFrameResizesAreOrientationChanges(
+      prefs.main_frame_resizes_are_orientation_changes);
 
   WebNetworkStateNotifier::setOnLine(prefs.is_online);
   WebNetworkStateNotifier::setWebConnection(
@@ -1764,6 +1763,7 @@ bool RenderViewImpl::runFileChooser(
 #if defined(OS_ANDROID)
   ipc_params.capture = params.useMediaCapture;
 #endif
+  ipc_params.requestor = params.requestor;
 
   return ScheduleFileChooser(ipc_params, chooser_completion);
 }
@@ -2277,6 +2277,8 @@ blink::WebPlugin* RenderViewImpl::GetWebPluginForFind() {
 void RenderViewImpl::OnFind(int request_id,
                             const base::string16& search_text,
                             const WebFindOptions& options) {
+  DCHECK(!search_text.empty());
+
   WebFrame* main_frame = webview()->mainFrame();
   blink::WebPlugin* plugin = GetWebPluginForFind();
   // Check if the plugin still exists in the document.
@@ -3044,7 +3046,7 @@ void RenderViewImpl::OnWasHidden() {
     (*plugin_it)->SetContainerVisibility(false);
   }
 #endif  // OS_MACOSX
-#endif // ENABLE_PLUGINS
+#endif  // ENABLE_PLUGINS
 }
 
 void RenderViewImpl::OnWasShown(bool needs_repainting,

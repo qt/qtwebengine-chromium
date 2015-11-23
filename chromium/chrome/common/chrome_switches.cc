@@ -57,6 +57,13 @@ const char kDisablePluginPowerSaver[] = "disable-plugin-power-saver";
 const char kEnablePluginPowerSaver[] = "enable-plugin-power-saver";
 #endif
 
+#if defined(FULL_SAFE_BROWSING)
+const char kAllowUncheckedDangerousDownloads[] =
+    "allow-unchecked-dangerous-downloads";
+const char kDisallowUncheckedDangerousDownloads[] =
+    "disallow-unchecked-dangerous-downloads";
+#endif
+
 // Don't block outdated plugins.
 const char kAllowOutdatedPlugins[]          = "allow-outdated-plugins";
 
@@ -957,6 +964,15 @@ const char kSbDisableDownloadProtection[] =
 // Disables safebrowsing feature that checks for blacklisted extensions.
 const char kSbDisableExtensionBlacklist[] =
     "safebrowsing-disable-extension-blacklist";
+
+// List of comma-separated sha256 hashes of executable files which the
+// download-protection service should treat as "dangerous."  For a file to
+// show a warning, it also must be considered a dangerous filetype and not
+// be whitelisted otherwise (by signature or URL) and must be on a supported
+// OS. Hashes are in hex. This is used for manual testing when looking
+// for ways to by-pass download protection.
+const char kSbManualDownloadBlacklist[] =
+    "safebrowsing-manual-download-blacklist";
 
 // Causes the process to run as a service process.
 const char kServiceProcess[]                = "service";

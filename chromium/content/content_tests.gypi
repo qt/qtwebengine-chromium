@@ -243,6 +243,7 @@
       'browser/renderer_host/render_process_host_browsertest.cc',
       'browser/renderer_host/render_view_host_browsertest.cc',
       'browser/renderer_host/render_widget_host_view_browsertest.cc',
+      'browser/resource_loading_browsertest.cc',
       'browser/screen_orientation/screen_orientation_browsertest.cc',
       'browser/security_exploit_browsertest.cc',
       'browser/service_worker/service_worker_browsertest.cc',
@@ -1016,6 +1017,7 @@
       'type': '<(gtest_target_type)',
       'dependencies': [
         'browser/background_sync/background_sync_proto.gyp:background_sync_proto',
+        'browser/cache_storage/cache_storage_proto.gyp:cache_storage_proto',
         'browser/notifications/notification_proto.gyp:notification_proto',
         'browser/service_worker/service_worker_proto.gyp:service_worker_proto',
         'browser/speech/proto/speech_proto.gyp:speech_proto',

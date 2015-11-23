@@ -315,7 +315,7 @@ void FrameLoader::clear()
 // This is the <iframe src="javascript:'html'"> case.
 void FrameLoader::replaceDocumentWhileExecutingJavaScriptURL(const String& source, Document* ownerDocument)
 {
-    if (!m_frame->document()->loader())
+    if (!m_frame->document()->loader() || m_frame->document()->pageDismissalEventBeingDispatched() != Document::NoDismissal)
         return;
 
     // DocumentLoader::replaceDocumentWhileExecutingJavaScriptURL can cause the DocumentLoader to get deref'ed and possible destroyed,
@@ -1058,7 +1058,7 @@ bool FrameLoader::prepareForCommit()
     if (pdl != m_provisionalDocumentLoader)
         return false;
     if (m_documentLoader) {
-        FrameNavigationDisabler navigationDisabler(m_frame);
+        FrameNavigationDisabler navigationDisabler(*m_frame);
         detachDocumentLoader(m_documentLoader);
     }
     // detachFromFrame() will abort XHRs that haven't completed, which can

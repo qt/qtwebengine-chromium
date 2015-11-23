@@ -257,6 +257,8 @@ void LocalFrame::navigate(Document& originDocument, const KURL& url, bool replac
 
 void LocalFrame::navigate(const FrameLoadRequest& request)
 {
+    if (!isNavigationAllowed())
+        return;
     m_loader.load(request);
 }
 
@@ -314,7 +316,28 @@ void LocalFrame::detach(FrameDetachType type)
     // Signal frame destruction here rather than in the destructor.
     // Main motivation is to avoid being dependent on its exact timing (Oilpan.)
     LocalFrameLifecycleNotifier::notifyContextDestroyed();
+    // TODO(dcheng): Temporary, to debug https://crbug.com/531291.
+    // If this is true, we somehow re-entered LocalFrame::detach. But this is
+    // probably OK?
+    if (m_supplementStatus == SupplementStatus::Cleared)
+        RELEASE_ASSERT(m_supplements.isEmpty());
+    // If this is true, we somehow re-entered LocalFrame::detach in the middle
+    // of cleaning up supplements.
+    RELEASE_ASSERT(m_supplementStatus != SupplementStatus::Clearing);
+    RELEASE_ASSERT(m_supplementStatus == SupplementStatus::Uncleared);
+    m_supplementStatus = SupplementStatus::Clearing;
+
+    // TODO(haraken): Temporary code to debug https://crbug.com/531291.
+    // Check that m_supplements doesn't duplicate OwnPtrs.
+    HashSet<void*> supplementPointers;
+    for (auto& it : m_supplements) {
+        void* pointer = reinterpret_cast<void*>(it.value.get());
+        RELEASE_ASSERT(!supplementPointers.contains(pointer));
+        supplementPointers.add(pointer);
+    }
+
     m_supplements.clear();
+    m_supplementStatus = SupplementStatus::Cleared;
     WeakIdentifierMap<LocalFrame>::notifyObjectDestroyed(this);
 }
 
@@ -852,6 +875,7 @@ inline LocalFrame::LocalFrame(FrameLoaderClient* client, FrameHost* host, FrameO
     , m_eventHandler(adoptPtrWillBeNoop(new EventHandler(this)))
     , m_console(FrameConsole::create(*this))
     , m_inputMethodController(InputMethodController::create(*this))
+    , m_navigationDisableCount(0)
     , m_pageZoomFactor(parentPageZoomFactor(this))
     , m_textZoomFactor(parentTextZoomFactor(this))
     , m_inViewSourceMode(false)
@@ -882,5 +906,16 @@ void LocalFrame::updateFrameSecurityOrigin()
 }
 
 DEFINE_WEAK_IDENTIFIER_MAP(LocalFrame);
+
+FrameNavigationDisabler::FrameNavigationDisabler(LocalFrame& frame)
+    : m_frame(&frame)
+{
+    m_frame->disableNavigation();
+}
+
+FrameNavigationDisabler::~FrameNavigationDisabler()
+{
+    m_frame->enableNavigation();
+}
 
 } // namespace blink
