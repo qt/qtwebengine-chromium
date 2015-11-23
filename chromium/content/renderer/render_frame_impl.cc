@@ -2184,11 +2184,15 @@ blink::WebServiceWorkerProvider* RenderFrameImpl::createServiceWorkerProvider(
   // At this point we should have non-null data source.
   DCHECK(frame->dataSource());
   if (!ChildThreadImpl::current())
-    return NULL;  // May be null in some tests.
+    return nullptr;  // May be null in some tests.
   ServiceWorkerNetworkProvider* provider =
       ServiceWorkerNetworkProvider::FromDocumentState(
           DocumentState::FromDataSource(frame->dataSource()));
   DCHECK(provider);
+  if (!provider->context()) {
+    // The context can be null when the frame is sandboxed.
+    return nullptr;
+  }
   return new WebServiceWorkerProviderImpl(
       ChildThreadImpl::current()->thread_safe_sender(),
       provider->context());
@@ -4714,9 +4718,9 @@ void RenderFrameImpl::NavigateInternal(
     base::TimeTicks renderer_navigation_start = base::TimeTicks::Now();
 
     // Perform a navigation to a data url if needed.
-    if (!common_params.base_url_for_data_url.is_empty() ||
-        (browser_side_navigation &&
-         common_params.url.SchemeIs(url::kDataScheme))) {
+    if ((!common_params.base_url_for_data_url.is_empty() ||
+         browser_side_navigation) &&
+        common_params.url.SchemeIs(url::kDataScheme)) {
       LoadDataURL(common_params, frame_);
     } else {
       // Load the request.
