@@ -787,7 +787,7 @@ inline Node::InsertionNotificationRequest Node::insertedInto(ContainerNode* inse
 {
     ASSERT(!childNeedsStyleInvalidation());
     ASSERT(!needsStyleInvalidation());
-    ASSERT(insertionPoint->inDocument() || isContainerNode());
+    ASSERT(insertionPoint->inDocument() || insertionPoint->isInShadowTree() || isContainerNode());
     if (insertionPoint->inDocument())
         setFlag(InDocumentFlag);
     if (parentOrShadowHostNode()->isInShadowTree())
