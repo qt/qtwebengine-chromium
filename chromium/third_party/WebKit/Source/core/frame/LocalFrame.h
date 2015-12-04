@@ -178,7 +178,11 @@ namespace blink {
 
     // ========
 
+        bool isNavigationAllowed() const { return m_navigationDisableCount == 0; }
+
     private:
+        friend class FrameNavigationDisabler;
+
         LocalFrame(FrameLoaderClient*, FrameHost*, FrameOwner*);
 
         // Internal Frame helper overrides:
@@ -189,6 +193,9 @@ namespace blink {
         // Paints the area for the given rect into a DragImage, with the given displayItemClient id attached.
         // The rect is in the coordinate space of the frame.
         PassOwnPtr<DragImage> paintIntoDragImage(const DisplayItemClientWrapper&, DisplayItem::Type, RespectImageOrientationEnum shouldRespectImageOrientation, IntRect paintingRect);
+
+        void enableNavigation() { --m_navigationDisableCount; }
+        void disableNavigation() { ++m_navigationDisableCount; }
 
         mutable FrameLoader m_loader;
         mutable NavigationScheduler m_navigationScheduler;
@@ -205,6 +212,8 @@ namespace blink {
         const OwnPtrWillBeMember<EventHandler> m_eventHandler;
         const OwnPtrWillBeMember<FrameConsole> m_console;
         const OwnPtrWillBeMember<InputMethodController> m_inputMethodController;
+
+    int m_navigationDisableCount;
 
 #if ENABLE(OILPAN)
         // Oilpan: in order to reliably finalize plugin elements with
@@ -305,6 +314,18 @@ namespace blink {
     DEFINE_TYPE_CASTS(LocalFrame, Frame, localFrame, localFrame->isLocalFrame(), localFrame.isLocalFrame());
 
     DECLARE_WEAK_IDENTIFIER_MAP(LocalFrame);
+
+    class FrameNavigationDisabler {
+        WTF_MAKE_NONCOPYABLE(FrameNavigationDisabler);
+        STACK_ALLOCATED();
+    public:
+        explicit FrameNavigationDisabler(LocalFrame&);
+        ~FrameNavigationDisabler();
+
+    private:
+        RawPtrWillBeMember<LocalFrame> m_frame;
+    };
+
 } // namespace blink
 
 // During refactoring, there are some places where we need to do type conversions that
