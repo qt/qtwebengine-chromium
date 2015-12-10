@@ -3295,14 +3295,14 @@ void WebContentsImpl::DidFailProvisionalLoadWithError(
     int error_code,
     const base::string16& error_description,
     bool was_ignored_by_handler) {
+  FrameTreeNode* ftn = render_frame_host->frame_tree_node();
+  BrowserAccessibilityManager* manager =
+      ftn->current_frame_host()->browser_accessibility_manager();
   FOR_EACH_OBSERVER(
       WebContentsObserver, observers_,
       DidFailProvisionalLoad(render_frame_host, validated_url, error_code,
                              error_description, was_ignored_by_handler));
 
-  FrameTreeNode* ftn = render_frame_host->frame_tree_node();
-  BrowserAccessibilityManager* manager =
-      ftn->current_frame_host()->browser_accessibility_manager();
   if (manager)
     manager->NavigationFailed();
 }
