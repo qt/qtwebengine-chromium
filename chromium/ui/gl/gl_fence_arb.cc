@@ -72,7 +72,8 @@ void GLFenceARB::ServerWait() {
 
 GLFenceARB::~GLFenceARB() {
   DCHECK_EQ(GL_TRUE, !sync_ || glIsSync(sync_));
-  glDeleteSync(sync_);
+  if (sync_)
+    glDeleteSync(sync_);
 }
 
 }  // namespace gfx
