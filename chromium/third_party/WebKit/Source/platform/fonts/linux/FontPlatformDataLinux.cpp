@@ -138,10 +138,12 @@ void FontPlatformData::querySystemForRenderStyle(bool useSkiaSubpixelPositioning
 #if OS(ANDROID)
     style.setDefaults();
 #else
-    // If the font name is missing (i.e. probably a web font) or the sandbox is disabled, use the system defaults.
-    if (!m_family.length() || !Platform::current()->sandboxSupport()) {
+    // If the the sandbox is disabled, we can query font parameters directly.
+    if (!Platform::current()->sandboxSupport()) {
         const int sizeAndStyle = (((int)m_textSize) << 2) | (m_typeface->style() & 3);
         gfx::FontRenderParamsQuery query;
+        if (m_family.length())
+            query.families.push_back(m_family.data());
         query.pixel_size = m_textSize;
         query.style = gfx::Font::NORMAL | (sizeAndStyle & 1 ? gfx::Font::BOLD : 0) | (sizeAndStyle & 2 ? gfx::Font::ITALIC : 0);
         const gfx::FontRenderParams params = gfx::GetFontRenderParams(query, NULL);
