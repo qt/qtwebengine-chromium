@@ -142,8 +142,8 @@ void FontPlatformData::querySystemForRenderStyle(bool useSkiaSubpixelPositioning
     if (!Platform::current()->sandboxSupport()) {
         const int sizeAndStyle = (((int)m_textSize) << 2) | (m_typeface->style() & 3);
         gfx::FontRenderParamsQuery query;
-        if (!family.empty())
-            query.families.push_back(family);
+        if (m_family.length())
+            query.families.push_back(m_family.data());
         query.pixel_size = m_textSize;
         query.style = gfx::Font::NORMAL | (sizeAndStyle & 1 ? gfx::Font::BOLD : 0) | (sizeAndStyle & 2 ? gfx::Font::ITALIC : 0);
         const gfx::FontRenderParams params = gfx::GetFontRenderParams(query, NULL);
