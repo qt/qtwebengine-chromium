@@ -169,6 +169,11 @@ class GFX_EXPORT Canvas {
   // until a balanced call to Restore() is made.
   void Save();
 
+  // Saves the drawing state, unscales by the image scale factor, and returns
+  // that factor.  This is useful when callers want to draw directly in the
+  // native scale.
+  float SaveAndUnscale();
+
   // As with Save(), except draws to a layer that is blended with the canvas
   // at the specified alpha once Restore() is called.
   // |layer_bounds| are the bounds of the layer relative to the current
@@ -304,14 +309,11 @@ class GFX_EXPORT Canvas {
                     const SkPaint& paint);
 
   // Same as the DrawImageInt functions above. Difference being this does not
-  // do any scaling, i.e. it assumes that the source/destination/image, etc are
-  // in pixels. It does translate the destination rectangle to ensure that the
-  // image is displayed at the correct pixel coordinates.
-  void DrawImageIntInPixel(const ImageSkia& image,
-                           int src_x,
-                           int src_y,
-                           int src_w,
-                           int src_h,
+  // do any scaling, i.e. it does not scale the output by the device scale
+  // factor (the internal image_scale_). It takes an ImageSkiaRep instead of
+  // an ImageSkia as the caller chooses the exact scale/pixel representation to
+  // use, which will not be scaled while drawing it into the canvas.
+  void DrawImageIntInPixel(const ImageSkiaRep& image_rep,
                            int dest_x,
                            int dest_y,
                            int dest_w,
@@ -419,7 +421,7 @@ class GFX_EXPORT Canvas {
   // Helper for the DrawImageInt functions declared above. The |pixel|
   // parameter if true indicates that the bounds and the image are to
   // be assumed to be in pixels, i.e. no scaling needs to be performed.
-  void DrawImageIntHelper(const ImageSkia& image,
+  void DrawImageIntHelper(const ImageSkiaRep& image_rep,
                           int src_x,
                           int src_y,
                           int src_w,
@@ -430,7 +432,6 @@ class GFX_EXPORT Canvas {
                           int dest_h,
                           bool filter,
                           const SkPaint& paint,
-                          float image_scale,
                           bool pixel);
 
   // The device scale factor at which drawing on this canvas occurs.
