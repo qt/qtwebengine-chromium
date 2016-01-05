@@ -13,7 +13,7 @@
 
 static void cost(
     int *const C,
-    vp8_tree T,
+    vp8_tree_p T,
     const vp8_prob *const P,
     int i,
     int c
@@ -33,11 +33,11 @@ static void cost(
     }
     while (++i & 1);
 }
-void vp8_cost_tokens(int *c, const vp8_prob *p, vp8_tree t)
+void vp8_cost_tokens(int *c, const vp8_prob *p, vp8_tree_p t)
 {
     cost(c, t, p, 0, 0);
 }
-void vp8_cost_tokens2(int *c, const vp8_prob *p, vp8_tree t,int start)
+void vp8_cost_tokens2(int *c, const vp8_prob *p, vp8_tree_p t,int start)
 {
     cost(c, t, p, start, 0);
 }
