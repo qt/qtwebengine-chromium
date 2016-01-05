@@ -41,7 +41,7 @@ typedef int8_t vpx_tree_index;
    Index > 0 means need another bit, specification at index.
    Nonnegative indices are always even;  processing begins at node 0. */
 
-typedef const vpx_tree_index vpx_tree[];
+typedef const vpx_tree_index vpx_tree[], *vpx_tree_p;
 
 static INLINE vpx_prob clip_prob(int p) {
   return (p > 255) ? 255 : (p < 1) ? 1 : p;
