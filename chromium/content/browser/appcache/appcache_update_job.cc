@@ -405,11 +405,13 @@ AppCacheUpdateJob::~AppCacheUpdateJob() {
   if (internal_state_ != COMPLETED)
     Cancel();
 
-  DCHECK(!manifest_fetcher_);
-  DCHECK(pending_url_fetches_.empty());
   DCHECK(!inprogress_cache_.get());
   DCHECK(pending_master_entries_.empty());
-  DCHECK(master_entry_fetches_.empty());
+
+  // The job must not outlive any of its fetchers.
+  CHECK(!manifest_fetcher_);
+  CHECK(pending_url_fetches_.empty());
+  CHECK(master_entry_fetches_.empty());
 
   if (group_)
     group_->SetUpdateAppCacheStatus(AppCacheGroup::IDLE);
@@ -425,6 +427,9 @@ void AppCacheUpdateJob::StartUpdate(AppCacheHost* host,
     DCHECK(new_master_resource == host->pending_master_entry_url());
     DCHECK(!new_master_resource.has_ref());
     DCHECK(new_master_resource.GetOrigin() == manifest_url_.GetOrigin());
+
+    if (ContainsKey(failed_master_entries_, new_master_resource))
+      return;
 
     // Cannot add more to this update if already terminating.
     if (IsTerminating()) {
@@ -863,6 +868,8 @@ void AppCacheUpdateJob::HandleMasterEntryFetchCompleted(
     }
     hosts.clear();
 
+    failed_master_entries_.insert(url);
+
     const char* kFormatString = "Manifest fetch failed (%d) %s";
     std::string message = FormatUrlErrorMessage(
         kFormatString, request->url(), fetcher->result(), response_code);
@@ -1105,10 +1112,10 @@ void AppCacheUpdateJob::OnDestructionImminent(AppCacheHost* host) {
   // The host is about to be deleted; remove from our collection.
   PendingMasters::iterator found =
       pending_master_entries_.find(host->pending_master_entry_url());
-  DCHECK(found != pending_master_entries_.end());
+  CHECK(found != pending_master_entries_.end());
   PendingHosts& hosts = found->second;
   PendingHosts::iterator it = std::find(hosts.begin(), hosts.end(), host);
-  DCHECK(it != hosts.end());
+  CHECK(it != hosts.end());
   hosts.erase(it);
 }
 
