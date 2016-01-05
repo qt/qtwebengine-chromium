@@ -12,6 +12,7 @@
   'conditions': [
   ['use_qt==1', {
     'includes': [
+      'cdm.gypi',
       'device_event_log.gypi',
       'devtools_discovery.gypi',
       'devtools_http_handler.gypi',
