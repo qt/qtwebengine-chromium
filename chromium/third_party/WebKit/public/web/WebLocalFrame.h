@@ -183,6 +183,9 @@ public:
     // extension debugging.
     virtual void setIsolatedWorldHumanReadableName(int worldID, const WebString&) = 0;
 
+    // Gets or creates the context of the isolated world
+    // As in requestExecuteScriptInIsolatedWorld: 0 < worldId < EmbedderWorldIdLimit
+    virtual v8::Local<v8::Context> isolatedWorldScriptContext(int worldID, int extensionGroup) const = 0;
 
     // Selection --------------------------------------------------------------
 
