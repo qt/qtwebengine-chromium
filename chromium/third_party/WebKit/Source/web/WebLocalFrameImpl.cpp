@@ -854,6 +854,13 @@ v8::Local<v8::Context> WebLocalFrameImpl::mainWorldScriptContext() const {
   return scriptState->context();
 }
 
+v8::Local<v8::Context> WebLocalFrameImpl::isolatedWorldScriptContext(int worldID, int extensionGroup) const {
+  RefPtr<DOMWrapperWorld> world = DOMWrapperWorld::ensureIsolatedWorld(toIsolate(frame()), worldID, extensionGroup);
+  ScriptState* scriptState = ScriptState::forWorld(frame(), *world.get());
+  CHECK(scriptState);
+  return scriptState->context();
+}
+
 bool WebFrame::scriptCanAccess(WebFrame* target) {
   return BindingSecurity::shouldAllowAccessToFrame(
       currentDOMWindow(mainThreadIsolate()), target->toImplBase()->frame(),
