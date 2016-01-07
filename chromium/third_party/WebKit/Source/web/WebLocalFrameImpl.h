@@ -129,6 +129,8 @@ public:
         int argc,
         v8::Local<v8::Value> argv[]) override;
     v8::Local<v8::Context> mainWorldScriptContext() const override;
+    v8::Local<v8::Context> isolatedWorldScriptContext(int worldID, int extensionGroup) const override;
+
     void reload(bool ignoreCache) override;
     void reloadWithOverrideURL(const WebURL& overrideUrl, bool ignoreCache) override;
     void reloadImage(const WebNode&) override;
