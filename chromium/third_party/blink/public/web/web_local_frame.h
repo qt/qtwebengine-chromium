@@ -394,6 +394,10 @@ class WebLocalFrame : public WebFrame {
       ScriptExecutionType,
       WebScriptExecutionCallback*) = 0;
 
+  // Gets or creates the context of the isolated world
+  // As in requestExecuteScriptInIsolatedWorld: 0 < worldId < EmbedderWorldIdLimit
+  virtual v8::Local<v8::Context> IsolatedWorldScriptContext(int worldID) const = 0;
+
   // Logs to the console associated with this frame.
   virtual void AddMessageToConsole(const WebConsoleMessage&) = 0;
 
