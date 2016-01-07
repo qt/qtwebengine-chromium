@@ -1121,6 +1121,14 @@ v8::Local<v8::Context> WebLocalFrameImpl::MainWorldScriptContext() const {
   return script_state->GetContext();
 }
 
+v8::Local<v8::Context> WebLocalFrameImpl::IsolatedWorldScriptContext(int world_id) const {
+  DOMWrapperWorld* world =
+      DOMWrapperWorld::EnsureIsolatedWorld(ToIsolate(GetFrame()), world_id);
+  ScriptState* script_state = ToScriptState(GetFrame(), *world);
+  CHECK(script_state);
+  return script_state->GetContext();
+}
+
 int32_t WebLocalFrameImpl::GetScriptContextWorldId(
     v8::Local<v8::Context> script_context) const {
   DCHECK_EQ(this, FrameForContext(script_context));
