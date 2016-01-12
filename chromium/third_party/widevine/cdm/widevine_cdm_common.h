@@ -57,7 +57,7 @@ const char kCdmSupportedCodecVp9[] = "vp9.0";
 const char kCdmSupportedCodecAvc1[] = "avc1";
 #endif  // defined(USE_PROPRIETARY_CODECS)
 
-#if defined(OS_MACOSX) || defined(OS_WIN)
+#if (defined(OS_MACOSX) || defined(OS_WIN)) && !defined(TOOLKIT_QT)
 // CDM is installed by the component installer instead of the Chrome installer.
 #define WIDEVINE_CDM_IS_COMPONENT
 #endif  // defined(OS_MACOSX) || defined(OS_WIN)
