@@ -42,7 +42,7 @@ const char kWidevineCdmFileSystemId[] = "application_x-ppapi-widevine-cdm";
 // Name of the CDM library.
 const char kWidevineCdmLibraryName[] = "widevinecdm";
 
-#if defined(OS_MACOSX) || defined(OS_WIN)
+#if (defined(OS_MACOSX) || defined(OS_WIN)) && !defined(TOOLKIT_QT)
 // CDM is installed by the component installer instead of the Chrome installer.
 #define WIDEVINE_CDM_IS_COMPONENT
 #endif  // defined(OS_MACOSX) || defined(OS_WIN)
