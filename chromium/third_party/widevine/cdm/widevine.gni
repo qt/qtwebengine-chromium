@@ -4,7 +4,7 @@
 
 import("//build/config/chrome_build.gni")
 import("//build/config/chromeos/ui_mode.gni")
-import("//build/config/chromeos/ui_mode.gni")
+import("//build/config/features.gni")
 import("//media/media_options.gni")
 
 declare_args() {
@@ -42,7 +42,7 @@ enable_library_widevine_cdm =
 # Note: Not enabled on ChromeOS. See https://crbug.com/971433
 enable_widevine_cdm_component =
     enable_library_widevine_cdm &&
-    (is_win || is_mac || is_linux || is_chromeos_lacros)
+    (is_win || is_mac || is_linux || is_chromeos_lacros) && !use_qt
 
 # Enable (Windows) Media Foundation Widevine CDM component.
 declare_args() {
