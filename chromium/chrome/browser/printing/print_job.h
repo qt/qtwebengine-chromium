@@ -55,7 +55,7 @@ class PrintJob : public PrintJobWorkerOwner,
                           const base::string16& name,
                           int page_count);
 
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(TOOLKIT_QT)
   // Overwrites the PDF page mapping to fill in values of -1 for all indices
   // that are not selected. This is needed when the user opens the system
   // dialog from the link in Print Preview on Windows and then sets a selection
