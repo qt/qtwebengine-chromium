@@ -121,6 +121,7 @@ const char kPageSetupScriptFormat[] = "setupHeaderFooterTemplate(%s);";
 
 constexpr int kAllowedIpcDepthForPrint = 1;
 
+#if !defined(TOOLKIT_QT)
 void ExecuteScript(blink::WebLocalFrame* frame,
                    const char* script_format,
                    const base::Value& parameters) {
@@ -130,6 +131,7 @@ void ExecuteScript(blink::WebLocalFrame* frame,
   frame->ExecuteScript(
       blink::WebScriptSource(blink::WebString::FromUTF8(script)));
 }
+#endif // !defined(TOOLKIT_QT)
 
 int GetDPI(const mojom::PrintParams& print_params) {
 #if BUILDFLAG(IS_APPLE)
@@ -613,6 +615,7 @@ void PrintHeaderAndFooter(cc::PaintCanvas* canvas,
                           float scale_factor,
                           const mojom::PageSizeMargins& page_layout,
                           const mojom::PrintParams& params) {
+#if !defined(TOOLKIT_QT)
   DCHECK_LE(total_pages, kMaxPageCount);
   DCHECK_LT(page_index, kMaxPageCount);
 
@@ -716,6 +719,7 @@ void PrintHeaderAndFooter(cc::PaintCanvas* canvas,
   frame->PrintEnd();
 
   web_view->Close();
+#endif // !defined(TOOLKIT_QT)
 }
 
 // Renders page contents from `frame` to `content_area` of `canvas`.
@@ -1720,7 +1724,7 @@ void PrintRenderFrameHelper::OnFramePreparedForPreviewDocument() {
 
 PrintRenderFrameHelper::CreatePreviewDocumentResult
 PrintRenderFrameHelper::CreatePreviewDocument() {
-  if (!print_pages_params_ || CheckForCancel() || !preview_ui_)
+  if (!print_pages_params_ || CheckForCancel() /*|| !preview_ui_*/)
     return CreatePreviewDocumentResult::kFail;
 
 #if BUILDFLAG(IS_CHROMEOS_ASH)
@@ -1776,20 +1780,22 @@ PrintRenderFrameHelper::CreatePreviewDocument() {
       ConvertUnitFloat(print_params.printable_area.height(), dpi,
                        kPointsPerInch));
 
-  // Margins: Send default page layout to browser process.
-  preview_ui_->DidGetDefaultPageLayout(
-      std::move(default_page_layout), printable_area_in_points,
-      all_pages_have_custom_size, all_pages_have_custom_orientation,
-      print_params.preview_request_id);
+  if (preview_ui_) {
+    // Margins: Send default page layout to browser process.
+    preview_ui_->DidGetDefaultPageLayout(
+        std::move(default_page_layout), printable_area_in_points,
+        all_pages_have_custom_size, all_pages_have_custom_orientation,
+        print_params.preview_request_id);
 
-  preview_ui_->DidStartPreview(
-      mojom::DidStartPreviewParams::New(
-          print_preview_context_.total_page_count(),
-          print_preview_context_.pages_to_render(),
-          print_params.pages_per_sheet,
-          GetPdfPageSize(print_params.page_size, dpi),
-          GetFitToPageScaleFactor(printable_area_in_points)),
-      print_params.preview_request_id);
+    preview_ui_->DidStartPreview(
+        mojom::DidStartPreviewParams::New(
+            print_preview_context_.total_page_count(),
+            print_preview_context_.pages_to_render(),
+            print_params.pages_per_sheet,
+            GetPdfPageSize(print_params.page_size, dpi),
+            GetFitToPageScaleFactor(printable_area_in_points)),
+        print_params.preview_request_id);
+  }
   if (CheckForCancel())
     return CreatePreviewDocumentResult::kFail;
 
@@ -1808,7 +1814,7 @@ PrintRenderFrameHelper::CreatePreviewDocument() {
 #endif
 
   if (print_pages_params_->params->printed_doc_type ==
-      mojom::SkiaDocumentType::kMSKP) {
+      mojom::SkiaDocumentType::kMSKP && preview_ui_) {
     // Want modifiable content of MSKP type to be collected into a document
     // during individual page preview generation (to avoid separate document
     // version for composition), notify to prepare to do this collection.
@@ -1929,6 +1935,10 @@ bool PrintRenderFrameHelper::FinalizePrintReadyDocument() {
 
   if (preview_ui_) {
     preview_ui_->MetafileReadyForPrinting(
+        std::move(preview_params),
+        print_pages_params_->params->preview_request_id);
+  } else {
+      GetPrintManagerHost()->MetafileReadyForPrinting(
         std::move(preview_params),
         print_pages_params_->params->preview_request_id);
   }
