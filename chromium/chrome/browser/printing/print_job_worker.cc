@@ -13,7 +13,9 @@
 #include "base/single_thread_task_runner.h"
 #include "base/thread_task_runner_handle.h"
 #include "base/values.h"
+#if !defined(TOOLKIT_QT)
 #include "chrome/browser/browser_process.h"
+#endif // !defined(TOOLKIT_QT)
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/printing/print_job.h"
 #include "chrome/grit/generated_resources.h"
@@ -29,6 +31,11 @@
 
 #if defined(OS_ANDROID)
 #include "chrome/browser/android/tab_android.h"
+#endif
+
+#if defined(TOOLKIT_QT)
+// Used to fetch the application name
+#include "web_engine_library_info.h"
 #endif
 
 using content::BrowserThread;
@@ -81,7 +88,11 @@ content::WebContents* PrintingContextDelegate::GetWebContents() {
 }
 
 std::string PrintingContextDelegate::GetAppLocale() {
+#if defined(TOOLKIT_QT)
+  return WebEngineLibraryInfo::getApplicationLocale();
+#else
   return g_browser_process->GetApplicationLocale();
+#endif // if defined(TOOLKIT_QT)
 }
 
 void NotificationCallback(PrintJobWorkerOwner* print_job,

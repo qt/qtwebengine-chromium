@@ -23,6 +23,13 @@
       'web_cache.gypi',
       'user_prefs.gypi',
     ],
+    'conditions': [
+      ['enable_basic_printing==1 or enable_print_preview==1', {
+        'includes': [
+          'printing.gypi',
+        ],
+      }]
+      ]
   }, {
   'includes': [
     'about_handler.gypi',

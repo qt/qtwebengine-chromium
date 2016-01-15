@@ -32,7 +32,8 @@
         '<(DEPTH)/printing/printing.gyp:printing',
         '<(DEPTH)/third_party/WebKit/public/blink.gyp:blink',
         '<(DEPTH)/ui/base/ui_base.gyp:ui_base',
-        'components_resources.gyp:components_resources',
+         # TODO - Reenable this with appropriate resources when adding print preview to Qt WebEngine
+         # 'components_resources.gyp:components_resources',
         'printing_common',
       ],
       'sources': [
