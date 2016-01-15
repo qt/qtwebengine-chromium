@@ -20,13 +20,19 @@
       'error_page.gypi',
       'keyed_service.gypi',
       'pref_registry.gypi',
-      'printing.gypi',
       'user_prefs.gypi',
       'visitedlink.gypi',
       'web_cache.gypi',
       'webmessaging.gypi',
       'webusb.gypi',
     ],
+    'conditions': [
+      ['enable_basic_printing==1 or enable_print_preview==1', {
+        'includes': [
+          'printing.gypi',
+        ],
+      }]
+      ]
   }, {
   'includes': [
     'about_handler.gypi',
