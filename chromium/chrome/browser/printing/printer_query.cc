@@ -14,7 +14,6 @@
 #include "base/threading/thread_restrictions.h"
 #include "base/values.h"
 #include "build/build_config.h"
-#include "chrome/browser/browser_process.h"
 #include "chrome/browser/printing/print_job_worker.h"
 #include "components/crash/core/common/crash_keys.h"
 #include "components/device_event_log/device_event_log.h"
@@ -26,10 +25,18 @@
 #include "printing/buildflags/buildflags.h"
 #include "printing/print_settings.h"
 
+#if !defined(TOOLKIT_QT)
+#include "chrome/browser/browser_process.h"
+
 #if BUILDFLAG(IS_ANDROID)
 #include "chrome/browser/android/tab_android.h"
 #include "chrome/browser/android/tab_printer.h"
 #include "printing/printing_context_android.h"
+#endif
+#else // !defined(TOOLKIT_QT)
+namespace printing {
+std::string getApplicationLocale();
+}
 #endif
 
 #if BUILDFLAG(ENABLE_OOP_PRINTING)
@@ -93,7 +100,11 @@ content::WebContents* PrintingContextDelegate::GetWebContents() {
 }
 
 std::string PrintingContextDelegate::GetAppLocale() {
+#if defined(TOOLKIT_QT)
+  return getApplicationLocale();
+#else
   return g_browser_process->GetApplicationLocale();
+#endif // if defined(TOOLKIT_QT)
 }
 
 CreatePrinterQueryCallback* g_create_printer_query_for_testing = nullptr;
@@ -261,8 +272,13 @@ void PrinterQuery::UpdatePrintableArea(
     PrintSettings* print_settings,
     OnDidUpdatePrintableAreaCallback callback) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+#ifdef TOOLKIT_QT
+  scoped_refptr<PrintBackend> print_backend =
+      PrintBackend::CreateInstance(getApplicationLocale());
+#else
   scoped_refptr<PrintBackend> print_backend =
       PrintBackend::CreateInstance(g_browser_process->GetApplicationLocale());
+#endif
 
   // Blocking is needed here because Windows printer drivers are oftentimes
   // not thread-safe and have to be accessed on the UI thread.
@@ -336,7 +352,11 @@ void PrinterQuery::UpdatePrintSettings(base::Value::Dict new_settings,
     base::ScopedAllowBlocking allow_blocking;
 #endif
     scoped_refptr<PrintBackend> print_backend =
+#ifdef TOOLKIT_QT
+        PrintBackend::CreateInstance(getApplicationLocale());
+#else
         PrintBackend::CreateInstance(g_browser_process->GetApplicationLocale());
+#endif
     std::string printer_name = *new_settings.FindString(kSettingDeviceName);
     crash_key = std::make_unique<crash_keys::ScopedPrinterInfo>(
         printer_name, print_backend->GetPrinterDriverInfo(printer_name));
