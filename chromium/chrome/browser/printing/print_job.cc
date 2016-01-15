@@ -23,10 +23,12 @@
 #include "printing/printed_document.h"
 
 #if defined(OS_WIN)
+#if !defined(TOOLKIT_QT)
 #include "base/command_line.h"
 #include "chrome/browser/printing/pdf_to_emf_converter.h"
 #include "chrome/common/chrome_features.h"
 #include "printing/pdf_render_settings.h"
+#endif
 #include "printing/printed_page_win.h"
 #endif
 
@@ -63,7 +65,7 @@ void PrintJob::Initialize(std::unique_ptr<PrinterQuery> query,
   worker_->SetPrintJob(this);
   std::unique_ptr<PrintSettings> settings = query->ExtractSettings();
 
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(TOOLKIT_QT)
   pdf_page_mapping_ = PageRange::GetPages(settings->ranges());
   if (pdf_page_mapping_.empty()) {
     for (int i = 0; i < page_count; i++)
@@ -81,7 +83,7 @@ void PrintJob::Initialize(std::unique_ptr<PrinterQuery> query,
                  content::Source<PrintJob>(this));
 }
 
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(TOOLKIT_QT)
 // static
 std::vector<int> PrintJob::GetFullPageMapping(const std::vector<int>& pages,
                                               int total_page_count) {
@@ -253,7 +255,7 @@ const std::string& PrintJob::source_id() const {
 }
 #endif  // defined(OS_CHROMEOS)
 
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(TOOLKIT_QT)
 class PrintJob::PdfConversionState {
  public:
   PdfConversionState(const gfx::Size& page_size, const gfx::Rect& content_area)
@@ -407,7 +409,7 @@ void PrintJob::StartPdfToPostScriptConversion(
       bytes, render_settings,
       base::BindOnce(&PrintJob::OnPdfConversionStarted, this));
 }
-#endif  // defined(OS_WIN)
+#endif  // OS_WIN && !defined(TOOLKIT_QT)
 
 void PrintJob::UpdatePrintedDocument(
     scoped_refptr<PrintedDocument> new_document) {
@@ -469,7 +471,7 @@ void PrintJob::OnNotifyPrintJobEvent(const JobEventDetails& event_details) {
                      base::BindOnce(&PrintJob::OnDocumentDone, this));
       break;
     }
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(TOOLKIT_QT)
     case JobEventDetails::PAGE_DONE:
       if (pdf_conversion_state_) {
         pdf_conversion_state_->OnPageProcessed(

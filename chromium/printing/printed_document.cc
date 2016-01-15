@@ -58,7 +58,8 @@ void DebugDumpPageTask(const base::string16& doc_name,
                   base::File::FLAG_CREATE_ALWAYS | base::File::FLAG_WRITE);
   page->metafile()->SaveTo(&file);
 }
-#else
+#endif
+
 void DebugDumpTask(const base::string16& doc_name,
                    const MetafilePlayer* metafile) {
   DCHECK(PrintedDocument::HasDebugDumpPath());
@@ -72,7 +73,6 @@ void DebugDumpTask(const base::string16& doc_name,
                   base::File::FLAG_CREATE_ALWAYS | base::File::FLAG_WRITE);
   metafile->SaveTo(&file);
 }
-#endif
 
 void DebugDumpDataTask(const base::string16& doc_name,
                        const base::FilePath::StringType& extension,
@@ -157,7 +157,8 @@ scoped_refptr<PrintedPage> PrintedDocument::GetPage(int page_number) {
   return page;
 }
 
-#else
+#endif
+
 void PrintedDocument::SetDocument(std::unique_ptr<MetafilePlayer> metafile,
                                   const gfx::Size& page_size,
                                   const gfx::Rect& page_content_rect) {
@@ -182,7 +183,6 @@ const MetafilePlayer* PrintedDocument::GetMetafile() {
   return mutable_.metafile_.get();
 }
 
-#endif
 
 bool PrintedDocument::IsComplete() const {
   base::AutoLock lock(lock_);

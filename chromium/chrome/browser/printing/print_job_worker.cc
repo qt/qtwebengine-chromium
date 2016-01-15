@@ -18,7 +18,6 @@
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/values.h"
 #include "build/build_config.h"
-#include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/printing/print_job.h"
 #include "chrome/grit/generated_resources.h"
@@ -34,10 +33,19 @@
 #include "printing/printing_utils.h"
 #include "ui/base/l10n/l10n_util.h"
 
+#if !defined(TOOLKIT_QT)
+#include "chrome/browser/browser_process.h"
+#include "chrome/common/features.h"
+
 #if defined(OS_ANDROID)
 #include "chrome/browser/android/tab_android.h"
 #include "chrome/browser/android/tab_printer.h"
 #include "printing/printing_context_android.h"
+#endif
+#else // !defined(TOOLKIT_QT)
+namespace printing {
+std::string getApplicationLocale();
+}
 #endif
 
 #if defined(OS_WIN)
@@ -93,7 +101,11 @@ content::WebContents* PrintingContextDelegate::GetWebContents() {
 }
 
 std::string PrintingContextDelegate::GetAppLocale() {
+#if defined(TOOLKIT_QT)
+  return getApplicationLocale();
+#else
   return g_browser_process->GetApplicationLocale();
+#endif // if defined(TOOLKIT_QT)
 }
 
 void NotificationCallback(PrintJob* print_job,
