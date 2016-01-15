@@ -94,7 +94,7 @@ const double kMinDpi = 1.0;
 // Also set in third_party/WebKit/Source/core/page/PrintContext.h
 const float kPrintingMinimumShrinkFactor = 1.33333333f;
 
-#if BUILDFLAG(ENABLE_PRINT_PREVIEW)
+#if BUILDFLAG(ENABLE_PRINT_PREVIEW) && !defined(TOOLKIT_QT)
 bool g_is_preview_enabled = true;
 #else
 bool g_is_preview_enabled = false;
@@ -601,6 +601,7 @@ void PrintRenderFrameHelper::PrintHeaderAndFooter(
     float webkit_scale_factor,
     const PageSizeMargins& page_layout,
     const PrintMsg_Print_Params& params) {
+#if !defined(TOOLKIT_QT)
   cc::PaintCanvasAutoRestore auto_restore(canvas, true);
   canvas->scale(1 / webkit_scale_factor, 1 / webkit_scale_factor);
 
@@ -664,6 +665,7 @@ void PrintRenderFrameHelper::PrintHeaderAndFooter(
   frame->PrintEnd();
 
   web_view->Close();
+#endif // !defined(TOOLKIT_QT)
 }
 
 // static - Not anonymous so that platform implementations can use it.

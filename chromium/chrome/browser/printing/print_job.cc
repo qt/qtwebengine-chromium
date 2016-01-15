@@ -22,11 +22,13 @@
 #include "content/public/browser/notification_service.h"
 #include "printing/printed_document.h"
 
-#if defined(OS_WIN) && !defined(TOOLKIT_QT)
+#if defined(OS_WIN)
+#if !defined(TOOLKIT_QT)
 #include "base/command_line.h"
 #include "chrome/browser/printing/pdf_to_emf_converter.h"
 #include "chrome/common/chrome_features.h"
 #include "printing/pdf_render_settings.h"
+#endif
 #include "printing/printed_page_win.h"
 #endif
 
@@ -71,7 +73,7 @@ void PrintJob::Initialize(PrinterQuery* query,
   new_doc->set_page_count(page_count);
   UpdatePrintedDocument(new_doc);
 
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(TOOLKIT_QT)
   pdf_page_mapping_ = PageRange::GetPages(settings_.ranges());
   if (pdf_page_mapping_.empty()) {
     for (int i = 0; i < page_count; i++)
@@ -84,7 +86,7 @@ void PrintJob::Initialize(PrinterQuery* query,
                  content::Source<PrintJob>(this));
 }
 
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(TOOLKIT_QT)
 // static
 std::vector<int> PrintJob::GetFullPageMapping(const std::vector<int>& pages,
                                               int total_page_count) {
