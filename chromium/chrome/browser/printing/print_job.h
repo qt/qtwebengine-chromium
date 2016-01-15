@@ -82,6 +82,7 @@ class PrintJob : public base::RefCountedThreadSafe<PrintJob> {
                           uint32_t page_count);
 
 #if BUILDFLAG(IS_WIN)
+#if !defined(TOOLKIT_QT)
   void StartConversionToNativeFormat(
       scoped_refptr<base::RefCountedMemory> print_data,
       const gfx::Size& page_size,
@@ -94,6 +95,7 @@ class PrintJob : public base::RefCountedThreadSafe<PrintJob> {
   // of pages, because all PDF pages will be converted, but only the user's
   // selected pages should be sent to the printer. See https://crbug.com/823876.
   void ResetPageMapping();
+#endif
 
   // Called when `page` is done printing.
   void OnPageDone(PrintedPage* page);
@@ -199,7 +201,7 @@ class PrintJob : public base::RefCountedThreadSafe<PrintJob> {
 
   void HoldUntilStopIsCalled();
 
-#if BUILDFLAG(IS_WIN)
+#if BUILDFLAG(IS_WIN) && !defined(TOOLKIT_QT)
   virtual void StartPdfToEmfConversion(
       scoped_refptr<base::RefCountedMemory> bytes,
       const gfx::Size& page_size,
@@ -247,7 +249,7 @@ class PrintJob : public base::RefCountedThreadSafe<PrintJob> {
   // the notified calls Cancel() again.
   bool is_canceling_ = false;
 
-#if BUILDFLAG(IS_WIN)
+#if BUILDFLAG(IS_WIN) && !defined(TOOLKIT_QT)
   class PdfConversionState;
   std::unique_ptr<PdfConversionState> pdf_conversion_state_;
   std::vector<uint32_t> pdf_page_mapping_;
