@@ -17,7 +17,6 @@
 #include "base/task/single_thread_task_runner.h"
 #include "base/values.h"
 #include "build/build_config.h"
-#include "chrome/browser/browser_process.h"
 #include "chrome/browser/printing/print_job.h"
 #include "chrome/grit/generated_resources.h"
 #include "components/device_event_log/device_event_log.h"
@@ -176,7 +175,7 @@ void PrintJobWorker::OnNewPage() {
     return;
 
   bool do_spool_document = true;
-#if BUILDFLAG(IS_WIN)
+#if BUILDFLAG(IS_WIN) && !defined(TOOLKIT_QT)
   const bool source_is_pdf =
       !print_job_->document()->settings().is_modifiable();
   if (!features::ShouldPrintUsingXps(source_is_pdf)) {
