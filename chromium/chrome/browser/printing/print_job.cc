@@ -26,6 +26,7 @@
 #include "printing/printed_document.h"
 
 #if BUILDFLAG(IS_WIN)
+#if !defined(TOOLKIT_QT)
 #include "base/command_line.h"
 #include "chrome/browser/printing/pdf_to_emf_converter.h"
 #include "chrome/browser/profiles/profile.h"
@@ -35,6 +36,7 @@
 #include "content/public/browser/web_contents.h"
 #include "printing/page_number.h"
 #include "printing/pdf_render_settings.h"
+#endif
 #include "printing/printed_page_win.h"
 #include "printing/printing_features.h"
 #endif
@@ -49,7 +51,7 @@ void HoldRefCallback(scoped_refptr<PrintJob> job, base::OnceClosure callback) {
   std::move(callback).Run();
 }
 
-#if BUILDFLAG(IS_WIN)
+#if BUILDFLAG(IS_WIN) && !defined(TOOLKIT_QT)
 // Those must be kept in sync with the values defined in policy_templates.json.
 enum class PrintPostScriptMode {
   // Do normal PostScript generation. Text is always rendered with Type 3 fonts.
@@ -131,7 +133,7 @@ void PrintJob::Initialize(std::unique_ptr<PrinterQuery> query,
   worker_->SetPrintJob(this);
   std::unique_ptr<PrintSettings> settings = query->ExtractSettings();
 
-#if BUILDFLAG(IS_WIN)
+#if BUILDFLAG(IS_WIN) && !defined(TOOLKIT_QT)
   pdf_page_mapping_ = PageNumber::GetPages(settings->ranges(), page_count);
 #endif
 
@@ -141,7 +143,7 @@ void PrintJob::Initialize(std::unique_ptr<PrinterQuery> query,
   UpdatePrintedDocument(new_doc);
 }
 
-#if BUILDFLAG(IS_WIN)
+#if BUILDFLAG(IS_WIN) && !defined(TOOLKIT_QT)
 // static
 std::vector<uint32_t> PrintJob::GetFullPageMapping(
     const std::vector<uint32_t>& pages,
@@ -293,7 +295,7 @@ const std::string& PrintJob::source_id() const {
 }
 #endif  // BUILDFLAG(IS_CHROMEOS)
 
-#if BUILDFLAG(IS_WIN)
+#if BUILDFLAG(IS_WIN) && !defined(TOOLKIT_QT)
 class PrintJob::PdfConversionState {
  public:
   PdfConversionState(const gfx::Size& page_size, const gfx::Rect& content_area)
@@ -454,7 +456,7 @@ void PrintJob::StartPdfToPostScriptConversion(
       bytes, render_settings,
       base::BindOnce(&PrintJob::OnPdfConversionStarted, this));
 }
-#endif  // BUILDFLAG(IS_WIN)
+#endif  // BUILDFLAG(IS_WIN) && !defined(TOOLKIT_QT)
 
 void PrintJob::UpdatePrintedDocument(
     scoped_refptr<PrintedDocument> new_document) {
@@ -491,12 +493,14 @@ void PrintJob::SyncPrintedDocumentToWorker() {
 
 #if BUILDFLAG(IS_WIN)
 void PrintJob::OnPageDone(PrintedPage* page) {
+#if !defined(TOOLKIT_QT)
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   if (pdf_conversion_state_) {
     pdf_conversion_state_->OnPageProcessed(
         base::BindRepeating(&PrintJob::OnPdfPageConverted, this));
   }
   document_->RemovePage(page);
+#endif
 }
 #endif  // BUILDFLAG(IS_WIN)
 
