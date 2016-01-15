@@ -47,6 +47,16 @@ static_library("common") {
       ]
     }
   }
+
+  if (is_qtwebengine) {
+    sources -= [
+      "cloud_print_cdd_conversion.cc",
+      "cloud_print_cdd_conversion.h",
+    ]
+    deps -= [
+      "//components/cloud_devices/common",
+    ]
+  }
 }
 
 mojom("mojo_interfaces") {

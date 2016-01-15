@@ -111,6 +111,7 @@ void PopulateAdvancedCapsLocalization(
 }
 #endif  // BUILDFLAG(IS_CHROMEOS)
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 // Returns a dictionary representing printer capabilities as CDD, or
 // a Value of type NONE if no capabilities are provided.
 base::Value AssemblePrinterCapabilities(const std::string& device_name,
@@ -139,6 +140,7 @@ base::Value AssemblePrinterCapabilities(const std::string& device_name,
 
   return cloud_print::PrinterSemanticCapsAndDefaultsToCdd(*caps);
 }
+#endif
 
 }  // namespace
 
@@ -163,6 +165,7 @@ std::string GetUserFriendlyName(std::string_view printer_name) {
 }
 #endif
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 base::DictValue AssemblePrinterSettings(const std::string& device_name,
                                         const PrinterBasicInfo& basic_info,
                                         bool has_secure_protocol,
@@ -227,5 +230,6 @@ base::DictValue GetSettingsOnBlockingTaskRunner(
                                  /*has_secure_protocol=*/false,
                                  base::OptionalToPtr(caps));
 }
+#endif
 
 }  // namespace printing
