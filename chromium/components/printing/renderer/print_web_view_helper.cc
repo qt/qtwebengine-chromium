@@ -27,7 +27,9 @@
 #include "content/public/renderer/render_frame.h"
 #include "content/public/renderer/render_thread.h"
 #include "content/public/renderer/render_view.h"
+#if defined(ENABLE_PRINT_PREVIEW)
 #include "grit/components_resources.h"
+#endif
 #include "net/base/escape.h"
 #include "printing/metafile_skia_wrapper.h"
 #include "printing/pdf_metafile_skia.h"
