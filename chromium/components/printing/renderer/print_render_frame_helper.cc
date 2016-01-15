@@ -116,6 +116,7 @@ const char kPageSetupScriptFormat[] = "setupHeaderFooterTemplate(%s);";
 
 constexpr int kAllowedIpcDepthForPrint = 1;
 
+#if !defined(TOOLKIT_QT)
 void ExecuteScript(blink::WebLocalFrame* frame,
                    const char* script_format,
                    const base::Value& parameters) {
@@ -124,6 +125,7 @@ void ExecuteScript(blink::WebLocalFrame* frame,
   std::string script = base::StringPrintf(script_format, json.c_str());
   frame->ExecuteScript(blink::WebString::FromUTF8(script));
 }
+#endif // !defined(TOOLKIT_QT)
 
 int GetDPI(const mojom::PrintParams& print_params) {
 #if defined(OS_APPLE)
@@ -691,6 +693,7 @@ void PrintRenderFrameHelper::PrintHeaderAndFooter(
     float webkit_scale_factor,
     const mojom::PageSizeMargins& page_layout,
     const mojom::PrintParams& params) {
+#if !defined(TOOLKIT_QT)
   DCHECK_LE(total_pages, kMaxPageCount);
   // |page_number| is 1-based here, so it could be equal to kMaxPageCount.
   DCHECK_LE(page_number, kMaxPageCount);
@@ -789,6 +792,7 @@ void PrintRenderFrameHelper::PrintHeaderAndFooter(
   frame->PrintEnd();
 
   web_view->Close();
+#endif // !defined(TOOLKIT_QT)
 }
 
 // static - Not anonymous so that platform implementations can use it.
