@@ -27,7 +27,9 @@
 #include "content/public/renderer/render_frame.h"
 #include "content/public/renderer/render_thread.h"
 #include "content/public/renderer/render_view.h"
+#if defined(ENABLE_PRINT_PREVIEW) && !defined(TOOLKIT_QT)
 #include "grit/components_resources.h"
+#endif
 #include "net/base/escape.h"
 #include "printing/metafile_skia_wrapper.h"
 #include "printing/pdf_metafile_skia.h"
@@ -81,7 +83,7 @@ const double kMinDpi = 1.0;
 // Also set in third_party/WebKit/Source/core/page/PrintContext.cpp
 const float kPrintingMinimumShrinkFactor = 1.333f;
 
-#if defined(ENABLE_PRINT_PREVIEW)
+#if defined(ENABLE_PRINT_PREVIEW) && !defined(TOOLKIT_QT)
 bool g_is_preview_enabled = true;
 
 const char kPageLoadScriptFormat[] =
@@ -514,6 +516,7 @@ void PrintWebViewHelper::PrintHeaderAndFooter(
     float webkit_scale_factor,
     const PageSizeMargins& page_layout,
     const PrintMsg_Print_Params& params) {
+#ifndef TOOLKIT_QT
   SkAutoCanvasRestore auto_restore(canvas, true);
   canvas->scale(1 / webkit_scale_factor, 1 / webkit_scale_factor);
 
@@ -559,6 +562,7 @@ void PrintWebViewHelper::PrintHeaderAndFooter(
 
   web_view->close();
   frame->close();
+#endif
 }
 #endif  // defined(ENABLE_PRINT_PREVIEW)
 

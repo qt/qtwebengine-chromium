@@ -14,10 +14,8 @@
 #include "base/thread_task_runner_handle.h"
 #include "base/values.h"
 #include "build/build_config.h"
-#include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/printing/print_job.h"
-#include "chrome/common/features.h"
 #include "chrome/grit/generated_resources.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
@@ -29,8 +27,17 @@
 #include "printing/printing_utils.h"
 #include "ui/base/l10n/l10n_util.h"
 
+#if !defined(TOOLKIT_QT)
+#include "chrome/browser/browser_process.h"
+#include "chrome/common/features.h"
+
 #if BUILDFLAG(ANDROID_JAVA_UI)
 #include "chrome/browser/android/tab_android.h"
+#endif
+
+#else // !defined(TOOLKIT_QT)
+// Used to fetch the application name
+#include "web_engine_library_info.h"
 #endif
 
 using content::BrowserThread;
@@ -83,7 +90,11 @@ content::WebContents* PrintingContextDelegate::GetWebContents() {
 }
 
 std::string PrintingContextDelegate::GetAppLocale() {
+#if defined(TOOLKIT_QT)
+  return WebEngineLibraryInfo::getApplicationLocale();
+#else
   return g_browser_process->GetApplicationLocale();
+#endif // if defined(TOOLKIT_QT)
 }
 
 void NotificationCallback(PrintJobWorkerOwner* print_job,
@@ -215,6 +226,7 @@ void PrintJobWorker::GetSettingsWithUI(
     bool is_scripted) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
+#if !defined(TOOLKIT_QT)
 #if BUILDFLAG(ANDROID_JAVA_UI)
   if (is_scripted) {
     PrintingContextDelegate* printing_context_delegate =
@@ -230,6 +242,7 @@ void PrintJobWorker::GetSettingsWithUI(
     if (tab)
       tab->SetPendingPrint();
   }
+#endif
 #endif
 
   // weak_factory_ creates pointers valid only on owner_ thread.
