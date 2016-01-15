@@ -79,7 +79,7 @@ class PrintJob : public base::RefCountedThreadSafe<PrintJob> {
                           const std::u16string& name,
                           uint32_t page_count);
 
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(TOOLKIT_QT)
   void StartConversionToNativeFormat(
       scoped_refptr<base::RefCountedMemory> print_data,
       const gfx::Size& page_size,
@@ -189,7 +189,7 @@ class PrintJob : public base::RefCountedThreadSafe<PrintJob> {
 
   void HoldUntilStopIsCalled();
 
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(TOOLKIT_QT)
   virtual void StartPdfToEmfConversion(
       scoped_refptr<base::RefCountedMemory> bytes,
       const gfx::Size& page_size,
@@ -233,11 +233,11 @@ class PrintJob : public base::RefCountedThreadSafe<PrintJob> {
   // the notified calls Cancel() again.
   bool is_canceling_ = false;
 
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(TOOLKIT_QT)
   class PdfConversionState;
   std::unique_ptr<PdfConversionState> pdf_conversion_state_;
   std::vector<uint32_t> pdf_page_mapping_;
-#endif  // defined(OS_WIN)
+#endif  // defined(OS_WIN) && !defined(TOOLKIT_QT)
 
 #if defined(OS_CHROMEOS)
   // The component which initiated the print job.
