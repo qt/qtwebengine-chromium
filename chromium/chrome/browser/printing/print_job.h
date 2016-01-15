@@ -56,7 +56,7 @@ class PrintJob : public base::RefCountedThreadSafe<PrintJob>,
                           const base::string16& name,
                           int page_count);
 
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(TOOLKIT_QT)
   void StartConversionToNativeFormat(
       const scoped_refptr<base::RefCountedMemory>& print_data,
       const gfx::Size& page_size,
