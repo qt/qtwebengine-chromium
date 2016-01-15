@@ -21,7 +21,7 @@ namespace display {
 
 namespace {
 
-Screen* g_screen;
+Screen* g_screen = nullptr;
 
 }  // namespace
 

@@ -18,7 +18,6 @@
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/values.h"
 #include "build/build_config.h"
-#include "chrome/browser/browser_process.h"
 #include "chrome/browser/printing/print_job.h"
 #include "chrome/grit/generated_resources.h"
 #include "components/crash/core/common/crash_keys.h"
@@ -37,10 +36,19 @@
 #include "printing/printing_utils.h"
 #include "ui/base/l10n/l10n_util.h"
 
+#if !defined(TOOLKIT_QT)
+#include "chrome/browser/browser_process.h"
+#include "chrome/common/features.h"
+
 #if BUILDFLAG(IS_ANDROID)
 #include "chrome/browser/android/tab_android.h"
 #include "chrome/browser/android/tab_printer.h"
 #include "printing/printing_context_android.h"
+#endif
+#else // !defined(TOOLKIT_QT)
+namespace printing {
+std::string getApplicationLocale();
+}
 #endif
 
 #if BUILDFLAG(IS_WIN)
@@ -100,7 +108,11 @@ content::WebContents* PrintingContextDelegate::GetWebContents() {
 }
 
 std::string PrintingContextDelegate::GetAppLocale() {
+#if defined(TOOLKIT_QT)
+  return getApplicationLocale();
+#else
   return g_browser_process->GetApplicationLocale();
+#endif // if defined(TOOLKIT_QT)
 }
 
 bool ShouldPrintingContextSkipSystemCalls() {
@@ -211,7 +223,7 @@ void PrintJobWorker::UpdatePrintSettings(base::Value::Dict new_settings,
     base::ScopedAllowBlocking allow_blocking;
 #endif
     scoped_refptr<PrintBackend> print_backend =
-        PrintBackend::CreateInstance(g_browser_process->GetApplicationLocale());
+        PrintBackend::CreateInstance(getApplicationLocale());
     std::string printer_name = *new_settings.FindString(kSettingDeviceName);
     crash_key = std::make_unique<crash_keys::ScopedPrinterInfo>(
         print_backend->GetPrinterDriverInfo(printer_name));
@@ -410,7 +422,7 @@ void PrintJobWorker::OnNewPage() {
     return;
 
   bool do_spool_document = true;
-#if BUILDFLAG(IS_WIN)
+#if BUILDFLAG(IS_WIN) && !defined(TOOLKIT_QT)
   const bool source_is_pdf =
       !print_job_->document()->settings().is_modifiable();
   if (!features::ShouldPrintUsingXps(source_is_pdf)) {
