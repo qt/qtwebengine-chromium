@@ -655,6 +655,7 @@ void PrintRenderFrameHelper::PrintHeaderAndFooter(
     float webkit_scale_factor,
     const mojom::PageSizeMargins& page_layout,
     const mojom::PrintParams& params) {
+#if !defined(TOOLKIT_QT)
   DCHECK_LE(total_pages, kMaxPageCount);
   // |page_number| is 1-based here, so it could be equal to kMaxPageCount.
   DCHECK_LE(page_number, kMaxPageCount);
@@ -741,6 +742,7 @@ void PrintRenderFrameHelper::PrintHeaderAndFooter(
   frame->PrintEnd();
 
   web_view->Close();
+#endif // !defined(TOOLKIT_QT)
 }
 
 // static - Not anonymous so that platform implementations can use it.
