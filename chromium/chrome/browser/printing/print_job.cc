@@ -24,9 +24,11 @@
 #include "content/public/browser/notification_service.h"
 #include "printing/printed_document.h"
 
-#if defined(OS_WIN) && !defined(TOOLKIT_QT)
+#if defined(OS_WIN)
+#if !defined(TOOLKIT_QT)
 #include "chrome/browser/printing/pdf_to_emf_converter.h"
 #include "printing/pdf_render_settings.h"
+#endif
 #include "printing/printed_page_win.h"
 #endif
 

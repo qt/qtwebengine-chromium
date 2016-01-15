@@ -164,7 +164,8 @@ scoped_refptr<PrintedPage> PrintedDocument::GetPage(int page_number) {
   return page;
 }
 
-#else
+#endif
+
 void PrintedDocument::SetDocument(std::unique_ptr<MetafilePlayer> metafile,
                                   const gfx::Size& page_size,
                                   const gfx::Rect& page_content_rect) {
@@ -188,7 +189,6 @@ const MetafilePlayer* PrintedDocument::GetMetafile() {
   return mutable_.metafile_.get();
 }
 
-#endif
 
 bool PrintedDocument::IsComplete() const {
   base::AutoLock lock(lock_);

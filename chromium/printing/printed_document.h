@@ -54,7 +54,7 @@ class PRINTING_EXPORT PrintedDocument
   // requests to have this page be rendered and returns NULL.
   // Note: locks for a short amount of time.
   scoped_refptr<PrintedPage> GetPage(int page_number);
-#else
+#endif
   // Sets the document data. Note: locks for a short amount of time.
   void SetDocument(std::unique_ptr<MetafilePlayer> metafile,
                    const gfx::Size& page_size,
@@ -63,7 +63,6 @@ class PRINTING_EXPORT PrintedDocument
   // Retrieves the metafile with the data to print. Lock must be held when
   // calling this function
   const MetafilePlayer* GetMetafile();
-#endif
 
 // Draws the page in the context.
 // Note: locks for a short amount of time in debug only.
@@ -153,9 +152,8 @@ class PRINTING_EXPORT PrintedDocument
     // Contains the pages' representation. This is a collection of PrintedPage.
     // Warning: Lock must be held when accessing this member.
     PrintedPages pages_;
-#else
-    std::unique_ptr<MetafilePlayer> metafile_;
 #endif
+    std::unique_ptr<MetafilePlayer> metafile_;
 #if defined(OS_MACOSX)
     gfx::Size page_size_;
     gfx::Rect page_content_rect_;
