@@ -1283,9 +1283,9 @@ class NinjaWriter(object):
 
       pri_file.write("QMAKE_LFLAGS += %s\n" % qmakeLiteral(' '.join(prefixed_lflags)))
       pri_file.write("OBJECTS += %s\n" % qmakeLiteral(' '.join(prefixed_objects)))
-      # Follow the logic of the solink rule.
+      # Follow the logic of the link rule.
       if self.flavor != 'mac' and self.flavor != 'win':
-        pri_file.write("LIBS_PRIVATE += -Wl,--whole-archive %s -Wl,--no-whole-archive\n" % qmakeLiteral(' '.join(prefixed_archives)))
+        pri_file.write("LIBS_PRIVATE += -Wl,--start-group %s -Wl,--end-group\n" % qmakeLiteral(' '.join(prefixed_archives)))
       else:
         pri_file.write("LIBS_PRIVATE += %s\n" % qmakeLiteral(' '.join(prefixed_archives)))
       # External libs have to come after objects/archives, the linker resolve them in order.
