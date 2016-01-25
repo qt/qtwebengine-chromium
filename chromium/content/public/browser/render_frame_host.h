@@ -75,7 +75,7 @@ class CONTENT_EXPORT RenderFrameHost : public IPC::Listener,
   // Returns nullptr if the IDs do not correspond to a live RenderFrameHost.
   static RenderFrameHost* FromID(int render_process_id, int render_frame_id);
 
-#if defined(OS_ANDROID) || defined(OS_FUCHSIA) || defined(IS_CHROMECAST)
+#if defined(OS_ANDROID) || defined(OS_FUCHSIA) || defined(IS_CHROMECAST) || defined(TOOLKIT_QT)
   // Globally allows for injecting JavaScript into the main world. This feature
   // is present only to support Android WebView, Fuchsia web.Contexts, and
   // CastOS content shell. It must not be used in other configurations.
